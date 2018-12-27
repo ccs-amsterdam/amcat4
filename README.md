@@ -32,3 +32,12 @@ python3 -m venv env
 env/bin/pip install -e .
 env/bin/python -m amcat4
 ```
+
+To run the unit tests:
+
+```
+env/bin/pip install nose
+env/bin/nosetests
+```
+
+(obviously, feel free to place your virutal environment in any other location, this is just how I set things up)
