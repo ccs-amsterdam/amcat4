@@ -5,9 +5,9 @@ from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth, MultiAuth
 
 from http import HTTPStatus
 
-import auth
-from auth import create_token
-from elastic import list_projects, create_project, setup_elastic
+from amcat4api import auth
+from amcat4api.auth import create_token
+from amcat4api.elastic import list_projects, create_project, setup_elastic
 
 app = Flask(__name__)
 

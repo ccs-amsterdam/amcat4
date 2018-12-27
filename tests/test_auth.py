@@ -1,9 +1,7 @@
 import random
 import string
 
-from nose.tools import assert_raises
-
-from auth import verify_user, create_user, ROLE_CREATOR, delete_user, create_token, verify_token, delete_token
+from amcat4api.auth import verify_user, create_user, ROLE_CREATOR, delete_user, create_token, verify_token, delete_token
 
 
 def test_create_check_user():

@@ -4,12 +4,11 @@ Provide authentication for AmCAT4 api
 Currently provides token based authentication using an elasticsearch backend,
 assuming a 'amcat4system' index
 """
-import datetime
 from secrets import token_hex
 
 import bcrypt
-from elasticsearch import Elasticsearch, NotFoundError
-from elastic import es, SYS_INDEX, SYS_MAPPING
+from elasticsearch import NotFoundError
+from amcat4api.elastic import es, SYS_INDEX, SYS_MAPPING
 
 SECRET_KEY = 'geheim'
 

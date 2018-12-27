@@ -1,7 +1,7 @@
 import random
 import string
 
-from elastic import create_project, list_projects, delete_project
+from amcat4api.elastic import create_project, list_projects, delete_project
 
 
 def test_create_delete_list_project():
