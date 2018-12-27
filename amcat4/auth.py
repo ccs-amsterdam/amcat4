@@ -8,7 +8,7 @@ from secrets import token_hex
 
 import bcrypt
 from elasticsearch import NotFoundError
-from amcat4api.elastic import es, SYS_INDEX, SYS_MAPPING
+from amcat4.elastic import es, SYS_INDEX, SYS_MAPPING
 
 SECRET_KEY = 'geheim'
 

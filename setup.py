@@ -3,12 +3,12 @@
 from distutils.core import setup
 
 setup(
-    name="AmCAT4API",
+    name="amcat4",
     version="0.01",
     description="API for AmCAT4 Text Analysis",
     author="Wouter van Atteveldt",
     author_email="wouter@vanatteveldt.com",
-    packages=["amcat4api"],
+    packages=["amcat4"],
     include_package_data=True,
     zip_safe=False,
     keywords = ["API", "text"],
