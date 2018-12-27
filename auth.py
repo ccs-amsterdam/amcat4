@@ -9,31 +9,37 @@ from secrets import token_hex
 
 import bcrypt
 from elasticsearch import Elasticsearch, NotFoundError
+from elastic import es, SYS_INDEX, SYS_MAPPING
 
-es = Elasticsearch()
-
-INDEX = "amcat4system"
-MAPPING = "sys"
 SECRET_KEY = 'geheim'
 
 ROLE_ADMIN = "admin"  # Can do anything
 ROLE_CREATOR = "creator"  # Can create projects
 
 
-def create_user(email: str, password: str, roles=None):
+def has_user() -> bool:
+    """
+    Is there at least one user?
+    """
+    es.indices.flush()
+    res = es.count(SYS_INDEX, SYS_MAPPING, body={"query": {"match": {"type": "user"}}})
+    return res['count'] > 0
+
+def create_user(email: str, password: str, roles=None, check_email=True):
     """
     Create a new user on this server
     :param email: Email address identifying the user
     :param password: New password
     :param roles: Roles for this user, see ROLE_* module variables
+    :param check_email: if True (default), raise an error for invalid email addresses
     """
-    if "@" not in email:
+    if check_email and "@" not in email:
         # This makes sure there cannot be confusion between user and token entries
         raise ValueError("Invalid email address")
-    if es.exists(INDEX, MAPPING, id=email):
+    if es.exists(SYS_INDEX, SYS_MAPPING, id=email):
         raise ValueError("User {email} already exists".format(**locals()))
     hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    es.create(INDEX, MAPPING, email, {'hash': hash, 'roles': roles, 'type': 'user'})
+    es.create(SYS_INDEX, SYS_MAPPING, email, {'hash': hash, 'roles': roles, 'type': 'user'})
 
 
 def verify_user(email: str, password: str) -> bool:
@@ -44,7 +50,7 @@ def verify_user(email: str, password: str) -> bool:
     :return: True if user could be authenticated, False otherwise
     """
     try:
-        user = es.get(INDEX, MAPPING, email)
+        user = es.get(SYS_INDEX, SYS_MAPPING, email)
     except NotFoundError:
         return False
     return bcrypt.checkpw(password.encode('utf-8'), user['_source']['hash'].encode("utf-8"))
@@ -56,7 +62,7 @@ def delete_user(email: str, ignore_missing=False):
     :param email: Email address identifying the user
     :param ignore_missing: If False (default), throw an exception if user does not exist
     """
-    es.delete(INDEX, MAPPING, email, ignore=([404] if ignore_missing else []))
+    es.delete(SYS_INDEX, SYS_MAPPING, email, ignore=([404] if ignore_missing else []))
 
 
 def create_token(email: str) -> str:
@@ -66,7 +72,7 @@ def create_token(email: str) -> str:
     :return: the created token
     """
     token = token_hex(8)
-    es.create(INDEX, MAPPING, token, {'email': email, 'type': 'token'})
+    es.create(SYS_INDEX, SYS_MAPPING, token, {'email': email, 'type': 'token'})
     return token
 
 
@@ -77,7 +83,7 @@ def verify_token(token: str) -> str:
     :return: the email address identifying the authenticated user
     """
     try:
-        result = es.get(INDEX, MAPPING, token)
+        result = es.get(SYS_INDEX, SYS_MAPPING, token)
     except NotFoundError:
         return None
     return result['_source']['email']
@@ -89,4 +95,4 @@ def delete_token(token: str, ignore_missing=False):
     :param token: The token to delete
     :param ignore_missing: If False (default), throw an exception if token does not exist
     """
-    es.delete(INDEX, MAPPING, token, ignore=([404] if ignore_missing else []))
+    es.delete(SYS_INDEX, SYS_MAPPING, token, ignore=([404] if ignore_missing else []))

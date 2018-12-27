@@ -1,3 +1,5 @@
+import logging
+
 from flask import request, jsonify, Flask, g
 from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth, MultiAuth
 
@@ -5,7 +7,7 @@ from http import HTTPStatus
 
 import auth
 from auth import create_token
-from elastic import list_projects, create_project
+from elastic import list_projects, create_project, setup_elastic
 
 app = Flask(__name__)
 
@@ -62,4 +64,9 @@ def project_create():
 
 
 if __name__ == '__main__':
+    logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=logging.INFO)
+    setup_elastic()
+    if not auth.has_user():
+        logging.warning("**** No user detected, creating superuser admin:admin ****")
+        auth.create_user("admin", "admin", roles=[auth.ROLE_ADMIN], check_email=False)
     app.run(debug=True)
