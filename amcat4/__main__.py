@@ -2,6 +2,7 @@ import logging
 
 from flask import request, jsonify, Flask, g
 from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth, MultiAuth
+from flask_cors import CORS
 
 from http import HTTPStatus
 
@@ -10,6 +11,7 @@ from amcat4.auth import create_token
 from amcat4.elastic import list_projects, create_project, setup_elastic
 
 app = Flask(__name__)
+CORS(app)
 
 basic_auth = HTTPBasicAuth()
 token_auth = HTTPTokenAuth()

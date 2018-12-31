@@ -20,6 +20,7 @@ setup(
     install_requires=[
         "Flask",
         "Flask-HTTPAuth",
+        "flask-cors",
         "elasticsearch",
         "bcrypt",
     ]
