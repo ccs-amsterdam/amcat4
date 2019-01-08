@@ -11,6 +11,10 @@ PREFIX = "amcat4_"
 DOCTYPE = "article"
 SYS_INDEX = "amcat4system"
 SYS_MAPPING = "sys"
+REQUIRED_FIELDS = ["title", "date", "text"]
+HASH_FIELDS = REQUIRED_FIELDS + ["url"]
+DEFAULT_QUERY_FIELDS = HASH_FIELDS
+
 
 def setup_elastic(*hosts):
     """
@@ -56,9 +60,6 @@ def delete_project(name: str, ignore_missing=False):
     es.indices.delete(name, ignore=([404] if ignore_missing else []))
 
 
-REQUIRED_FIELDS = ["title", "date", "text"]
-HASH_FIELDS = REQUIRED_FIELDS + ["url"]
-
 
 def _get_hash(document):
     """
@@ -99,7 +100,6 @@ def upload_documents(project_name: str, documents):
     """
     index = "".join([PREFIX, project_name])
     actions = list(_get_es_actions(index, DOCTYPE, documents))
-    print(actions)
     bulk(es, actions)
     return [action['_id'] for action in actions]
 
@@ -114,3 +114,17 @@ def get_document(project_name: str, id: str):
     """
     index = "".join([PREFIX, project_name])
     return es.get(index, DOCTYPE, id)['_source']
+
+
+def query_documents(project_name: str, query_string: str, **kwargs):
+    """
+    Conduct a query_string query, returning the found documents
+
+    :param project_name: The name of the project (without prefix)
+    :param query_string: The elasticsearch query_string
+    :return: an iterator of article dicts
+    """
+    index = "".join([PREFIX, project_name])
+    body = dict(query=dict(query_string=dict(default_field="text", query=query_string)))
+    result = es.search(index, DOCTYPE, body, **kwargs)
+    return [dict(_id=hit['_id'], **hit['_source']) for  hit in result['hits']['hits']]

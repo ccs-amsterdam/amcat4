@@ -3,7 +3,8 @@ import string
 
 from nose.tools import assert_equal
 
-from amcat4.elastic import create_project, list_projects, delete_project, upload_documents, _get_hash, get_document
+from amcat4.elastic import create_project, list_projects, delete_project, upload_documents, _get_hash, get_document, \
+    query_documents, es
 
 
 def test_create_delete_list_project():
@@ -37,3 +38,15 @@ def test_upload_retrieve_document():
     d = get_document(_TEST_PROJECT, ids[0])
     assert_equal(d['title'], a['title'])
     # todo check date type
+
+
+def test_query():
+    texts = ["this is a text", "a test text", "and another test"]
+    docs = [dict(title="title", date="2018-01-01", text=t) for t in texts]
+    id0, id1, id2 = upload_documents(_TEST_PROJECT, docs)
+    es.indices.flush()
+    r = [h['_id'] for h in query_documents(_TEST_PROJECT, "test")]
+    assert_equal(set(r), {id1, id2})
+
+    r = [h['_id'] for h in query_documents(_TEST_PROJECT, '"a text"')]
+    assert_equal(set(r), {id0})
