@@ -1,10 +1,14 @@
+import hashlib
+import json
 import logging
 
 from elasticsearch import Elasticsearch
+from elasticsearch.helpers import bulk
 
 es = Elasticsearch()
 
 PREFIX = "amcat4_"
+DOCTYPE = "article"
 SYS_INDEX = "amcat4system"
 SYS_MAPPING = "sys"
 
@@ -50,3 +54,63 @@ def delete_project(name: str, ignore_missing=False):
     """
     name = "".join([PREFIX, name])
     es.indices.delete(name, ignore=([404] if ignore_missing else []))
+
+
+REQUIRED_FIELDS = ["title", "date", "text"]
+HASH_FIELDS = REQUIRED_FIELDS + ["url"]
+
+
+def _get_hash(document):
+    """
+    Get the hash for a document
+    """
+    hash_dict = {key: document.get(key) for key in HASH_FIELDS}
+    hash_str = json.dumps(hash_dict, sort_keys=True, ensure_ascii=True).encode('ascii')
+    m = hashlib.sha224()
+    m.update(hash_str)
+    return m.hexdigest()
+
+
+def _get_es_actions(index, doc_type, documents):
+    """
+    Create the Elasticsearch bulk actions from article dicts.
+    If you provide a list to ID_SEQ_LIST, the hashes are copied there
+    """
+    for document in documents:
+        for f in REQUIRED_FIELDS:
+            if f not in document:
+                raise ValueError("Field {f} not present in article {article}")
+        _id = _get_hash(document)
+        yield {
+            "_index": index,
+            "_type": doc_type,
+            "_id": _id,
+            **document
+        }
+
+
+def upload_documents(project_name: str, documents):
+    """
+    Upload documents to this project
+
+    :param project_name: The name of the project (without prefix)
+    :param documents: A sequence of article dictionaries
+    :return:
+    """
+    index = "".join([PREFIX, project_name])
+    actions = list(_get_es_actions(index, DOCTYPE, documents))
+    print(actions)
+    bulk(es, actions)
+    return [action['_id'] for action in actions]
+
+
+def get_document(project_name: str, id: str):
+    """
+    Get a single document from this project
+
+    :param project_name: The name of the project (without prefix)
+    :param id: The document id (hash)
+    :return: the source dict of the document
+    """
+    index = "".join([PREFIX, project_name])
+    return es.get(index, DOCTYPE, id)['_source']

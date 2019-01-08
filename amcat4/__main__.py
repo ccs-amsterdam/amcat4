@@ -65,6 +65,19 @@ def project_create():
     return jsonify({"name": name}), HTTPStatus.CREATED
 
 
+@app.route("/projects/<project_name>/documents", methods=['POST'])
+@multi_auth.login_required
+def project_list(project_name: str):
+    """
+    Upload documents to this server
+    JSON payload should be a list of documents with at least a title, date, text and any optional attributes
+    Note: The unique elastic ID will be the hash of title, date, text and url.
+    """
+    articles = request.get_json(force=True)
+    reuslt = upload_articles(project_name, articles)
+    return jsonify(result)
+
+
 if __name__ == '__main__':
     logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=logging.INFO)
     setup_elastic()
