@@ -24,6 +24,7 @@ def has_user() -> bool:
     res = es.count(SYS_INDEX, SYS_MAPPING, body={"query": {"match": {"type": "user"}}})
     return res['count'] > 0
 
+
 def create_user(email: str, password: str, roles=None, check_email=True):
     """
     Create a new user on this server

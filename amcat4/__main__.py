@@ -20,7 +20,7 @@ multi_auth = MultiAuth(basic_auth, token_auth)
 
 @basic_auth.verify_password
 def verify_password(username, password):
-    if auth.verify_user(username, password):
+    if username and auth.verify_user(username, password):
         g.email = username
         return True
 
@@ -67,15 +67,27 @@ def project_create():
 
 @app.route("/projects/<project_name>/documents", methods=['POST'])
 @multi_auth.login_required
-def project_list(project_name: str):
+def upload_documents(project_name: str):
     """
     Upload documents to this server
     JSON payload should be a list of documents with at least a title, date, text and any optional attributes
     Note: The unique elastic ID will be the hash of title, date, text and url.
     """
-    articles = request.get_json(force=True)
-    reuslt = upload_articles(project_name, articles)
+    documents = request.get_json(force=True)
+    result = upload_documents(project_name, documents)
     return jsonify(result)
+
+
+@app.route("/projects/<project_name>/documents", methods=['GET'])
+@multi_auth.login_required
+def query_documents(project_name: str):
+    """
+    List or query documents in this project
+    """
+    documents = request.get_json(force=True)
+    result = upload_documents(project_name, documents)
+    return jsonify(result)
+
 
 
 if __name__ == '__main__':
