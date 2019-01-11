@@ -1,7 +1,9 @@
 import random
 import string
 
-from amcat4.auth import verify_user, create_user, ROLE_CREATOR, delete_user, create_token, verify_token, delete_token
+from nose.tools import assert_is_not_none, assert_equals
+
+from amcat4.auth import verify_user, create_user, ROLE_CREATOR, verify_token, delete_token
 
 
 def test_create_check_user():
@@ -9,21 +11,25 @@ def test_create_check_user():
     email = "{}@example.org".format(name)
     password = name
     assert not verify_user(email, password)
-    create_user(email, password, roles=ROLE_CREATOR)
+    u = create_user(email, password, roles=ROLE_CREATOR)
     try:
-        assert verify_user(email, password)
+        u2 = verify_user(email, password)
+        assert_is_not_none(u2, "User could not be found")
+        assert_equals(u2.roles, {ROLE_CREATOR})
         assert not verify_user(email, "fout")
-        delete_user(email)
+        u2.delete()
         assert not verify_user(email, password)
     finally:
-        delete_user(email, ignore_missing=True)
+        u.delete(ignore_missing=True)
+
 
 def test_token():
     name = ''.join(random.choices(string.ascii_lowercase, k=32))
     email = "{}@example.org".format(name)
-    token = create_token(email)
+    u = create_user(email, 'password')
+    token = u.create_token()
     try:
-        assert verify_token(token) == email
+        assert verify_token(token).email == u.email
         delete_token(token)
         assert verify_token(token) is None
     finally:

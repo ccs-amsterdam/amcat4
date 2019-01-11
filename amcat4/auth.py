@@ -16,6 +16,43 @@ ROLE_ADMIN = "admin"  # Can do anything
 ROLE_CREATOR = "creator"  # Can create projects
 
 
+def role_set(str_or_sequence):
+    if str_or_sequence is None:
+        return set()
+    if isinstance(str_or_sequence, str):
+        return {str_or_sequence}
+    else:
+        return set(str_or_sequence)
+
+
+class User:
+    def __init__(self, email, roles):
+        self.email = email
+        self.roles = role_set(roles)
+
+    def has_role(self, role):
+        return bool(self.roles & {ROLE_ADMIN, role})
+
+    def create_token(self) -> str:
+        """
+        Create a new token for this user
+        """
+        token = token_hex(8)
+        es.create(SYS_INDEX, SYS_MAPPING, token, {'email': self.email, 'type': 'token'})
+        return token
+
+    def delete(self, ignore_missing=False):
+        """
+        Delete the user
+        :param email: Email address identifying the user
+        :param ignore_missing: If False (default), throw an exception if user does not exist
+        """
+        es.delete(SYS_INDEX, SYS_MAPPING, self.email, ignore=([404] if ignore_missing else []))
+
+    def __eq__(self, other):
+        return self.email == other.email
+
+
 def has_user() -> bool:
     """
     Is there at least one user?
@@ -25,7 +62,7 @@ def has_user() -> bool:
     return res['count'] > 0
 
 
-def create_user(email: str, password: str, roles=None, check_email=True):
+def create_user(email: str, password: str, roles=None, check_email=True) -> User:
     """
     Create a new user on this server
     :param email: Email address identifying the user
@@ -40,53 +77,37 @@ def create_user(email: str, password: str, roles=None, check_email=True):
         raise ValueError("User {email} already exists".format(**locals()))
     hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     es.create(SYS_INDEX, SYS_MAPPING, email, {'hash': hash, 'roles': roles, 'type': 'user'})
+    return User(email, roles)
 
 
-def verify_user(email: str, password: str) -> bool:
+def verify_user(email: str, password: str) -> User:
     """
     Check that this user exists and is authenticated with the given password
     :param email: Email address identifying the user
     :param password: Password to check
-    :return: True if user could be authenticated, False otherwise
+    :return: A User object if user could be authenticated, None otherwise
     """
     try:
         user = es.get(SYS_INDEX, SYS_MAPPING, email)
     except NotFoundError:
         return False
-    return bcrypt.checkpw(password.encode('utf-8'), user['_source']['hash'].encode("utf-8"))
+    if bcrypt.checkpw(password.encode('utf-8'), user['_source']['hash'].encode("utf-8")):
+        return User(email, user['_source']['roles'])
 
 
-def delete_user(email: str, ignore_missing=False):
-    """
-    Delete the user
-    :param email: Email address identifying the user
-    :param ignore_missing: If False (default), throw an exception if user does not exist
-    """
-    es.delete(SYS_INDEX, SYS_MAPPING, email, ignore=([404] if ignore_missing else []))
-
-
-def create_token(email: str) -> str:
-    """
-    Create a new token for this user
-    :param email: Email address identifying the user
-    :return: the created token
-    """
-    token = token_hex(8)
-    es.create(SYS_INDEX, SYS_MAPPING, token, {'email': email, 'type': 'token'})
-    return token
-
-
-def verify_token(token: str) -> str:
+def verify_token(token: str) -> User:
     """
     Check the token and return the authenticated user email
     :param token: The token to verify
-    :return: the email address identifying the authenticated user
+    :return: a User object if user could be authenticated, None otherwise
     """
     try:
         result = es.get(SYS_INDEX, SYS_MAPPING, token)
     except NotFoundError:
         return None
-    return result['_source']['email']
+    email = result['_source']['email']
+    u = es.get(SYS_INDEX, SYS_MAPPING, email)
+    return User(email, u['_source']['roles'])
 
 
 def delete_token(token: str, ignore_missing=False):

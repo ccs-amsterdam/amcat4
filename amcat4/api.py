@@ -4,8 +4,10 @@ from flask_cors import CORS
 
 from http import HTTPStatus
 
+from werkzeug.exceptions import Unauthorized
+
 from amcat4 import auth
-from amcat4.auth import create_token
+from amcat4.auth import ROLE_CREATOR
 from amcat4.elastic import list_projects, create_project, setup_elastic
 
 app = Flask(__name__)
@@ -16,19 +18,26 @@ token_auth = HTTPTokenAuth()
 multi_auth = MultiAuth(basic_auth, token_auth)
 
 
+def check_role(role):
+    u = g.current_user
+    if not u:
+        raise Unauthorized("No authenticated user")
+    if not u.has_role(role):
+        raise Unauthorized("User {} does not have role {}".format(u.email, role))
+
+
 @basic_auth.verify_password
 def verify_password(username, password):
-    if username and auth.verify_user(username, password):
-        g.email = username
-        return True
+    if not username:
+        return False
+    g.current_user = auth.verify_user(username, password)
+    return g.current_user is not None
 
 
 @token_auth.verify_token
 def verify_token(token):
-    email = auth.verify_token(token)
-    if email is not None:
-        g.email = email
-        return True
+    g.current_user= auth.verify_token(token)
+    return g.current_user is not None
 
 
 @app.route("/auth/token/", methods=['GET'])
@@ -37,7 +46,7 @@ def get_token():
     """
     Create a new token for the authenticated user
     """
-    token = create_token(g.email)
+    token = g.current_user.create_token()
     return jsonify({"token": token})
 
 
@@ -57,6 +66,7 @@ def project_create():
     """
     Create a new project
     """
+    check_role(ROLE_CREATOR)
     data = request.get_json(force=True)
     name = data['name']
     create_project(name)
