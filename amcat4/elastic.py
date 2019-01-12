@@ -116,7 +116,7 @@ def get_document(project_name: str, id: str):
     return es.get(index, DOCTYPE, id)['_source']
 
 
-def query_documents(project_name: str, query_string: str, **kwargs):
+def query_documents(project_name: str, query_string: str = None, **kwargs):
     """
     Conduct a query_string query, returning the found documents
 
@@ -125,6 +125,14 @@ def query_documents(project_name: str, query_string: str, **kwargs):
     :return: an iterator of article dicts
     """
     index = "".join([PREFIX, project_name])
-    body = dict(query=dict(query_string=dict(default_field="text", query=query_string)))
+    if query_string:
+        body = dict(query=dict(query_string=dict(default_field="text", query=query_string)))
+    else:
+        body = dict(query=dict(match_all={}))
+
     result = es.search(index, DOCTYPE, body, **kwargs)
     return [dict(_id=hit['_id'], **hit['_source']) for  hit in result['hits']['hits']]
+
+
+def flush():
+    es.indices.flush()

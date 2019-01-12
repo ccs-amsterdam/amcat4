@@ -4,6 +4,7 @@ import string
 
 from nose.tools import assert_equal, assert_in, assert_not_in
 
+from amcat4 import elastic
 from amcat4.__main__ import app
 from amcat4.auth import verify_token, create_user, ROLE_ADMIN, User
 
@@ -19,7 +20,6 @@ def setup_module():
     rnd_suffix = ''.join(random.choices(string.ascii_lowercase, k=32))
     _TEST_ADMIN = create_user("__test__admin__"+rnd_suffix, "password", roles=ROLE_ADMIN, check_email=False)
     _TEST_USER = create_user("__test__user__"+rnd_suffix, "password", check_email=False)
-
 
 
 def teardown_module():
@@ -65,3 +65,24 @@ def test_project():
 
     _post('/projects/', json=dict(name=_TEST_PROJECT), user=_TEST_ADMIN)
     assert_in(dict(name=_TEST_PROJECT), _get('/projects/').json)
+
+
+def test_upload_search():
+    _TEST_PROJECT = '__test__' + ''.join(random.choices(string.ascii_lowercase, k=32))
+    elastic.create_project(_TEST_PROJECT)
+    try:
+        url = 'projects/{}/documents'.format(_TEST_PROJECT)
+        assert_equal(C.get(url).status_code, 401, "Reading documents requires authorization")
+        assert_equal(C.post(url).status_code, 401, "Reading documents requires authorization")
+
+        assert_equal(_get(url).json, [])
+        doc = {"title": "t", "text": "a text", "date": "2018-01-01"}
+        _post(url, json=[doc])
+        elastic.flush()
+        docs = _get(url).json
+        assert_equal(len(docs), 1)
+        assert_equal(docs[0]['text'], doc['text'])
+    finally:
+        elastic.delete_project(_TEST_PROJECT, ignore_missing=True)
+
+

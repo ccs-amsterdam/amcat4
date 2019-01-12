@@ -8,7 +8,7 @@ from werkzeug.exceptions import Unauthorized
 
 from amcat4 import auth
 from amcat4.auth import ROLE_CREATOR
-from amcat4.elastic import list_projects, create_project, setup_elastic
+from amcat4 import elastic
 
 app = Flask(__name__)
 CORS(app)
@@ -56,7 +56,7 @@ def project_list():
     """
     List projects from this server
     """
-    result = [{"name": name} for name in list_projects()]
+    result = [{"name": name} for name in elastic.list_projects()]
     return jsonify(result)
 
 
@@ -69,7 +69,7 @@ def project_create():
     check_role(ROLE_CREATOR)
     data = request.get_json(force=True)
     name = data['name']
-    create_project(name)
+    elastic.create_project(name)
     return jsonify({"name": name}), HTTPStatus.CREATED
 
 
@@ -82,18 +82,16 @@ def upload_documents(project_name: str):
     Note: The unique elastic ID will be the hash of title, date, text and url.
     """
     documents = request.get_json(force=True)
-    result = upload_documents(project_name, documents)
+    result = elastic.upload_documents(project_name, documents)
     return jsonify(result)
 
 
 @app.route("/projects/<project_name>/documents", methods=['GET'])
 @multi_auth.login_required
-def query_documents(project_name: str):
+def get_documents(project_name: str):
     """
     List or query documents in this project
     """
-    documents = request.get_json(force=True)
-    result = upload_documents(project_name, documents)
-    return jsonify(result)
-
+    r = elastic.query_documents(project_name)
+    return jsonify(r)
 
