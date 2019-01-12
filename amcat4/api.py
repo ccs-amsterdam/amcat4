@@ -92,6 +92,7 @@ def get_documents(project_name: str):
     """
     List or query documents in this project
     """
-    r = elastic.query_documents(project_name)
+    q = request.args.get('q')
+    r = elastic.query_documents(project_name, query_string=q)
     return jsonify(r)
 
