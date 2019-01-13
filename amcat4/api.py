@@ -36,7 +36,7 @@ def verify_password(username, password):
 
 @token_auth.verify_token
 def verify_token(token):
-    g.current_user= auth.verify_token(token)
+    g.current_user = auth.verify_token(token)
     return g.current_user is not None
 
 
