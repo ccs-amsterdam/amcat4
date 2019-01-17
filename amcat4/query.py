@@ -22,14 +22,14 @@ class QueryResult:
                     results=self.data)
 
 
-def query_documents(project_name: str, query_string: str = None, page=1, per_page=10, **kwargs) -> QueryResult:
+def query_documents(project_name: str, query_string: str = None, page=0, per_page=10, **kwargs) -> QueryResult:
     """
     Conduct a query_string query, returning the found documents
 
 
     :param project_name: The name of the project (without prefix)
     :param query_string: The elasticsearch query_string
-    :param page: The number of the page to request (starting from one)
+    :param page: The number of the page to request (starting from zero)
     :param per_page: The number of hits per page
     :param kwargs: Additional elements passed to Elasticsearch.search(), for example:
            sort=col1:desc,col2
@@ -41,8 +41,8 @@ def query_documents(project_name: str, query_string: str = None, page=1, per_pag
     else:
         body = dict(query=dict(match_all={}))
 
-    from_ = (page - 1) * per_page
+    from_ = page * per_page
     result = es.search(index, DOCTYPE, body, from_=from_, size=per_page, **kwargs)
-    data = [dict(_id=hit['_id'], **hit['_source']) for  hit in result['hits']['hits']]
+    data = [dict(_id=hit['_id'], **hit['_source']) for hit in result['hits']['hits']]
     return QueryResult(data, n=result['hits']['total'], page=page, per_page=per_page)
 

@@ -50,12 +50,12 @@ def test_pagination(project):
     assert_equal(x.page_count, 4)
     assert_equal(x.per_page, 30)
     assert_equal(len(x.data), 30)
-    assert_equal(x.page, 1)
-    x = query.query_documents(project, per_page=30, page=4)
+    assert_equal(x.page, 0)
+    x = query.query_documents(project, per_page=30, page=3)
     assert_equal(x.page_count, 4)
     assert_equal(x.per_page, 30)
     assert_equal(len(x.data), 95 - 3*30)
-    assert_equal(x.page, 4)
+    assert_equal(x.page, 3)
 
 
 @with_project
