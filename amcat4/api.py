@@ -6,7 +6,7 @@ from http import HTTPStatus
 
 from werkzeug.exceptions import Unauthorized
 
-from amcat4 import auth
+from amcat4 import auth, query
 from amcat4.auth import ROLE_CREATOR
 from amcat4 import elastic
 
@@ -93,6 +93,6 @@ def get_documents(project_name: str):
     List or query documents in this project
     """
     q = request.args.get('q')
-    r = elastic.query_documents(project_name, query_string=q)
-    return jsonify(r)
+    r = query.query_documents(project_name, query_string=q)
+    return jsonify(r.as_dict())
 

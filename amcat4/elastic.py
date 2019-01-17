@@ -80,12 +80,12 @@ def _get_es_actions(index, doc_type, documents):
     for document in documents:
         for f in REQUIRED_FIELDS:
             if f not in document:
-                raise ValueError("Field {f} not present in article {article}")
-        _id = _get_hash(document)
+                raise ValueError("Field {f!r} not present in document {document}".format(**locals()))
+        if '_id' not in document:
+            document['_id'] = _get_hash(document)
         yield {
             "_index": index,
             "_type": doc_type,
-            "_id": _id,
             **document
         }
 
@@ -115,23 +115,6 @@ def get_document(project_name: str, id: str):
     index = "".join([PREFIX, project_name])
     return es.get(index, DOCTYPE, id)['_source']
 
-
-def query_documents(project_name: str, query_string: str = None, **kwargs):
-    """
-    Conduct a query_string query, returning the found documents
-
-    :param project_name: The name of the project (without prefix)
-    :param query_string: The elasticsearch query_string
-    :return: an iterator of article dicts
-    """
-    index = "".join([PREFIX, project_name])
-    if query_string:
-        body = dict(query=dict(query_string=dict(default_field="text", query=query_string)))
-    else:
-        body = dict(query=dict(match_all={}))
-
-    result = es.search(index, DOCTYPE, body, **kwargs)
-    return [dict(_id=hit['_id'], **hit['_source']) for  hit in result['hits']['hits']]
 
 
 def flush():

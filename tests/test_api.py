@@ -78,7 +78,7 @@ def test_documents():
 
         def query_ids(q=None):
             _url = "{url}?q={q}".format(**locals()) if q else url
-            return {d['_id'] for d in _get(_url).json}
+            return {d['_id'] for d in _get(_url).json['results']}
 
         assert_equal(query_ids(), set())
         docs = [{"title": "t", "text": t, "date": "2018-01-01"} for t in ["a test", "another text"]]
