@@ -1,13 +1,16 @@
 import base64
 import random
 import string
+import urllib.parse
 
 from nose.tools import assert_equal, assert_in, assert_not_in
 
 from amcat4 import elastic
 from amcat4.__main__ import app
 from amcat4.auth import verify_token, create_user, ROLE_ADMIN, User
-from amcat4.elastic import _get_hash
+from amcat4.elastic import _get_hash, delete_project
+
+from tests.tools import with_project, upload
 
 C = None
 _TEST_ADMIN: User = None
@@ -57,6 +60,7 @@ def test_get_token():
 
 def test_project():
     _TEST_PROJECT = '__test__' + ''.join(random.choices(string.ascii_lowercase, k=32))
+    delete_project(_TEST_PROJECT, ignore_missing=True)
     assert_not_in(dict(name=_TEST_PROJECT), _get('/projects/').json)
 
     assert_equal(C.get('/projects/').status_code, 401, "Getting project list should require authorization")
@@ -68,29 +72,56 @@ def test_project():
     assert_in(dict(name=_TEST_PROJECT), _get('/projects/').json)
 
 
-def test_documents():
-    _TEST_PROJECT = '__test__' + ''.join(random.choices(string.ascii_lowercase, k=32))
-    elastic.create_project(_TEST_PROJECT)
-    try:
-        url = 'projects/{}/documents'.format(_TEST_PROJECT)
-        assert_equal(C.get(url).status_code, 401, "Reading documents requires authorization")
-        assert_equal(C.post(url).status_code, 401, "Reading documents requires authorization")
+def _query(project, **options):
+    url = 'projects/{}/documents'.format(project)
+    if options:
+        query= urllib.parse.urlencode(options)
+        url = "{url}?{query}".format(**locals())
+    return _get(url).json
 
-        def query_ids(q=None):
-            _url = "{url}?q={q}".format(**locals()) if q else url
-            return {d['_id'] for d in _get(_url).json['results']}
 
-        assert_equal(query_ids(), set())
-        docs = [{"title": "t", "text": t, "date": "2018-01-01"} for t in ["a test", "another text"]]
-        id0, id1 = [_get_hash(d) for d in docs]
-        _post(url, json=docs)
-        elastic.flush()
-        assert_equal(query_ids(), {id0, id1})
-        assert_equal(query_ids("test"), {id0})
-        assert_equal(query_ids("text"), {id1})
-        assert_equal(query_ids("te*"), {id0, id1})
-        assert_equal(query_ids("foo"), set())
-    finally:
-        elastic.delete_project(_TEST_PROJECT, ignore_missing=True)
+
+
+@with_project
+def test_documents(project):
+    def q(**q):
+        return {int(d['_id']) for d in _query(project, **q)['results']}
+    url = 'projects/{}/documents'.format(project)
+    assert_equal(C.get(url).status_code, 401, "Reading documents requires authorization")
+    assert_equal(C.post(url).status_code, 401, "Reading documents requires authorization")
+
+    assert_equal(q(), set())
+    upload([{"title": "t", "text": t, "date": "2018-01-01"} for t in ["a test", "another text"]])
+    assert_equal(q(), {0,1})
+    assert_equal(q(q="test"), {0})
+    assert_equal(q(q="text"), {1})
+    assert_equal(q(q="te*"), {0, 1})
+    assert_equal(q(q="foo"), set())
+
+
+@with_project
+def test_sorting(project):
+    def q(**q):
+        return [int(d['_id']) for d in _query(project, **q)['results']]
+    upload([{'f': x} for x in [3, 2, 1, 2, 3]])
+    assert_equal(q(sort="_id"), [0, 1, 2, 3, 4])
+    assert_equal(q(sort="_id:desc"), [4, 3, 2, 1, 0])
+    assert_equal(q(sort="f,_id"), [2, 1, 3, 0, 4])
+
+
+@with_project
+def test_pagination(project):
+    upload([{'i': i} for i in range(66)])
+    r = _query(project, sort="i", per_page=20)
+    assert_equal(r['meta']['per_page'], 20)
+    assert_equal(r['meta']['page'], 1)
+    assert_equal(r['meta']['page_count'], 4)
+    assert_equal({h['i'] for h in r['results']}, set(range(20)))
+    r = _query(project, sort="i", per_page=20, page=4)
+    assert_equal(r['meta']['per_page'], 20)
+    assert_equal(r['meta']['page'], 4)
+    assert_equal(r['meta']['page_count'], 4)
+    assert_equal({h['i'] for h in r['results']}, {60, 61, 62, 63, 64, 65})
+
 
 

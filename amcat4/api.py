@@ -92,7 +92,13 @@ def get_documents(project_name: str):
     """
     List or query documents in this project
     """
-    q = request.args.get('q')
-    r = query.query_documents(project_name, query_string=q)
+    args = {}
+    for name in ["q", "sort", "page", "per_page"]:
+        if name in request.args:
+            val = request.args[name]
+            val = int(val) if name in ["page", "per_page"] else val
+            name = "query_string" if name == "q" else name
+            args[name] = val
+    r = query.query_documents(project_name, **args)
     return jsonify(r.as_dict())
 
