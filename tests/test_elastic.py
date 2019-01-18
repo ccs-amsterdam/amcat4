@@ -2,7 +2,7 @@ import random
 import string
 from typing import Set, List
 
-from nose.tools import assert_equal
+from nose.tools import assert_equal, assert_is_none
 from tests.tools import with_project, upload
 
 from amcat4 import elastic, query
@@ -68,3 +68,23 @@ def test_sort(project):
     assert_equal(q('pagenr,id'), [50, 49, 51, 48, 52])
     assert_equal(q('pagenr:desc,id'), [0, 1, 99, 2, 98])
 
+
+@with_project
+def test_scroll(project):
+    upload([dict(text=x) for x in ["odd", "even"] * 10])
+    elastic.es.indices.refresh()
+    r = query.query_documents(project, query_string="odd", scroll='5m', per_page=4)
+    assert_equal(len(r.data), 4)
+    assert_equal(r.total_count, 10)
+    assert_equal(r.page_count, 3)
+    all = list(r.data)
+
+    r = query.query_documents(project, scroll_id=r.scroll_id)
+    assert_equal(len(r.data), 4)
+    all += r.data
+    r = query.query_documents(project, scroll_id=r.scroll_id)
+    assert_equal(len(r.data), 2)
+    all += r.data
+    r = query.query_documents(project, scroll_id=r.scroll_id)
+    assert_is_none(r)
+    assert_equal({int(h['_id']) for h in all}, {0, 2, 4, 6, 8, 10, 12, 14, 16, 18})
