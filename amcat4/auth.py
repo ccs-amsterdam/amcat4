@@ -4,6 +4,7 @@ Provide authentication for AmCAT4 api
 Currently provides token based authentication using an elasticsearch backend,
 assuming a 'amcat4system' index
 """
+import logging
 from secrets import token_hex
 
 import bcrypt
@@ -87,12 +88,16 @@ def verify_user(email: str, password: str) -> User:
     :param password: Password to check
     :return: A User object if user could be authenticated, None otherwise
     """
+    logging.info("Attempted login: {email}".format(**locals()))
     try:
         user = es.get(SYS_INDEX, SYS_MAPPING, email)
     except NotFoundError:
-        return False
+        logging.warning("User {email} not found!".format(**locals()))
+        return None
     if bcrypt.checkpw(password.encode('utf-8'), user['_source']['hash'].encode("utf-8")):
         return User(email, user['_source']['roles'])
+    else:
+        logging.warning("Incorrect password for user {email}".format(**locals()))
 
 
 def verify_token(token: str) -> User:
