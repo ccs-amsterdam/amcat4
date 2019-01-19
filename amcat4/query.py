@@ -47,9 +47,6 @@ def query_documents(project_name: str, query_string: str = None, page=0, per_pag
            sort=col1:desc,col2
     :return: an iterator of article dicts
     """
-    if page and (scroll or scroll_id):
-        raise ValueError("Please specify either page or scroll/scroll_id")
-
     if scroll or scroll_id:
         # set scroll to default also if scroll_id is given but no scroll time is known
         kwargs['scroll'] = '2m' if (not scroll or scroll is True) else scroll

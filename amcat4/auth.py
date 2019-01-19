@@ -63,7 +63,7 @@ def has_user() -> bool:
     return res['count'] > 0
 
 
-def create_user(email: str, password: str, roles=None, check_email=True) -> User:
+def create_user(email: str, password: str, roles=None) -> User:
     """
     Create a new user on this server
     :param email: Email address identifying the user
@@ -71,9 +71,6 @@ def create_user(email: str, password: str, roles=None, check_email=True) -> User
     :param roles: Roles for this user, see ROLE_* module variables
     :param check_email: if True (default), raise an error for invalid email addresses
     """
-    if check_email and "@" not in email:
-        # This makes sure there cannot be confusion between user and token entries
-        raise ValueError("Invalid email address")
     if es.exists(SYS_INDEX, SYS_MAPPING, id=email):
         raise ValueError("User {email} already exists".format(**locals()))
     hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")

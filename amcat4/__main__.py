@@ -30,9 +30,11 @@ def upload_test_data():
 if __name__ == '__main__':
     logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=logging.INFO)
     setup_elastic()
+    es_logger = logging.getLogger('elasticsearch')
+    es_logger.setLevel(logging.WARNING)
     if not auth.has_user():
         logging.warning("**** No user detected, creating superuser admin:admin ****")
-        auth.create_user("admin", "admin", roles=[auth.ROLE_ADMIN], check_email=False)
+        auth.create_user("admin", "admin", roles=[auth.ROLE_ADMIN])
     if "--create-test-project" in sys.argv:
         # [WvA] I apologize for the argument parsing
         if SOTU_PROJECT not in list_projects():

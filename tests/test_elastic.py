@@ -72,7 +72,6 @@ def test_sort(project):
 @with_project
 def test_scroll(project):
     upload([dict(text=x) for x in ["odd", "even"] * 10])
-    elastic.es.indices.refresh()
     r = query.query_documents(project, query_string="odd", scroll='5m', per_page=4)
     assert_equal(len(r.data), 4)
     assert_equal(r.total_count, 10)

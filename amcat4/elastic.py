@@ -116,5 +116,5 @@ def get_document(project_name: str, id: str):
     return es.get(index, DOCTYPE, id)['_source']
 
 
-def flush():
+def refresh():
     es.indices.flush()

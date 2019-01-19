@@ -1,4 +1,4 @@
-from flask import request, jsonify, Flask, g
+from flask import request, jsonify, Flask, g, abort
 from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth, MultiAuth
 from flask_cors import CORS
 
@@ -83,22 +83,30 @@ def upload_documents(project_name: str):
     """
     documents = request.get_json(force=True)
     result = elastic.upload_documents(project_name, documents)
-    return jsonify(result)
+    return jsonify(result), HTTPStatus.CREATED
 
 
 @app.route("/projects/<project_name>/documents", methods=['GET'])
 @multi_auth.login_required
 def get_documents(project_name: str):
     """
-    List or query documents in this project
+    List or query documents in this project. GET request parameters:
+    q - Elastic query string
+    sort - Comma based list of fields to sort on, e.g. id,date:desc
+    per_page - Number of results per page
+    page - Page to fetch
+    scroll - If given, create a new scroll_id to download all results in subsequent calls
+    scroll_id - Get the next batch from this id. 
     """
     args = {}
-    for name in ["q", "sort", "page", "per_page"]:
+    for name in ["q", "sort", "page", "per_page", "scroll", "scroll_id"]:
         if name in request.args:
             val = request.args[name]
             val = int(val) if name in ["page", "per_page"] else val
             name = "query_string" if name == "q" else name
             args[name] = val
     r = query.query_documents(project_name, **args)
+    if r is None:
+        abort(404)
     return jsonify(r.as_dict())
 

@@ -32,5 +32,5 @@ def upload(docs, project=_TEST_PROJECT):
             if k not in doc:
                 doc[k] = v
     ids = elastic.upload_documents(project, docs)
-    elastic.flush()
+    elastic.refresh()
     return ids
