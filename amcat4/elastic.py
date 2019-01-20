@@ -103,15 +103,21 @@ def _get_es_actions(index, doc_type, documents):
         }
 
 
-def upload_documents(project_name: str, documents) -> List[str]:
+def upload_documents(project_name: str, documents, columns: Mapping[str, str]=None) -> List[str]:
     """
     Upload documents to this project
 
     :param project_name: The name of the project (without prefix)
     :param documents: A sequence of article dictionaries
+    :param columns: A mapping of field:type for column types
     :return: the list of document ids
     """
     index = "".join([PREFIX, project_name])
+    if columns:
+        mapping = {field: ES_MAPPINGS[type] for (field, type) in columns.items()}
+        body = {"properties": mapping}
+        es.indices.put_mapping(index=index, doc_type=DOCTYPE, body=body)
+
     actions = list(_get_es_actions(index, DOCTYPE, documents))
     bulk(es, actions)
     return [action['_id'] for action in actions]
@@ -139,6 +145,13 @@ def get_fields(project_name: str) -> Mapping[str, str]:
     r = es.indices.get_mapping(index, DOCTYPE)
     fields = r[index]['mappings'][DOCTYPE]['properties']
     return {k: v['type'] for (k, v) in fields.items()}
+
+
+def get_values(project_name: str, field: str) -> List[str]:
+    index = "".join([PREFIX, project_name])
+    body = {"size": 0, "aggs": {"values": {"terms": {"field": field}}}}
+    r = es.search(index, DOCTYPE, body)
+    return [x["key"] for x in r["aggregations"]["values"]["buckets"]]
 
 
 def refresh():

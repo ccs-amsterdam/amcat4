@@ -27,7 +27,7 @@ class QueryResult:
 
 
 def query_documents(project_name: str, query_string: str = None, page=0, per_page=10, scroll=None, scroll_id=None,
-                    **kwargs) -> QueryResult:
+                    filters=None, **kwargs) -> QueryResult:
     """
     Conduct a query_string query, returning the found documents
 
@@ -43,8 +43,10 @@ def query_documents(project_name: str, query_string: str = None, page=0, per_pag
     :param scroll: if not None, will create a scroll request rather than a paginated request. Parmeter should
                    specify the time the context should be kept alive, or True to get the default of 2m.
     :param scroll_id: if not None, should be a previously returned context_id to retrieve a new page of results
+    :param filters: if not None, a dict of "django style" filters
     :param kwargs: Additional elements passed to Elasticsearch.search(), for example:
            sort=col1:desc,col2
+
     :return: an iterator of article dicts
     """
     if scroll or scroll_id:
@@ -58,13 +60,17 @@ def query_documents(project_name: str, query_string: str = None, page=0, per_pag
     else:
         index = "".join([PREFIX, project_name])
         if query_string:
-            body = dict(query=dict(query_string=dict(default_field="text", query=query_string)))
+            body = dict(query_string=dict(default_field="text", query=query_string))
         else:
-            body = dict(query=dict(match_all={}))
+            body = dict(match_all={})
+        if filters:
+            fterms = [{"term": {k: v}} for (k, v) in filters.items()]
+            body = {"bool": {"must": body,
+                             "filter": fterms}}
 
         if not scroll:
             kwargs['from_'] = page * per_page
-        result = es.search(index, DOCTYPE, body, size=per_page, **kwargs)
+        result = es.search(index, DOCTYPE, {'query': body}, size=per_page, **kwargs)
 
     data = [dict(_id=hit['_id'], **hit['_source']) for hit in result['hits']['hits']]
     if scroll_id:

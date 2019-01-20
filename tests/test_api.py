@@ -98,8 +98,6 @@ def test_upload(project):
     assert_equal({d.get('custom') for d in res}, {"x", None})
 
 
-
-
 @with_project
 def test_documents(project):
     def q(**q):

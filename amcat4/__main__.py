@@ -2,7 +2,7 @@ import logging
 import sys
 
 from amcat4 import auth
-from amcat4.elastic import setup_elastic, create_project, upload_documents, list_projects
+from amcat4.elastic import setup_elastic, create_project, upload_documents, list_projects, refresh
 from amcat4.api import app
 
 
@@ -23,7 +23,8 @@ def upload_test_data():
                  year=row['Year'],
                  party=row['Party'])
             for row in csvfile]
-    upload_documents(SOTU_PROJECT, docs)
+    columns = {"president": "keyword", "party": "keyword"}
+    upload_documents(SOTU_PROJECT, docs, columns)
     return csvfile
 
 

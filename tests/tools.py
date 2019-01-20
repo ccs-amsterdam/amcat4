@@ -22,7 +22,7 @@ def with_project(f):
     return wrapper
 
 
-def upload(docs, project=_TEST_PROJECT):
+def upload(docs, project=_TEST_PROJECT, **kwargs):
     """
     Upload these docs to the project, giving them an incremental id, and flush
     """
@@ -31,6 +31,6 @@ def upload(docs, project=_TEST_PROJECT):
         for k, v in defaults.items():
             if k not in doc:
                 doc[k] = v
-    ids = elastic.upload_documents(project, docs)
+    ids = elastic.upload_documents(project, docs, **kwargs)
     elastic.refresh()
     return ids

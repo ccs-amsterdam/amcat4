@@ -99,7 +99,7 @@ def get_documents(project_name: str):
     scroll_id - Get the next batch from this id. 
     """
     args = {}
-    for name in ["q", "sort", "page", "per_page", "scroll", "scroll_id"]:
+    for name in ["q", "sort", "page", "per_page", "scroll", "scroll_id", "filters"]:
         if name in request.args:
             val = request.args[name]
             val = int(val) if name in ["page", "per_page"] else val
@@ -119,3 +119,14 @@ def get_fields(project_name: str):
     """
     r = elastic.get_fields(project_name)
     return jsonify(r)
+
+
+@app.route("/projects/<project_name>/fields/<field>/values", methods=['GET'])
+@multi_auth.login_required
+def get_values(project_name: str, field: str):
+    """
+    Get the fields (columns) used in this project
+    """
+    r = elastic.get_values(project_name, field)
+    return jsonify(r)
+

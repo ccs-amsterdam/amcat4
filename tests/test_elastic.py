@@ -35,14 +35,19 @@ def test_upload_retrieve_document(project):
 
 @with_project
 def test_query(project):
-    def q(q) -> Set[int]:
-        res = query.query_documents(project, q)
+    def q(*args, **kwargs) -> Set[int]:
+        res = query.query_documents(project, *args, **kwargs)
         return {int(h['_id']) for h in res.data}
 
-    texts = ["this is a text", "a test text", "and another test"]
-    upload([dict(title="title", date="2018-01-01", text=t) for t in texts])
+    texts = ["this is a text", "a test text", "and this is another test"]
+    titles = ["titel", "titel", "bla"]
+    upload([dict(title=title, date="2018-01-01", text=text) for (title, text) in zip(titles, texts)])
     assert_equal(q("test"), {1, 2})
     assert_equal(q('"a text"'), {0})
+
+    assert_equal(q(filters={"title": "titel"}),  {0, 1})
+    assert_equal(q("this", filters={"title": "titel"}),  {0})
+    assert_equal(q("this"),  {0, 2})
 
 
 @with_project
@@ -94,3 +99,10 @@ def test_scroll(project):
 @with_project
 def test_fields(project):
     assert_equal(get_fields(project), dict(title='text', date='date', text='text', url='keyword'))
+
+
+@with_project
+def test_values(project):
+    upload([dict(bla=x) for x in ["odd", "even", "even"] * 10], columns={"bla": "keyword"})
+    assert_equal(set(elastic.get_values(project, "bla")), {"odd", "even"})
+
