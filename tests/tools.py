@@ -4,7 +4,7 @@ from functools import wraps
 
 from amcat4 import elastic
 
-_TEST_PROJECT = '__test__' + ''.join(random.choices(string.ascii_lowercase, k=32))
+_TEST_PROJECT = '__testproject__'
 
 
 def with_project(f):

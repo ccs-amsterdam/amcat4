@@ -31,26 +31,23 @@ def teardown_module():
     _TEST_USER and _TEST_USER.delete(ignore_missing=True)
 
 
-def _request(url, method='get', user=None, password="password", check=(200, 201), **kwargs):
+def _request(url, method='get', user=None, password="password", check=False, **kwargs):
     if user is None:
         user = _TEST_USER
     request_method = getattr(C, method)
     cred = ":".join([user.email, password])
     auth = base64.b64encode(cred.encode("ascii")).decode('ascii')
     result = request_method(url, headers={"Authorization": "Basic {}".format(auth)}, **kwargs)
-    if check:
-        if isinstance(check, int):
-            check = {check}
-        if result.status_code not in check:
-            assert_in(result.status_code, check, result.get_data(as_text=True))
+    if check and result.status_code != check:
+        assert_equal(result.status_code, check, result.get_data(as_text=True))
     return result
 
 
-def _get(url, check=(200,), **kwargs):
+def _get(url, check=200, **kwargs):
     return _request(url, method='get', check=check, **kwargs)
 
 
-def _post(url, check=(201,), **kwargs):
+def _post(url, check=201, **kwargs):
     return _request(url, method='post', check=check, **kwargs)
 
 
@@ -77,7 +74,7 @@ def test_project():
     assert_in(dict(name=_TEST_PROJECT), _get('/projects/').json)
 
 
-def _query(project, check=(200,), **options):
+def _query(project, check=200, **options):
     url = 'projects/{}/documents'.format(project)
     if options:
         query = urllib.parse.urlencode(options)
@@ -158,6 +155,10 @@ def test_scrolling(project):
     r = _query(project, scroll_id=scroll_id)
     assert_equal({h['i'] for h in r['results']}, {8, 9})
     assert_equal(r['meta']['scroll_id'], scroll_id)
-    _query(project, scroll_id=scroll_id, check={404})
+    _query(project, scroll_id=scroll_id, check=404)
 
 
+@with_project
+def test_mapping(project):
+    url = 'projects/{}/fields'.format(project)
+    assert_equal(_get(url).json, dict(date="date", text="text", title="text", url="keyword"))

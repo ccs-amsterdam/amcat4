@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+from typing import Mapping, List
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
@@ -14,6 +15,14 @@ SYS_MAPPING = "sys"
 REQUIRED_FIELDS = ["title", "date", "text"]
 HASH_FIELDS = REQUIRED_FIELDS + ["url"]
 DEFAULT_QUERY_FIELDS = HASH_FIELDS
+
+ES_MAPPINGS = {
+   'int': {"type": "long"},
+   'date': {"type": "date", "format": "dateOptionalTime"},
+   'num': {"type": "double"},
+   'keyword': {"type": "keyword"},
+   'text': {"type": "text"},
+   }
 
 
 def setup_elastic(*hosts):
@@ -39,17 +48,22 @@ def list_projects() -> [str]:
     return names
 
 
-def create_project(name: str):
+def create_project(name: str) -> None:
     """
     Create a new project
 
     :param name: The name of the new index (without prefix)
     """
     name = "".join([PREFIX, name])
-    es.indices.create(name)
+    fields = {'text': ES_MAPPINGS['text'],
+              'title': ES_MAPPINGS['text'],
+              'date': ES_MAPPINGS['date'],
+              'url': ES_MAPPINGS['keyword']}
+    body = {'mappings': {DOCTYPE: {'properties': fields}}}
+    es.indices.create(name, body=body)
 
 
-def delete_project(name: str, ignore_missing=False):
+def delete_project(name: str, ignore_missing=False) -> None:
     """
     Create a new project
 
@@ -58,7 +72,6 @@ def delete_project(name: str, ignore_missing=False):
     """
     name = "".join([PREFIX, name])
     es.indices.delete(name, ignore=([404] if ignore_missing else []))
-
 
 
 def _get_hash(document):
@@ -90,13 +103,13 @@ def _get_es_actions(index, doc_type, documents):
         }
 
 
-def upload_documents(project_name: str, documents):
+def upload_documents(project_name: str, documents) -> List[str]:
     """
     Upload documents to this project
 
     :param project_name: The name of the project (without prefix)
     :param documents: A sequence of article dictionaries
-    :return:
+    :return: the list of document ids
     """
     index = "".join([PREFIX, project_name])
     actions = list(_get_es_actions(index, DOCTYPE, documents))
@@ -104,7 +117,7 @@ def upload_documents(project_name: str, documents):
     return [action['_id'] for action in actions]
 
 
-def get_document(project_name: str, id: str):
+def get_document(project_name: str, id: str) -> dict:
     """
     Get a single document from this project
 
@@ -114,6 +127,18 @@ def get_document(project_name: str, id: str):
     """
     index = "".join([PREFIX, project_name])
     return es.get(index, DOCTYPE, id)['_source']
+
+
+def get_fields(project_name: str) -> Mapping[str, str]:
+    """
+    Get the field types in use in this project
+    :param project_name:
+    :return: a dictionary of field: type
+    """
+    index = "".join([PREFIX, project_name])
+    r = es.indices.get_mapping(index, DOCTYPE)
+    fields = r[index]['mappings'][DOCTYPE]['properties']
+    return {k: v['type'] for (k, v) in fields.items()}
 
 
 def refresh():

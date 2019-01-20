@@ -110,3 +110,12 @@ def get_documents(project_name: str):
         abort(404)
     return jsonify(r.as_dict())
 
+
+@app.route("/projects/<project_name>/fields", methods=['GET'])
+@multi_auth.login_required
+def get_fields(project_name: str):
+    """
+    Get the fields (columns) used in this project
+    """
+    r = elastic.get_fields(project_name)
+    return jsonify(r)

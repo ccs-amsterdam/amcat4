@@ -3,6 +3,8 @@ import string
 from typing import Set, List
 
 from nose.tools import assert_equal, assert_is_none
+
+from amcat4.elastic import get_fields
 from tests.tools import with_project, upload
 
 from amcat4 import elastic, query
@@ -87,3 +89,8 @@ def test_scroll(project):
     r = query.query_documents(project, scroll_id=r.scroll_id)
     assert_is_none(r)
     assert_equal({int(h['_id']) for h in all}, {0, 2, 4, 6, 8, 10, 12, 14, 16, 18})
+
+
+@with_project
+def test_fields(project):
+    assert_equal(get_fields(project), dict(title='text', date='date', text='text', url='keyword'))
