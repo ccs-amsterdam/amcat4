@@ -160,3 +160,11 @@ def test_scrolling(project):
 def test_mapping(project):
     url = 'projects/{}/fields'.format(project)
     assert_equal(_get(url).json, dict(date="date", text="text", title="text", url="keyword"))
+
+
+@with_project
+def test_filters(project):
+    def q(**q):
+        return {int(d['_id']) for d in _query(project, **q)['results']}
+    upload([{'x': x} for x in ["a", "a", "b"]])
+    assert_equal(q(x="a"), {0, 1})

@@ -96,15 +96,21 @@ def get_documents(project_name: str):
     per_page - Number of results per page
     page - Page to fetch
     scroll - If given, create a new scroll_id to download all results in subsequent calls
-    scroll_id - Get the next batch from this id. 
+    scroll_id - Get the next batch from this id.
+    Any addition GET parameters are interpreted as filters.
+    (If you have field called 'sort' or 'q', we're working on something)
     """
     args = {}
-    for name in ["q", "sort", "page", "per_page", "scroll", "scroll_id", "filters"]:
+    KNOWN_ARGS = ["q", "sort", "page", "per_page", "scroll", "scroll_id"]
+    for name in KNOWN_ARGS:
         if name in request.args:
             val = request.args[name]
             val = int(val) if name in ["page", "per_page"] else val
             name = "query_string" if name == "q" else name
             args[name] = val
+    filters = {k: v for (k, v) in request.args.items() if k not in KNOWN_ARGS}
+    if filters:
+        args['filters'] = filters
     r = query.query_documents(project_name, **args)
     if r is None:
         abort(404)
