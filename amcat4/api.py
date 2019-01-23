@@ -88,7 +88,7 @@ def upload_documents(project_name: str):
 
 @app.route("/projects/<project_name>/documents", methods=['GET'])
 @multi_auth.login_required
-def get_documents(project_name: str):
+def query_documents(project_name: str):
     """
     List or query documents in this project. GET request parameters:
     q - Elastic query string
@@ -97,8 +97,11 @@ def get_documents(project_name: str):
     page - Page to fetch
     scroll - If given, create a new scroll_id to download all results in subsequent calls
     scroll_id - Get the next batch from this id.
-    Any addition GET parameters are interpreted as filters.
-    (If you have field called 'sort' or 'q', we're working on something)
+    Any addition GET parameters are interpreted as filters, and can be
+    field=value for a term query, or field__xxx=value for a range query, with xxx in gte, gt, lte, lt
+    Note that dates can use relative queries, see elasticsearch 'date math'
+    In case of conflict between field names and (other) arguments, you may prepend a field name with __
+    If your field names contain __, it might be better to use POST queries
     """
     args = {}
     KNOWN_ARGS = ["q", "sort", "page", "per_page", "scroll", "scroll_id"]
@@ -108,7 +111,18 @@ def get_documents(project_name: str):
             val = int(val) if name in ["page", "per_page"] else val
             name = "query_string" if name == "q" else name
             args[name] = val
-    filters = {k: v for (k, v) in request.args.items() if k not in KNOWN_ARGS}
+    filters = {}
+    for (f, v) in request.args.items():
+        if f not in KNOWN_ARGS:
+            if f.startswith("__"):
+                f = f[2:]
+            if "__" in f:  # range query
+                (field, operator) = f.split("__")
+                if field not in filters:
+                    filters[field] = {"range": {}}
+                filters[field]['range'][operator] = v
+            else:  # value query
+                filters[f] = {"value": v}
     if filters:
         args['filters'] = filters
     r = query.query_documents(project_name, **args)

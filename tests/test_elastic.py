@@ -45,9 +45,27 @@ def test_query(project):
     assert_equal(q("test"), {1, 2})
     assert_equal(q('"a text"'), {0})
 
-    assert_equal(q(filters={"title": "titel"}),  {0, 1})
-    assert_equal(q("this", filters={"title": "titel"}),  {0})
+    assert_equal(q(filters={"title": {"value": "titel"}}),  {0, 1})
+    assert_equal(q("this", filters={"title": {"value": "titel"}}),  {0})
     assert_equal(q("this"),  {0, 2})
+
+
+@with_project
+def test_range_query(project):
+    def q(*args, **kwargs) -> Set[int]:
+        res = query.query_documents(project, *args, **kwargs)
+        return {int(h['_id']) for h in res.data}
+    upload([dict(title="a title", date="2018-01-01"),
+            dict(title="a second title", date="2019-01-01"),
+            dict(title="title three", date="2020-01-01"),
+            dict(title="more title", date="2021-01-01"),
+            dict(title="last", date="2022-01-01")])
+
+    assert_equal(q("title"), {0, 1, 2, 3})
+    assert_equal(q(filters={"date": {"range": {"gt": "2020-01-01"}}}), {3, 4})
+    assert_equal(q(filters={"date": {"range": {"gte": "2020-01-01"}}}), {2, 3, 4})
+    assert_equal(q(filters={"date": {"range": {"gte": "2020-01-01", "lt": "2021-06-01"}}}), {2, 3})
+    assert_equal(q("title", filters={"date": {"range": {"gt": "2020-01-01"}}}), {3})
 
 
 @with_project

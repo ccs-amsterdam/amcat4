@@ -2,6 +2,7 @@
 All things query
 """
 from math import ceil
+from typing import Mapping
 
 from .elastic import PREFIX, DOCTYPE, es
 
@@ -26,8 +27,9 @@ class QueryResult:
         return dict(meta=meta, results=self.data)
 
 
-def query_documents(project_name: str, query_string: str = None, page=0, per_page=10, scroll=None, scroll_id=None,
-                    filters=None, **kwargs) -> QueryResult:
+def query_documents(project_name: str, query_string: str=None, page:int=0, per_page:int=10,
+                    scroll=None, scroll_id:str=None,
+                    filters: Mapping[str, Mapping]=None, **kwargs) -> QueryResult:
     """
     Conduct a query_string query, returning the found documents
 
@@ -43,7 +45,8 @@ def query_documents(project_name: str, query_string: str = None, page=0, per_pag
     :param scroll: if not None, will create a scroll request rather than a paginated request. Parmeter should
                    specify the time the context should be kept alive, or True to get the default of 2m.
     :param scroll_id: if not None, should be a previously returned context_id to retrieve a new page of results
-    :param filters: if not None, a dict of "django style" filters
+    :param filters: if not None, a dict of filters: {field: {'value': value}} or
+                    {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
     :param kwargs: Additional elements passed to Elasticsearch.search(), for example:
            sort=col1:desc,col2
 
@@ -60,11 +63,17 @@ def query_documents(project_name: str, query_string: str = None, page=0, per_pag
     else:
         index = "".join([PREFIX, project_name])
         if query_string:
-            body = dict(query_string=dict(default_field="text", query=query_string))
+            body = dict(query_string=dict(query=query_string))
         else:
             body = dict(match_all={})
         if filters:
-            fterms = [{"term": {k: v}} for (k, v) in filters.items()]
+            def parse_filter(field, filter):
+                if 'value' in filter:
+                    return {"term": {field: filter['value']}}
+                elif 'range' in filter:
+                    return {"range": {field: filter['range']}}
+
+            fterms = [parse_filter(*item) for item in filters.items()]
             body = {"bool": {"must": body,
                              "filter": fterms}}
 

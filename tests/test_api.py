@@ -166,5 +166,12 @@ def test_mapping(project):
 def test_filters(project):
     def q(**q):
         return {int(d['_id']) for d in _query(project, **q)['results']}
-    upload([{'x': x} for x in ["a", "a", "b"]])
+    upload([{'x': "a", 'date': '2012-01-01'},
+            {'x': "a", 'date': '2012-02-01'},
+            {'x': "b", 'date': '2012-03-01'},])
     assert_equal(q(x="a"), {0, 1})
+    assert_equal(q(date="2012-01-01"), {0})
+    assert_equal(q(date__gt="2012-01-01"), {1, 2})
+    assert_equal(q(date__gt="2012-01-01", date__lte="2012-02-01"), {1})
+    assert_equal(q(x="b", date__gt="2012-01-01"), {2})
+
