@@ -86,12 +86,12 @@ def upload_documents(project_name: str):
     return jsonify(result), HTTPStatus.CREATED
 
 
-@app.route("/projects/<project_name>/documents", methods=['GET'])
+@app.route("/projects/<project_name>/query", methods=['GET'])
 @multi_auth.login_required
 def query_documents(project_name: str):
     """
-    List or query documents in this project. GET request parameters:
-    q - Elastic query string
+    Query (or list) documents in this project. GET request parameters:
+    q (or query_string)- Elastic query string
     sort - Comma based list of fields to sort on, e.g. id,date:desc
     per_page - Number of results per page
     page - Page to fetch
@@ -103,6 +103,7 @@ def query_documents(project_name: str):
     In case of conflict between field names and (other) arguments, you may prepend a field name with __
     If your field names contain __, it might be better to use POST queries
     """
+    # [WvA] GET /documents might be more RESTful, but would not allow a POST query to the same endpoint
     args = {}
     KNOWN_ARGS = ["q", "sort", "page", "per_page", "scroll", "scroll_id"]
     for name in KNOWN_ARGS:
@@ -129,6 +130,26 @@ def query_documents(project_name: str):
     if r is None:
         abort(404)
     return jsonify(r.as_dict())
+
+
+@app.route("/projects/<project_name>/query", methods=['POST'])
+@multi_auth.login_required
+def query_documents_post(project_name: str):
+    """
+    List or query documents in this project. POST body should be a json dict structured as follows (all keys optional):
+    {param: value,   # for optional param in {sort, per_page, page, scroll, scroll_id}
+     'query_string': query   # elastic query_string, can be abbreviated to q
+     'filters': {field: {'value': value},
+                 field: {'range': {op: value [, op: value]}}  # for op in gte, gt, lte, lt
+    }}
+    """
+    params = request.get_json(force=True)
+    query_string = params.pop("query_string", None) or params.pop("q", None)
+    filters = params.pop("filters", None)
+    r = query.query_documents(project_name, query_string=query_string, filters=filters, **params)
+    if r is None:
+        abort(404)
+    return jsonify(r.as_dict()), HTTPStatus.OK
 
 
 @app.route("/projects/<project_name>/fields", methods=['GET'])

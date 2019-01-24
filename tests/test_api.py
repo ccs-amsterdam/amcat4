@@ -31,7 +31,7 @@ def teardown_module():
     _TEST_USER and _TEST_USER.delete(ignore_missing=True)
 
 
-def _request(url, method='get', user=None, password="password", check=False, **kwargs):
+def _request(url, method='get', user=None, password="password", check=None, **kwargs):
     if user is None:
         user = _TEST_USER
     request_method = getattr(C, method)
@@ -75,7 +75,7 @@ def test_project():
 
 
 def _query(project, check=200, **options):
-    url = 'projects/{}/documents'.format(project)
+    url = 'projects/{}/query'.format(project)
     if options:
         query = urllib.parse.urlencode(options)
         url = "{url}?{query}".format(**locals())
@@ -102,7 +102,7 @@ def test_upload(project):
 def test_documents(project):
     def q(**q):
         return {int(d['_id']) for d in _query(project, **q)['results']}
-    url = 'projects/{}/documents'.format(project)
+    url = 'projects/{}/query'.format(project)
     assert_equal(C.get(url).status_code, 401, "Reading documents requires authorization")
     assert_equal(C.post(url).status_code, 401, "Reading documents requires authorization")
 
@@ -160,6 +160,10 @@ def test_scrolling(project):
 def test_mapping(project):
     url = 'projects/{}/fields'.format(project)
     assert_equal(_get(url).json, dict(date="date", text="text", title="text", url="keyword"))
+    upload([{'x': x} for x in ("a", "a", "b")], columns={"x": "keyword"})
+    assert_equal(_get(url).json, dict(date="date", text="text", title="text", url="keyword", x="keyword"))
+    url = 'projects/{}/fields/x/values'.format(project)
+    assert_equal(_get(url).json, ["a", "b"])
 
 
 @with_project
@@ -173,5 +177,36 @@ def test_filters(project):
     assert_equal(q(date="2012-01-01"), {0})
     assert_equal(q(date__gt="2012-01-01"), {1, 2})
     assert_equal(q(date__gt="2012-01-01", date__lte="2012-02-01"), {1})
-    assert_equal(q(x="b", date__gt="2012-01-01"), {2})
+    assert_equal(q(x="a", date__gt="2012-01-01"), {1})
+
+
+@with_project
+def test_query_post(project):
+    def q(**json):
+        url = 'projects/{}/query'.format(project)
+        return _post(url, check=200, json=json).json
+    upload([{'x': "a", 'date': '2012-01-01', 'i': 1},
+            {'x': "a", 'date': '2012-02-01', 'i': 2},
+            {'x': "b", 'date': '2012-03-01', 'i': 3},])
+    assert_equal({h['i'] for h in q()['results']}, {1, 2, 3})
+    assert_equal({h['i'] for h in q(q="b")['results']}, {3})
+    assert_equal({h['i'] for h in q(q="a", filters={'date': {'value': '2012-02-01'}})['results']}, {2})
+    assert_equal({h['i'] for h in q(q="a", filters={'date': {'range': {'lt':'2012-02-01'}}})['results']}, {1})
+
+    # test pagination and scrolling via post
+    res = q(per_page=2, sort="i:desc")
+    assert_not_in('scroll_id', res['meta'])
+    assert_equal(res['meta']['page'], 0)
+    assert_equal([x['i'] for x in res['results']], [3, 2])
+    res = q(per_page=2, sort="i:desc", page=1)
+    assert_equal([x['i'] for x in res['results']], [1])
+
+    res = q(scroll=True, per_page=2, sort="i:desc")
+    assert_in('scroll_id', res['meta'])
+    assert_not_in('page', res['meta'])
+    assert_equal([x['i'] for x in res['results']], [3, 2])
+
+    scroll_id = res['meta']['scroll_id']
+    res = q(scroll_id=scroll_id)
+    assert_equal([x['i'] for x in res['results']], [1])
 
