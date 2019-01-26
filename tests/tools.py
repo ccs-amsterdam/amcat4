@@ -7,18 +7,27 @@ from amcat4 import elastic
 _TEST_PROJECT = '__testproject__'
 
 
+def create_project(name=_TEST_PROJECT):
+    elastic.delete_project(name, ignore_missing=True)
+    elastic.create_project(name)
+    return name
+
+
+def delete_project(name=_TEST_PROJECT):
+    elastic.delete_project(name, ignore_missing=True)
+
+
 def with_project(f):
     """
     Setup a clean database
     """
     @wraps(f)
     def wrapper(*args, **kwargs):
-        elastic.delete_project(_TEST_PROJECT, ignore_missing=True)
-        elastic.create_project(_TEST_PROJECT)
+        project_name = create_project()
         try:
-            return f(_TEST_PROJECT, *args, **kwargs)
+            return f(project_name, *args, **kwargs)
         finally:
-            elastic.delete_project(_TEST_PROJECT, ignore_missing=True)
+            delete_project()
     return wrapper
 
 

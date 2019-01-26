@@ -147,6 +147,14 @@ def get_fields(project_name: str) -> Mapping[str, str]:
     return {k: v['type'] for (k, v) in fields.items()}
 
 
+def field_type(project_name: str, field_name: str) -> str:
+    """
+    Get the field type for the given field.
+    :return: a type name ('text', 'date', ..)
+    """
+    # TODO: [WvA] cache this as it should be invariant
+    return get_fields(project_name)[field_name]
+
 def get_values(project_name: str, field: str) -> List[str]:
     index = "".join([PREFIX, project_name])
     body = {"size": 0, "aggs": {"values": {"terms": {"field": field}}}}

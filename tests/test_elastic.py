@@ -35,6 +35,7 @@ def test_upload_retrieve_document(project):
 
 @with_project
 def test_query(project):
+    # TODO: [WvA] better to refactor into separate module so we can use setup/teardown with shared set of documents
     def q(*args, **kwargs) -> Set[int]:
         res = query.query_documents(project, *args, **kwargs)
         return {int(h['_id']) for h in res.data}
