@@ -3,7 +3,7 @@ from datetime import datetime
 from nose.tools import assert_equals
 
 from amcat4.aggregate import query_aggregate
-from tests.tools import upload, create_project, delete_project, _TEST_PROJECT
+from tests.tools import upload, create_index, delete_index, _TEST_INDEX
 
 
 def _d(x):
@@ -15,7 +15,7 @@ def _y(y):
 
 
 def setup_module():
-    create_project()
+    create_index()
     upload([{'cat': 'a', 'subcat': 'x', 'i': 1, 'date': '2018-01-01'},
             {'cat': 'a', 'subcat': 'x', 'i': 2, 'date': '2018-02-01'},
             {'cat': 'a', 'subcat': 'y', 'i': 11, 'date': '2020-01-01'},
@@ -24,11 +24,11 @@ def setup_module():
 
 
 def teardown_module():
-    delete_project()
+    delete_index()
 
 
 def q(*args, **kargs):
-    result = query_aggregate(_TEST_PROJECT, *args, **kargs)
+    result = query_aggregate(_TEST_INDEX, *args, **kargs)
     def _key(x):
         if len(x) == 1:
             return x[0]

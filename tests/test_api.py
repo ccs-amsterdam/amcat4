@@ -8,9 +8,9 @@ from nose.tools import assert_equal, assert_in, assert_not_in, assert_is_not_non
 from amcat4 import elastic
 from amcat4.__main__ import app
 from amcat4.auth import verify_token, create_user, ROLE_ADMIN, User
-from amcat4.elastic import _get_hash, delete_project
+from amcat4.elastic import _get_hash, delete_index
 
-from tests.tools import with_project, upload
+from tests.tools import with_index, upload
 
 C = None
 _TEST_ADMIN: User = None
@@ -52,57 +52,57 @@ def _post(url, check=201, **kwargs):
 
 
 def test_get_token():
-    assert_equal(C.get('/auth/token/').status_code, 401, "Getting project list should require authorization")
+    assert_equal(C.get('/auth/token/').status_code, 401, "Getting index list should require authorization")
     r = _get('/auth/token/')
     token = r.json['token']
     assert_equal(verify_token(token), _TEST_USER)
-    assert_equal(C.get('/projects/').status_code, 401)
-    assert_equal(C.get('/projects/', headers={"Authorization": "Bearer {}".format(token)}).status_code, 200)
+    assert_equal(C.get('/index/').status_code, 401)
+    assert_equal(C.get('/index/', headers={"Authorization": "Bearer {}".format(token)}).status_code, 200)
 
 
-def test_project():
-    _TEST_PROJECT = '__test__' + ''.join(random.choices(string.ascii_lowercase, k=32))
-    delete_project(_TEST_PROJECT, ignore_missing=True)
-    assert_not_in(dict(name=_TEST_PROJECT), _get('/projects/').json)
+def test_index():
+    _TEST_INDEX = 'amcat4_test__' + ''.join(random.choices(string.ascii_lowercase, k=32))
+    delete_index(_TEST_INDEX, ignore_missing=True)
+    assert_not_in(dict(name=_TEST_INDEX), _get('/index/').json)
 
-    assert_equal(C.get('/projects/').status_code, 401, "Getting project list should require authorization")
-    assert_equal(C.post('/projects/').status_code, 401, "Creating a project should require authorization")
-    assert_equal(_post('/projects/', json=dict(name=_TEST_PROJECT), user=_TEST_USER, check=False).status_code,
-                 401, "Creating a project should require admin or creator role")
+    assert_equal(C.get('/index/').status_code, 401, "Getting index list should require authorization")
+    assert_equal(C.post('/index/').status_code, 401, "Creating a indexshould require authorization")
+    assert_equal(_post('/index/', json=dict(name=_TEST_INDEX), user=_TEST_USER, check=False).status_code,
+                 401, "Creating an index should require admin or creator role")
 
-    _post('/projects/', json=dict(name=_TEST_PROJECT), user=_TEST_ADMIN)
-    assert_in(dict(name=_TEST_PROJECT), _get('/projects/').json)
+    _post('/index/', json=dict(name=_TEST_INDEX), user=_TEST_ADMIN)
+    assert_in(dict(name=_TEST_INDEX), _get('/index/').json)
 
 
-def _query(project, check=200, **options):
-    url = 'projects/{}/query'.format(project)
+def _query(index, check=200, **options):
+    url = 'index/{}/query'.format(index)
     if options:
         query = urllib.parse.urlencode(options)
         url = "{url}?{query}".format(**locals())
     return _get(url, check=check).json
 
 
-@with_project
-def test_upload(project):
+@with_index
+def test_upload(index):
     docs = [{"title": "title", "text": "text", "date": "2018-01-01"},
             {"title": "titel", "text": "more text", "custom": "x"}]
-    url = 'projects/{}/documents'.format(project)
+    url = 'index/{}/documents'.format(index)
     res = _post(url, json=docs, check=None)
     assert_equal(res.status_code, 500, "Check for missing fields")
     docs[1]['date'] = '2010-12-31'
     _post(url, json=docs)
     elastic.refresh()
-    res = _query(project)['results']
+    res = _query(index)['results']
     assert_equal(len(res), 2)
     assert_equal({d['title'] for d in res}, {"title", "titel"})
     assert_equal({d.get('custom') for d in res}, {"x", None})
 
 
-@with_project
-def test_documents(project):
+@with_index
+def test_documents(index):
     def q(**q):
-        return {int(d['_id']) for d in _query(project, **q)['results']}
-    url = 'projects/{}/query'.format(project)
+        return {int(d['_id']) for d in _query(index, **q)['results']}
+    url = 'index/{}/query'.format(index)
     assert_equal(C.get(url).status_code, 401, "Reading documents requires authorization")
     assert_equal(C.post(url).status_code, 401, "Reading documents requires authorization")
 
@@ -115,61 +115,61 @@ def test_documents(project):
     assert_equal(q(q="foo"), set())
 
 
-@with_project
-def test_sorting(project):
+@with_index
+def test_sorting(index):
     def q(**q):
-        return [int(d['_id']) for d in _query(project, **q)['results']]
+        return [int(d['_id']) for d in _query(index, **q)['results']]
     upload([{'f': x} for x in [3, 2, 1, 2, 3]])
     assert_equal(q(sort="_id"), [0, 1, 2, 3, 4])
     assert_equal(q(sort="_id:desc"), [4, 3, 2, 1, 0])
     assert_equal(q(sort="f,_id"), [2, 1, 3, 0, 4])
 
 
-@with_project
-def test_pagination(project):
+@with_index
+def test_pagination(index):
     upload([{'i': i} for i in range(66)])
-    r = _query(project, sort="i", per_page=20)
+    r = _query(index, sort="i", per_page=20)
     assert_equal(r['meta']['per_page'], 20)
     assert_equal(r['meta']['page'], 0)
     assert_equal(r['meta']['page_count'], 4)
     assert_equal({h['i'] for h in r['results']}, set(range(20)))
-    r = _query(project, sort="i", per_page=20, page=3)
+    r = _query(index, sort="i", per_page=20, page=3)
     assert_equal(r['meta']['per_page'], 20)
     assert_equal(r['meta']['page'], 3)
     assert_equal(r['meta']['page_count'], 4)
     assert_equal({h['i'] for h in r['results']}, {60, 61, 62, 63, 64, 65})
 
 
-@with_project
-def test_scrolling(project):
+@with_index
+def test_scrolling(index):
     upload([{'i': i} for i in range(10)])
-    r = _query(project, per_page=4, sort="i", scroll="5m")
+    r = _query(index, per_page=4, sort="i", scroll="5m")
     scroll_id = r['meta']['scroll_id']
     assert_is_not_none(scroll_id)
     assert_equal({h['i'] for h in r['results']}, {0, 1, 2, 3})
-    r = _query(project, scroll_id=scroll_id)
+    r = _query(index, scroll_id=scroll_id)
     assert_equal({h['i'] for h in r['results']}, {4, 5, 6, 7})
     assert_equal(r['meta']['scroll_id'], scroll_id)
-    r = _query(project, scroll_id=scroll_id)
+    r = _query(index, scroll_id=scroll_id)
     assert_equal({h['i'] for h in r['results']}, {8, 9})
     assert_equal(r['meta']['scroll_id'], scroll_id)
-    _query(project, scroll_id=scroll_id, check=404)
+    _query(index, scroll_id=scroll_id, check=404)
 
 
-@with_project
-def test_mapping(project):
-    url = 'projects/{}/fields'.format(project)
+@with_index
+def test_mapping(index):
+    url = 'index/{}/fields'.format(index)
     assert_equal(_get(url).json, dict(date="date", text="text", title="text", url="keyword"))
     upload([{'x': x} for x in ("a", "a", "b")], columns={"x": "keyword"})
     assert_equal(_get(url).json, dict(date="date", text="text", title="text", url="keyword", x="keyword"))
-    url = 'projects/{}/fields/x/values'.format(project)
+    url = 'index/{}/fields/x/values'.format(index)
     assert_equal(_get(url).json, ["a", "b"])
 
 
-@with_project
-def test_filters(project):
+@with_index
+def test_filters(index):
     def q(**q):
-        return {int(d['_id']) for d in _query(project, **q)['results']}
+        return {int(d['_id']) for d in _query(index, **q)['results']}
     upload([{'x': "a", 'date': '2012-01-01'},
             {'x': "a", 'date': '2012-02-01'},
             {'x': "b", 'date': '2012-03-01'},])
@@ -180,10 +180,10 @@ def test_filters(project):
     assert_equal(q(x="a", date__gt="2012-01-01"), {1})
 
 
-@with_project
-def test_query_post(project):
+@with_index
+def test_query_post(index):
     def q(**json):
-        url = 'projects/{}/query'.format(project)
+        url = 'index/{}/query'.format(index)
         return _post(url, check=200, json=json).json
     upload([{'x': "a", 'date': '2012-01-01', 'i': 1},
             {'x': "a", 'date': '2012-02-01', 'i': 2},

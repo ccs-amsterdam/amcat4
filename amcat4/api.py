@@ -50,47 +50,47 @@ def get_token():
     return jsonify({"token": token})
 
 
-@app.route("/projects/", methods=['GET'])
+@app.route("/index/", methods=['GET'])
 @multi_auth.login_required
-def project_list():
+def index_list():
     """
-    List projects from this server
+    List index from this server
     """
-    result = [{"name": name} for name in elastic.list_projects()]
+    result = [{"name": name} for name in elastic.list_indices()]
     return jsonify(result)
 
 
-@app.route("/projects/", methods=['POST'])
+@app.route("/index/", methods=['POST'])
 @multi_auth.login_required
-def project_create():
+def create_index():
     """
-    Create a new project
+    Create a new index
     """
     check_role(ROLE_CREATOR)
     data = request.get_json(force=True)
     name = data['name']
-    elastic.create_project(name)
+    elastic.create_index(name)
     return jsonify({"name": name}), HTTPStatus.CREATED
 
 
-@app.route("/projects/<project_name>/documents", methods=['POST'])
+@app.route("/index/<index>/documents", methods=['POST'])
 @multi_auth.login_required
-def upload_documents(project_name: str):
+def upload_documents(index: str):
     """
     Upload documents to this server
     JSON payload should be a list of documents with at least a title, date, text and any optional attributes
     Note: The unique elastic ID will be the hash of title, date, text and url.
     """
     documents = request.get_json(force=True)
-    result = elastic.upload_documents(project_name, documents)
+    result = elastic.upload_documents(index, documents)
     return jsonify(result), HTTPStatus.CREATED
 
 
-@app.route("/projects/<project_name>/query", methods=['GET'])
+@app.route("/index/<index>/query", methods=['GET'])
 @multi_auth.login_required
-def query_documents(project_name: str):
+def query_documents(index: str):
     """
-    Query (or list) documents in this project. GET request parameters:
+    Query (or list) documents in this index. GET request parameters:
     q (or query_string)- Elastic query string
     sort - Comma based list of fields to sort on, e.g. id,date:desc
     per_page - Number of results per page
@@ -126,17 +126,17 @@ def query_documents(project_name: str):
                 filters[f] = {"value": v}
     if filters:
         args['filters'] = filters
-    r = query.query_documents(project_name, **args)
+    r = query.query_documents(index, **args)
     if r is None:
         abort(404)
     return jsonify(r.as_dict())
 
 
-@app.route("/projects/<project_name>/query", methods=['POST'])
+@app.route("/index/<index>/query", methods=['POST'])
 @multi_auth.login_required
-def query_documents_post(project_name: str):
+def query_documents_post(index: str):
     """
-    List or query documents in this project. POST body should be a json dict structured as follows (all keys optional):
+    List or query documents in this index. POST body should be a json dict structured as follows (all keys optional):
     {param: value,   # for optional param in {sort, per_page, page, scroll, scroll_id}
      'query_string': query   # elastic query_string, can be abbreviated to q
      'filters': {field: {'value': value},
@@ -146,28 +146,28 @@ def query_documents_post(project_name: str):
     params = request.get_json(force=True)
     query_string = params.pop("query_string", None) or params.pop("q", None)
     filters = params.pop("filters", None)
-    r = query.query_documents(project_name, query_string=query_string, filters=filters, **params)
+    r = query.query_documents(index, query_string=query_string, filters=filters, **params)
     if r is None:
         abort(404)
     return jsonify(r.as_dict()), HTTPStatus.OK
 
 
-@app.route("/projects/<project_name>/fields", methods=['GET'])
+@app.route("/index/<index>/fields", methods=['GET'])
 @multi_auth.login_required
-def get_fields(project_name: str):
+def get_fields(index: str):
     """
-    Get the fields (columns) used in this project
+    Get the fields (columns) used in this index
     """
-    r = elastic.get_fields(project_name)
+    r = elastic.get_fields(index)
     return jsonify(r)
 
 
-@app.route("/projects/<project_name>/fields/<field>/values", methods=['GET'])
+@app.route("/index/<index>/fields/<field>/values", methods=['GET'])
 @multi_auth.login_required
-def get_values(project_name: str, field: str):
+def get_values(index: str, field: str):
     """
-    Get the fields (columns) used in this project
+    Get the fields (columns) used in this index
     """
-    r = elastic.get_values(project_name, field)
+    r = elastic.get_values(index, field)
     return jsonify(r)
 

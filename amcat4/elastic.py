@@ -8,7 +8,6 @@ from elasticsearch.helpers import bulk
 
 es = Elasticsearch()
 
-PREFIX = "amcat4_"
 DOCTYPE = "article"
 SYS_INDEX = "amcat4system"
 SYS_MAPPING = "sys"
@@ -39,22 +38,21 @@ def setup_elastic(*hosts):
         es.indices.create(SYS_INDEX)
 
 
-def list_projects() -> [str]:
+def list_indices(exclude_system_index=True) -> [str]:
     """
-    List all projects (i.e. indices starting with PREFIX) on the connected elastic cluster
+    List all indices on the connected elastic cluster
     """
-    result = es.indices.get(PREFIX + "*")
-    names = [x[len(PREFIX):] for x in result.keys()]
-    return names
+    result = es.indices.get("*")
+    return [x for x in result.keys() if not (exclude_system_index and x == SYS_INDEX)]
 
 
-def create_project(name: str) -> None:
+
+def create_index(name: str) -> None:
     """
-    Create a new project
+    Create a new index
 
     :param name: The name of the new index (without prefix)
     """
-    name = "".join([PREFIX, name])
     fields = {'text': ES_MAPPINGS['text'],
               'title': ES_MAPPINGS['text'],
               'date': ES_MAPPINGS['date'],
@@ -63,14 +61,13 @@ def create_project(name: str) -> None:
     es.indices.create(name, body=body)
 
 
-def delete_project(name: str, ignore_missing=False) -> None:
+def delete_index(name: str, ignore_missing=False) -> None:
     """
-    Create a new project
+    Delete an index
 
     :param name: The name of the new index (without prefix)
     :param ignore_missing: If True, do not throw exception if index does not exist
     """
-    name = "".join([PREFIX, name])
     es.indices.delete(name, ignore=([404] if ignore_missing else []))
 
 
@@ -103,16 +100,15 @@ def _get_es_actions(index, doc_type, documents):
         }
 
 
-def upload_documents(project_name: str, documents, columns: Mapping[str, str]=None) -> List[str]:
+def upload_documents(index: str, documents, columns: Mapping[str, str]=None) -> List[str]:
     """
-    Upload documents to this project
+    Upload documents to this index
 
-    :param project_name: The name of the project (without prefix)
+    :param index: The name of the index (without prefix)
     :param documents: A sequence of article dictionaries
     :param columns: A mapping of field:type for column types
     :return: the list of document ids
     """
-    index = "".join([PREFIX, project_name])
     if columns:
         mapping = {field: ES_MAPPINGS[type] for (field, type) in columns.items()}
         body = {"properties": mapping}
@@ -123,40 +119,44 @@ def upload_documents(project_name: str, documents, columns: Mapping[str, str]=No
     return [action['_id'] for action in actions]
 
 
-def get_document(project_name: str, id: str) -> dict:
+def get_document(index: str, id: str) -> dict:
     """
-    Get a single document from this project
+    Get a single document from this index
 
-    :param project_name: The name of the project (without prefix)
+    :param index: The name of the index
     :param id: The document id (hash)
     :return: the source dict of the document
     """
-    index = "".join([PREFIX, project_name])
     return es.get(index, DOCTYPE, id)['_source']
 
 
-def get_fields(project_name: str) -> Mapping[str, str]:
+def get_fields(index: str) -> Mapping[str, str]:
     """
-    Get the field types in use in this project
-    :param project_name:
+    Get the field types in use in this index
+    :param index:
     :return: a dictionary of field: type
     """
-    index = "".join([PREFIX, project_name])
     r = es.indices.get_mapping(index, DOCTYPE)
     fields = r[index]['mappings'][DOCTYPE]['properties']
     return {k: v['type'] for (k, v) in fields.items()}
 
 
-def field_type(project_name: str, field_name: str) -> str:
+def field_type(index: str, field_name: str) -> str:
     """
     Get the field type for the given field.
     :return: a type name ('text', 'date', ..)
     """
     # TODO: [WvA] cache this as it should be invariant
-    return get_fields(project_name)[field_name]
+    return get_fields(index)[field_name]
 
-def get_values(project_name: str, field: str) -> List[str]:
-    index = "".join([PREFIX, project_name])
+
+def get_values(index: str, field: str) -> List[str]:
+    """
+    Get the values for a given field (e.g. to populate list of filter values on keyword field)
+    :param index: The index
+    :param field: The field name
+    :return: A list of values
+    """
     body = {"size": 0, "aggs": {"values": {"terms": {"field": field}}}}
     r = es.search(index, DOCTYPE, body)
     return [x["key"] for x in r["aggregations"]["values"]["buckets"]]

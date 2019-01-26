@@ -14,7 +14,7 @@ from amcat4.elastic import es, SYS_INDEX, SYS_MAPPING
 SECRET_KEY = 'geheim'
 
 ROLE_ADMIN = "admin"  # Can do anything
-ROLE_CREATOR = "creator"  # Can create projects
+ROLE_CREATOR = "creator"  # Can create indices
 
 
 def role_set(str_or_sequence):

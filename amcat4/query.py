@@ -4,7 +4,7 @@ All things query
 from math import ceil
 from typing import Mapping
 
-from .elastic import PREFIX, DOCTYPE, es
+from .elastic import DOCTYPE, es
 
 
 class QueryResult:
@@ -27,7 +27,7 @@ class QueryResult:
         return dict(meta=meta, results=self.data)
 
 
-def query_documents(project_name: str, query_string: str=None, page:int=0, per_page:int=10,
+def query_documents(index: str, query_string: str=None, page:int=0, per_page:int=10,
                     scroll=None, scroll_id:str=None,
                     filters: Mapping[str, Mapping]=None, **kwargs) -> QueryResult:
     """
@@ -38,7 +38,7 @@ def query_documents(project_name: str, query_string: str=None, page:int=0, per_p
     If the scroll parameter is given, the result will contain a scroll_id which can be used to get the next batch.
     In case there are no more documents to scroll, it will return None
 
-    :param project_name: The name of the project (without prefix)
+    :param index: The name of the index
     :param query_string: The elasticsearch query_string
     :param page: The number of the page to request (starting from zero)
     :param per_page: The number of hits per page
@@ -61,7 +61,6 @@ def query_documents(project_name: str, query_string: str=None, page:int=0, per_p
         if not result['hits']['hits']:
             return None
     else:
-        index = "".join([PREFIX, project_name])
         if query_string:
             body = dict(query_string=dict(query=query_string))
         else:

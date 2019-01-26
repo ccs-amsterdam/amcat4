@@ -2,11 +2,11 @@ import logging
 import sys
 
 from amcat4 import auth
-from amcat4.elastic import setup_elastic, create_project, upload_documents, list_projects, refresh
+from amcat4.elastic import setup_elastic, create_index, upload_documents, list_indices, refresh
 from amcat4.api import app
 
 
-SOTU_PROJECT = "state_of_the_union"
+SOTU_INDEX = "state_of_the_union"
 
 
 def upload_test_data():
@@ -15,7 +15,7 @@ def upload_test_data():
     url_open = urllib.request.urlopen(url)
     csv.field_size_limit(sys.maxsize)
     csvfile = csv.DictReader(io.TextIOWrapper(url_open, encoding='utf-8'))
-    create_project(SOTU_PROJECT)
+    create_index(SOTU_INDEX)
     docs = [dict(title="{Year}: {President}".format(**row),
                  text=row['Text'],
                  date=row['Date'],
@@ -24,7 +24,7 @@ def upload_test_data():
                  party=row['Party'])
             for row in csvfile]
     columns = {"president": "keyword", "party": "keyword"}
-    upload_documents(SOTU_PROJECT, docs, columns)
+    upload_documents(SOTU_INDEX, docs, columns)
     return csvfile
 
 
@@ -36,9 +36,9 @@ if __name__ == '__main__':
     if not auth.has_user():
         logging.warning("**** No user detected, creating superuser admin:admin ****")
         auth.create_user("admin", "admin", roles=[auth.ROLE_ADMIN])
-    if "--create-test-project" in sys.argv:
+    if "--create-test-index" in sys.argv:
         # [WvA] I apologize for the argument parsing
-        if SOTU_PROJECT not in list_projects():
-            logging.info("**** Creating test project {} ****".format(SOTU_PROJECT))
+        if SOTU_INDEX not in list_indices():
+            logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
             upload_test_data()
     app.run(debug=True)
