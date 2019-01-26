@@ -23,7 +23,7 @@ def upload_test_data():
                  year=row['Year'],
                  party=row['Party'])
             for row in csvfile]
-    columns = {"president": "keyword", "party": "keyword"}
+    columns = {"president": "keyword", "party": "keyword", "year": "int"}
     upload_documents(SOTU_INDEX, docs, columns)
     return csvfile
 
