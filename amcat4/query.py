@@ -2,7 +2,7 @@
 All things query
 """
 from math import ceil
-from typing import Mapping
+from typing import Mapping, Iterable
 
 from .elastic import DOCTYPE, es
 
@@ -27,8 +27,8 @@ class QueryResult:
         return dict(meta=meta, results=self.data)
 
 
-def query_documents(index: str, query_string: str=None, page:int=0, per_page:int=10,
-                    scroll=None, scroll_id:str=None,
+def query_documents(index: str, query_string: str=None, *, page:int=0, per_page:int=10,
+                    scroll=None, scroll_id:str=None, fields:Iterable[str]=None,
                     filters: Mapping[str, Mapping]=None, **kwargs) -> QueryResult:
     """
     Conduct a query_string query, returning the found documents
@@ -45,6 +45,7 @@ def query_documents(index: str, query_string: str=None, page:int=0, per_page:int
     :param scroll: if not None, will create a scroll request rather than a paginated request. Parmeter should
                    specify the time the context should be kept alive, or True to get the default of 2m.
     :param scroll_id: if not None, should be a previously returned context_id to retrieve a new page of results
+    :param fields: if not None, specify a list of fields to retrieve for each hit
     :param filters: if not None, a dict of filters: {field: {'value': value}} or
                     {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
     :param kwargs: Additional elements passed to Elasticsearch.search(), for example:
@@ -75,7 +76,9 @@ def query_documents(index: str, query_string: str=None, page:int=0, per_page:int
             fterms = [parse_filter(*item) for item in filters.items()]
             body = {"bool": {"must": body,
                              "filter": fterms}}
-
+        if fields:
+            fields = fields if isinstance(fields, list) else list(fields)
+            kwargs['_source'] = fields
         if not scroll:
             kwargs['from_'] = page * per_page
         result = es.search(index, DOCTYPE, {'query': body}, size=per_page, **kwargs)

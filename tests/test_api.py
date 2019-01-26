@@ -1,4 +1,5 @@
 import base64
+import functools
 import random
 import string
 import urllib.parse
@@ -82,6 +83,11 @@ def _query(index, check=200, **options):
     return _get(url, check=check).json
 
 
+def _query_post(index, **json):
+    url = 'index/{}/query'.format(index)
+    return _post(url, check=200, json=json).json
+
+
 @with_index
 def test_upload(index):
     docs = [{"title": "title", "text": "text", "date": "2018-01-01"},
@@ -113,6 +119,20 @@ def test_documents(index):
     assert_equal(q(q="text"), {1})
     assert_equal(q(q="te*"), {0, 1})
     assert_equal(q(q="foo"), set())
+
+
+@with_index
+def test_fields(index):
+    upload([{"cat": "a"}])
+    assert_equal(set(_query(index)['results'][0].keys()), {"_id", "date", "cat", "text", "title", "_id"})
+    assert_equal(set(_query(index, fields="cat")['results'][0].keys()), {"_id", "cat"})
+    assert_equal(set(_query(index, fields="date,title")['results'][0].keys()), {"_id", "date", "title"})
+
+    assert_equal(set(_query_post(index)['results'][0].keys()), {"_id", "date", "cat", "text", "title", "_id"})
+    assert_equal(set(_query_post(index, fields=["cat"])['results'][0].keys()), {"_id", "cat"})
+    assert_equal(set(_query_post(index, fields=["date", "title"])['results'][0].keys()), {"_id", "date", "title"})
+
+
 
 
 @with_index
@@ -182,9 +202,7 @@ def test_filters(index):
 
 @with_index
 def test_query_post(index):
-    def q(**json):
-        url = 'index/{}/query'.format(index)
-        return _post(url, check=200, json=json).json
+    q = functools.partial(_query_post, index=index)
     upload([{'x': "a", 'date': '2012-01-01', 'i': 1},
             {'x': "a", 'date': '2012-02-01', 'i': 2},
             {'x': "b", 'date': '2012-03-01', 'i': 3},])

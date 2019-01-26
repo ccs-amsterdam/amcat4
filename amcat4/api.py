@@ -92,7 +92,8 @@ def query_documents(index: str):
     """
     Query (or list) documents in this index. GET request parameters:
     q (or query_string)- Elastic query string
-    sort - Comma based list of fields to sort on, e.g. id,date:desc
+    sort - Comma separated list of fields to sort on, e.g. id,date:desc
+    fields - Comma separated list of fields to return
     per_page - Number of results per page
     page - Page to fetch
     scroll - If given, create a new scroll_id to download all results in subsequent calls
@@ -105,11 +106,12 @@ def query_documents(index: str):
     """
     # [WvA] GET /documents might be more RESTful, but would not allow a POST query to the same endpoint
     args = {}
-    KNOWN_ARGS = ["q", "sort", "page", "per_page", "scroll", "scroll_id"]
+    KNOWN_ARGS = ["q", "sort", "page", "per_page", "scroll", "scroll_id", "fields"]
     for name in KNOWN_ARGS:
         if name in request.args:
             val = request.args[name]
             val = int(val) if name in ["page", "per_page"] else val
+            val = val.split(",") if name in ["fields"] else val
             name = "query_string" if name == "q" else name
             args[name] = val
     filters = {}
@@ -137,7 +139,7 @@ def query_documents(index: str):
 def query_documents_post(index: str):
     """
     List or query documents in this index. POST body should be a json dict structured as follows (all keys optional):
-    {param: value,   # for optional param in {sort, per_page, page, scroll, scroll_id}
+    {param: value,   # for optional param in {sort, per_page, page, scroll, scroll_id, fields}
      'query_string': query   # elastic query_string, can be abbreviated to q
      'filters': {field: {'value': value},
                  field: {'range': {op: value [, op: value]}}  # for op in gte, gt, lte, lt

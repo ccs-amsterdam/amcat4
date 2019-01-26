@@ -44,3 +44,7 @@ def test_range_query():
     assert_equal(q(filters={"date": {"range": {"gte": "2018-02-01", "lt": "2020-01-01"}}}), {1})
     assert_equal(q("title", filters={"date": {"range": {"gt": "2018-01-01"}}}), {1})
 
+
+def test_fields():
+    res = query.query_documents(_TEST_INDEX, query_string="test", fields=["cat", "title"])
+    assert_equal(set(res.data[0].keys()), {"cat", "title", "_id"})
