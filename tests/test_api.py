@@ -4,7 +4,7 @@ import random
 import string
 import urllib.parse
 
-from nose.tools import assert_equal, assert_in, assert_not_in, assert_is_not_none
+from nose.tools import assert_equal, assert_in, assert_not_in, assert_is_not_none, assert_raises
 
 from amcat4 import elastic
 from amcat4.__main__ import app
@@ -83,9 +83,9 @@ def _query(index, check=200, **options):
     return _get(url, check=check).json
 
 
-def _query_post(index, **json):
-    url = 'index/{}/query'.format(index)
-    return _post(url, check=200, json=json).json
+def _query_post(index, endpoint='query', check=200, **json):
+    url = 'index/{index}/{endpoint}'.format(**locals())
+    return _post(url, check=check, json=json).json
 
 
 @with_index
@@ -131,8 +131,6 @@ def test_fields(index):
     assert_equal(set(_query_post(index)['results'][0].keys()), {"_id", "date", "cat", "text", "title", "_id"})
     assert_equal(set(_query_post(index, fields=["cat"])['results'][0].keys()), {"_id", "cat"})
     assert_equal(set(_query_post(index, fields=["date", "title"])['results'][0].keys()), {"_id", "date", "title"})
-
-
 
 
 @with_index
@@ -202,7 +200,7 @@ def test_filters(index):
 
 @with_index
 def test_query_post(index):
-    q = functools.partial(_query_post, index=index)
+    q = functools.partial(_query_post, index=index, endpoint='query')
     upload([{'x': "a", 'date': '2012-01-01', 'i': 1},
             {'x': "a", 'date': '2012-02-01', 'i': 2},
             {'x': "b", 'date': '2012-03-01', 'i': 3},])
@@ -228,3 +226,21 @@ def test_query_post(index):
     res = q(scroll_id=scroll_id)
     assert_equal([x['i'] for x in res['results']], [1])
 
+
+@with_index
+def test_aggregate_post(index):
+    def q(axes):
+        for row in _query_post(index, 'aggregate', axes=axes):
+            key = tuple(row[x['field']] for x in axes)
+            yield (key, row['n'])
+
+    upload([{'cat': 'a', 'subcat': 'x', 'i': 1, 'date': '2018-01-01'},
+            {'cat': 'a', 'subcat': 'x', 'i': 2, 'date': '2018-02-01'},
+            {'cat': 'a', 'subcat': 'y', 'i': 11, 'date': '2020-01-01'},
+            {'cat': 'b', 'subcat': 'y', 'i': 31, 'date': '2018-01-01'},
+            ], columns={'cat': 'keyword', 'subcat': 'keyword'})
+
+    _query_post(index, 'aggregate', check=400)
+    assert_equal(dict(q(axes=[{'field': 'cat'}])), {("a",): 3, ("b",): 1})
+    assert_equal(dict(q(axes=[{'field': 'cat'}, {'field': 'date', 'interval': 'year'}])),
+                 {("a", "2018-01-01"): 2,  ("a", "2020-01-01"): 1, ("b", "2018-01-01"): 1})

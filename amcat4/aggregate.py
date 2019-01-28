@@ -3,6 +3,7 @@ Aggregate queries
 """
 import json
 import logging
+from collections import namedtuple
 from datetime import datetime
 from typing import Mapping, Iterable, Tuple, Union
 
@@ -25,43 +26,37 @@ class _Axis:
     def query(self):
         if self.interval:
             if self.ftype == "date":
-                return {"aggr": {"date_histogram": {"field": self.field, "interval": self.interval}}}
+                return {self.field: {"date_histogram": {"field": self.field, "interval": self.interval}}}
             else:
-                return {"aggr": {"histogram": {"field": self.field, "interval": self.interval}}}
+                return {self.field: {"histogram": {"field": self.field, "interval": self.interval}}}
         else:
-            return {"aggr": {"terms": {"field": self.field}}}
-
-    def nested_query(self, inner_axes=None):
-        q = self.query()
-        if inner_axes:
-            next_axis, tail = inner_axes[0], inner_axes[1:]
-            q['aggr']['aggregations'] = next_axis.nested_query(tail)
-        return q
+            return {self.field: {"terms": {"field": self.field}}}
 
     def postprocess(self, value):
         if self.ftype == "date":
             value = datetime.utcfromtimestamp(value / 1000.)
+            if self.interval in {"year", "month", "week", "day"}:
+                value = value.date()
         return value
 
-    def process(self, result, prefix=(), inner_axes=None):
-        """
-        Process the elasticsearch results.
-        If there are inner axes, call the next axis to process inner results
-        """
-        if result.get('doc_count_error_upper_bound', 0) > 0:
-            logging.warning(json.dumps(result, indent=2))
-            raise Exception("Possibly inaccurate result!")  # not sure if check ever useful
 
-        for bucket in result['buckets']:
-            key = self.postprocess(bucket['key'])
-            if not inner_axes:
-                yield prefix + (key, bucket['doc_count'])
-            else:
-                next_axis, tail = inner_axes[0], inner_axes[1:]
-                yield from next_axis.process(bucket['aggr'], prefix + (key,), tail)
+def _get_aggregates(index, sources, after_key=None):
+    """
+    Recursively get all buckets from a composite query
+    """
+    # [WvA] Not sure if we should get all results ourselves or expose the 'after' pagination.
+    #       This might get us in trouble if someone e.g. aggregates on url or day for a large corpus
+    after = {"after": after_key} if after_key else {}
+    body = {"size": 0, "aggregations": {"aggr": {"composite": dict(sources=sources, **after)}}}
+    result = es.search(index, DOCTYPE, body=body)['aggregations']['aggr']
+    yield from result['buckets']
+    after_key = result.get('after_key')
+    if after_key:
+        yield from _get_aggregates(index, sources, after_key)
 
 
 def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
+                    value="n",
                     filters: Mapping[str, Mapping] = None) -> Iterable[Tuple]:
     """
     Conduct an aggregate query.
@@ -69,15 +64,19 @@ def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
     but only if that is the last axis. [WvA] Not sure if this is desired
 
     :param index: The name of the elasticsearch index
-    :param axis: The primary aggregation axis, should be the name of a field (options for date/int ranges forthcoming)
+    :param axis: The primary aggregation axis, should be the name of a field or a dict with keys 'field', 'interval'
     :param axes: Optional additional axes
+    :param value: Name for the value 'column', default n.
     :param filters: if not None, a dict of filters: {field: {'value': value}} or
                     {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
     :return: a sequence of (axis-value, [axis2-value, ...], aggregate-value) tuples
     """
-
+    # TODO: [WvA] Filtered aggregate queries
     axes = [_Axis(index, x) for x in (axis, ) + axes]
-    aggr = axes[0].nested_query(axes[1:])
-
-    result = es.search(index, DOCTYPE, body=dict(size=0, aggregations=aggr))['aggregations']['aggr']
-    return axes[0].process(result, inner_axes=axes[1:])
+    names = [x.field for x in axes] + [value]
+    nt = namedtuple("Bucket", names)
+    sources = [axis.query() for axis in axes]
+    for bucket in _get_aggregates(index, sources):
+        result = [axis.postprocess(bucket['key'][axis.field]) for axis in axes]
+        result += [bucket['doc_count']]
+        yield nt(*result)

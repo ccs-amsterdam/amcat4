@@ -1,3 +1,6 @@
+from datetime import datetime, date
+
+from flask.json import JSONEncoder
 from flask import request, jsonify, Flask, g, abort
 from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth, MultiAuth
 from flask_cors import CORS
@@ -6,16 +9,32 @@ from http import HTTPStatus
 
 from werkzeug.exceptions import Unauthorized
 
-from amcat4 import auth, query
+from amcat4 import auth, query, aggregate
 from amcat4.auth import ROLE_CREATOR
 from amcat4 import elastic
 
 app = Flask(__name__)
+
+
+class MyJSONEncoder(JSONEncoder):
+    def default(self, o):
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        return super().default(o)
+
+
+app.json_encoder = MyJSONEncoder
 CORS(app)
 
 basic_auth = HTTPBasicAuth()
 token_auth = HTTPTokenAuth()
 multi_auth = MultiAuth(basic_auth, token_auth)
+
+
+def _bad_request(message):
+    response = jsonify({'message': message})
+    response.status_code = 400
+    return response
 
 
 def check_role(role):
@@ -86,6 +105,26 @@ def upload_documents(index: str):
     return jsonify(result), HTTPStatus.CREATED
 
 
+@app.route("/index/<index>/fields", methods=['GET'])
+@multi_auth.login_required
+def get_fields(index: str):
+    """
+    Get the fields (columns) used in this index
+    """
+    r = elastic.get_fields(index)
+    return jsonify(r)
+
+
+@app.route("/index/<index>/fields/<field>/values", methods=['GET'])
+@multi_auth.login_required
+def get_values(index: str, field: str):
+    """
+    Get the fields (columns) used in this index
+    """
+    r = elastic.get_values(index, field)
+    return jsonify(r)
+
+
 @app.route("/index/<index>/query", methods=['GET'])
 @multi_auth.login_required
 def query_documents(index: str):
@@ -154,22 +193,19 @@ def query_documents_post(index: str):
     return jsonify(r.as_dict()), HTTPStatus.OK
 
 
-@app.route("/index/<index>/fields", methods=['GET'])
+@app.route("/index/<index>/aggregate", methods=['POST'])
 @multi_auth.login_required
-def get_fields(index: str):
+def query_aggregate_post(index: str):
     """
-    Get the fields (columns) used in this index
+    Construct an aggregate query. POST body should be a json dict:
+    {'axes': [{'field': .., ['interval': ..]}, ...],
+     'filters': <filters, see query endpoint>
+     }
+    Will return a json list of lists [<axis-1-name>, ..., _n]
     """
-    r = elastic.get_fields(index)
-    return jsonify(r)
-
-
-@app.route("/index/<index>/fields/<field>/values", methods=['GET'])
-@multi_auth.login_required
-def get_values(index: str, field: str):
-    """
-    Get the fields (columns) used in this index
-    """
-    r = elastic.get_values(index, field)
-    return jsonify(r)
-
+    params = request.get_json(force=True)
+    axes = params.pop('axes', [])
+    if len(axes) < 1:
+        return _bad_request('Aggregation axis not given')
+    results = aggregate.query_aggregate(index, *axes, **params)
+    return jsonify([b._asdict() for b in results])
