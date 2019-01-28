@@ -7,6 +7,23 @@ from typing import Mapping, Iterable
 from .elastic import DOCTYPE, es
 
 
+def build_body(query: Mapping = None, filters: Mapping = None):
+    def parse_filter(field, filter):
+        if 'value' in filter:
+            return {"term": {field: filter['value']}}
+        elif 'range' in filter:
+            return {"range": {field: filter['range']}}
+
+    if not query and not filters:
+        return {'match_all': {}}
+    body = {"bool": {}}
+    if filters:
+        body['bool']['filter'] = [parse_filter(*item) for item in filters.items()]
+    if query:
+        body['bool']['must'] = query
+    return body
+
+
 class QueryResult:
     def __init__(self, data, n=None, per_page=None, page=None, page_count=None, scroll_id=None):
         if n and page_count is None:
@@ -62,20 +79,8 @@ def query_documents(index: str, query_string: str=None, *, page:int=0, per_page:
         if not result['hits']['hits']:
             return None
     else:
-        if query_string:
-            body = dict(query_string=dict(query=query_string))
-        else:
-            body = dict(match_all={})
-        if filters:
-            def parse_filter(field, filter):
-                if 'value' in filter:
-                    return {"term": {field: filter['value']}}
-                elif 'range' in filter:
-                    return {"range": {field: filter['range']}}
-
-            fterms = [parse_filter(*item) for item in filters.items()]
-            body = {"bool": {"must": body,
-                             "filter": fterms}}
+        query = dict(query_string=dict(query=query_string)) if query_string else None
+        body = build_body(query, filters)
         if fields:
             fields = fields if isinstance(fields, list) else list(fields)
             kwargs['_source'] = fields

@@ -61,6 +61,10 @@ def test_second_axis():
                   {("a", _y(2018)): 2, ("a", _y(2020)): 1, ("b", _y(2018)): 1})
 
 
+def test_filtered_aggregate():
+    assert_equals(q('subcat', filters={'cat': {'value': 'a'}}), {"x": 2, "y": 1})
+
+
 @with_index
 def test_many_buckets(index):
     upload([{'cat': x} for x in string.ascii_letters*4], columns={'cat': 'keyword'})
