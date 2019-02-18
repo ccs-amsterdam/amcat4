@@ -8,8 +8,14 @@ import logging
 from secrets import token_hex
 
 import bcrypt
+from itsdangerous import TimedJSONWebSignatureSerializer, Serializer, SignatureExpired, BadSignature
 from peewee import Model, CharField, BooleanField
 from amcat4.db import db
+
+SECRET_KEY = "NOT VERY SECRET YET!"
+
+ROLE_CREATOR = "CREATOR"
+ROLE_ADMIN = "ADMIN"
 
 
 class User(Model):
@@ -21,13 +27,18 @@ class User(Model):
     class Meta:
         database = db
 
-    def create_token(self) -> str:
+    def create_token(self, expiration: int = None) -> str:
         """
         Create a new token for this user
         """
-        token = token_hex(8)
-        es.create(SYS_INDEX, SYS_MAPPING, token, {'email': self.email, 'type': 'token'})
-        return token
+        s = TimedJSONWebSignatureSerializer(SECRET_KEY, expires_in=expiration)
+        return s.dumps({'id': self.id})
+
+    def has_role(self, role):
+        if self.is_admin:
+            return True
+        if role == ROLE_CREATOR and self.is_creator:
+            return True
 
 
 def create_user(email: str, password: str, is_admin: bool = False, is_creator: bool = False) -> User:
@@ -63,19 +74,11 @@ def verify_token(token: str) -> User:
     :param token: The token to verify
     :return: a User object if user could be authenticated, None otherwise
     """
+    s = TimedJSONWebSignatureSerializer(SECRET_KEY)
     try:
-        result = es.get(SYS_INDEX, SYS_MAPPING, token)
-    except NotFoundError:
+        result = s.loads(token)
+    except (SignatureExpired, BadSignature):
+        logging.exception("Token verification failed")
         return None
-    email = result['_source']['email']
-    u = es.get(SYS_INDEX, SYS_MAPPING, email)
-    return User(email, u['_source']['roles'])
-
-
-def delete_token(token: str, ignore_missing=False):
-    """
-    Delete the given token
-    :param token: The token to delete
-    :param ignore_missing: If False (default), throw an exception if token does not exist
-    """
-    es.delete(SYS_INDEX, SYS_MAPPING, token, ignore=([404] if ignore_missing else []))
+    logging.warning("TOKEN RESULT: {}" .format(result))
+    return User.get(User.id == result['id'])

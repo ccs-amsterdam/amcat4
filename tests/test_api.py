@@ -8,8 +8,8 @@ from nose.tools import assert_equal, assert_in, assert_not_in, assert_is_not_non
 
 from amcat4 import elastic
 from amcat4.__main__ import app
-from amcat4.auth import verify_token, create_user, ROLE_ADMIN, User
-from amcat4.elastic import _get_hash, delete_index
+from amcat4.auth import verify_token, create_user, User
+from amcat4.elastic import delete_index
 
 from tests.tools import with_index, upload
 
@@ -23,13 +23,13 @@ def setup_module():
     C = app.test_client()
     C.testing = True
     rnd_suffix = ''.join(random.choices(string.ascii_lowercase, k=32))
-    _TEST_ADMIN = create_user("__test__admin__"+rnd_suffix, "password", roles=ROLE_ADMIN)
+    _TEST_ADMIN = create_user("__test__admin__"+rnd_suffix, "password", is_admin=True)
     _TEST_USER = create_user("__test__user__"+rnd_suffix, "password")
 
 
 def teardown_module():
-    _TEST_ADMIN and _TEST_ADMIN.delete(ignore_missing=True)
-    _TEST_USER and _TEST_USER.delete(ignore_missing=True)
+    _TEST_ADMIN and _TEST_ADMIN.delete()
+    _TEST_USER and _TEST_USER.delete()
 
 
 def _request(url, method='get', user=None, password="password", check=None, **kwargs):

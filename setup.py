@@ -24,5 +24,6 @@ setup(
         "elasticsearch",
         "bcrypt",
         "peewee",
+        "itsdangerous",
     ]
 )

@@ -10,8 +10,8 @@ from http import HTTPStatus
 from werkzeug.exceptions import Unauthorized
 
 from amcat4 import auth, query, aggregate
-from amcat4.auth import ROLE_CREATOR
 from amcat4 import elastic
+from amcat4.auth import ROLE_CREATOR
 
 app = Flask(__name__)
 
@@ -66,7 +66,7 @@ def get_token():
     Create a new token for the authenticated user
     """
     token = g.current_user.create_token()
-    return jsonify({"token": token})
+    return jsonify({"token": token.decode('ascii')})
 
 
 @app.route("/index/", methods=['GET'])
