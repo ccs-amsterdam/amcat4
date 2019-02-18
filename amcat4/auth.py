@@ -8,31 +8,18 @@ import logging
 from secrets import token_hex
 
 import bcrypt
-from elasticsearch import NotFoundError
-from amcat4.elastic import es, SYS_INDEX, SYS_MAPPING
-
-SECRET_KEY = 'geheim'
-
-ROLE_ADMIN = "admin"  # Can do anything
-ROLE_CREATOR = "creator"  # Can create indices
+from peewee import Model, CharField, BooleanField
+from amcat4.db import db
 
 
-def role_set(str_or_sequence):
-    if str_or_sequence is None:
-        return set()
-    if isinstance(str_or_sequence, str):
-        return {str_or_sequence}
-    else:
-        return set(str_or_sequence)
+class User(Model):
+    email = CharField(unique=True)
+    password = CharField()
+    is_admin = BooleanField(default=False)
+    is_creator = BooleanField(default=False)
 
-
-class User:
-    def __init__(self, email, roles):
-        self.email = email
-        self.roles = role_set(roles)
-
-    def has_role(self, role):
-        return bool(self.roles & {ROLE_ADMIN, role})
+    class Meta:
+        database = db
 
     def create_token(self) -> str:
         """
@@ -42,57 +29,30 @@ class User:
         es.create(SYS_INDEX, SYS_MAPPING, token, {'email': self.email, 'type': 'token'})
         return token
 
-    def delete(self, ignore_missing=False):
-        """
-        Delete the user
-        :param email: Email address identifying the user
-        :param ignore_missing: If False (default), throw an exception if user does not exist
-        """
-        es.delete(SYS_INDEX, SYS_MAPPING, self.email, ignore=([404] if ignore_missing else []))
 
-    def __eq__(self, other):
-        return self.email == other.email
-
-
-def has_user() -> bool:
+def create_user(email: str, password: str, is_admin: bool = False, is_creator: bool = False) -> User:
     """
-    Is there at least one user?
+    Create and return a new User with the given information
     """
-    es.indices.flush()
-    res = es.count(SYS_INDEX, SYS_MAPPING, body={"query": {"match": {"type": "user"}}})
-    return res['count'] > 0
-
-
-def create_user(email: str, password: str, roles=None) -> User:
-    """
-    Create a new user on this server
-    :param email: Email address identifying the user
-    :param password: New password
-    :param roles: Roles for this user, see ROLE_* module variables
-    :param check_email: if True (default), raise an error for invalid email addresses
-    """
-    if es.exists(SYS_INDEX, SYS_MAPPING, id=email):
-        raise ValueError("User {email} already exists".format(**locals()))
-    hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    es.create(SYS_INDEX, SYS_MAPPING, email, {'hash': hash, 'roles': roles, 'type': 'user'})
-    return User(email, roles)
+    hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return User.create(email=email, password=hashed, is_admin=is_admin, is_creator=is_creator)
 
 
 def verify_user(email: str, password: str) -> User:
     """
-    Check that this user exists and is authenticated with the given password
+    Check that this user exists and can be authenticated with the given password, returning a User object
     :param email: Email address identifying the user
     :param password: Password to check
     :return: A User object if user could be authenticated, None otherwise
     """
     logging.info("Attempted login: {email}".format(**locals()))
     try:
-        user = es.get(SYS_INDEX, SYS_MAPPING, email)
-    except NotFoundError:
+        user = User.get(User.email == email)
+    except User.DoesNotExist:
         logging.warning("User {email} not found!".format(**locals()))
         return None
-    if bcrypt.checkpw(password.encode('utf-8'), user['_source']['hash'].encode("utf-8")):
-        return User(email, user['_source']['roles'])
+    if bcrypt.checkpw(password.encode('utf-8'), user.password.encode("utf-8")):
+        return user
     else:
         logging.warning("Incorrect password for user {email}".format(**locals()))
 

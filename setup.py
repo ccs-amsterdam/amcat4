@@ -23,5 +23,6 @@ setup(
         "flask-cors",
         "elasticsearch",
         "bcrypt",
+        "peewee",
     ]
 )
