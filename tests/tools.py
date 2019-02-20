@@ -8,13 +8,13 @@ _TEST_INDEX = 'amcat4_testindex__'
 
 
 def create_index(name=_TEST_INDEX):
-    elastic.delete_index(name, ignore_missing=True)
-    elastic.create_index(name)
+    elastic._delete_index(name, ignore_missing=True)
+    elastic._create_index(name)
     return name
 
 
 def delete_index(name=_TEST_INDEX):
-    elastic.delete_index(name, ignore_missing=True)
+    elastic._delete_index(name, ignore_missing=True)
 
 
 def with_index(f):

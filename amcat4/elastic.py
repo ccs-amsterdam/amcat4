@@ -38,20 +38,20 @@ def setup_elastic(*hosts):
         es.indices.create(SYS_INDEX)
 
 
-def list_indices(exclude_system_index=True) -> [str]:
+def _list_indices(exclude_system_index=True) -> [str]:
     """
-    List all indices on the connected elastic cluster
+    List all indices on the connected elastic cluster.
+    You should probably use the methods in amcat4.index rather than this.
     """
     result = es.indices.get("*")
     return [x for x in result.keys() if not (exclude_system_index and x == SYS_INDEX)]
 
 
 
-def create_index(name: str) -> None:
+def _create_index(name: str) -> None:
     """
     Create a new index
-
-    :param name: The name of the new index (without prefix)
+    You should probably use the methods in amcat4.index rather than this.
     """
     fields = {'text': ES_MAPPINGS['text'],
               'title': ES_MAPPINGS['text'],
@@ -61,10 +61,10 @@ def create_index(name: str) -> None:
     es.indices.create(name, body=body)
 
 
-def delete_index(name: str, ignore_missing=False) -> None:
+def _delete_index(name: str, ignore_missing=False) -> None:
     """
     Delete an index
-
+    You should probably use the methods in amcat4.index rather than this.
     :param name: The name of the new index (without prefix)
     :param ignore_missing: If True, do not throw exception if index does not exist
     """
@@ -164,3 +164,10 @@ def get_values(index: str, field: str) -> List[str]:
 
 def refresh():
     es.indices.flush()
+
+
+def index_exists(name: str) -> bool:
+    """
+    Check if an index with this name exists
+    """
+    return es.indices.exists(index=name)

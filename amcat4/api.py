@@ -11,7 +11,7 @@ from werkzeug.exceptions import Unauthorized
 
 from amcat4 import auth, query, aggregate
 from amcat4 import elastic
-from amcat4.auth import ROLE_CREATOR
+from amcat4.auth import Role
 
 app = Flask(__name__)
 

@@ -2,7 +2,8 @@ import logging
 import sys
 
 from amcat4 import auth
-from amcat4.elastic import setup_elastic, create_index, upload_documents, list_indices, refresh
+from amcat4.auth import Role, User
+from amcat4.elastic import setup_elastic, _create_index, upload_documents, _list_indices
 from amcat4.api import app
 
 
@@ -15,7 +16,7 @@ def upload_test_data():
     url_open = urllib.request.urlopen(url)
     csv.field_size_limit(sys.maxsize)
     csvfile = csv.DictReader(io.TextIOWrapper(url_open, encoding='utf-8'))
-    create_index(SOTU_INDEX)
+    _create_index(SOTU_INDEX)
     docs = [dict(title="{Year}: {President}".format(**row),
                  text=row['Text'],
                  date=row['Date'],
@@ -33,12 +34,12 @@ if __name__ == '__main__':
     setup_elastic()
     es_logger = logging.getLogger('elasticsearch')
     es_logger.setLevel(logging.WARNING)
-    if not auth.has_user():
+    if not User.where(User.email == "admin").exists():
         logging.warning("**** No user detected, creating superuser admin:admin ****")
-        auth.create_user("admin", "admin", roles=[auth.ROLE_ADMIN])
+        auth.create_user("admin", "admin", Role.ADMIN)
     if "--create-test-index" in sys.argv:
         # [WvA] I apologize for the argument parsing
-        if SOTU_INDEX not in list_indices():
+        if SOTU_INDEX not in _list_indices():
             logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
             upload_test_data()
     app.run(debug=True)

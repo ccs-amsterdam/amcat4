@@ -1,28 +1,32 @@
 """
 Provide authentication for AmCAT4 api
 
-Currently provides token based authentication using an elasticsearch backend,
-assuming a 'amcat4system' index
+Authentication can work via password or token
+See amcat4.index for authorisation rules
 """
 import logging
-from secrets import token_hex
+from enum import IntEnum
+from typing import Optional, Iterable
 
 import bcrypt
-from itsdangerous import TimedJSONWebSignatureSerializer, Serializer, SignatureExpired, BadSignature
-from peewee import Model, CharField, BooleanField
+from itsdangerous import TimedJSONWebSignatureSerializer, SignatureExpired, BadSignature
+from peewee import Model, CharField, IntegerField
 from amcat4.db import db
 
 SECRET_KEY = "NOT VERY SECRET YET!"
 
-ROLE_CREATOR = "CREATOR"
-ROLE_ADMIN = "ADMIN"
+
+class Role(IntEnum):
+    METAREADER = 10
+    READER = 20
+    WRITER = 30
+    ADMIN = 40
 
 
 class User(Model):
     email = CharField(unique=True)
     password = CharField()
-    is_admin = BooleanField(default=False)
-    is_creator = BooleanField(default=False)
+    global_role = IntegerField(null=True)
 
     class Meta:
         database = db
@@ -34,22 +38,31 @@ class User(Model):
         s = TimedJSONWebSignatureSerializer(SECRET_KEY, expires_in=expiration)
         return s.dumps({'id': self.id})
 
-    def has_role(self, role):
-        if self.is_admin:
-            return True
-        if role == ROLE_CREATOR and self.is_creator:
-            return True
+    def has_role(self, role: Role) -> bool:
+        """
+        Check whether this user has at least the requested Role
+        """
+        return self.role and self.role >= role
+
+    def indices(self, include_guest: bool = False) -> Iterable['Index']:
+        from amcat4.index import Index  # Prevent circular import
+        indices = {i.index for i in self.indexrole_set.join(Index)}
+        if include_guest:
+            indices |= set(Index.select().where(Index.guest_role != None))  # NOQA
+        return indices
 
 
-def create_user(email: str, password: str, is_admin: bool = False, is_creator: bool = False) -> User:
+def create_user(email: str, password: str, global_role: Role = None) -> User:
     """
     Create and return a new User with the given information
     """
+    if global_role not in [None, Role.WRITER, Role.ADMIN]:
+        raise ValueError("Global roles can only be None, Writer, or Admin")
     hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    return User.create(email=email, password=hashed, is_admin=is_admin, is_creator=is_creator)
+    return User.create(email=email, password=hashed, global_role=global_role)
 
 
-def verify_user(email: str, password: str) -> User:
+def verify_user(email: str, password: str) -> Optional[User]:
     """
     Check that this user exists and can be authenticated with the given password, returning a User object
     :param email: Email address identifying the user
@@ -68,7 +81,7 @@ def verify_user(email: str, password: str) -> User:
         logging.warning("Incorrect password for user {email}".format(**locals()))
 
 
-def verify_token(token: str) -> User:
+def verify_token(token: str) -> Optional[User]:
     """
     Check the token and return the authenticated user email
     :param token: The token to verify
