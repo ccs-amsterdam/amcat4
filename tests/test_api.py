@@ -8,8 +8,8 @@ from nose.tools import assert_equal, assert_in, assert_not_in, assert_is_not_non
 
 from amcat4 import elastic
 from amcat4.__main__ import app
-from amcat4.auth import verify_token, create_user, User
-from amcat4.elastic import delete_index
+from amcat4.auth import verify_token, create_user, User, Role
+from amcat4.elastic import _delete_index
 
 from tests.tools import with_index, upload
 
@@ -23,7 +23,7 @@ def setup_module():
     C = app.test_client()
     C.testing = True
     rnd_suffix = ''.join(random.choices(string.ascii_lowercase, k=32))
-    _TEST_ADMIN = create_user("__test__admin__"+rnd_suffix, "password", is_admin=True)
+    _TEST_ADMIN = create_user("__test__admin__"+rnd_suffix, "password", global_role=Role.ADMIN)
     _TEST_USER = create_user("__test__user__"+rnd_suffix, "password")
 
 
@@ -62,9 +62,11 @@ def test_get_token():
 
 
 def test_index():
+    def indices():
+        return {i['name'] for i in _get('/index/', user=_TEST_ADMIN).json}
+
     _TEST_INDEX = 'amcat4_test__' + ''.join(random.choices(string.ascii_lowercase, k=32))
-    delete_index(_TEST_INDEX, ignore_missing=True)
-    assert_not_in(dict(name=_TEST_INDEX), _get('/index/').json)
+    assert_equal(indices(), set())
 
     assert_equal(C.get('/index/').status_code, 401, "Getting index list should require authorization")
     assert_equal(C.post('/index/').status_code, 401, "Creating a indexshould require authorization")
@@ -72,7 +74,11 @@ def test_index():
                  401, "Creating an index should require admin or creator role")
 
     _post('/index/', json=dict(name=_TEST_INDEX), user=_TEST_ADMIN)
-    assert_in(dict(name=_TEST_INDEX), _get('/index/').json)
+    assert_equal(indices(), {_TEST_INDEX})
+
+
+def test_index_roles():
+    """Does a user get the correct role with an index?"""
 
 
 def _query(index, check=200, **options):

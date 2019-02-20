@@ -9,9 +9,9 @@ from http import HTTPStatus
 
 from werkzeug.exceptions import Unauthorized
 
-from amcat4 import auth, query, aggregate
-from amcat4 import elastic
+from amcat4 import auth, query, aggregate, index, elastic
 from amcat4.auth import Role
+from amcat4.index import Index
 
 app = Flask(__name__)
 
@@ -37,12 +37,16 @@ def _bad_request(message):
     return response
 
 
-def check_role(role):
+def check_role(role: Role, ix: Index = None):
     u = g.current_user
     if not u:
         raise Unauthorized("No authenticated user")
-    if not u.has_role(role):
-        raise Unauthorized("User {} does not have role {}".format(u.email, role))
+    if ix:
+        if not ix.has_role(u, role):
+            raise Unauthorized("User {} does not have role {} on index {}".format(u.email, role, ix))
+    else:
+        if not u.has_role(role):
+            raise Unauthorized("User {} does not have role {}".format(u.email, role))
 
 
 @basic_auth.verify_password
@@ -73,9 +77,9 @@ def get_token():
 @multi_auth.login_required
 def index_list():
     """
-    List index from this server
+    List index from this server. Returns a list of dicts containing name, role, and guest attributes
     """
-    result = [{"name": name} for name in elastic.list_indices()]
+    result = [dict(name=ix.name) for ix in (g.current_user.indices(include_guest=True))]
     return jsonify(result)
 
 
@@ -85,11 +89,11 @@ def create_index():
     """
     Create a new index
     """
-    check_role(ROLE_CREATOR)
+    check_role(Role.WRITER)
     data = request.get_json(force=True)
     name = data['name']
-    elastic.create_index(name)
-    return jsonify({"name": name}), HTTPStatus.CREATED
+    ix = index.create_index(name, admin=g.current_user)
+    return jsonify({'name': ix.name}), HTTPStatus.CREATED
 
 
 @app.route("/index/<index>/documents", methods=['POST'])

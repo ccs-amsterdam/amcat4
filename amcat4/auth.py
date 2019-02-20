@@ -42,7 +42,7 @@ class User(Model):
         """
         Check whether this user has at least the requested Role
         """
-        return self.role and self.role >= role
+        return self.global_role and self.global_role >= role
 
     def indices(self, include_guest: bool = False) -> Iterable['Index']:
         from amcat4.index import Index  # Prevent circular import

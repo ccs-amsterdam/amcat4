@@ -15,6 +15,7 @@ Authorisation rules:
   - Writers can add/delete documents, add/delete users (up to their own level), and make other changes (but not delete)
   - Admins can do whatever they want, including deleting the index
 - If a user does not have an explicit role on an index, the guest role (if any) is used
+- An unauthorized user can still get guest roles, so it can see any indices with a guest role
 
 Note that these rules are not enforced in this module, they should be enforced by the API!
 """
