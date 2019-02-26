@@ -3,6 +3,7 @@ import sys
 
 from amcat4 import auth
 from amcat4.auth import Role, User
+from amcat4.db import initialize_if_needed
 from amcat4.elastic import setup_elastic, _create_index, upload_documents, _list_indices
 from amcat4.api import app
 
@@ -32,6 +33,7 @@ def upload_test_data():
 if __name__ == '__main__':
     logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=logging.INFO)
     setup_elastic()
+    initialize_if_needed()
     es_logger = logging.getLogger('elasticsearch')
     es_logger.setLevel(logging.WARNING)
     if not User.select().where(User.email == "admin").exists():
