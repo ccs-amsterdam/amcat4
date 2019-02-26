@@ -34,7 +34,7 @@ if __name__ == '__main__':
     setup_elastic()
     es_logger = logging.getLogger('elasticsearch')
     es_logger.setLevel(logging.WARNING)
-    if not User.where(User.email == "admin").exists():
+    if not User.select().where(User.email == "admin").exists():
         logging.warning("**** No user detected, creating superuser admin:admin ****")
         auth.create_user("admin", "admin", Role.ADMIN)
     if "--create-test-index" in sys.argv:
