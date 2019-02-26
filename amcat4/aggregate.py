@@ -61,7 +61,7 @@ def _get_aggregates(index, sources, query_string, filters, after_key=None):
 
 def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
                     value="n", query_string: str = None,
-                    filters: Mapping[str, Mapping] = None) -> Iterable[Tuple]:
+                    filters: Mapping[str, Mapping] = None) -> Iterable[namedtuple]:
     """
     Conduct an aggregate query.
     Note that interval queries also yield zero counts for intervening keys without value,
