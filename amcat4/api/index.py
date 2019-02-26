@@ -1,3 +1,4 @@
+import elasticsearch
 from flask import Blueprint, jsonify, request, abort, g
 
 
@@ -45,6 +46,19 @@ def upload_documents(index: str):
     documents = request.get_json(force=True)
     result = elastic.upload_documents(index, documents)
     return jsonify(result), HTTPStatus.CREATED
+
+
+@app_index.route("/index/<index>/documents/<docid>", methods=['GET'])
+@multi_auth.login_required
+def get_document(index: str, docid: str):
+    """
+    Get a single document by id
+    """
+    try:
+        doc = elastic.get_document(index, docid)
+        return jsonify(doc)
+    except elasticsearch.exceptions.NotFoundError:
+        abort(404)
 
 
 @app_index.route("/index/<index>/fields", methods=['GET'])

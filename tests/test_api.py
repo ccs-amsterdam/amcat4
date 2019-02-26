@@ -111,6 +111,13 @@ def test_upload(index):
 
 
 @with_index
+def test_get_document(index):
+    _get("/index/{}/documents/{}".format(index, "testdoc"), check=404)
+    upload([{"title": "de titel", "_id": "testdoc" }])
+    assert_equal(_get("/index/{}/documents/{}".format(index, "testdoc")).json['title'], 'de titel')
+
+
+@with_index
 def test_documents(index):
     def q(**q):
         return {int(d['_id']) for d in _query(index, **q)['results']}
