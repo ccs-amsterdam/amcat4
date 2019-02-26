@@ -3,6 +3,7 @@ import functools
 import random
 import string
 import urllib.parse
+from collections import namedtuple
 
 from nose.tools import assert_equal, assert_in, assert_not_in, assert_is_not_none, assert_raises
 
@@ -16,25 +17,30 @@ from tests.tools import with_index, upload
 C = None
 _TEST_ADMIN: User = None
 _TEST_USER: User = None
-
+_TEST_WRITER: User = None
+NO_USER = object()  # sorry!
 
 def setup_module():
-    global C, _TEST_ADMIN, _TEST_USER
+    global C, _TEST_ADMIN, _TEST_USER, _TEST_WRITER
     C = app.test_client()
     C.testing = True
     rnd_suffix = ''.join(random.choices(string.ascii_lowercase, k=32))
     _TEST_ADMIN = create_user("__test__admin__"+rnd_suffix, "password", global_role=Role.ADMIN)
     _TEST_USER = create_user("__test__user__"+rnd_suffix, "password")
+    _TEST_WRITER = create_user("__test__writer__"+rnd_suffix, "password", global_role=Role.WRITER)
 
 
 def teardown_module():
-    _TEST_ADMIN and _TEST_ADMIN.delete()
-    _TEST_USER and _TEST_USER.delete()
+    _TEST_ADMIN and _TEST_ADMIN.delete_instance()
+    _TEST_USER and _TEST_USER.delete_instance()
+    _TEST_WRITER and _TEST_USER.delete_instance()
 
 
 def _request(url, method='get', user=None, password="password", check=None, **kwargs):
     if user is None:
         user = _TEST_USER
+    if user == NO_USER:
+        user = None  # I said sorry, ok?
     request_method = getattr(C, method)
     cred = ":".join([user.email, password])
     auth = base64.b64encode(cred.encode("ascii")).decode('ascii')
@@ -50,6 +56,10 @@ def _get(url, check=200, **kwargs):
 
 def _post(url, check=201, **kwargs):
     return _request(url, method='post', check=check, **kwargs)
+
+
+def _delete(url, check=204, **kwargs):
+    return _request(url, method='delete', check=check, **kwargs)
 
 
 def test_get_token():
@@ -257,3 +267,46 @@ def test_aggregate_post(index):
     assert_equal(dict(q(axes=[{'field': 'cat'}])), {("a",): 3, ("b",): 1})
     assert_equal(dict(q(axes=[{'field': 'cat'}, {'field': 'date', 'interval': 'year'}])),
                  {("a", "2018-01-01"): 2,  ("a", "2020-01-01"): 1, ("b", "2018-01-01"): 1})
+
+
+def _getuser(user, as_user = None, **args):
+    if not isinstance(user, str):
+        user = user.email
+    return _get("/users/"+user, user=as_user, **args).json
+
+
+def test_get_user():
+    assert_equal(C.get('/users/unknown').status_code, 401, "Viewing user should require auth")
+    _getuser("unknown user", as_user=NO_USER, check=401)
+    _getuser(_TEST_USER, as_user=NO_USER, check=401)
+
+    # user can only see its own info:
+    assert_equal(_getuser(_TEST_USER, as_user=_TEST_USER), {"email": _TEST_USER.email, "global_role": None})
+    _getuser(_TEST_ADMIN, as_user=_TEST_USER, check=401)
+    # admin can see everyone
+    assert_equal(_getuser(_TEST_ADMIN, as_user=_TEST_ADMIN), {"email": _TEST_ADMIN.email, "global_role": 'ADMIN'})
+    assert_equal(_getuser(_TEST_USER, as_user=_TEST_ADMIN), {"email": _TEST_USER.email, "global_role": None})
+
+
+def test_create_user():
+    assert_equal(C.post('/users/').status_code, 401, "Creating user should require auth")
+    _user = namedtuple("_user", "email pwd")
+    u = _user(email='testuser@example.com', pwd='test')
+    _post("/users/", user=_TEST_USER, check=401)  # creating user requires >=WRITER
+
+    _getuser(u, as_user=_TEST_ADMIN, check=404)
+    _post("/users/", user=_TEST_WRITER, json=dict(email=u.email, password=u.pwd))
+    assert_equal(_getuser(u, as_user=u, password=u.pwd), {"email": u.email, "global_role": None})
+    _post("/users/", user=_TEST_WRITER, json=dict(email=u.email, password=u.pwd), check=400)
+    _delete("/users/"+u.email, user=_TEST_WRITER)
+
+    _post("/users/", user=_TEST_WRITER, json=dict(email=u.email, password=u.pwd, global_role='ADMIN'),
+          check=401)  # WRITER cannot create ADMIN
+    _post("/users/", user=_TEST_ADMIN, json=dict(email=u.email, password=u.pwd, global_role='ADMIN'))
+    assert_equal(_getuser(u, as_user=_TEST_WRITER), {"email": u.email, "global_role": 'ADMIN'})
+    _delete("/users/" + u.email, user=_TEST_WRITER, check=401)  # WRITER cannot delete ADMIN
+    _delete("/users/" + u.email, user=_TEST_ADMIN)
+
+
+
+

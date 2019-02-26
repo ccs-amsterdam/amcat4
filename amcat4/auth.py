@@ -51,6 +51,10 @@ class User(Model):
             indices |= set(Index.select().where(Index.guest_role != None))  # NOQA
         return indices
 
+    @property
+    def role(self):
+        return self.global_role and Role(self.global_role)
+
 
 def create_user(email: str, password: str, global_role: Role = None) -> User:
     """

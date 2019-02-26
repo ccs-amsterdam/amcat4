@@ -1,10 +1,9 @@
 import elasticsearch
 from flask import Blueprint, jsonify, request, abort, g
 
-
-from amcat4 import auth, query, aggregate, index, elastic
+from amcat4 import elastic
+from amcat4.index import create_index
 from amcat4.auth import Role
-from amcat4.index import Index
 from http import HTTPStatus
 
 from amcat4.api.common import multi_auth, check_role
@@ -31,7 +30,7 @@ def create_index():
     check_role(Role.WRITER)
     data = request.get_json(force=True)
     name = data['name']
-    ix = index.create_index(name, admin=g.current_user)
+    ix = create_index(name, admin=g.current_user)
     return jsonify({'name': ix.name}), HTTPStatus.CREATED
 
 

@@ -1,6 +1,6 @@
 from datetime import datetime, date
 
-from flask import g, json
+from flask import g, json, jsonify
 from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth, MultiAuth
 from werkzeug.exceptions import Unauthorized
 
@@ -44,3 +44,9 @@ class MyJSONEncoder(json.JSONEncoder):
         if isinstance(o, (datetime, date)):
             return o.isoformat()
         return super().default(o)
+
+
+def bad_request(message):
+    response = jsonify({'message': message})
+    response.status_code = 400
+    return response
