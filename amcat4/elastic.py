@@ -47,7 +47,6 @@ def _list_indices(exclude_system_index=True) -> [str]:
     return [x for x in result.keys() if not (exclude_system_index and x == SYS_INDEX)]
 
 
-
 def _create_index(name: str) -> None:
     """
     Create a new index
@@ -100,7 +99,7 @@ def _get_es_actions(index, doc_type, documents):
         }
 
 
-def upload_documents(index: str, documents, columns: Mapping[str, str]=None) -> List[str]:
+def upload_documents(index: str, documents, columns: Mapping[str, str] = None) -> List[str]:
     """
     Upload documents to this index
 
@@ -110,7 +109,7 @@ def upload_documents(index: str, documents, columns: Mapping[str, str]=None) -> 
     :return: the list of document ids
     """
     if columns:
-        mapping = {field: ES_MAPPINGS[type] for (field, type) in columns.items()}
+        mapping = {field: ES_MAPPINGS[type_] for (field, type_) in columns.items()}
         body = {"properties": mapping}
         es.indices.put_mapping(index=index, doc_type=DOCTYPE, body=body)
 
@@ -119,15 +118,15 @@ def upload_documents(index: str, documents, columns: Mapping[str, str]=None) -> 
     return [action['_id'] for action in actions]
 
 
-def get_document(index: str, id: str) -> dict:
+def get_document(index: str, doc_id: str) -> dict:
     """
     Get a single document from this index
 
     :param index: The name of the index
-    :param id: The document id (hash)
+    :param doc_id: The document id (hash)
     :return: the source dict of the document
     """
-    return es.get(index, DOCTYPE, id)['_source']
+    return es.get(index, DOCTYPE, doc_id)['_source']
 
 
 def get_fields(index: str) -> Mapping[str, str]:

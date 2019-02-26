@@ -4,13 +4,13 @@ import random
 import string
 import urllib.parse
 from collections import namedtuple
+from typing import Optional
 
-from nose.tools import assert_equal, assert_in, assert_not_in, assert_is_not_none, assert_raises
+from nose.tools import assert_equal, assert_in, assert_not_in, assert_is_not_none
 
 from amcat4 import elastic
 from amcat4.__main__ import app
 from amcat4.auth import verify_token, create_user, User, Role
-from amcat4.elastic import _delete_index
 
 from tests.tools import with_index, upload
 
@@ -18,7 +18,7 @@ C = None
 _TEST_ADMIN: User = None
 _TEST_USER: User = None
 _TEST_WRITER: User = None
-NO_USER = object()  # sorry!
+
 
 def setup_module():
     global C, _TEST_ADMIN, _TEST_USER, _TEST_WRITER
@@ -36,29 +36,29 @@ def teardown_module():
     _TEST_WRITER and _TEST_USER.delete_instance()
 
 
-def _request(url, method='get', user=None, password="password", check=None, **kwargs):
-    if user is None:
+def _request(url, method='get', user='test_user', password="password", check=None, **kwargs):
+    if user == 'test_user':
         user = _TEST_USER
-    if user == NO_USER:
-        user = None  # I said sorry, ok?
+    if user is not None:
+        cred = ":".join([user.email, password])
+        auth = base64.b64encode(cred.encode("ascii")).decode('ascii')
+        kwargs['headers'] = {"Authorization": "Basic {}".format(auth)}
     request_method = getattr(C, method)
-    cred = ":".join([user.email, password])
-    auth = base64.b64encode(cred.encode("ascii")).decode('ascii')
-    result = request_method(url, headers={"Authorization": "Basic {}".format(auth)}, **kwargs)
+    result = request_method(url, **kwargs)
     if check and result.status_code != check:
         assert_equal(result.status_code, check, result.get_data(as_text=True))
     return result
 
 
-def _get(url, check=200, **kwargs):
+def _get(url, check: Optional[int] = 200, **kwargs):
     return _request(url, method='get', check=check, **kwargs)
 
 
-def _post(url, check=201, **kwargs):
+def _post(url, check: Optional[int] = 201, **kwargs):
     return _request(url, method='post', check=check, **kwargs)
 
 
-def _delete(url, check=204, **kwargs):
+def _delete(url, check: Optional[int] = 204, **kwargs):
     return _request(url, method='delete', check=check, **kwargs)
 
 
@@ -123,14 +123,14 @@ def test_upload(index):
 @with_index
 def test_get_document(index):
     _get("/index/{}/documents/{}".format(index, "testdoc"), check=404)
-    upload([{"title": "de titel", "_id": "testdoc" }])
+    upload([{"title": "de titel", "_id": "testdoc"}])
     assert_equal(_get("/index/{}/documents/{}".format(index, "testdoc")).json['title'], 'de titel')
 
 
 @with_index
 def test_documents(index):
-    def q(**q):
-        return {int(d['_id']) for d in _query(index, **q)['results']}
+    def q(**args):
+        return {int(d['_id']) for d in _query(index, **args)['results']}
     url = 'index/{}/query'.format(index)
     assert_equal(C.get(url).status_code, 401, "Reading documents requires authorization")
     assert_equal(C.post(url).status_code, 401, "Reading documents requires authorization")
@@ -158,8 +158,8 @@ def test_fields(index):
 
 @with_index
 def test_sorting(index):
-    def q(**q):
-        return [int(d['_id']) for d in _query(index, **q)['results']]
+    def q(**args):
+        return [int(d['_id']) for d in _query(index, **args)['results']]
     upload([{'f': x} for x in [3, 2, 1, 2, 3]])
     assert_equal(q(sort="_id"), [0, 1, 2, 3, 4])
     assert_equal(q(sort="_id:desc"), [4, 3, 2, 1, 0])
@@ -209,11 +209,11 @@ def test_mapping(index):
 
 @with_index
 def test_filters(index):
-    def q(**q):
-        return {int(d['_id']) for d in _query(index, **q)['results']}
+    def q(**args):
+        return {int(d['_id']) for d in _query(index, **args)['results']}
     upload([{'x': "a", 'date': '2012-01-01'},
             {'x': "a", 'date': '2012-02-01'},
-            {'x': "b", 'date': '2012-03-01'},])
+            {'x': "b", 'date': '2012-03-01'}])
     assert_equal(q(x="a"), {0, 1})
     assert_equal(q(date="2012-01-01"), {0})
     assert_equal(q(date__gt="2012-01-01"), {1, 2})
@@ -226,11 +226,11 @@ def test_query_post(index):
     q = functools.partial(_query_post, index=index, endpoint='query')
     upload([{'x': "a", 'date': '2012-01-01', 'i': 1},
             {'x': "a", 'date': '2012-02-01', 'i': 2},
-            {'x': "b", 'date': '2012-03-01', 'i': 3},])
+            {'x': "b", 'date': '2012-03-01', 'i': 3}])
     assert_equal({h['i'] for h in q()['results']}, {1, 2, 3})
     assert_equal({h['i'] for h in q(q="b")['results']}, {3})
     assert_equal({h['i'] for h in q(q="a", filters={'date': {'value': '2012-02-01'}})['results']}, {2})
-    assert_equal({h['i'] for h in q(q="a", filters={'date': {'range': {'lt':'2012-02-01'}}})['results']}, {1})
+    assert_equal({h['i'] for h in q(q="a", filters={'date': {'range': {'lt': '2012-02-01'}}})['results']}, {1})
 
     # test pagination and scrolling via post
     res = q(per_page=2, sort="i:desc")
@@ -269,7 +269,7 @@ def test_aggregate_post(index):
                  {("a", "2018-01-01"): 2,  ("a", "2020-01-01"): 1, ("b", "2018-01-01"): 1})
 
 
-def _getuser(user, as_user = None, **args):
+def _getuser(user, as_user=None, **args):
     if not isinstance(user, str):
         user = user.email
     return _get("/users/"+user, user=as_user, **args).json
@@ -277,8 +277,8 @@ def _getuser(user, as_user = None, **args):
 
 def test_get_user():
     assert_equal(C.get('/users/unknown').status_code, 401, "Viewing user should require auth")
-    _getuser("unknown user", as_user=NO_USER, check=401)
-    _getuser(_TEST_USER, as_user=NO_USER, check=401)
+    _getuser("unknown user", as_user=None, check=401)
+    _getuser(_TEST_USER, as_user=None, check=401)
 
     # user can only see its own info:
     assert_equal(_getuser(_TEST_USER, as_user=_TEST_USER), {"email": _TEST_USER.email, "global_role": None})
@@ -306,7 +306,3 @@ def test_create_user():
     assert_equal(_getuser(u, as_user=_TEST_WRITER), {"email": u.email, "global_role": 'ADMIN'})
     _delete("/users/" + u.email, user=_TEST_WRITER, check=401)  # WRITER cannot delete ADMIN
     _delete("/users/" + u.email, user=_TEST_ADMIN)
-
-
-
-

@@ -1,8 +1,7 @@
 import elasticsearch
 from flask import Blueprint, jsonify, request, abort, g
 
-from amcat4 import elastic
-from amcat4.index import create_index
+from amcat4 import elastic, index
 from amcat4.auth import Role
 from http import HTTPStatus
 
@@ -30,53 +29,51 @@ def create_index():
     check_role(Role.WRITER)
     data = request.get_json(force=True)
     name = data['name']
-    ix = create_index(name, admin=g.current_user)
+    ix = index.create_index(name, admin=g.current_user)
     return jsonify({'name': ix.name}), HTTPStatus.CREATED
 
 
-@app_index.route("/index/<index>/documents", methods=['POST'])
+@app_index.route("/index/<ix>/documents", methods=['POST'])
 @multi_auth.login_required
-def upload_documents(index: str):
+def upload_documents(ix: str):
     """
     Upload documents to this server
     JSON payload should be a list of documents with at least a title, date, text and any optional attributes
     Note: The unique elastic ID will be the hash of title, date, text and url.
     """
     documents = request.get_json(force=True)
-    result = elastic.upload_documents(index, documents)
+    result = elastic.upload_documents(ix, documents)
     return jsonify(result), HTTPStatus.CREATED
 
 
-@app_index.route("/index/<index>/documents/<docid>", methods=['GET'])
+@app_index.route("/index/<ix>/documents/<docid>", methods=['GET'])
 @multi_auth.login_required
-def get_document(index: str, docid: str):
+def get_document(ix: str, docid: str):
     """
     Get a single document by id
     """
     try:
-        doc = elastic.get_document(index, docid)
+        doc = elastic.get_document(ix, docid)
         return jsonify(doc)
     except elasticsearch.exceptions.NotFoundError:
         abort(404)
 
 
-@app_index.route("/index/<index>/fields", methods=['GET'])
+@app_index.route("/index/<ix>/fields", methods=['GET'])
 @multi_auth.login_required
-def get_fields(index: str):
+def get_fields(ix: str):
     """
     Get the fields (columns) used in this index
     """
-    r = elastic.get_fields(index)
+    r = elastic.get_fields(ix)
     return jsonify(r)
 
 
-@app_index.route("/index/<index>/fields/<field>/values", methods=['GET'])
+@app_index.route("/index/<ix>/fields/<field>/values", methods=['GET'])
 @multi_auth.login_required
-def get_values(index: str, field: str):
+def get_values(ix: str, field: str):
     """
     Get the fields (columns) used in this index
     """
-    r = elastic.get_values(index, field)
+    r = elastic.get_values(ix, field)
     return jsonify(r)
-
-

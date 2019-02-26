@@ -1,11 +1,9 @@
 """
 Aggregate queries
 """
-import json
-import logging
 from collections import namedtuple
 from datetime import datetime
-from typing import Mapping, Iterable, Tuple, Union
+from typing import Mapping, Iterable, Union
 
 from amcat4.elastic import DOCTYPE, es, field_type
 from amcat4.query import build_body

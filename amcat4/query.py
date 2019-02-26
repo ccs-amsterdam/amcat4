@@ -2,17 +2,17 @@
 All things query
 """
 from math import ceil
-from typing import Mapping, Iterable
+from typing import Mapping, Iterable, Optional
 
 from .elastic import DOCTYPE, es
 
 
 def build_body(query: Mapping = None, filters: Mapping = None):
-    def parse_filter(field, filter):
-        if 'value' in filter:
-            return {"term": {field: filter['value']}}
-        elif 'range' in filter:
-            return {"range": {field: filter['range']}}
+    def parse_filter(field, filter_):
+        if 'value' in filter_:
+            return {"term": {field: filter_['value']}}
+        elif 'range' in filter_:
+            return {"range": {field: filter_['range']}}
 
     if not query and not filters:
         return {'match_all': {}}
@@ -44,9 +44,9 @@ class QueryResult:
         return dict(meta=meta, results=self.data)
 
 
-def query_documents(index: str, query_string: str=None, *, page:int=0, per_page:int=10,
-                    scroll=None, scroll_id:str=None, fields:Iterable[str]=None,
-                    filters: Mapping[str, Mapping]=None, **kwargs) -> QueryResult:
+def query_documents(index: str, query_string: str = None, *, page: int = 0, per_page: int = 10,
+                    scroll=None, scroll_id: str = None, fields: Iterable[str] = None,
+                    filters: Mapping[str, Mapping] = None, **kwargs) -> Optional[QueryResult]:
     """
     Conduct a query_string query, returning the found documents
 
@@ -68,7 +68,7 @@ def query_documents(index: str, query_string: str=None, *, page:int=0, per_page:
     :param kwargs: Additional elements passed to Elasticsearch.search(), for example:
            sort=col1:desc,col2
 
-    :return: an iterator of article dicts
+    :return: a QueryResult, or None if there is not scroll result anymore
     """
     if scroll or scroll_id:
         # set scroll to default also if scroll_id is given but no scroll time is known
@@ -95,4 +95,3 @@ def query_documents(index: str, query_string: str=None, *, page:int=0, per_page:
         return QueryResult(data, n=result['hits']['total'], per_page=per_page, scroll_id=result['_scroll_id'])
     else:
         return QueryResult(data, n=result['hits']['total'], per_page=per_page,  page=page)
-

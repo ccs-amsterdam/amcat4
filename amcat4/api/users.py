@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request, abort, g
 
-from amcat4 import query, aggregate, auth
+from amcat4 import auth
 from http import HTTPStatus
 
 from amcat4.api.common import multi_auth, check_role, bad_request
@@ -71,4 +71,3 @@ def get_token():
     """
     token = g.current_user.create_token()
     return jsonify({"token": token.decode('ascii')})
-

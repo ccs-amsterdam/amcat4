@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, abort, g
+from flask import Blueprint, jsonify, request, abort
 
 
 from amcat4 import query, aggregate
@@ -29,8 +29,8 @@ def query_documents(index: str):
     """
     # [WvA] GET /documents might be more RESTful, but would not allow a POST query to the same endpoint
     args = {}
-    KNOWN_ARGS = ["q", "sort", "page", "per_page", "scroll", "scroll_id", "fields"]
-    for name in KNOWN_ARGS:
+    known_args = ["q", "sort", "page", "per_page", "scroll", "scroll_id", "fields"]
+    for name in known_args:
         if name in request.args:
             val = request.args[name]
             val = int(val) if name in ["page", "per_page"] else val
@@ -39,7 +39,7 @@ def query_documents(index: str):
             args[name] = val
     filters = {}
     for (f, v) in request.args.items():
-        if f not in KNOWN_ARGS:
+        if f not in known_args:
             if f.startswith("__"):
                 f = f[2:]
             if "__" in f:  # range query

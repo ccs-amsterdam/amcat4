@@ -1,10 +1,13 @@
 import logging
 import sys
+import io
+import csv
+import urllib.request
 
 from amcat4 import auth
 from amcat4.auth import Role, User
 from amcat4.db import initialize_if_needed
-from amcat4.elastic import setup_elastic, _create_index, upload_documents, _list_indices
+from amcat4.elastic import setup_elastic, upload_documents
 from amcat4.api import app
 from amcat4.index import create_index, Index
 
@@ -12,7 +15,6 @@ SOTU_INDEX = "state_of_the_union"
 
 
 def upload_test_data() -> Index:
-    import io, csv, urllib.request, sys
     url = "https://raw.githubusercontent.com/ccs-amsterdam/example-text-data/master/sotu.csv"
     url_open = urllib.request.urlopen(url)
     csv.field_size_limit(sys.maxsize)

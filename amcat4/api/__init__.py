@@ -13,5 +13,3 @@ CORS(app)
 app.register_blueprint(app_index)
 app.register_blueprint(app_query)
 app.register_blueprint(app_users)
-
-

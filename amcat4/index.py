@@ -103,4 +103,3 @@ def create_index(name: str, guest_role: Role = None, create_in_elastic=True, adm
     if admin:
         IndexRole.create(user=admin, index=index, role=Role.ADMIN)
     return index
-
