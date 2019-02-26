@@ -6,18 +6,20 @@ from amcat4.auth import Role, User
 from amcat4.db import initialize_if_needed
 from amcat4.elastic import setup_elastic, _create_index, upload_documents, _list_indices
 from amcat4.api import app
-
+from amcat4.index import create_index, Index
 
 SOTU_INDEX = "state_of_the_union"
 
 
-def upload_test_data():
+def upload_test_data() -> Index:
     import io, csv, urllib.request, sys
     url = "https://raw.githubusercontent.com/ccs-amsterdam/example-text-data/master/sotu.csv"
     url_open = urllib.request.urlopen(url)
     csv.field_size_limit(sys.maxsize)
     csvfile = csv.DictReader(io.TextIOWrapper(url_open, encoding='utf-8'))
-    _create_index(SOTU_INDEX)
+
+    index = create_index(SOTU_INDEX)
+
     docs = [dict(title="{Year}: {President}".format(**row),
                  text=row['Text'],
                  date=row['Date'],
@@ -27,7 +29,7 @@ def upload_test_data():
             for row in csvfile]
     columns = {"president": "keyword", "party": "keyword", "year": "int"}
     upload_documents(SOTU_INDEX, docs, columns)
-    return csvfile
+    return index
 
 
 if __name__ == '__main__':
@@ -41,7 +43,8 @@ if __name__ == '__main__':
         auth.create_user("admin", "admin", Role.ADMIN)
     if "--create-test-index" in sys.argv:
         # [WvA] I apologize for the argument parsing
-        if SOTU_INDEX not in _list_indices():
+        if not Index.select().where(Index.name == SOTU_INDEX):
             logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
-            upload_test_data()
+            admin = User.get(User.email == "admin")
+            upload_test_data().set_role(admin, Role.ADMIN)
     app.run(debug=True)
