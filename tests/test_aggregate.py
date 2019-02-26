@@ -20,7 +20,7 @@ def _y(y):
 
 def setup_module():
     create_index(_INDEX)
-    upload([{'cat': 'a', 'subcat': 'x', 'i': 1, 'date': '2018-01-01', 'text': 'a text'},
+    upload([{'cat': 'a', 'subcat': 'x', 'i': 1, 'date': '2018-01-01', 'text': 'a text yo'},
             {'cat': 'a', 'subcat': 'x', 'i': 2, 'date': '2018-02-01', 'text': 'another text'},
             {'cat': 'a', 'subcat': 'y', 'i': 11, 'date': '2020-01-01', 'text': 'john doe'},
             {'cat': 'b', 'subcat': 'y', 'i': 31, 'date': '2018-01-01', 'text': 'john too has texts'},
@@ -47,8 +47,9 @@ def test_aggregate():
 
 
 def test_aggregate_querystring():
-    assert_equals(q("cat", query_string='john'), {"a": 1, "b": 1})
-    assert_equals(q("cat", query_string='tex*'), {"a": 2, "b": 1})
+    assert_equals(q("cat", queries=['john']), {"a": 1, "b": 1})
+    assert_equals(q("cat", queries=['tex*']), {"a": 2, "b": 1})
+    assert_equals(q("cat", queries=['yo', 'doe']), {"a": 2})
 
 
 def test_interval():

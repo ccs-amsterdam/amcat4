@@ -14,14 +14,14 @@ app_query = Blueprint('app_query', __name__)
 def query_documents(index: str):
     """
     Query (or list) documents in this index. GET request parameters:
-    q (or query_string)- Elastic query string
+    q - Elastic query string. Argument may be repeated for multiple queries (treated as OR)
     sort - Comma separated list of fields to sort on, e.g. id,date:desc
     fields - Comma separated list of fields to return
     per_page - Number of results per page
     page - Page to fetch
     scroll - If given, create a new scroll_id to download all results in subsequent calls
     scroll_id - Get the next batch from this id.
-    Any addition GET parameters are interpreted as filters, and can be
+    Any additional GET parameters are interpreted as filters, and can be
     field=value for a term query, or field__xxx=value for a range query, with xxx in gte, gt, lte, lt
     Note that dates can use relative queries, see elasticsearch 'date math'
     In case of conflict between field names and (other) arguments, you may prepend a field name with __
@@ -29,17 +29,17 @@ def query_documents(index: str):
     """
     # [WvA] GET /documents might be more RESTful, but would not allow a POST query to the same endpoint
     args = {}
-    known_args = ["q", "sort", "page", "per_page", "scroll", "scroll_id", "fields"]
+    known_args = ["sort", "page", "per_page", "scroll", "scroll_id", "fields"]
     for name in known_args:
         if name in request.args:
             val = request.args[name]
             val = int(val) if name in ["page", "per_page"] else val
             val = val.split(",") if name in ["fields"] else val
-            name = "query_string" if name == "q" else name
+            name = "queries" if name == "q" else name
             args[name] = val
     filters = {}
     for (f, v) in request.args.items():
-        if f not in known_args:
+        if f not in known_args + ["q"]:
             if f.startswith("__"):
                 f = f[2:]
             if "__" in f:  # range query
@@ -51,6 +51,8 @@ def query_documents(index: str):
                 filters[f] = {"value": v}
     if filters:
         args['filters'] = filters
+    if "q" in request.args:
+        args['queries'] = request.args.getlist("q")
     r = query.query_documents(index, **args)
     if r is None:
         abort(404)
@@ -69,9 +71,7 @@ def query_documents_post(index: str):
     }}
     """
     params = request.get_json(force=True)
-    query_string = params.pop("query_string", None) or params.pop("q", None)
-    filters = params.pop("filters", None)
-    r = query.query_documents(index, query_string=query_string, filters=filters, **params)
+    r = query.query_documents(index, **params)
     if r is None:
         abort(404)
     return jsonify(r.as_dict()), HTTPStatus.OK

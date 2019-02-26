@@ -91,9 +91,11 @@ def test_index_roles():
     """Does a user get the correct role with an index?"""
 
 
-def _query(index, check=200, **options):
+def _query(index, *queries, check=200, **options):
     url = 'index/{}/query'.format(index)
-    if options:
+    if options or queries:
+        options = list(options.items()) if options else []
+        options += [("q", query) for query in queries]
         query = urllib.parse.urlencode(options)
         url = "{url}?{query}".format(**locals())
     return _get(url, check=check).json
@@ -129,8 +131,8 @@ def test_get_document(index):
 
 @with_index
 def test_documents(index):
-    def q(**args):
-        return {int(d['_id']) for d in _query(index, **args)['results']}
+    def q(*queries, **args):
+        return {int(d['_id']) for d in _query(index, *queries, **args)['results']}
     url = 'index/{}/query'.format(index)
     assert_equal(C.get(url).status_code, 401, "Reading documents requires authorization")
     assert_equal(C.post(url).status_code, 401, "Reading documents requires authorization")
@@ -138,10 +140,19 @@ def test_documents(index):
     assert_equal(q(), set())
     upload([{"title": "t", "text": t, "date": "2018-01-01"} for t in ["a test", "another text"]])
     assert_equal(q(), {0, 1})
-    assert_equal(q(q="test"), {0})
-    assert_equal(q(q="text"), {1})
-    assert_equal(q(q="te*"), {0, 1})
-    assert_equal(q(q="foo"), set())
+    assert_equal(q("test"), {0})
+    assert_equal(q("text"), {1})
+    assert_equal(q("te*"), {0, 1})
+    assert_equal(q("foo"), set())
+
+
+@with_index
+def test_get_multiple_queries(index):
+    def q(*queries, **args):
+        return {int(d['_id']) for d in _query(index, *queries, **args)['results']}
+
+    upload([{"title": "t", "text": t, "date": "2018-01-01"} for t in ["a test", "another text", "who?"]])
+    assert_equal(q("test", "text"), {0, 1})
 
 
 @with_index
@@ -228,9 +239,9 @@ def test_query_post(index):
             {'x': "a", 'date': '2012-02-01', 'i': 2},
             {'x': "b", 'date': '2012-03-01', 'i': 3}])
     assert_equal({h['i'] for h in q()['results']}, {1, 2, 3})
-    assert_equal({h['i'] for h in q(q="b")['results']}, {3})
-    assert_equal({h['i'] for h in q(q="a", filters={'date': {'value': '2012-02-01'}})['results']}, {2})
-    assert_equal({h['i'] for h in q(q="a", filters={'date': {'range': {'lt': '2012-02-01'}}})['results']}, {1})
+    assert_equal({h['i'] for h in q(queries=["b"])['results']}, {3})
+    assert_equal({h['i'] for h in q(queries=["a"], filters={'date': {'value': '2012-02-01'}})['results']}, {2})
+    assert_equal({h['i'] for h in q(queries=["a"], filters={'date': {'range': {'lt': '2012-02-01'}}})['results']}, {1})
 
     # test pagination and scrolling via post
     res = q(per_page=2, sort="i:desc")

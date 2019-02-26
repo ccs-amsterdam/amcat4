@@ -7,21 +7,28 @@ from typing import Mapping, Iterable, Optional
 from .elastic import DOCTYPE, es
 
 
-def build_body(query: Mapping = None, filters: Mapping = None):
+def build_body(queries: Iterable[str] = None, filters: Mapping = None):
     def parse_filter(field, filter_):
         if 'value' in filter_:
             return {"term": {field: filter_['value']}}
         elif 'range' in filter_:
             return {"range": {field: filter_['range']}}
 
-    if not query and not filters:
+    def parse_query(q):
+        return {"query_string": {"query": q}}
+
+    def parse_queries(qs):
+        if len(qs) == 1:
+            return parse_query(qs[0])
+        else:
+            return {"bool": {"should": [parse_query(q) for q in qs]}}
+
+    if not queries and not filters:
         return {'match_all': {}}
-    body = {"bool": {}}
-    if filters:
-        body['bool']['filter'] = [parse_filter(*item) for item in filters.items()]
-    if query:
-        body['bool']['must'] = query
-    return body
+    fs = [parse_filter(*item) for item in filters.items()] if filters else []
+    if queries:
+        fs.append(parse_queries(queries))
+    return {"bool": {"filter": fs}}
 
 
 class QueryResult:
@@ -44,7 +51,7 @@ class QueryResult:
         return dict(meta=meta, results=self.data)
 
 
-def query_documents(index: str, query_string: str = None, *, page: int = 0, per_page: int = 10,
+def query_documents(index: str, queries: Iterable[str] = None, *, page: int = 0, per_page: int = 10,
                     scroll=None, scroll_id: str = None, fields: Iterable[str] = None,
                     filters: Mapping[str, Mapping] = None, **kwargs) -> Optional[QueryResult]:
     """
@@ -56,7 +63,7 @@ def query_documents(index: str, query_string: str = None, *, page: int = 0, per_
     In case there are no more documents to scroll, it will return None
 
     :param index: The name of the index
-    :param query_string: The elasticsearch query_string
+    :param queries: The elasticsearch query_strings
     :param page: The number of the page to request (starting from zero)
     :param per_page: The number of hits per page
     :param scroll: if not None, will create a scroll request rather than a paginated request. Parmeter should
@@ -79,8 +86,7 @@ def query_documents(index: str, query_string: str = None, *, page: int = 0, per_
         if not result['hits']['hits']:
             return None
     else:
-        query = dict(query_string=dict(query=query_string)) if query_string else None
-        body = build_body(query, filters)
+        body = build_body(queries, filters)
         if fields:
             fields = fields if isinstance(fields, list) else list(fields)
             kwargs['_source'] = fields

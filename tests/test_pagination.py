@@ -40,7 +40,7 @@ def test_sort():
 
 
 def test_scroll():
-    r = query.query_documents(_TEST_INDEX, query_string="odd", scroll='5m', per_page=4)
+    r = query.query_documents(_TEST_INDEX, queries=["odd"], scroll='5m', per_page=4)
     assert_equal(len(r.data), 4)
     assert_equal(r.total_count, 10)
     assert_equal(r.page_count, 3)

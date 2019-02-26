@@ -23,8 +23,10 @@ def teardown_module():
     delete_index()
 
 
-def q(*args, **kwargs) -> Set[int]:
-    res = query.query_documents(_TEST_INDEX, *args, **kwargs)
+def q(q=None, **kwargs) -> Set[int]:
+    if q is not None:
+        kwargs['queries'] = [q]
+    res = query.query_documents(_TEST_INDEX, **kwargs)
     return {int(h['_id']) for h in res.data}
 
 
@@ -32,6 +34,8 @@ def test_query():
     assert_equal(q("test"), {1, 2})
     assert_equal(q("test*"), {1, 2, 3})
     assert_equal(q('"a text"'), {0})
+
+    assert_equal(q(queries=["this", "toto"]), {0, 2, 3})
 
     assert_equal(q(filters={"title": {"value": "title"}}),  {0, 1})
     assert_equal(q("this", filters={"title": {"value": "title"}}),  {0})
@@ -46,5 +50,5 @@ def test_range_query():
 
 
 def test_fields():
-    res = query.query_documents(_TEST_INDEX, query_string="test", fields=["cat", "title"])
+    res = query.query_documents(_TEST_INDEX, queries=["test"], fields=["cat", "title"])
     assert_equal(set(res.data[0].keys()), {"cat", "title", "_id"})
