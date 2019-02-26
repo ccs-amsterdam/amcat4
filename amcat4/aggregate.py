@@ -41,7 +41,7 @@ class _Axis:
         return value
 
 
-def _get_aggregates(index, sources, filters, after_key=None):
+def _get_aggregates(index, sources, query_string, filters, after_key=None):
     """
     Recursively get all buckets from a composite query
     """
@@ -49,17 +49,18 @@ def _get_aggregates(index, sources, filters, after_key=None):
     #       This might get us in trouble if someone e.g. aggregates on url or day for a large corpus
     after = {"after": after_key} if after_key else {}
     body = {"size": 0, "aggregations": {"aggr": {"composite": dict(sources=sources, **after)}}}
-    if filters:
-        body['query'] = build_body(filters=filters)
+    if filters or query_string:
+        query = dict(query_string=dict(query=query_string)) if query_string else None
+        body['query'] = build_body(query=query, filters=filters)
     result = es.search(index, DOCTYPE, body=body)['aggregations']['aggr']
     yield from result['buckets']
     after_key = result.get('after_key')
     if after_key:
-        yield from _get_aggregates(index, sources, filters, after_key)
+        yield from _get_aggregates(index, sources, query_string, filters, after_key)
 
 
 def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
-                    value="n",
+                    value="n", query_string: str = None,
                     filters: Mapping[str, Mapping] = None) -> Iterable[Tuple]:
     """
     Conduct an aggregate query.
@@ -70,6 +71,7 @@ def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
     :param axis: The primary aggregation axis, should be the name of a field or a dict with keys 'field', 'interval'
     :param axes: Optional additional axes
     :param value: Name for the value 'column', default n. This might be expanded for other aggregate values (avg etc)
+    :param query_string: Optional query string
     :param filters: if not None, a dict of filters: {field: {'value': value}} or
                     {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
     :return: a sequence of (axis-value, [axis2-value, ...], aggregate-value) tuples
@@ -78,7 +80,7 @@ def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
     names = [x.field for x in axes] + [value]
     nt = namedtuple("Bucket", names)
     sources = [axis.query() for axis in axes]
-    for bucket in _get_aggregates(index, sources, filters):
+    for bucket in _get_aggregates(index, sources, query_string, filters):
         result = [axis.postprocess(bucket['key'][axis.field]) for axis in axes]
         result += [bucket['doc_count']]
         yield nt(*result)
