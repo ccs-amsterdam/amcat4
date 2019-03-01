@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/ccs-amsterdam/amcat4.svg?branch=master)](https://travis-ci.org/ccs-amsterdam/amcat4)
+
 # AmCAT4
 
 API server for AmCAT4 Text Analysis
