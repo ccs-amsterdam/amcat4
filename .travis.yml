@@ -10,5 +10,5 @@ before_script:
   - echo "deb https://artifacts.elastic.co/packages/6.x/apt stable main" | sudo tee -a /etc/apt/sources.list
   - sudo apt-get update -qq
   - sudo apt-get install -y elasticsearch
-  - sudo systemctl start elasticsearch.service
+  - sudo /etc/init.d/elasticsearch start
   - until $(curl --output /dev/null --silent --head --fail http://localhost:9200); do printf '.'; sleep 1; done
