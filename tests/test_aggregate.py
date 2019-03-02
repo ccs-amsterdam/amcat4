@@ -72,7 +72,7 @@ def test_filtered_aggregate():
 
 
 @with_index
-def test_many_buckets(index):
+def test_many_buckets(index_name):
     upload([{'cat': x} for x in string.ascii_letters*4], columns={'cat': 'keyword'})
-    assert_equals(q('cat', index=index), {x: 4 for x in string.ascii_letters})
+    assert_equals(q('cat', index=index_name), {x: 4 for x in string.ascii_letters})
 

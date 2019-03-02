@@ -22,12 +22,12 @@ def test_create_delete_list_index():
 
 
 @with_index
-def test_upload_retrieve_document(index):
+def test_upload_retrieve_document(index_name):
     a = dict(text="text", title="title", date="2018-01-01")
-    ids = elastic.upload_documents(index, [a])
+    ids = elastic.upload_documents(index_name, [a])
     assert_equal([elastic._get_hash(a)], ids)
 
-    d = elastic.get_document(index, ids[0])
+    d = elastic.get_document(index_name, ids[0])
     assert_equal(d['title'], a['title'])
     # todo check date type
 
@@ -35,12 +35,12 @@ def test_upload_retrieve_document(index):
 
 
 @with_index
-def test_fields(index):
-    assert_equal(get_fields(index), dict(title='text', date='date', text='text', url='keyword'))
+def test_fields(index_name):
+    assert_equal(get_fields(index_name), dict(title='text', date='date', text='text', url='keyword'))
 
 
 @with_index
-def test_values(index):
+def test_values(index_name):
     upload([dict(bla=x) for x in ["odd", "even", "even"] * 10], columns={"bla": "keyword"})
-    assert_equal(set(elastic.get_values(index, "bla")), {"odd", "even"})
+    assert_equal(set(elastic.get_values(index_name, "bla")), {"odd", "even"})
 

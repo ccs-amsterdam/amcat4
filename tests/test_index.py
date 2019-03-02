@@ -36,10 +36,10 @@ def test_create_index():
 
 
 @with_index
-def test_roles(name):
+def test_roles(index_name):
     user_admin = create_user("admin", "admin", Role.ADMIN)
     user_noob = create_user("noob", "admin", None)
-    ix = index.create_index(name, guest_role=None, admin=None, create_in_elastic=False)
+    ix = index.create_index(index_name, guest_role=None, admin=None, create_in_elastic=False)
 
     def test(u, roles):
         for role in Role:
@@ -58,7 +58,7 @@ def test_roles(name):
     ix.delete_index(delete_from_elastic=False)
     test(user_noob, [])
     test(user_admin, [])
-    ix = index.create_index(name, guest_role=Role.READER, admin=user_admin, create_in_elastic=False)
+    ix = index.create_index(index_name, guest_role=Role.READER, admin=user_admin, create_in_elastic=False)
     test(user_noob, [Role.METAREADER, Role.READER])
     test(user_admin, [Role.METAREADER, Role.READER, Role.WRITER, Role.ADMIN])
 
