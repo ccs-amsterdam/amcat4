@@ -1,7 +1,7 @@
 import urllib
 from collections import namedtuple
 
-from amcat4.auth import verify_token
+from amcat4.auth import verify_token, create_user, User, verify_user, Role
 from nose.tools import assert_equal, assert_is_not_none
 
 from tests.tools import QueryTestCase, ApiTestCase
@@ -50,3 +50,31 @@ class TestQuery(ApiTestCase):
         assert_equal(self.getuser(u, as_user=self.writer), {"email": u.email, "global_role": 'ADMIN'})
         self.delete("/users/" + u.email, user=self.writer, check=401, check_error="WRITER cannot delete ADMIN")
         self.delete("/users/" + u.email, user=self.admin)
+
+    def test_modify_user_auth(self):
+        """Are the authentication rules for changing users in place"""
+        self.put('/users/unknown', check=401, check_error="Creating user should require auth")
+        self.put('/users/' + self.user.email, json={'global_role': 'writer'},
+                 check=401, check_error="Unprivileged users can't change their role")
+        self.put('/users/' + self.writer.email, json={'email': 'new'},
+                 check=401, check_error="Unprivileged users can't change other users")
+        self.put('/users/' + self.user.email, json={'global_role': 'writer'},
+                 check=401, check_error="Unprivileged users can't change their role")
+        self.put('/users/' + self.admin.email, user=self.writer,
+                 check=401, check_error="Writers can't change admins")
+        self.put('/users/' + self.user.email, user=self.writer, json={'global_role': 'admin'},
+                 check=401, check_error="Writers can't create admins")
+
+    def test_modify_user(self):
+        """Can we change a user"""
+        u = create_user("testmail", "password")
+        self.put('/users/testmail', user=u, json={'email': 'changed', 'password': 'pietje'})
+        assert_equal(User.get(User.id == u.id).email, 'changed')
+        assert_equal(verify_user(email='changed', password='pietje'), u)
+        self.put('/users/changed', user=self.writer, json={'email': 'testmail', 'global_role': 'writer'})
+        assert_equal(User.get(User.id == u.id).role, Role.WRITER)
+        self.put('/users/testmail', user=self.admin, json={'global_role': 'admin'})
+        assert_equal(User.get(User.id == u.id).role, Role.ADMIN)
+
+    def test_index_roles(self):
+        """Can we add/mofify/remove user roles on an index?"""

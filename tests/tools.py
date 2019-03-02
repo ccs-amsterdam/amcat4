@@ -106,6 +106,9 @@ class ApiTestCase:
     def delete(self, url, check: Optional[int] = 204, **kwargs):
         return self.request(url, method='delete', check=check, **kwargs)
 
+    def put(self, url, check: Optional[int] = 200, **kwargs):
+        return self.request(url, method='put', check=check, **kwargs)
+
 
 class QueryTestCase(ApiTestCase):
     def query(self, *queries, check=200, check_error=None, user='test_user', **options):

@@ -56,14 +56,17 @@ class User(Model):
         return self.global_role and Role(self.global_role)
 
 
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
 def create_user(email: str, password: str, global_role: Role = None) -> User:
     """
     Create and return a new User with the given information
     """
     if global_role not in [None, Role.WRITER, Role.ADMIN]:
         raise ValueError("Global roles can only be None, Writer, or Admin")
-    hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    return User.create(email=email, password=hashed, global_role=global_role)
+    return User.create(email=email, password=hash_password(password), global_role=global_role)
 
 
 def verify_user(email: str, password: str) -> Optional[User]:
