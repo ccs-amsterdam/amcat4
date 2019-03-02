@@ -11,7 +11,7 @@ setup(
     packages=["amcat4"],
     include_package_data=True,
     zip_safe=False,
-    keywords = ["API", "text"],
+    keywords=["API", "text"],
     classifiers=[
         "Intended Audience :: Science/Research",
         "License :: OSI Approved :: MIT License",
@@ -25,5 +25,11 @@ setup(
         "bcrypt",
         "peewee",
         "itsdangerous",
-    ]
+    ],
+    extras_require={
+        'dev': [
+            'nose',
+            'codecov',
+        ]
+    },
 )

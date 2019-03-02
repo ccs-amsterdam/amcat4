@@ -4,7 +4,8 @@ python:
 install:
   - pip install -e .[dev]
 script:
-  - nosetests
+  - nosetests --cover-package=amcat4
+  - codecov
 before_script:
   - wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -
   - echo "deb https://artifacts.elastic.co/packages/6.x/apt stable main" | sudo tee -a /etc/apt/sources.list
