@@ -1,11 +1,13 @@
 import random
 import string
+from typing import Iterable
 
-from nose.tools import assert_is_not_none, assert_equals, assert_false, assert_true, assert_is_none
+from nose.tools import assert_is_not_none, assert_equals, assert_false, assert_true, assert_is_none, assert_set_equal
 
 from amcat4.auth import verify_user, create_user, verify_token, Role
 from amcat4.elastic import _delete_index
 from amcat4.index import create_index
+from tests.tools import assert_set_contains
 
 
 def test_create_check_user():
@@ -43,17 +45,15 @@ def test_indices():
 
     ix1 = create_index(ix1_name)
     ix2 = create_index(ix2_name, guest_role=Role.READER)
+    create_index(ix2_name+"x", guest_role=Role.READER)  # make sure other indices don't mess up test
     try:
         email = "{}@example.org".format(name)
         u = create_user(email, 'password')
         assert_equals(set(u.indices(include_guest=False)), set())
-        assert_equals(set(u.indices(include_guest=True)), {ix2})
+        assert_set_contains(u.indices(include_guest=True), {ix2})
         ix1.set_role(u, Role.WRITER)
         assert_equals(set(u.indices(include_guest=False)), {ix1})
-        assert_equals(set(u.indices(include_guest=True)), {ix1, ix2})
-        assert_equals(len(list(u.indices(include_guest=True))), 2)
-
-
+        assert_set_contains(u.indices(include_guest=True), {ix1, ix2})
     finally:
         _delete_index(ix1_name, ignore_missing=True)
         _delete_index(ix2_name, ignore_missing=True)

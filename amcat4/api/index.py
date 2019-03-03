@@ -6,8 +6,20 @@ from amcat4.auth import Role
 from http import HTTPStatus
 
 from amcat4.api.common import multi_auth, check_role
+from amcat4.index import Index
 
 app_index = Blueprint('app_index', __name__)
+
+
+def _index(ix:str) -> Index:
+    try:
+        return Index.get(Index.name == ix)
+    except Index.DoesNotExist:
+        abort(404)
+
+
+def index_json(ix: Index):
+    return jsonify({'name': ix.name, 'guest_role': ix.guest_role and Role(ix.guest_role).name})
 
 
 @app_index.route("/index/", methods=['GET'])
@@ -16,7 +28,7 @@ def index_list():
     """
     List index from this server. Returns a list of dicts containing name, role, and guest attributes
     """
-    result = [dict(name=ix.name) for ix in (g.current_user.indices(include_guest=True))]
+    result = [dict(name=ix.name, role=role.name) for ix, role in g.current_user.indices(include_guest=True).items()]
     return jsonify(result)
 
 
@@ -24,13 +36,46 @@ def index_list():
 @multi_auth.login_required
 def create_index():
     """
-    Create a new index
+    Create a new index, setting the current user to admin (owner).
+    POST data should be json containing name and optional guest_role
     """
     check_role(Role.WRITER)
     data = request.get_json(force=True)
     name = data['name']
-    ix = index.create_index(name, admin=g.current_user)
-    return jsonify({'name': ix.name}), HTTPStatus.CREATED
+    guest_role = Role[data['guest_role'].upper()] if 'guest_role' in data else None
+    ix = index.create_index(name, admin=g.current_user, guest_role=guest_role)
+    return index_json(ix), HTTPStatus.CREATED
+
+
+@app_index.route("/index/<ix>", methods=['PUT'])
+@multi_auth.login_required
+def modify_index(ix: str):
+    """
+    Modify the index. Currently only supports modifying guest_role
+    POST data should be json containing the changed values (i.e. guest_role)
+    """
+    ix = _index(ix)
+    check_role(Role.WRITER, ix)
+    data = request.get_json(force=True)
+    if 'guest_role' in data:
+        guest_role = Role[data['guest_role'].upper()] if data['guest_role'] else None
+        if guest_role == Role.ADMIN:
+            check_role(Role.ADMIN, ix)
+        ix.guest_role = guest_role
+    ix.save()
+    return index_json(ix)
+
+
+@app_index.route("/index/<ix>", methods=['GET'])
+@multi_auth.login_required
+def view_index(ix: str):
+    """
+    Modify the index. Currently only supports modifying guest_role
+    POST data should be json containing the changed values (i.e. guest_role)
+    """
+    ix = _index(ix)
+    check_role(Role.METAREADER, ix)
+    return index_json(ix)
 
 
 @app_index.route("/index/<ix>/documents", methods=['POST'])
@@ -41,6 +86,7 @@ def upload_documents(ix: str):
     JSON payload should be a list of documents with at least a title, date, text and any optional attributes
     Note: The unique elastic ID will be the hash of title, date, text and url.
     """
+    check_role(Role.WRITER, ix)
     documents = request.get_json(force=True)
     result = elastic.upload_documents(ix, documents)
     return jsonify(result), HTTPStatus.CREATED
@@ -52,6 +98,7 @@ def get_document(ix: str, docid: str):
     """
     Get a single document by id
     """
+    check_role(Role.READER, ix)
     try:
         doc = elastic.get_document(ix, docid)
         return jsonify(doc)

@@ -5,17 +5,17 @@ import urllib
 from functools import wraps
 from typing import Optional, Mapping, Iterable
 
-from nose.tools import assert_equal
+from nose.tools import assert_equal, assert_false
 from peewee import Index
 
 from amcat4.auth import create_user, User, Role
 
-from amcat4 import elastic
+from amcat4 import elastic, index
 
 _TEST_INDEX = 'amcat4_testindex__'
 
 
-def create_index(name=_TEST_INDEX):
+def create_index(name=_TEST_INDEX) -> str:
     elastic._delete_index(name, ignore_missing=True)
     elastic._create_index(name)
     return name
@@ -39,7 +39,7 @@ def with_index(f):
     return wrapper
 
 
-def upload(docs, index=_TEST_INDEX, **kwargs):
+def upload(docs, index_name: str = _TEST_INDEX, **kwargs):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
@@ -48,9 +48,15 @@ def upload(docs, index=_TEST_INDEX, **kwargs):
         for k, v in defaults.items():
             if k not in doc:
                 doc[k] = v
-    ids = elastic.upload_documents(index, docs, **kwargs)
+    ids = elastic.upload_documents(index_name, docs, **kwargs)
     elastic.refresh()
     return ids
+
+
+def assert_set_contains(superset: Iterable, subset: Iterable):
+    """Test whether all elements of subset are contained in superset"""
+    remainder = set(subset) - set(superset)
+    assert_false(remainder, "Elements in second value not contained in first: {}".format(remainder))
 
 
 class ApiTestCase:
@@ -71,14 +77,18 @@ class ApiTestCase:
         cls.user = create_user("__test__user__"+rnd_suffix, "password")
         cls.admin = create_user("__test__admin__"+rnd_suffix, "password", global_role=Role.ADMIN)
         cls.writer = create_user("__test__writer__"+rnd_suffix, "password", global_role=Role.WRITER)
-        cls.index = create_index()
+        cls.index_name = create_index()
+        cls.index = index.create_index(cls.index_name, create_in_elastic=False, admin=cls.admin)
         if cls.documents:
-            upload(cls.documents, cls.index, columns=getattr(cls, 'columns', None))
+            upload(cls.documents, cls.index.name, columns=getattr(cls, 'columns', None))
 
     @classmethod
     def teardown_class(cls):
+        if cls.index_name:
+            delete_index(cls.index_name)
         if cls.index:
-            delete_index()
+            cls.index.delete_instance()
+
 
     def request(self, url, method='get', user='test_user', password="password",
                 check=None, check_error=None, **kwargs):
@@ -112,7 +122,7 @@ class ApiTestCase:
 
 class QueryTestCase(ApiTestCase):
     def query(self, *queries, check=200, check_error=None, user='test_user', **options):
-        url = 'index/{}/query'.format(self.index)
+        url = 'index/{}/query'.format(self.index_name)
         if options or queries:
             options = list(options.items()) if options else []
             options += [("q", query) for query in queries]
@@ -121,7 +131,7 @@ class QueryTestCase(ApiTestCase):
         return self.get(url, user=user, check=check, check_error=check_error).json
 
     def query_post(self, *queries, endpoint='query', check=200, check_error=None,  **json):
-        url = 'index/{self.index}/{endpoint}'.format(**locals())
+        url = 'index/{self.index_name}/{endpoint}'.format(**locals())
         if queries:
             json['queries'] = queries
         return self.post(url, check=check, json=json, check_error=check_error).json

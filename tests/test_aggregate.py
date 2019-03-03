@@ -24,7 +24,7 @@ def setup_module():
             {'cat': 'a', 'subcat': 'x', 'i': 2, 'date': '2018-02-01', 'text': 'another text'},
             {'cat': 'a', 'subcat': 'y', 'i': 11, 'date': '2020-01-01', 'text': 'john doe'},
             {'cat': 'b', 'subcat': 'y', 'i': 31, 'date': '2018-01-01', 'text': 'john too has texts'},
-            ], index=_INDEX, columns={'cat': 'keyword', 'subcat': 'keyword'})
+            ], index_name=_INDEX, columns={'cat': 'keyword', 'subcat': 'keyword'})
 
 
 def teardown_module():
