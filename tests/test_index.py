@@ -1,7 +1,8 @@
 import random
 import string
 
-from nose.tools import assert_is_not_none, assert_equals, assert_false, assert_true, assert_is_none, assert_raises
+from nose.tools import assert_is_not_none, assert_equals, assert_false, assert_true, assert_is_none, assert_raises, \
+    assert_not_in
 
 from amcat4 import index, elastic
 from amcat4.auth import create_user, Role, User
@@ -12,7 +13,7 @@ def test_create_index():
     name = "amcat4_test__" + ''.join(random.choices(string.ascii_lowercase, k=16))
     # Index should not exist, and we can't register (ie create in amcat4 but not in elastic) non-existing indices
     assert_false(elastic.index_exists(name))
-    assert_raises(Exception, index.create_index, name, create_in_elastic=False)  # can't register existing index
+    assert_raises(Exception, index.create_index, name, create_in_elastic=False)  # can't register non-existing index
 
     # Create the index
     ix = index.create_index(name)
@@ -47,18 +48,31 @@ def test_roles(index_name):
             assert_equals(ix.has_role(u, role), should_have,
                           "User {} should {}have role {!r}".format(u.email, "" if should_have else "not ", role.name))
 
+    # Index should not be visible to the user
+    assert_not_in(ix, user_noob.indices(include_guest=True))
     test(user_noob, [])
     test(user_admin, [])
+
+    # Give user a role, index should now be visible
     ix.set_role(user_noob, Role.METAREADER)
+    assert_equals(Role.METAREADER, user_noob.indices(include_guest=False)[ix])
+    assert_equals(Role.METAREADER, user_noob.indices(include_guest=True)[ix])
     test(user_noob, {Role.METAREADER})
     test(user_admin, [])
     ix.set_role(user_noob, Role.READER)
     test(user_noob, {Role.METAREADER, Role.READER})
 
+    # Delete index
     ix.delete_index(delete_from_elastic=False)
     test(user_noob, [])
     test(user_admin, [])
+
+    # Recreate index with gues role and admin.
     ix = index.create_index(index_name, guest_role=Role.READER, admin=user_admin, create_in_elastic=False)
+    assert_not_in(ix, user_noob.indices(include_guest=False))
+    assert_equals(Role.READER, user_noob.indices(include_guest=True)[ix])
+    assert_equals(Role.ADMIN, user_admin.indices(include_guest=False)[ix])
+    assert_equals(Role.ADMIN, user_admin.indices(include_guest=True)[ix])
     test(user_noob, [Role.METAREADER, Role.READER])
     test(user_admin, [Role.METAREADER, Role.READER, Role.WRITER, Role.ADMIN])
 

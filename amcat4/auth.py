@@ -6,7 +6,7 @@ See amcat4.index for authorisation rules
 """
 import logging
 from enum import IntEnum
-from typing import Optional, Iterable
+from typing import Optional, Iterable, Mapping
 
 import bcrypt
 from itsdangerous import TimedJSONWebSignatureSerializer, SignatureExpired, BadSignature
@@ -44,11 +44,13 @@ class User(Model):
         """
         return self.global_role and self.global_role >= role
 
-    def indices(self, include_guest: bool = False) -> Iterable['Index']:
+    def indices(self, include_guest: bool = False) -> Mapping['Index', Role]:
         from amcat4.index import Index  # Prevent circular import
-        indices = {i.index for i in self.indexrole_set.join(Index)}
+        indices = {i.index: Role(i.role) for i in self.indexrole_set.join(Index)}
         if include_guest:
-            indices |= set(Index.select().where(Index.guest_role != None))  # NOQA
+            for i in Index.select().where(Index.guest_role != None):
+                if i not in indices:
+                    indices[i] = Role(i.guest_role)
         return indices
 
     @property

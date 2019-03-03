@@ -75,6 +75,3 @@ class TestQuery(ApiTestCase):
         assert_equal(User.get(User.id == u.id).role, Role.WRITER)
         self.put('/users/testmail', user=self.admin, json={'global_role': 'admin'})
         assert_equal(User.get(User.id == u.id).role, Role.ADMIN)
-
-    def test_index_roles(self):
-        """Can we add/mofify/remove user roles on an index?"""
