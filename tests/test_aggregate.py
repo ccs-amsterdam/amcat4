@@ -1,5 +1,6 @@
 import string
 from datetime import datetime
+import time
 
 from nose.tools import assert_equals
 
@@ -25,7 +26,7 @@ def setup_module():
             {'cat': 'a', 'subcat': 'y', 'i': 11, 'date': '2020-01-01', 'text': 'john doe'},
             {'cat': 'b', 'subcat': 'y', 'i': 31, 'date': '2018-01-01', 'text': 'john too has texts'},
             ], index_name=_INDEX, columns={'cat': 'keyword', 'subcat': 'keyword'})
-
+    time.sleep(5)
 
 def teardown_module():
     delete_index(_INDEX)
@@ -74,5 +75,5 @@ def test_filtered_aggregate():
 @with_index
 def test_many_buckets(index_name):
     upload([{'cat': x} for x in string.ascii_letters*4], columns={'cat': 'keyword'})
+    # time.sleep(5)
     assert_equals(q('cat', index=index_name), {x: 4 for x in string.ascii_letters})
-

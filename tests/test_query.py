@@ -1,4 +1,5 @@
 from typing import Set
+import time
 
 from nose.tools import assert_equal
 
@@ -17,6 +18,8 @@ _TEST_DOCUMENTS = [
 def setup_module():
     create_index()
     upload(_TEST_DOCUMENTS, columns={'cat': 'keyword', 'subcat': 'keyword', 'i': 'int'})
+    # somehow the process of creating shards takes long
+    # time.sleep(5)
 
 
 def teardown_module():

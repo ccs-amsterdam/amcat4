@@ -1,4 +1,5 @@
 from typing import Iterable, List
+import time
 
 from nose.tools import assert_equal, assert_is_none
 
@@ -9,6 +10,7 @@ from tests.tools import create_index, upload, delete_index, _TEST_INDEX
 def setup_module():
     create_index()
     upload([dict(id=i, pagenr=abs(10-i), text=text) for (i, text) in enumerate(["odd", "even"]*10)])
+    # time.sleep(5)
 
 
 def teardown_module():
@@ -42,7 +44,7 @@ def test_sort():
 def test_scroll():
     r = query.query_documents(_TEST_INDEX, queries=["odd"], scroll='5m', per_page=4)
     assert_equal(len(r.data), 4)
-    assert_equal(r.total_count, 10)
+    assert_equal(r.total_count.get("value"), 10)
     assert_equal(r.page_count, 3)
     allids = list(r.data)
 

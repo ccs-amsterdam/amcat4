@@ -34,7 +34,7 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None):
 class QueryResult:
     def __init__(self, data, n=None, per_page=None, page=None, page_count=None, scroll_id=None):
         if n and page_count is None:
-            page_count = ceil(n / per_page)
+            page_count = ceil(n.get("value") / per_page)
         self.data = data
         self.total_count = n
         self.page = page
@@ -56,12 +56,10 @@ def query_documents(index: str, queries: Iterable[str] = None, *, page: int = 0,
                     filters: Mapping[str, Mapping] = None, **kwargs) -> Optional[QueryResult]:
     """
     Conduct a query_string query, returning the found documents
-
     It will return at most per_page results.
     In normal (paginated) mode, the next batch can be  requested by incrementing the page parameter.
     If the scroll parameter is given, the result will contain a scroll_id which can be used to get the next batch.
     In case there are no more documents to scroll, it will return None
-
     :param index: The name of the index
     :param queries: The elasticsearch query_strings
     :param page: The number of the page to request (starting from zero)
@@ -74,7 +72,6 @@ def query_documents(index: str, queries: Iterable[str] = None, *, page: int = 0,
                     {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
     :param kwargs: Additional elements passed to Elasticsearch.search(), for example:
            sort=col1:desc,col2
-
     :return: a QueryResult, or None if there is not scroll result anymore
     """
     if scroll or scroll_id:

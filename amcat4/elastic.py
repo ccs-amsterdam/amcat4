@@ -17,7 +17,7 @@ DEFAULT_QUERY_FIELDS = HASH_FIELDS
 
 ES_MAPPINGS = {
    'int': {"type": "long"},
-   'date': {"type": "date", "format": "dateOptionalTime"},
+   'date': {"type": "date", "format": "strict_date_optional_time"},
    'num': {"type": "double"},
    'keyword': {"type": "keyword"},
    'text': {"type": "text"},
@@ -56,8 +56,12 @@ def _create_index(name: str) -> None:
               'title': ES_MAPPINGS['text'],
               'date': ES_MAPPINGS['date'],
               'url': ES_MAPPINGS['keyword']}
-    body = {'mappings': {DOCTYPE: {'properties': fields}}}
-    es.indices.create(name, body=body)
+    body = {'mappings':
+                {DOCTYPE:
+                     {'properties': fields}}}
+    # body = {'mappings':
+    #             {'properties': fields}}
+    es.indices.create(name, body=body, include_type_name=True)
 
 
 def _delete_index(name: str, ignore_missing=False) -> None:
@@ -111,7 +115,7 @@ def upload_documents(index: str, documents, columns: Mapping[str, str] = None) -
     if columns:
         mapping = {field: ES_MAPPINGS[type_] for (field, type_) in columns.items()}
         body = {"properties": mapping}
-        es.indices.put_mapping(index=index, doc_type=DOCTYPE, body=body)
+        es.indices.put_mapping(index=index, doc_type=DOCTYPE, body=body, include_type_name=True)
 
     actions = list(_get_es_actions(index, DOCTYPE, documents))
     bulk(es, actions)
@@ -135,10 +139,9 @@ def get_fields(index: str) -> Mapping[str, str]:
     :param index:
     :return: a dictionary of field: type
     """
-    r = es.indices.get_mapping(index, DOCTYPE)
-    fields = r[index]['mappings'][DOCTYPE]['properties']
-    return {k: v['type'] for (k, v) in fields.items()}
-
+    r = es.indices.get_mapping(index)
+    fields = r[index]['mappings']['properties']
+    return {k:v['type'] for (k,v) in fields.items()}
 
 def field_type(index: str, field_name: str) -> str:
     """
