@@ -12,7 +12,7 @@ API server for AmCAT4 Text Analysis
 AmCAT requires an elasticsearch instance. The easiest way to run one for development is using docker:
 
 ```
-sudo docker run -p 9200:9200 -p 9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:6.5.4
+sudo docker run --name elastic7 -dp 9200:9200 -p 9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:7.11.1
 ```
 
 ## From PyPi
