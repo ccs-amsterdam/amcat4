@@ -4,7 +4,7 @@ All things query
 from math import ceil
 from typing import Mapping, Iterable, Optional
 
-from .elastic import DOCTYPE, es
+from .elastic import es
 
 
 def build_body(queries: Iterable[str] = None, filters: Mapping = None):
@@ -89,7 +89,7 @@ def query_documents(index: str, queries: Iterable[str] = None, *, page: int = 0,
             kwargs['_source'] = fields
         if not scroll:
             kwargs['from_'] = page * per_page
-        result = es.search(index=index, doc_type=DOCTYPE, body={'query': body}, size=per_page, **kwargs)
+        result = es.search(index=index, body={'query': body}, size=per_page, **kwargs)
 
     data = [dict(_id=hit['_id'], **hit['_source']) for hit in result['hits']['hits']]
     if scroll_id:

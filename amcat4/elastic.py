@@ -8,7 +8,6 @@ from elasticsearch.helpers import bulk
 
 es = Elasticsearch()
 
-DOCTYPE = "article"
 SYS_INDEX = "amcat4system"
 SYS_MAPPING = "sys"
 REQUIRED_FIELDS = ["title", "date", "text"]
@@ -57,11 +56,10 @@ def _create_index(name: str) -> None:
               'date': ES_MAPPINGS['date'],
               'url': ES_MAPPINGS['keyword']}
     body = {'mappings':
-                {DOCTYPE:
-                     {'properties': fields}}}
+                     {'properties': fields}}
     # body = {'mappings':
     #             {'properties': fields}}
-    es.indices.create(index=name, body=body, include_type_name=True)
+    es.indices.create(index=name, body=body)
 
 
 def _delete_index(name: str, ignore_missing=False) -> None:
@@ -85,7 +83,7 @@ def _get_hash(document):
     return m.hexdigest()
 
 
-def _get_es_actions(index, doc_type, documents):
+def _get_es_actions(index, documents):
     """
     Create the Elasticsearch bulk actions from article dicts.
     If you provide a list to ID_SEQ_LIST, the hashes are copied there
@@ -98,7 +96,6 @@ def _get_es_actions(index, doc_type, documents):
             document['_id'] = _get_hash(document)
         yield {
             "_index": index,
-            "_type": doc_type,
             **document
         }
 
@@ -115,9 +112,9 @@ def upload_documents(index: str, documents, columns: Mapping[str, str] = None) -
     if columns:
         mapping = {field: ES_MAPPINGS[type_] for (field, type_) in columns.items()}
         body = {"properties": mapping}
-        es.indices.put_mapping(index=index, doc_type=DOCTYPE, body=body, include_type_name=True)
+        es.indices.put_mapping(index=index, body=body)
 
-    actions = list(_get_es_actions(index, DOCTYPE, documents))
+    actions = list(_get_es_actions(index, documents))
     bulk(es, actions)
     return [action['_id'] for action in actions]
 
@@ -130,7 +127,7 @@ def get_document(index: str, doc_id: str) -> dict:
     :param doc_id: The document id (hash)
     :return: the source dict of the document
     """
-    return es.get(index=index, doc_type=DOCTYPE, id=doc_id)['_source']
+    return es.get(index=index, id=doc_id)['_source']
 
 
 def get_fields(index: str) -> Mapping[str, str]:
@@ -161,7 +158,7 @@ def get_values(index: str, field: str) -> List[str]:
     :return: A list of values
     """
     body = {"size": 0, "aggs": {"values": {"terms": {"field": field}}}}
-    r = es.search(index=index, doc_type=DOCTYPE, body=body)
+    r = es.search(index=index, body=body)
     return [x["key"] for x in r["aggregations"]["values"]["buckets"]]
 
 

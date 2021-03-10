@@ -5,7 +5,7 @@ from collections import namedtuple
 from datetime import datetime
 from typing import Mapping, Iterable, Union
 
-from amcat4.elastic import DOCTYPE, es, field_type
+from amcat4.elastic import es, field_type
 from amcat4.query import build_body
 
 
@@ -49,7 +49,7 @@ def _get_aggregates(index, sources, queries, filters, after_key=None):
     body = {"size": 0, "aggregations": {"aggr": {"composite": dict(sources=sources, **after)}}}
     if filters or queries:
         body['query'] = build_body(queries=queries, filters=filters)
-    result = es.search(index=index, doc_type=DOCTYPE, body=body)['aggregations']['aggr']
+    result = es.search(index=index, body=body)['aggregations']['aggr']
     yield from result['buckets']
     after_key = result.get('after_key')
     if after_key:
