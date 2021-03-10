@@ -65,4 +65,13 @@ class TestIndex(ApiTestCase):
         url = 'index/{}/fields/x/values'.format(self.index_name)
         assert_equal(self.get(url).json, ["a", "b"])
 
+    def test_update_document(self):
+        """Can we update a document with PUT /index/x/document/y"""
+
+        assert_equal(self.query(fields="annotations")['results'][0]['annotations'], ANNOTATIONS)
+        url = f"/index/{self.index_name}/documents/0?fields=annotations"
+        assert_equal(self.get(url, user=self.admin).json['annotations'], ANNOTATIONS)
+        url = f"/index/{self.index_name}/documents/0"
+        self.put(url, json={"annotations": {'x': 3}}, user=self.admin)
+        assert_equal(self.get(url, user=self.admin).json['annotations'], {'x': 3})
 

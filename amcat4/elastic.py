@@ -20,6 +20,7 @@ ES_MAPPINGS = {
    'num': {"type": "double"},
    'keyword': {"type": "keyword"},
    'text': {"type": "text"},
+   'object': {"type": "object"},
    }
 
 
@@ -119,7 +120,7 @@ def upload_documents(index: str, documents, columns: Mapping[str, str] = None) -
     return [action['_id'] for action in actions]
 
 
-def get_document(index: str, doc_id: str) -> dict:
+def get_document(index: str, doc_id: str, **kargs) -> dict:
     """
     Get a single document from this index
 
@@ -127,7 +128,20 @@ def get_document(index: str, doc_id: str) -> dict:
     :param doc_id: The document id (hash)
     :return: the source dict of the document
     """
-    return es.get(index=index, id=doc_id)['_source']
+    return es.get(index=index, id=doc_id, **kargs)['_source']
+
+
+def update_document(index: str, doc_id: str, fields: dict):
+    """
+    Update a single document
+
+
+    :param index: The name of the index
+    :param doc_id: The document id (hash)
+    :param fields: a {field: value} mapping of fields to update
+    """
+    body = {"doc": fields}
+    es.update(index=index, id=doc_id, body=body)
 
 
 def get_fields(index: str) -> Mapping[str, str]:
