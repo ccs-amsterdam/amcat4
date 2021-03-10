@@ -79,7 +79,7 @@ def query_documents(index: str, queries: Iterable[str] = None, *, page: int = 0,
         kwargs['scroll'] = '2m' if (not scroll or scroll is True) else scroll
 
     if scroll_id:
-        result = es.scroll(scroll_id, **kwargs)
+        result = es.scroll(scroll_id=scroll_id, **kwargs)
         if not result['hits']['hits']:
             return None
     else:
