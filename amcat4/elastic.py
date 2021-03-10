@@ -61,7 +61,7 @@ def _create_index(name: str) -> None:
                      {'properties': fields}}}
     # body = {'mappings':
     #             {'properties': fields}}
-    es.indices.create(name, body=body, include_type_name=True)
+    es.indices.create(index=name, body=body, include_type_name=True)
 
 
 def _delete_index(name: str, ignore_missing=False) -> None:
@@ -71,7 +71,7 @@ def _delete_index(name: str, ignore_missing=False) -> None:
     :param name: The name of the new index (without prefix)
     :param ignore_missing: If True, do not throw exception if index does not exist
     """
-    es.indices.delete(name, ignore=([404] if ignore_missing else []))
+    es.indices.delete(index=name, ignore=([404] if ignore_missing else []))
 
 
 def _get_hash(document):
@@ -130,7 +130,7 @@ def get_document(index: str, doc_id: str) -> dict:
     :param doc_id: The document id (hash)
     :return: the source dict of the document
     """
-    return es.get(index, DOCTYPE, doc_id)['_source']
+    return es.get(index=index, doc_type=DOCTYPE, id=doc_id)['_source']
 
 
 def get_fields(index: str) -> Mapping[str, str]:
@@ -139,9 +139,10 @@ def get_fields(index: str) -> Mapping[str, str]:
     :param index:
     :return: a dictionary of field: type
     """
-    r = es.indices.get_mapping(index)
+    r = es.indices.get_mapping(index=index)
     fields = r[index]['mappings']['properties']
     return {k:v['type'] for (k,v) in fields.items()}
+
 
 def field_type(index: str, field_name: str) -> str:
     """
@@ -160,7 +161,7 @@ def get_values(index: str, field: str) -> List[str]:
     :return: A list of values
     """
     body = {"size": 0, "aggs": {"values": {"terms": {"field": field}}}}
-    r = es.search(index, DOCTYPE, body)
+    r = es.search(index=index, doc_type=DOCTYPE, body=body)
     return [x["key"] for x in r["aggregations"]["values"]["buckets"]]
 
 
