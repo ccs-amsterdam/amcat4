@@ -165,8 +165,8 @@ def get_values(index: str, field: str) -> List[str]:
     return [x["key"] for x in r["aggregations"]["values"]["buckets"]]
 
 
-def refresh():
-    es.indices.flush()
+def refresh(index: str):
+    es.indices.refresh(index=index)
 
 
 def index_exists(name: str) -> bool:

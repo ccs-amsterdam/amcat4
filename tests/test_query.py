@@ -18,9 +18,6 @@ _TEST_DOCUMENTS = [
 def setup_module():
     create_index()
     upload(_TEST_DOCUMENTS, columns={'cat': 'keyword', 'subcat': 'keyword', 'i': 'int'})
-    # somehow the process of creating shards takes long
-    # time.sleep(5)
-
 
 def teardown_module():
     delete_index()

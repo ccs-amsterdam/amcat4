@@ -49,7 +49,7 @@ def upload(docs, index_name: str = _TEST_INDEX, **kwargs):
             if k not in doc:
                 doc[k] = v
     ids = elastic.upload_documents(index_name, docs, **kwargs)
-    elastic.refresh()
+    elastic.refresh(index_name)
     return ids
 
 
