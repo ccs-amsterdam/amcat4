@@ -4,13 +4,13 @@ import string
 from nose.tools import assert_equal
 
 from amcat4.auth import Role
-from tests.tools import with_index, upload, ApiTestCase
+from tests.tools import with_index, upload, ApiTestCase, delete_index
 
 
 class TestIndex(ApiTestCase):
 
     def test_index_auth(self):
-        """Check that proper authentication is in place"""
+        """test_index_auth: Check that proper authentication is in place"""
         self.get('/index/', user=None, check=401, check_error="Getting index list should require authorization")
         self.post('/index/', user=None, check=401, check_error="Creating a index should require authorization")
         self.post('/index/', user=self.user, check=401,
@@ -42,9 +42,13 @@ class TestIndex(ApiTestCase):
 
         _TEST_INDEX = 'amcat4_test__' + ''.join(random.choices(string.ascii_lowercase, k=32))
         assert_equal(get_index(user=self.admin), None)
-        self.post('/index/', json=dict(name=_TEST_INDEX, guest_role='METAREADER'), user=self.admin)
-        assert_equal(get_index(user=self.admin), 'ADMIN')
-        assert_equal(get_index(user=self.user), 'METAREADER')
+        try:
+            self.post('/index/', json=dict(name=_TEST_INDEX, guest_role='METAREADER'), user=self.admin)
+            assert_equal(get_index(user=self.admin), 'ADMIN')
+            assert_equal(get_index(user=self.user), 'METAREADER')
+            self.delete(f'/index/{_TEST_INDEX}', user=self.admin)
+        finally:
+            delete_index(_TEST_INDEX)
 
     def test_set_guest_role(self):
         url = '/index/' + self.index_name
@@ -57,12 +61,10 @@ class TestIndex(ApiTestCase):
         assert_equal(self.get(url, user=self.admin).json['guest_role'], None)
 
     def test_fields(self):
-        """Can we set and retrieve field mappings and values?"""
+        """test_fields: Can we set and retrieve field mappings and values?"""
         url = 'index/{}/fields'.format(self.index_name)
         assert_equal(self.get(url).json, dict(date="date", text="text", title="text", url="keyword"))
         upload([{'x': x} for x in ("a", "a", "b")], index_name=self.index_name, columns={"x": "keyword"})
         assert_equal(self.get(url).json, dict(date="date", text="text", title="text", url="keyword", x="keyword"))
         url = 'index/{}/fields/x/values'.format(self.index_name)
         assert_equal(self.get(url).json, ["a", "b"])
-
-

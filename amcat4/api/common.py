@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, date
 
 from flask import g, json, jsonify
@@ -29,6 +30,7 @@ def verify_token(token):
 
 def check_role(role: Role, ix: Index = None):
     u = g.current_user
+    logging.warning(f">>> u:{u}, role:{role}, ix:{ix}")
     if not u:
         raise Unauthorized("No authenticated user")
     if ix:

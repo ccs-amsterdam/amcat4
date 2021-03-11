@@ -11,7 +11,7 @@ from amcat4.index import Index
 app_index = Blueprint('app_index', __name__)
 
 
-def _index(ix:str) -> Index:
+def _index(ix: str) -> Index:
     try:
         return Index.get(Index.name == ix)
     except Index.DoesNotExist:
@@ -78,6 +78,19 @@ def view_index(ix: str):
     return index_json(ix)
 
 
+@app_index.route("/index/<ix>", methods=['DELETE'])
+@multi_auth.login_required
+def delete_index(ix: str):
+    """
+    Delete the index.
+    """
+    ix = _index(ix)
+    check_role(Role.ADMIN, ix)
+    ix.delete_index()
+    return "", HTTPStatus.NO_CONTENT
+
+
+
 @app_index.route("/index/<ix>/documents", methods=['POST'])
 @multi_auth.login_required
 def upload_documents(ix: str):
@@ -97,13 +110,34 @@ def upload_documents(ix: str):
 def get_document(ix: str, docid: str):
     """
     Get a single document by id
+    GET request parameters:
+    fields - Comma separated list of fields to return (default: all fields)
     """
-    check_role(Role.READER, ix)
+    check_role(Role.READER, _index(ix))
+    kargs = {}
+    if 'fields' in request.args:
+        kargs['_source'] = request.args['fields']
     try:
-        doc = elastic.get_document(ix, docid)
-        return jsonify(doc)
+        doc = elastic.get_document(ix, docid, **kargs)
     except elasticsearch.exceptions.NotFoundError:
         abort(404)
+    return jsonify(doc)
+
+
+@app_index.route("/index/<ix>/documents/<docid>", methods=['PUT'])
+@multi_auth.login_required
+def update_document(ix: str, docid: str):
+    """
+    Update a document
+    PUT request body should be a json {field: value} mapping of fields to update
+    """
+    check_role(Role.WRITER, _index(ix))
+    update = request.get_json(force=True)
+    try:
+        elastic.update_document(ix, docid, update)
+    except elasticsearch.exceptions.NotFoundError:
+        abort(404)
+    return '', HTTPStatus.OK
 
 
 @app_index.route("/index/<ix>/fields", methods=['GET'])
