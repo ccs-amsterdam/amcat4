@@ -1,3 +1,7 @@
+"""
+AmCAT4 REST API
+"""
+
 import logging
 import sys
 import io
@@ -34,19 +38,22 @@ def upload_test_data() -> Index:
     return index
 
 
-if __name__ == '__main__':
-    logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=logging.INFO)
-    setup_elastic()
-    initialize_if_needed()
-    es_logger = logging.getLogger('elasticsearch')
-    es_logger.setLevel(logging.WARNING)
-    if not User.select().where(User.email == "admin").exists():
-        logging.warning("**** No user detected, creating superuser admin:admin ****")
-        auth.create_user("admin", "admin", Role.ADMIN)
-    if "--create-test-index" in sys.argv:
-        # [WvA] I apologize for the argument parsing
-        if not Index.select().where(Index.name == SOTU_INDEX):
-            logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
-            admin = User.get(User.email == "admin")
-            upload_test_data().set_role(admin, Role.ADMIN)
-    app.run(debug=True)
+import argparse
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--create-test-index', action='store_true')
+args = parser.parse_args()
+
+logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=logging.INFO)
+setup_elastic()
+initialize_if_needed()
+es_logger = logging.getLogger('elasticsearch')
+es_logger.setLevel(logging.WARNING)
+if not User.select().where(User.email == "admin").exists():
+    logging.warning("**** No user detected, creating superuser admin:admin ****")
+    auth.create_user("admin", "admin", Role.ADMIN)
+if args.create_test_index:
+    if not Index.select().where(Index.name == SOTU_INDEX):
+        logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
+        admin = User.get(User.email == "admin")
+        upload_test_data().set_role(admin, Role.ADMIN)
+app.run(debug=True)
