@@ -69,13 +69,15 @@ def test_roles(index_name):
 
     # Recreate index with gues role and admin.
     ix = index.create_index(index_name, guest_role=Role.READER, admin=user_admin, create_in_elastic=False)
-    assert_not_in(ix, user_noob.indices(include_guest=False))
-    assert_equals(Role.READER, user_noob.indices(include_guest=True)[ix])
-    assert_equals(Role.ADMIN, user_admin.indices(include_guest=False)[ix])
-    assert_equals(Role.ADMIN, user_admin.indices(include_guest=True)[ix])
-    test(user_noob, [Role.METAREADER, Role.READER])
-    test(user_admin, [Role.METAREADER, Role.READER, Role.WRITER, Role.ADMIN])
-
+    try:
+        assert_not_in(ix, user_noob.indices(include_guest=False))
+        assert_equals(Role.READER, user_noob.indices(include_guest=True)[ix])
+        assert_equals(Role.ADMIN, user_admin.indices(include_guest=False)[ix])
+        assert_equals(Role.ADMIN, user_admin.indices(include_guest=True)[ix])
+        test(user_noob, [Role.METAREADER, Role.READER])
+        test(user_admin, [Role.METAREADER, Role.READER, Role.WRITER, Role.ADMIN])
+    finally:
+        ix.delete_index()
 
 
 

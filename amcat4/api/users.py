@@ -51,7 +51,6 @@ def delete_user(email):
     """
     Delete the given user. Users can delete themselves, admin can delete everyone, and writer can delete non-admin
     """
-    print("DELETE /users/", email)
     if g.current_user.email != email:
         check_role(Role.WRITER)
     try:
@@ -71,7 +70,6 @@ def modify_user(email):
     Modify the given user.
     Users can modify themselves (but not their role), admin can change everyone, and writer can change non-admin.
     """
-    print("PUT /users/", email)
     if g.current_user.email != email:
         check_role(Role.WRITER)
     try:

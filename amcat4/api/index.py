@@ -78,6 +78,19 @@ def view_index(ix: str):
     return index_json(ix)
 
 
+@app_index.route("/index/<ix>", methods=['DELETE'])
+@multi_auth.login_required
+def delete_index(ix: str):
+    """
+    Delete the index.
+    """
+    ix = _index(ix)
+    check_role(Role.ADMIN, ix)
+    ix.delete_index()
+    return "", HTTPStatus.NO_CONTENT
+
+
+
 @app_index.route("/index/<ix>/documents", methods=['POST'])
 @multi_auth.login_required
 def upload_documents(ix: str):

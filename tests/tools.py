@@ -6,11 +6,11 @@ from functools import wraps
 from typing import Optional, Mapping, Iterable
 
 from nose.tools import assert_equal, assert_false
-from peewee import Index
 
 from amcat4.auth import create_user, User, Role
 
 from amcat4 import elastic, index
+from amcat4.index import Index
 
 _TEST_INDEX = 'amcat4_testindex__'
 
@@ -22,7 +22,10 @@ def create_index(name=_TEST_INDEX) -> str:
 
 
 def delete_index(name=_TEST_INDEX):
-    elastic._delete_index(name, ignore_missing=True)
+    try:
+        Index.get(name=name).delete_index()
+    except Index.DoesNotExist:
+        elastic._delete_index(name, ignore_missing=True)
 
 
 def with_index(f):
@@ -87,7 +90,7 @@ class ApiTestCase:
         if cls.index_name:
             delete_index(cls.index_name)
         if cls.index:
-            cls.index.delete_instance()
+            cls.index.delete_index(delete_from_elastic=False)
 
 
     def request(self, url, method='get', user='test_user', password="password",
