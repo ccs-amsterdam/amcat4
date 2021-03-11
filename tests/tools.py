@@ -73,7 +73,7 @@ class ApiTestCase:
 
     @classmethod
     def setup_class(cls: 'ApiTestCase'):
-        from amcat4.__main__ import app
+        from amcat4.api import app
         cls.C = app.test_client()
         cls.C.testing = True
         rnd_suffix = ''.join(random.choices(string.ascii_lowercase, k=32))
