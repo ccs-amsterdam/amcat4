@@ -99,7 +99,7 @@ def upload_documents(ix: str):
     JSON payload should be a list of documents with at least a title, date, text and any optional attributes
     Note: The unique elastic ID will be the hash of title, date, text and url.
     """
-    check_role(Role.WRITER, ix)
+    check_role(Role.WRITER, _index(ix))
     documents = request.get_json(force=True)
     result = elastic.upload_documents(ix, documents)
     return jsonify(result), HTTPStatus.CREATED
@@ -131,6 +131,7 @@ def update_document(ix: str, docid: str):
     Update a document
     PUT request body should be a json {field: value} mapping of fields to update
     """
+
     check_role(Role.WRITER, _index(ix))
     update = request.get_json(force=True)
     try:
