@@ -28,6 +28,7 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None):
     fs = [parse_filter(*item) for item in filters.items()] if filters else []
     if queries:
         fs.append(parse_queries(queries))
+
     return {"bool": {"filter": fs}}
 
 
@@ -84,12 +85,15 @@ def query_documents(index: str, queries: Iterable[str] = None, *, page: int = 0,
             return None
     else:
         body = build_body(queries, filters)
+
         if fields:
             fields = fields if isinstance(fields, list) else list(fields)
             kwargs['_source'] = fields
         if not scroll:
             kwargs['from_'] = page * per_page
+        print(index,body,per_page,kwargs)
         result = es.search(index=index, body={'query': body}, size=per_page, **kwargs)
+
 
     data = [dict(_id=hit['_id'], **hit['_source']) for hit in result['hits']['hits']]
     if scroll_id:

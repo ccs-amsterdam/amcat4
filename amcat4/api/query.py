@@ -71,6 +71,12 @@ def query_documents_post(index: str):
     }}
     """
     params = request.get_json(force=True)
+    if ("q" in params.keys()):
+        params["queries"] = [params["q"]]
+        del params["q"]
+
+    if ("fields" in params.keys()):
+        params["fields"] = params["fields"].split(",")
     r = query.query_documents(index, **params)
     if r is None:
         abort(404)

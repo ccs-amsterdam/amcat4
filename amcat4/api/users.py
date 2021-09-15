@@ -5,6 +5,7 @@ from http import HTTPStatus
 
 from amcat4.api.common import multi_auth, check_role, bad_request
 from amcat4.auth import Role, User, hash_password
+from amcat4.api.index import _index
 
 app_users = Blueprint('app_users', __name__)
 
@@ -27,6 +28,8 @@ def create_user():
         elif role != Role.WRITER:
             return bad_request("Global role should be ADMIN (superuser) or WRITER (staff/maintainer)")
     u = auth.create_user(email=data['email'], password=data['password'], global_role=role)
+    if (data.get('index_access')):
+        _index(data.get('index')).set_role(u, Role[data.get('global_role')])
     return jsonify({"id": u.id, "email": u.email}), HTTPStatus.CREATED
 
 
@@ -41,6 +44,21 @@ def get_user(email):
     try:
         u = User.get(User.email == email)
         return jsonify({"email": u.email, "global_role": u.role and u.role.name})
+    except User.DoesNotExist:
+        abort(404)
+
+
+@app_users.route("/users/all", methods=['GET'])
+@multi_auth.login_required
+def get_users():
+    check_role(Role.ADMIN)
+    try:
+        result=[]
+        res1 = [dict(user=u.email, role=u.global_role) for u in User.select()]
+        for entry in res1:
+            for ix, role in User.get(User.email == entry['user']).indices().items():
+                result.append(dict(user= entry['user'], index_name= ix.name, role=role.name))
+        return jsonify(result)
     except User.DoesNotExist:
         abort(404)
 
@@ -79,10 +97,12 @@ def modify_user(email):
     if u.role == Role.ADMIN:
         check_role(Role.ADMIN)
     data = request.get_json(force=True)
+    print(data)
     if 'global_role' in data:
         role = Role[data['global_role'].upper()]
         check_role(role)  # need at least same level
         u.global_role = role
+        _index(data.get('index')).set_role(u, Role[data.get('global_role')])
     if 'email' in data:
         u.email = data['email']
     if 'password' in data:

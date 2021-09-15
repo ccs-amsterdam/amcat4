@@ -24,6 +24,7 @@ def upload_test_data() -> Index:
     csv.field_size_limit(sys.maxsize)
     csvfile = csv.DictReader(io.TextIOWrapper(url_open, encoding='utf-8'))
 
+    # creates the index info on the sqlite db
     index = create_index(SOTU_INDEX)
 
     docs = [dict(title="{Year}: {President}".format(**row),
@@ -39,6 +40,7 @@ def upload_test_data() -> Index:
 
 
 import argparse
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--create-test-index', action='store_true')
 args = parser.parse_args()
