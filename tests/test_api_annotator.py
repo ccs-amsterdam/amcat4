@@ -22,18 +22,25 @@ class TestAnnotator(ApiTestCase):
         assert_equal(result['codebook'], "CODEBOOK")
 
         # Get the first unit
-        unit = self.get(f'/codingjob/{id}/unit', user=None, check=200).json
-        print("!!1", unit)
+        unit = self.get(f'/codingjob/{id}/unit?user=piet', user=None, check=200).json
         assert_equal(unit['unit']['text'], "zin 1")
 
         # Add a coding
-        self.post(f"/codingjob/{id}/unit/{unit['id']}/annotation", user=None, check=204, json=dict(foo='bar'))
+        self.post(f"/codingjob/{id}/unit/{unit['id']}/annotation?user=piet", user=None, check=204, json=dict(foo='bar'))
 
         # Get the next unit
-        unit = self.get(f'/codingjob/{id}/unit', user=None, check=200).json
-        print("!!2", unit)
+        unit = self.get(f'/codingjob/{id}/unit?user=piet', user=None, check=200).json
         assert_equal(unit['unit']['text'], "zin 2")
+
+        # Get a unit as a second coder. This should be unit 2 again since unit 1 has been coded once already
+        unit = self.get(f'/codingjob/{id}/unit?user=jan', user=None, check=200).json
+        assert_equal(unit['unit']['text'], "zin 2")
+
+        # Add a coding for unit 2, and check that getting next unit gives 404
+        self.post(f"/codingjob/{id}/unit/{unit['id']}/annotation?user=piet", user=None, check=204, json=dict(bar='foo'))
+        self.get(f'/codingjob/{id}/unit?user=piet', user=None, check=404)
 
         # Is the coding registered?
         result = self.get(f'/codingjob/{id}', user=self.admin, check=200).json
-        assert_equal(result['units'][0]['annotations'], dict(foo='bar'))
+        assert_equal(result['units'][0]['annotations'], dict(piet=dict(foo='bar')))
+        assert_equal(result['units'][1]['annotations'], dict(piet=dict(bar='foo')))

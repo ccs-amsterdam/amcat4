@@ -11,11 +11,24 @@ app_annotator = Blueprint('app_annotator', __name__)
 
 """
 A coding job consists of the following information:
-{"owner": <userid>,
- "title": <str>,
- "codebook": {...},
- "units": [{..}, ]
+{
+ "config": {
+   "rules": ..,
+   ..
+ },
+ "codebook": ..,
+ "units": [{
+     "content": ..,
+     "annotations": {"user_id": .., ..}  
+   }, ... ]
 }
+
+The codebook is an arbitrary json object that is used by the coding interface.
+Similarly, the content and annotations fields of units are arbitrary json objects
+used by the coding interface and researcher.
+
+The config dict is used by the server to control which units to serve for annotation,
+how to authenticate coders, and whether to post the results back to a (e.g. AmCAT) server.  
 """
 
 @app_annotator.route("/codingjob", methods=['GET'])
@@ -64,21 +77,37 @@ def get_next_unit(id):
     """
     Retrieve a single unit to be coded. Currently, the next uncoded unit
     """
+    #TODO: authenticate the user (e.g. using bearer token)
+    user = request.args.get('user')
+    if not user:
+        abort(401)
     job = _get_codingjob(id)
+    best = None  # (i, min_n_coded, unit)
     for i, unit in enumerate(job['units']):
-        print(unit)
-        if not unit.get('status') == "DONE":
-            return {'id': i, 'unit': unit}
+        coders = set(unit.get("annotations", {}).keys())
+        if user not in coders:
+            if best is None or len(coders) < best[0]:
+                best = len(coders), i, unit
+    if best:
+        return {'id': best[1], 'unit': best[2]}
     abort(404)
 
-@app_annotator.route("/codingjob/<job_id>/unit/<int:unit_id>/annotation", methods=['POST'])
+@app_annotator.route("/codingjob/<job_id>/unit/<unit_id>/annotation", methods=['POST'])
 def set_annotation(job_id, unit_id):
     """Set the annotations for a specific unit"""
+    #TODO: authenticate the user (e.g. using bearer token)
+    user = request.args.get('user')
+    if not user:
+        abort(401)
     job = _get_codingjob(job_id)
     annotations = request.get_json(force=True)
-
-    job["units"][unit_id]["annotations"] = annotations
-    job["units"][unit_id]["status"] = "DONE"
+    try:
+        unit = job["units"][int(unit_id)]
+    except (ValueError, IndexError):
+        abort(404)  # unit did not exist or was not integer
+    if "annotations" not in unit:
+        unit["annotations"] = {}
+    unit["annotations"][user] = annotations
     es.index(INDEX, id=job_id, body=job)
     return make_response('', 204)
 
