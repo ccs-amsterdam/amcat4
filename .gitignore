@@ -65,3 +65,5 @@ MANIFEST
 
 amcat4.db
 coverage.xml
+venv/
+
