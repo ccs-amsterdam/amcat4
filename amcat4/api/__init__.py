@@ -2,7 +2,7 @@
 from flask import Flask
 from flask_cors import CORS
 
-from amcat4.api.annotator import app_annotator
+from amcat4annotator import app_annotator
 from amcat4.api.common import MyJSONEncoder
 from amcat4.api.query import app_query
 from amcat4.api.users import app_users
