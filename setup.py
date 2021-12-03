@@ -25,7 +25,7 @@ setup(
         "bcrypt",
         "peewee",
         "itsdangerous",
-        "amcat4annotator"
+        "amcat4annotator=0.07"
     ],
     extras_require={
         'dev': [
