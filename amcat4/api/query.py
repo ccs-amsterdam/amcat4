@@ -26,10 +26,12 @@ def query_documents(index: str):
     Note that dates can use relative queries, see elasticsearch 'date math'
     In case of conflict between field names and (other) arguments, you may prepend a field name with __
     If your field names contain __, it might be better to use POST queries
+    highlight - if true, add highlight tags <em>
+    annotations - if true, also return _annotations with query matches as annotations
     """
     # [WvA] GET /documents might be more RESTful, but would not allow a POST query to the same endpoint
     args = {}
-    known_args = ["sort", "page", "per_page", "scroll", "scroll_id", "fields"]
+    known_args = ["sort", "page", "per_page", "scroll", "scroll_id", "fields", "highlight", "annotations"]
     for name in known_args:
         if name in request.args:
             val = request.args[name]
@@ -44,11 +46,12 @@ def query_documents(index: str):
                 f = f[2:]
             if "__" in f:  # range query
                 (field, operator) = f.split("__")
-                if field not in filters:
-                    filters[field] = {"range": {}}
-                filters[field]['range'][operator] = v
+                if field not in filters: filters[field] = {}
+                filters[field][operator] = v
             else:  # value query
-                filters[f] = {"value": v}
+                if f not in filters: filters[f] = {'values': []}
+                filters[f]['values'].append(v)
+
     if filters:
         args['filters'] = filters
     if "q" in request.args:
@@ -64,19 +67,49 @@ def query_documents(index: str):
 def query_documents_post(index: str):
     """
     List or query documents in this index. POST body should be a json dict structured as follows (all keys optional):
-    {param: value,   # for optional param in {sort, per_page, page, scroll, scroll_id, fields}
-     'query_string': query   # elastic query_string, can be abbreviated to q
-     'filters': {field: {'value': value},
-                 field: {'range': {op: value [, op: value]}}  # for op in gte, gt, lte, lt
-    }}
+    
+    
+    {
+        # for optional param in {sort, per_page, page, scroll, scroll_id}
+        param: value,   
+
+        # select fields
+        fields: field                                    ## single field
+        fields: [field1, field2]                         ## multiple fields
+     
+        # elastic queries. 
+        'queries':  query,                               ## single query
+        'queries': [query1, query2],                     ## OR without labels
+        'queries': {label1: query1, label2: query2}      ## OR with labels
+
+        # filters 
+        'filters': {field: value},                       ## exact value
+                   {field: [value1, value2]},            ## OR   
+                   {field: {gt(e): value, lt(e): value}  ## range or multiple
+                   {field: {values: [v1,v2]}             ## can also use values inside dict
+        }        
+    }
     """
     params = request.get_json(force=True)
-    if ("q" in params.keys()):
-        params["queries"] = [params["q"]]
-        del params["q"]
+    
+    ## first standardize fields, queries and filters to their most versatile format
+    if 'fields' in params:
+        ## to array format: fields: [field1, field2]
+        if isinstance(params['fields'], str) params['fields'] = [params['fields']]
 
-    if ("fields" in params.keys()):
-        params["fields"] = params["fields"].split(",")
+    if 'queries' in params:
+        ## to dict format: {label1:query1, label2: query2}  uses indices if no labels given
+        if isinstance(params['queries'], str): params['queries'] = [params['queries']]
+        if isinstance(params['queries'], []):
+            params['queries'] = {str(i):q for i,q in enumerate(params['queries'])}
+
+    if 'filters' in params:
+        ## to dict format: {field: {values: []}}
+        for field, filter in params['filters'].items():
+            if isinstance(filter, str): filter = [filter]
+            if isinstance(filter, []): 
+                params['filters'][field] = {'values': filter}
+         
     r = query.query_documents(index, **params)
     if r is None:
         abort(404)
