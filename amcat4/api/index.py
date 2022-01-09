@@ -100,8 +100,9 @@ def upload_documents(ix: str):
     Note: The unique elastic ID will be the hash of title, date, text and url.
     """
     check_role(Role.WRITER, _index(ix))
-    documents = request.get_json(force=True)
-    result = elastic.upload_documents(ix, documents)
+    body = request.get_json(force=True)
+    
+    result = elastic.upload_documents(ix, body['documents'], body['columns'])
     return jsonify(result), HTTPStatus.CREATED
 
 

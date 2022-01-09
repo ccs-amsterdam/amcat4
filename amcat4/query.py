@@ -8,29 +8,43 @@ from typing import Mapping, Iterable, Optional
 from .elastic import es
 
 
-def build_body(queries: Iterable[str] = None, filters: Mapping = None):
-    def parse_filter(field, filter_):
-        if 'value' in filter_:
-            return {"term": {field: filter_['value']}}
-        elif 'range' in filter_:
-            return {"range": {field: filter_['range']}}
+def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: bool = False):
+    def parse_filter(field, filter):
+        field_filters = []
+        if 'values' in filter:
+            for value in filter['values']:
+                field_filters.append({"term": {field: value}})      
+        
+        rangefilter = {}
+        for rangevar in ['gt','gte','lt','lte']:
+            if rangevar in filter: rangefilter[rangevar] = filter[rangevar]
+        if rangefilter: 
+            field_filters.append({"term": {field: value}})
+            
+        return {'bool': {'should': field_filters}} 
 
     def parse_query(q):
         return {"query_string": {"query":  q }}
         
     def parse_queries(qs):
-        if len(qs) == 1:
-            return parse_query(qs[0])
+        if len(qs.values()) == 1:
+            return parse_query(list(qs.values())[0])
         else:
-            return {"bool": {"should": [parse_query(q) for q in qs]}}
+            return {"bool": {"should": [parse_query(q) for q in qs.values()]}}
 
     if not queries and not filters:
-        return {'match_all': {}}
-    fs = [parse_filter(*item) for item in filters.items()] if filters else []
-    if queries:
-        fs.append(parse_queries(queries))
+        return {'query': {'match_all': {}}}
 
-    return {"bool": {"filter": fs}}
+    fs = [parse_filter(*item) for item in filters.items()] if filters else []
+    if queries: fs.append(parse_queries(queries))
+
+    body = {"query": {"bool": {"filter": fs}}}
+
+    
+
+    if highlight:               
+        body['highlight'] = {"type": 'plain', "fields" : {"*" : {"number_of_fragments": 0}}}
+    return body
 
 class QueryResult:
     def __init__(self, data, n=None, per_page=None, page=None, page_count=None, scroll_id=None):
@@ -74,7 +88,7 @@ def query_documents(index: str, queries: Iterable[str] = None, *, page: int = 0,
     :param filters: if not None, a dict of filters, either: 
                        {field: {'values': [value1,value2]}} or
                        {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
-    :param highlight: if True, add highlight tags (<em>) to results. (doesn't work with scroll)
+    :param highlight: if True, add highlight tags (<em>) to results. 
     :param annotations: if True, get query matches as annotations. 
     :param kwargs: Additional elements passed to Elasticsearch.search(), for example:
            sort=col1:desc,col2
@@ -89,13 +103,7 @@ def query_documents(index: str, queries: Iterable[str] = None, *, page: int = 0,
         if not result['hits']['hits']:
             return None
     else:
-        body = build_body(queries, filters)
-        print(body)
-        body = {'query': body}
-        if highlight:               
-            body['highlight'] = {"type": 'plain', 
-                                  "tags_schema": 'styled',
-                                  "fields" : {"*" : {"number_of_fragments": 0}}}
+        body = build_body(queries, filters, highlight)
 
         if fields:
             fields = fields if isinstance(fields, list) else list(fields)
@@ -126,18 +134,13 @@ def query_documents(index: str, queries: Iterable[str] = None, *, page: int = 0,
 
 def query_annotations(index: str, id: str, queries: Iterable[str]):
     """
-    !!EXPERIMENTAL!!
-    Extract query matches in annotation format. Currently does so per hit per query.
+    get query matches in annotation format. Currently does so per hit per query.
     Per hit could be optimized, but per query seems necessary:
     https://stackoverflow.com/questions/44621694/elasticsearch-highlight-with-multiple-queries-not-work-as-expected
     """
     annotations = []
     for query in queries:
-        
-        body = build_body([query], {'_id': {'value': id}})
-        body = {'query': body}
-        body['highlight'] = {"type": 'plain',
-                             "fields" : {"*" : {"number_of_fragments": 0}}}
+        body = build_body([query], {'_id': {'value': id}}, True)
 
         result = es.search(index=index, body=body)
         hit = result['hits']['hits'][0]
@@ -153,7 +156,6 @@ def query_annotations(index: str, id: str, queries: Iterable[str]):
 
 def extract_highlight_span(highlight):
     """
-    !!EXPERIMENTAL!!
     It doesn't seem possible to get the offsets of highlights:
     https://github.com/elastic/elasticsearch/issues/5736
 

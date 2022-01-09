@@ -37,8 +37,8 @@ def query_documents(index: str):
             val = request.args[name]
             val = int(val) if name in ["page", "per_page"] else val
             val = val.split(",") if name in ["fields"] else val
-            name = "queries" if name == "q" else name
             args[name] = val
+
     filters = {}
     for (f, v) in request.args.items():
         if f not in known_args + ["q"]:
@@ -70,7 +70,7 @@ def query_documents_post(index: str):
     
     
     {
-        # for optional param in {sort, per_page, page, scroll, scroll_id}
+        # for optional param in {sort, per_page, page, scroll, scroll_id, highlight, annotations}
         param: value,   
 
         # select fields
@@ -95,19 +95,19 @@ def query_documents_post(index: str):
     ## first standardize fields, queries and filters to their most versatile format
     if 'fields' in params:
         ## to array format: fields: [field1, field2]
-        if isinstance(params['fields'], str) params['fields'] = [params['fields']]
+        if isinstance(params['fields'], str): params['fields'] = [params['fields']]
 
     if 'queries' in params:
         ## to dict format: {label1:query1, label2: query2}  uses indices if no labels given
         if isinstance(params['queries'], str): params['queries'] = [params['queries']]
-        if isinstance(params['queries'], []):
+        if isinstance(params['queries'], list):
             params['queries'] = {str(i):q for i,q in enumerate(params['queries'])}
 
     if 'filters' in params:
         ## to dict format: {field: {values: []}}
         for field, filter in params['filters'].items():
             if isinstance(filter, str): filter = [filter]
-            if isinstance(filter, []): 
+            if isinstance(filter, list): 
                 params['filters'][field] = {'values': filter}
          
     r = query.query_documents(index, **params)
