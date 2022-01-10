@@ -1,8 +1,9 @@
 ### AmCAT4 - The Amsterdam Content Analysis Toolkit
 
-Server for 
+Server for document management and automatic text analysis, developed as part of [OPTED](https://opted.eu). 
+[Learn more](https://opted.eu/fileadmin/user_upload/k_opted/OPTED_deliverable_D7.1.pdf)
 
-* Installing and running
+#### Installing and running
 
 ```
 git clone git@github.com:ccs-amsterdam/amcat4
@@ -12,6 +13,6 @@ env/bin/pip install -e .
 env/bin/python -m amcat4 --help
 ```
 
-* API endpoints
+#### API endpoints
 
 See the [API Documentation](apidoc.md)
