@@ -1,4 +1,4 @@
-* AmCAT4 - The Amsterdam Content Analysis Toolkit
+### AmCAT4 - The Amsterdam Content Analysis Toolkit
 
 Server for 
 
