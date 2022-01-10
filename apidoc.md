@@ -5,6 +5,8 @@ See also the GitHub pages for the <a href="https://github.com/ccs-amsterdam/amca
 and client bindings for <a href="https://github.com/ccs-amsterdam/amcat4apiclient">Python</a>
 and <a href="https://github.com/ccs-amsterdam/amcat4r">R</a>.
 
+Note: To generate this documentation, run `python -m amcat4 document`
+
 
 ##  Querying
 

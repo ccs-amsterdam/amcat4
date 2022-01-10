@@ -4,6 +4,7 @@ from datetime import datetime, date
 from flask import g, json, jsonify
 from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth, MultiAuth
 from werkzeug.exceptions import Unauthorized
+from flask_selfdoc import Autodoc
 
 from amcat4 import auth
 from amcat4.auth import Role
@@ -13,6 +14,7 @@ basic_auth = HTTPBasicAuth()
 token_auth = HTTPTokenAuth()
 multi_auth = MultiAuth(basic_auth, token_auth)
 
+auto = Autodoc()
 
 @basic_auth.verify_password
 def verify_password(username, password):
@@ -45,6 +47,8 @@ class MyJSONEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, (datetime, date)):
             return o.isoformat()
+        if isinstance(o, set):
+            return sorted(o)
         return super().default(o)
 
 

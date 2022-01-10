@@ -1,15 +1,20 @@
+"""
+API Endpoints for querying
+"""
+
 from flask import Blueprint, jsonify, request, abort
 
 
 from amcat4 import query, aggregate
 from http import HTTPStatus
 
-from amcat4.api.common import multi_auth
+from amcat4.api.common import multi_auth, auto
 
 app_query = Blueprint('app_query', __name__)
 
 
 @app_query.route("/index/<index>/query", methods=['GET'])
+@auto.doc(group='Querying')
 @multi_auth.login_required
 def query_documents(index: str):
     """
@@ -63,6 +68,7 @@ def query_documents(index: str):
 
 
 @app_query.route("/index/<index>/query", methods=['POST'])
+@auto.doc(group='Querying')
 @multi_auth.login_required
 def query_documents_post(index: str):
     """
@@ -117,6 +123,7 @@ def query_documents_post(index: str):
 
 
 @app_query.route("/index/<index>/aggregate", methods=['POST'])
+@auto.doc(group='Querying')
 @multi_auth.login_required
 def query_aggregate_post(index: str):
     """

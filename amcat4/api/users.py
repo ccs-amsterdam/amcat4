@@ -1,9 +1,14 @@
+"""
+AmCAT4 can use either Basic or Token-based authentication.
+A client can request a token with basic authentication and store that token for future requests.
+"""
+
 from flask import Blueprint, jsonify, request, abort, g
 
 from amcat4 import auth
 from http import HTTPStatus
 
-from amcat4.api.common import multi_auth, check_role, bad_request
+from amcat4.api.common import multi_auth, check_role, bad_request, auto
 from amcat4.auth import Role, User, hash_password
 from amcat4.api.index import _index
 
@@ -11,6 +16,7 @@ app_users = Blueprint('app_users', __name__)
 
 
 @app_users.route("/users/", methods=['POST'])
+@auto.doc(group='users')
 @multi_auth.login_required
 def create_user():
     """
@@ -34,6 +40,7 @@ def create_user():
 
 
 @app_users.route("/users/<email>", methods=['GET'])
+@auto.doc(group='users')
 @multi_auth.login_required
 def get_user(email):
     """
@@ -49,6 +56,7 @@ def get_user(email):
 
 
 @app_users.route("/users/all", methods=['GET'])
+@auto.doc(group='users')
 @multi_auth.login_required
 def get_users():
     check_role(Role.ADMIN)
@@ -64,6 +72,7 @@ def get_users():
 
 
 @app_users.route("/users/<email>", methods=['DELETE'])
+@auto.doc(group='users')
 @multi_auth.login_required
 def delete_user(email):
     """
@@ -82,6 +91,7 @@ def delete_user(email):
 
 
 @app_users.route("/users/<email>", methods=['PUT'])
+@auto.doc(group='users')
 @multi_auth.login_required
 def modify_user(email):
     """
@@ -112,6 +122,7 @@ def modify_user(email):
 
 
 @app_users.route("/auth/token/", methods=['GET'])
+@auto.doc(group='auth')
 @multi_auth.login_required
 def get_token():
     """

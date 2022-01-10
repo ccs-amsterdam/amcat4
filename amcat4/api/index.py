@@ -1,3 +1,7 @@
+"""
+API Endpoints for document and index management
+"""
+
 import elasticsearch
 from flask import Blueprint, jsonify, request, abort, g
 
@@ -5,7 +9,7 @@ from amcat4 import elastic, index
 from amcat4.auth import Role
 from http import HTTPStatus
 
-from amcat4.api.common import multi_auth, check_role
+from amcat4.api.common import multi_auth, check_role, auto
 from amcat4.index import Index
 
 app_index = Blueprint('app_index', __name__)
@@ -23,6 +27,7 @@ def index_json(ix: Index):
 
 
 @app_index.route("/index/", methods=['GET'])
+@auto.doc(group='index')
 @multi_auth.login_required
 def index_list():
     """
@@ -33,6 +38,7 @@ def index_list():
 
 
 @app_index.route("/index/", methods=['POST'])
+@auto.doc(group='index')
 @multi_auth.login_required
 def create_index():
     """
@@ -48,6 +54,7 @@ def create_index():
 
 
 @app_index.route("/index/<ix>", methods=['PUT'])
+@auto.doc(group='index')
 @multi_auth.login_required
 def modify_index(ix: str):
     """
@@ -67,6 +74,7 @@ def modify_index(ix: str):
 
 
 @app_index.route("/index/<ix>", methods=['GET'])
+@auto.doc(group='index')
 @multi_auth.login_required
 def view_index(ix: str):
     """
@@ -79,6 +87,7 @@ def view_index(ix: str):
 
 
 @app_index.route("/index/<ix>", methods=['DELETE'])
+@auto.doc(group='index')
 @multi_auth.login_required
 def delete_index(ix: str):
     """
@@ -92,6 +101,7 @@ def delete_index(ix: str):
 
 
 @app_index.route("/index/<ix>/documents", methods=['POST'])
+@auto.doc(group='index')
 @multi_auth.login_required
 def upload_documents(ix: str):
     """
@@ -107,6 +117,7 @@ def upload_documents(ix: str):
 
 
 @app_index.route("/index/<ix>/documents/<docid>", methods=['GET'])
+@auto.doc(group='index')
 @multi_auth.login_required
 def get_document(ix: str, docid: str):
     """
@@ -126,6 +137,7 @@ def get_document(ix: str, docid: str):
 
 
 @app_index.route("/index/<ix>/documents/<docid>", methods=['PUT'])
+@auto.doc(group='index')
 @multi_auth.login_required
 def update_document(ix: str, docid: str):
     """
@@ -143,6 +155,7 @@ def update_document(ix: str, docid: str):
 
 
 @app_index.route("/index/<ix>/fields", methods=['GET'])
+@auto.doc(group='index')
 @multi_auth.login_required
 def get_fields(ix: str):
     """
@@ -153,6 +166,7 @@ def get_fields(ix: str):
 
 
 @app_index.route("/index/<ix>/fields/<field>/values", methods=['GET'])
+@auto.doc(group='index')
 @multi_auth.login_required
 def get_values(ix: str, field: str):
     """
