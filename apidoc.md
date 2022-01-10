@@ -12,19 +12,19 @@ and <a href="https://github.com/ccs-amsterdam/amcat4r">R</a>.
 API Endpoints for querying
 
 
-### POST /index/<index>/aggregate</h2>
+### POST /index/&lt;index&gt;/aggregate</h2>
 
 <pre>
 
     Construct an aggregate query. POST body should be a json dict:
-    {'axes': [{'field': .., ['interval': ..]}, ...],
-     'filters': <filters, see query endpoint>
+    {&#39;axes&#39;: [{&#39;field&#39;: .., [&#39;interval&#39;: ..]}, ...],
+     &#39;filters&#39;: &lt;filters, see query endpoint&gt;
      }
-    Will return a json list of lists [<axis-1-name>, ..., _n]
+    Will return a json list of lists [&lt;axis-1-name&gt;, ..., _n]
     
 </pre>
 
-### GET /index/<index>/query</h2>
+### GET /index/&lt;index&gt;/query</h2>
 
 <pre>
 
@@ -38,15 +38,15 @@ API Endpoints for querying
     scroll_id - Get the next batch from this id.
     Any additional GET parameters are interpreted as filters, and can be
     field=value for a term query, or field__xxx=value for a range query, with xxx in gte, gt, lte, lt
-    Note that dates can use relative queries, see elasticsearch 'date math'
+    Note that dates can use relative queries, see elasticsearch &#39;date math&#39;
     In case of conflict between field names and (other) arguments, you may prepend a field name with __
     If your field names contain __, it might be better to use POST queries
-    highlight - if true, add highlight tags <em>
+    highlight - if true, add highlight tags &lt;em&gt;
     annotations - if true, also return _annotations with query matches as annotations
     
 </pre>
 
-### POST /index/<index>/query</h2>
+### POST /index/&lt;index&gt;/query</h2>
 
 <pre>
 
@@ -62,12 +62,12 @@ API Endpoints for querying
         fields: [field1, field2]                         ## multiple fields
      
         # elastic queries. 
-        'queries':  query,                               ## single query
-        'queries': [query1, query2],                     ## OR without labels
-        'queries': {label1: query1, label2: query2}      ## OR with labels
+        &#39;queries&#39;:  query,                               ## single query
+        &#39;queries&#39;: [query1, query2],                     ## OR without labels
+        &#39;queries&#39;: {label1: query1, label2: query2}      ## OR with labels
 
         # filters 
-        'filters': {field: value},                       ## exact value
+        &#39;filters&#39;: {field: value},                       ## exact value
                    {field: [value1, value2]},            ## OR   
                    {field: {gt(e): value, lt(e): value}  ## range or multiple
                    {field: {values: [v1,v2]}             ## can also use values inside dict
@@ -100,7 +100,7 @@ API Endpoints for document and index management
     
 </pre>
 
-### PUT /index/<ix></h2>
+### PUT /index/&lt;ix&gt;</h2>
 
 <pre>
 
@@ -109,7 +109,7 @@ API Endpoints for document and index management
     
 </pre>
 
-### GET /index/<ix></h2>
+### GET /index/&lt;ix&gt;</h2>
 
 <pre>
 
@@ -118,7 +118,7 @@ API Endpoints for document and index management
     
 </pre>
 
-### DELETE /index/<ix></h2>
+### DELETE /index/&lt;ix&gt;</h2>
 
 <pre>
 
@@ -126,7 +126,7 @@ API Endpoints for document and index management
     
 </pre>
 
-### POST /index/<ix>/documents</h2>
+### POST /index/&lt;ix&gt;/documents</h2>
 
 <pre>
 
@@ -136,7 +136,7 @@ API Endpoints for document and index management
     
 </pre>
 
-### GET /index/<ix>/documents/<docid></h2>
+### GET /index/&lt;ix&gt;/documents/&lt;docid&gt;</h2>
 
 <pre>
 
@@ -146,7 +146,7 @@ API Endpoints for document and index management
     
 </pre>
 
-### PUT /index/<ix>/documents/<docid></h2>
+### PUT /index/&lt;ix&gt;/documents/&lt;docid&gt;</h2>
 
 <pre>
 
@@ -155,7 +155,7 @@ API Endpoints for document and index management
     
 </pre>
 
-### GET /index/<ix>/fields</h2>
+### GET /index/&lt;ix&gt;/fields</h2>
 
 <pre>
 
@@ -163,7 +163,7 @@ API Endpoints for document and index management
     
 </pre>
 
-### GET /index/<ix>/fields/<field>/values</h2>
+### GET /index/&lt;ix&gt;/fields/&lt;field&gt;/values</h2>
 
 <pre>
 
@@ -203,7 +203,7 @@ A client can request a token with basic authentication and store that token for 
     
 </pre>
 
-### GET /users/<email></h2>
+### GET /users/&lt;email&gt;</h2>
 
 <pre>
 
@@ -211,7 +211,7 @@ A client can request a token with basic authentication and store that token for 
     
 </pre>
 
-### DELETE /users/<email></h2>
+### DELETE /users/&lt;email&gt;</h2>
 
 <pre>
 
@@ -219,7 +219,7 @@ A client can request a token with basic authentication and store that token for 
     
 </pre>
 
-### PUT /users/<email></h2>
+### PUT /users/&lt;email&gt;</h2>
 
 <pre>
 
