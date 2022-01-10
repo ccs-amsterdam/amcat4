@@ -19,7 +19,7 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
         for rangevar in ['gt','gte','lt','lte']:
             if rangevar in filter: rangefilter[rangevar] = filter[rangevar]
         if rangefilter: 
-            field_filters.append({"term": {field: value}})
+            field_filters.append({"range": {field: rangefilter}})
             
         return {'bool': {'should': field_filters}} 
 
