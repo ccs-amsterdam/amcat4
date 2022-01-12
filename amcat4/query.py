@@ -45,8 +45,8 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
     body = {"query": {"bool": {"filter": fs}}}
 
     if highlight:
-        body['highlight'] = {"type": 'unified', "require_field_match" : True,
-                             "fields" : {"*" : {"number_of_fragments": 0}}}
+        body['highlight'] = {"type": 'unified', "require_field_match": True,
+                             "fields": {"*": {"number_of_fragments": 0}}}
     return body
 
 
@@ -144,6 +144,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
     else:
         return QueryResult(data, n=result['hits']['total'], per_page=per_page,  page=page)
 
+
 def query_annotations(index: str, id: str, queries: Iterable[str]):
     """
     get query matches in annotation format. Currently does so per hit per query.
@@ -152,13 +153,15 @@ def query_annotations(index: str, id: str, queries: Iterable[str]):
     """
 
     annotations = []
-    if not queries: return annotations
+    if not queries:
+        return annotations
     for label, query in queries.items():
         body = build_body({label: query}, {'_id': {'value': id}}, True)
 
         result = es.search(index=index, body=body)
         hit = result['hits']['hits']
-        if len(hit) == 0: continue
+        if len(hit) == 0:
+            continue
         for field, highlights in hit[0]['highlight'].items():
             for span in extract_highlight_span(highlights[0]):
                 span['variable'] = 'query'
@@ -166,7 +169,6 @@ def query_annotations(index: str, id: str, queries: Iterable[str]):
                 span['field'] = field
                 annotations.append(span)
     return annotations
-
 
 
 def extract_highlight_span(highlight):
