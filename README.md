@@ -1,6 +1,5 @@
-
-![Build status](https://github.com/ccs-amsterdam/amcat4/actions/workflows/unittests.yml/badge.svg)
-![Linting](https://github.com/ccs-amsterdam/amcat4/actions/workflows/linting.yml/badge.svg)
+[![Unit tests](https://github.com/ccs-amsterdam/amcat4/actions/workflows/unittests.yml/badge.svg)](https://github.com/ccs-amsterdam/amcat4/actions/workflows/unittests.yml)
+[![Flake8 & Mypy linting](https://github.com/ccs-amsterdam/amcat4/actions/workflows/linting.yml/badge.svg)](https://github.com/ccs-amsterdam/amcat4/actions/workflows/linting.yml)
 
 # AmCAT4
 
