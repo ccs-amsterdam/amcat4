@@ -2,7 +2,7 @@
 All things query
 """
 from math import ceil
-from re import finditer
+from re import finditer, sub
 from typing import Mapping, Iterable, Optional, Union, Dict
 
 from .elastic import es
@@ -43,8 +43,10 @@ def build_body(queries: Mapping[str, str] = None, filters: Mapping = None, highl
         fs.append(parse_queries(queries))
 
     body = {"query": {"bool": {"filter": fs}}}
+
     if highlight:
-        body['highlight'] = {"type": 'plain', "fields": {"*": {"number_of_fragments": 0}}}
+        body['highlight'] = {"type": 'unified', "require_field_match" : True, 
+                             "fields" : {"*" : {"number_of_fragments": 0}}}
     return body
 
 
@@ -141,26 +143,29 @@ def query_documents(index: str, queries: Union[Dict[str,  str], Iterable[str]] =
     else:
         return QueryResult(data, n=result['hits']['total'], per_page=per_page,  page=page)
 
-
 def query_annotations(index: str, id: str, queries: Iterable[str]):
     """
     get query matches in annotation format. Currently does so per hit per query.
     Per hit could be optimized, but per query seems necessary:
     https://stackoverflow.com/questions/44621694/elasticsearch-highlight-with-multiple-queries-not-work-as-expected
     """
+    
     annotations = []
-    for query in queries:
-        body = build_body([query], {'_id': {'value': id}}, True)
+    if not queries: return annotations
+    for label, query in queries.items():
+        body = build_body({label: query}, {'_id': {'value': id}}, True)
 
         result = es.search(index=index, body=body)
-        hit = result['hits']['hits'][0]
-        for field, highlights in hit['highlight'].items():
+        hit = result['hits']['hits']
+        if len(hit) == 0: continue
+        for field, highlights in hit[0]['highlight'].items():
             for span in extract_highlight_span(highlights[0]):
-                span['variable'] = 'lucene_query'
-                span['value'] = query
+                span['variable'] = 'query'
+                span['value'] = label
                 span['field'] = field
                 annotations.append(span)
-        return annotations
+    return annotations
+
 
 
 def extract_highlight_span(highlight):
@@ -170,9 +175,13 @@ def extract_highlight_span(highlight):
 
     We can get the offsets from the tags, but not yet sure how stable this is.
     """
-    regex = '<em>.+</em>'
+    side_by_side = '</em> <em>'
+    highlight = sub(side_by_side, ' ', highlight)
+
+    regex = '<em>.+?</em>'
     tagsize = 9  # <em></em>
     for i, m in enumerate(finditer(regex, highlight)):
         offset = m.start(0) - tagsize*i
         length = len(m.group(0)) - tagsize
         yield dict(offset=offset, length=length)
+    
