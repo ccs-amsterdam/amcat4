@@ -33,6 +33,8 @@ def query_documents(index: str):
     If your field names contain __, it might be better to use POST queries
     highlight - if true, add highlight tags <em>
     annotations - if true, also return _annotations with query matches as annotations
+
+    Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     """
     # [WvA] GET /documents might be more RESTful, but would not allow a POST query to the same endpoint
     args = {}
@@ -95,24 +97,31 @@ def query_documents_post(index: str):
                    {field: {values: [v1,v2]}             ## can also use values inside dict
         }        
     }
+
+    Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
+    }
+
     """
     params = request.get_json(force=True)
     
-    ## first standardize fields, queries and filters to their most versatile format
+    # first standardize fields, queries and filters to their most versatile format
     if 'fields' in params:
-        ## to array format: fields: [field1, field2]
-        if isinstance(params['fields'], str): params['fields'] = [params['fields']]
+        # to array format: fields: [field1, field2]
+        if isinstance(params['fields'], str):
+            params['fields'] = [params['fields']]
 
     if 'queries' in params:
-        ## to dict format: {label1:query1, label2: query2}  uses indices if no labels given
-        if isinstance(params['queries'], str): params['queries'] = [params['queries']]
+        # to dict format: {label1:query1, label2: query2}  uses indices if no labels given
+        if isinstance(params['queries'], str):
+            params['queries'] = [params['queries']]
         if isinstance(params['queries'], list):
-            params['queries'] = {str(i):q for i,q in enumerate(params['queries'])}
+            params['queries'] = {str(i): q for i, q in enumerate(params['queries'])}
 
     if 'filters' in params:
-        ## to dict format: {field: {values: []}}
+        # to dict format: {field: {values: []}}
         for field, filter in params['filters'].items():
-            if isinstance(filter, str): filter = [filter]
+            if isinstance(filter, str):
+                filter = [filter]
             if isinstance(filter, list): 
                 params['filters'][field] = {'values': filter}
          
@@ -131,7 +140,8 @@ def query_aggregate_post(index: str):
     {'axes': [{'field': .., ['interval': ..]}, ...],
      'filters': <filters, see query endpoint>
      }
-    Will return a json list of lists [<axis-1-name>, ..., _n]
+
+    Returns a JSON object {data: [{axis1, ..., n}, ...], meta: {axes: [...]}
     """
     params = request.get_json(force=True)
     axes = params.pop('axes', [])
@@ -139,5 +149,6 @@ def query_aggregate_post(index: str):
         response = jsonify({'message': 'Aggregation axis not given'})
         response.status_code = 400
         return response
-    results = aggregate.query_aggregate(index, *axes, **params)
-    return jsonify([b._asdict() for b in results])
+    axes, results = aggregate.query_aggregate(index, *axes, **params)
+    return jsonify({"meta": {"axes": [axis.asdict() for axis in axes]},
+                    "data": [b._asdict() for b in results]})

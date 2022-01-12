@@ -107,12 +107,10 @@ def modify_user(email):
     if u.role == Role.ADMIN:
         check_role(Role.ADMIN)
     data = request.get_json(force=True)
-    print(data)
     if 'global_role' in data:
         role = Role[data['global_role'].upper()]
         check_role(role)  # need at least same level
         u.global_role = role
-        _index(data.get('index')).set_role(u, Role[data.get('global_role')])
     if 'email' in data:
         u.email = data['email']
     if 'password' in data:

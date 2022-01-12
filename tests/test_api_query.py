@@ -41,9 +41,9 @@ class TestQuery(QueryTestCase):
         """Does the POST end point work with queries and filters"""
         assert_equal(self.qp(), {1, 2, 11, 31})
         assert_equal(self.qp("te*", filters={'date': {'value': '2018-02-01'}}), {2})
-        assert_equal(self.qp("te*", filters={'date': {'range': {'lt': '2018-02-01'}}}), {1})
-        assert_equal(self.qp("te*", filters={'date': {'range': {'lte': '2018-02-01'}}}), {1, 2})
-        assert_equal(self.qp(filters={'date': {'range': {'lt': '2020-01-01'}}}), {1, 2, 31})
+        assert_equal(self.qp("te*", filters={'date': {'lt': '2018-02-01'}}), {1})
+        assert_equal(self.qp("te*", filters={'date': {'lte': '2018-02-01'}}), {1, 2})
+        assert_equal(self.qp(filters={'date': {'lt': '2020-01-01'}}), {1, 2, 31})
 
     def test_fields(self):
         """Can we request specific fields?"""
@@ -59,7 +59,7 @@ class TestQuery(QueryTestCase):
     def test_aggregate_post(self):
         """Can we aggregate on one or more fields?"""
         def q(axes):
-            for row in self.query_post(endpoint='aggregate', axes=axes):
+            for row in self.query_post(endpoint='aggregate', axes=axes)['data']:
                 key = tuple(row[x['field']] for x in axes)
                 yield (key, row['n'])
 

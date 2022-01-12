@@ -37,7 +37,8 @@ def q(*args, index=_INDEX, **kargs):
         if len(x) == 1:
             return x[0]
         return x
-    result = query_aggregate(index, *args, **kargs)
+    _axes, result = query_aggregate(index, *args, **kargs)
+    print("!!!!", result)
     return {_key(vals[:-1]): vals[-1] for vals in result}
 
 

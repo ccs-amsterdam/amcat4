@@ -43,10 +43,10 @@ def test_query():
 
 
 def test_range_query():
-    assert_equal(q(filters={"date": {"range": {"gt": "2018-02-01"}}}), {2})
-    assert_equal(q(filters={"date": {"range": {"gte": "2018-02-01"}}}), {1, 2})
-    assert_equal(q(filters={"date": {"range": {"gte": "2018-02-01", "lt": "2020-01-01"}}}), {1})
-    assert_equal(q("title", filters={"date": {"range": {"gt": "2018-01-01"}}}), {1})
+    assert_equal(q(filters={"date": {"gt": "2018-02-01"}}), {2})
+    assert_equal(q(filters={"date": {"gte": "2018-02-01"}}), {1, 2})
+    assert_equal(q(filters={"date": {"gte": "2018-02-01", "lt": "2020-01-01"}}), {1})
+    assert_equal(q("title", filters={"date": {"gt": "2018-01-01"}}), {1})
 
 
 def test_fields():

@@ -10,6 +10,7 @@ class TestQuery(QueryTestCase):
     def test_pagination(self):
         """Does basic pagination work?"""
         r = self.query(sort="i", per_page=20)
+        print(r)
         assert_equal(r['meta']['per_page'], 20)
         assert_equal(r['meta']['page'], 0)
         assert_equal(r['meta']['page_count'], 4)

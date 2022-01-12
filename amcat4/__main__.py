@@ -76,7 +76,7 @@ def document(args):
 
 
 import argparse
-parser = argparse.ArgumentParser(description=__doc__)
+parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
 
 subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
 p = subparsers.add_parser('run', help='Run the backend API in development mode')

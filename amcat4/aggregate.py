@@ -3,15 +3,15 @@ Aggregate queries
 """
 from collections import namedtuple
 from datetime import datetime
-from typing import Mapping, Iterable, Union
+from typing import Mapping, Iterable, Union, Tuple
 
 from amcat4.elastic import es, field_type
 from amcat4.query import build_body
 
 
-class _Axis:
+class Axis:
     """
-    Internal helper class that represents an aggregation axis
+    Class that represents an aggregation axis
     """
     def __init__(self, index, field, interval=None):
         if isinstance(field, dict):
@@ -38,6 +38,8 @@ class _Axis:
                 value = value.date()
         return value
 
+    def asdict(self):
+        return {"field": self.field, "type": self.ftype, "interval": self.interval}
 
 def _get_aggregates(index, sources, queries, filters, after_key=None):
     """
@@ -48,7 +50,8 @@ def _get_aggregates(index, sources, queries, filters, after_key=None):
     after = {"after": after_key} if after_key else {}
     body = {"size": 0, "aggregations": {"aggr": {"composite": dict(sources=sources, **after)}}}
     if filters or queries:
-        body['query'] = build_body(queries=queries, filters=filters)
+        q = build_body(queries=queries, filters=filters)
+        body["query"] = q["query"]
     result = es.search(index=index, body=body)['aggregations']['aggr']
     yield from result['buckets']
     after_key = result.get('after_key')
@@ -57,8 +60,8 @@ def _get_aggregates(index, sources, queries, filters, after_key=None):
 
 
 def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
-                    value="n", queries: Iterable[str] = None,
-                    filters: Mapping[str, Mapping] = None) -> Iterable[namedtuple]:
+                    value="n", queries: Union[Mapping[str, str], Iterable[str]] = None,
+                    filters: Mapping[str, Mapping] = None) -> Tuple[Iterable[Axis], Iterable[namedtuple]]:
     """
     Conduct an aggregate query.
     Note that interval queries also yield zero counts for intervening keys without value,
@@ -71,13 +74,19 @@ def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
     :param queries: Optional query string
     :param filters: if not None, a dict of filters: {field: {'value': value}} or
                     {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
-    :return: a sequence of (axis-value, [axis2-value, ...], aggregate-value) tuples
+    :return: a pair of (Axis, results), where results is a sequence of (axis-value, [axis2-value, ...], aggregate-value) tuples
     """
-    axes = [_Axis(index, x) for x in (axis, ) + axes]
+    axes = [Axis(index, x) for x in (axis, ) + axes]
     names = [x.field for x in axes] + [value]
     nt = namedtuple("Bucket", names)
     sources = [axis.query() for axis in axes]
-    for bucket in _get_aggregates(index, sources, queries, filters):
-        result = [axis.postprocess(bucket['key'][axis.field]) for axis in axes]
-        result += [bucket['doc_count']]
-        yield nt(*result)
+
+    if queries and not isinstance(queries, dict):
+        queries = {q: q for q in queries}
+
+    def _process(axes, bucket):
+        values = [axis.postprocess(bucket['key'][axis.field]) for axis in axes] + [bucket['doc_count']]
+        return nt(*values)
+    results = [_process(axes, bucket)
+            for bucket in _get_aggregates(index, sources, queries, filters)]
+    return axes, results
