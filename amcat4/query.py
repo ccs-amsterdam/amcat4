@@ -2,13 +2,14 @@
 All things query
 """
 from math import ceil
-from re import finditer, sub
-from typing import Mapping, Iterable, Optional, Union, Dict
+from re import finditer
+from re import sub
+from typing import Mapping, Iterable, Optional, Union, Sequence
 
 from .elastic import es
 
 
-def build_body(queries: Mapping[str, str] = None, filters: Mapping = None, highlight: bool = False):
+def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: bool = False):
     def parse_filter(field, filter):
         field_filters = []
         for value in filter.pop('values', []):
@@ -26,26 +27,25 @@ def build_body(queries: Mapping[str, str] = None, filters: Mapping = None, highl
             raise ValueError(f"Unknown filter type(s): {filter}")
         return {'bool': {'should': field_filters}}
 
-    def parse_query(q):
+    def parse_query(q: str) -> dict:
         return {"query_string": {"query":  q}}
 
-    def parse_queries(qs):
-        if len(qs.values()) == 1:
-            return parse_query(list(qs.values())[0])
+    def parse_queries(qs: Sequence[str]) -> dict:
+        if len(qs) == 1:
+            return parse_query(list(qs)[0])
         else:
-            return {"bool": {"should": [parse_query(q) for q in qs.values()]}}
-
+            return {"bool": {"should": [parse_query(q) for q in qs]}}
     if not queries and not filters:
         return {'query': {'match_all': {}}}
 
     fs = [parse_filter(*item) for item in filters.items()] if filters else []
     if queries:
-        fs.append(parse_queries(queries))
+        fs.append(parse_queries(list(queries)))
 
     body = {"query": {"bool": {"filter": fs}}}
 
     if highlight:
-        body['highlight'] = {"type": 'unified', "require_field_match" : True, 
+        body['highlight'] = {"type": 'unified', "require_field_match" : True,
                              "fields" : {"*" : {"number_of_fragments": 0}}}
     return body
 
@@ -73,7 +73,7 @@ class QueryResult:
         return dict(meta=meta, results=self.data)
 
 
-def query_documents(index: str, queries: Union[Dict[str,  str], Iterable[str]] = None, *,
+def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]] = None, *,
                     page: int = 0, per_page: int = 10,
                     scroll=None, scroll_id: str = None, fields: Iterable[str] = None,
                     filters: Mapping[str, Mapping] = None,
@@ -116,7 +116,7 @@ def query_documents(index: str, queries: Union[Dict[str,  str], Iterable[str]] =
         if not result['hits']['hits']:
             return None
     else:
-        body = build_body(queries, filters, highlight)
+        body = build_body(queries and queries.values(), filters, highlight)
 
         if fields:
             fields = fields if isinstance(fields, list) else list(fields)
@@ -129,7 +129,8 @@ def query_documents(index: str, queries: Union[Dict[str,  str], Iterable[str]] =
     for hit in result['hits']['hits']:
         hitdict = dict(_id=hit['_id'], **hit['_source'])
         if annotations:
-            hitdict['_annotations'] = query_annotations(index, hit['_id'], queries)
+            assert queries is not None
+            hitdict['_annotations'] = query_annotations(index, hit['_id'], queries.values())
         if 'highlight' in hit:
             for key in hit['highlight'].keys():
                 if hit['highlight'][key]:
@@ -149,7 +150,7 @@ def query_annotations(index: str, id: str, queries: Iterable[str]):
     Per hit could be optimized, but per query seems necessary:
     https://stackoverflow.com/questions/44621694/elasticsearch-highlight-with-multiple-queries-not-work-as-expected
     """
-    
+
     annotations = []
     if not queries: return annotations
     for label, query in queries.items():
@@ -184,4 +185,3 @@ def extract_highlight_span(highlight):
         offset = m.start(0) - tagsize*i
         length = len(m.group(0)) - tagsize
         yield dict(offset=offset, length=length)
-    

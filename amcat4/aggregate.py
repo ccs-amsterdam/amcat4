@@ -3,7 +3,7 @@ Aggregate queries
 """
 from collections import namedtuple
 from datetime import datetime
-from typing import Mapping, Iterable, Union, Tuple
+from typing import Mapping, Iterable, Union, Tuple, Sequence
 
 from amcat4.elastic import es, field_type
 from amcat4.query import build_body
@@ -61,8 +61,8 @@ def _get_aggregates(index, sources, queries, filters, after_key=None):
 
 
 def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
-                    value="n", queries: Union[Mapping[str, str], Iterable[str]] = None,
-                    filters: Mapping[str, Mapping] = None) -> Tuple[Iterable[Axis], Iterable[namedtuple]]:
+                    value="n", queries: Union[Mapping[str, str], Sequence[str]] = None,
+                    filters: Mapping[str, Mapping] = None) -> Tuple[Iterable[Axis], Iterable[Tuple]]:
     """
     Conduct an aggregate query.
     Note that interval queries also yield zero counts for intervening keys without value,

@@ -49,7 +49,7 @@ class User(Model):
         from amcat4.index import Index  # Prevent circular import
         indices = {i.index: Role(i.role) for i in self.indexrole_set.join(Index)}
         if include_guest:
-            for i in Index.select().where(Index.guest_role.isnull(False)):
+            for i in Index.select().where(Index.guest_role.is_null(False)):
                 if i not in indices:
                     indices[i] = Role(i.guest_role)
         return indices
@@ -89,6 +89,7 @@ def verify_user(email: str, password: str) -> Optional[User]:
         return user
     else:
         logging.warning("Incorrect password for user {email}".format(**locals()))
+        return None
 
 
 def verify_token(token: str) -> Optional[User]:

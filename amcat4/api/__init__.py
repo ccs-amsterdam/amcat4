@@ -12,7 +12,7 @@ from amcat4.api.query import app_query
 from amcat4.api.users import app_users
 
 template_path = (Path(__file__) / "../../../templates").resolve()
-app = Flask(__name__, template_folder=template_path)
+app = Flask(__name__, template_folder=str(template_path))
 auto.init_app(app)
 
 app.json_encoder = MyJSONEncoder

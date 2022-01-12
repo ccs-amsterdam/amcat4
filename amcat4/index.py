@@ -20,6 +20,7 @@ Authorisation rules:
 Note that these rules are not enforced in this module, they should be enforced by the API!
 """
 
+
 from peewee import Model, CharField, IntegerField, ForeignKeyField
 
 from amcat4 import elastic

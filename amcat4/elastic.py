@@ -38,7 +38,7 @@ def setup_elastic(*hosts):
         es.indices.create(SYS_INDEX)
 
 
-def _list_indices(exclude_system_index=True) -> [str]:
+def _list_indices(exclude_system_index=True) -> List[str]:
     """
     List all indices on the connected elastic cluster.
     You should probably use the methods in amcat4.index rather than this.
