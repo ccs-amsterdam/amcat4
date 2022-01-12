@@ -33,14 +33,15 @@ To install AmCAT4 from github and create a virutal environment, run:
 git clone https://github.com/ccs-amsterdam/amcat4
 cd amcat4
 python3 -m venv env
-env/bin/pip install -e .
+env/bin/pip install -e .[dev]
 env/bin/python -m amcat4 run
 ```
 
-To run the unit tests:
+To run the unit tests and linting:
 
 ```
-env/bin/pip install nose
+env/bin/flake8 . --exclude=env
+env/bin/mypy -p amcat4
 env/bin/nosetests
 ```
 
