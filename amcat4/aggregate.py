@@ -3,17 +3,17 @@ Aggregate queries
 """
 from collections import namedtuple
 from datetime import datetime
-from typing import Mapping, Iterable, Union, Tuple, Sequence
+from typing import Mapping, Iterable, Union, Tuple, Sequence, NamedTuple
 
 from amcat4.elastic import es, field_type
-from amcat4.query import build_body
+from amcat4.query import build_body, _normalize_queries
 
 
 class Axis:
     """
     Class that represents an aggregation axis
     """
-    def __init__(self, index, field, interval=None):
+    def __init__(self, index: str, field: Union[str, dict], interval=None):
         if isinstance(field, dict):
             self.field = field['field']
             self.interval = field.get('interval')
@@ -60,9 +60,9 @@ def _get_aggregates(index, sources, queries, filters, after_key=None):
         yield from _get_aggregates(index, sources, queries, filters, after_key)
 
 
-def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
+def query_aggregate(index: str, axis: Union[str, dict], *more_axes: Union[str, dict],
                     value="n", queries: Union[Mapping[str, str], Sequence[str]] = None,
-                    filters: Mapping[str, Mapping] = None) -> Tuple[Iterable[Axis], Iterable[Tuple]]:
+                    filters: Mapping[str, Mapping] = None) -> Tuple[Iterable[Axis], Iterable[NamedTuple]]:
     """
     Conduct an aggregate query.
     Note that interval queries also yield zero counts for intervening keys without value,
@@ -77,17 +77,15 @@ def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
                     {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
     :return: a pair of (Axis, results), where results is a sequence of (axis-value, [axis2-value, ...], aggregate-value) tuples
     """
-    axes = [Axis(index, x) for x in (axis, ) + axes]
+    axes = [Axis(index, x) for x in (axis, ) + more_axes]
     names = [x.field for x in axes] + [value]
-    nt = namedtuple("Bucket", names)
+    nt = namedtuple("Bucket", names)  # type: ignore
     sources = [axis.query() for axis in axes]
+    queries = _normalize_queries(queries)
 
-    if queries and not isinstance(queries, dict):
-        queries = {q: q for q in queries}
-
-    def _process(axes, bucket):
+    def _process(axes, bucket) -> NamedTuple:
         values = [axis.postprocess(bucket['key'][axis.field]) for axis in axes] + [bucket['doc_count']]
-        return nt(*values)
+        return nt(*values)  # noqa
     results = [_process(axes, bucket)
                for bucket in _get_aggregates(index, sources, queries, filters)]
     return axes, results

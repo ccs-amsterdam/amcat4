@@ -3,6 +3,7 @@ API Endpoints for querying
 """
 
 from http import HTTPStatus
+from typing import Dict
 
 from flask import Blueprint, jsonify, request, abort
 
@@ -45,7 +46,7 @@ def query_documents(index: str):
             val = val.split(",") if name in ["fields"] else val
             args[name] = val
 
-    filters = {}
+    filters: Dict[str, Dict] = {}
     for (f, v) in request.args.items():
         if f not in known_args + ["q"]:
             if f.startswith("__"):

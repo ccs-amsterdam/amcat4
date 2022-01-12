@@ -4,7 +4,7 @@ All things query
 from math import ceil
 from re import finditer
 from re import sub
-from typing import Mapping, Iterable, Optional, Union, Sequence
+from typing import Mapping, Iterable, Optional, Union, Sequence, Any, Dict
 
 from .elastic import es
 
@@ -42,7 +42,7 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
     if queries:
         fs.append(parse_queries(list(queries)))
 
-    body = {"query": {"bool": {"filter": fs}}}
+    body: Dict[str, Any] = {"query": {"bool": {"filter": fs}}}
 
     if highlight:
         body['highlight'] = {"type": 'unified', "require_field_match": True,
@@ -71,6 +71,14 @@ class QueryResult:
         else:
             meta['page'] = self.page
         return dict(meta=meta, results=self.data)
+
+
+def _normalize_queries(queries: Optional[Union[Dict[str,  str], Iterable[str]]]) -> Mapping[str, str]:
+    if queries is None:
+        return {}
+    if isinstance(queries, dict):
+        return queries
+    return {q: q for q in queries}
 
 
 def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]] = None, *,
@@ -107,16 +115,14 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
     if scroll or scroll_id:
         # set scroll to default also if scroll_id is given but no scroll time is known
         kwargs['scroll'] = '2m' if (not scroll or scroll is True) else scroll
-
-    if queries and not isinstance(queries, dict):
-        queries = {q: q for q in queries}
+    queries = _normalize_queries(queries)
 
     if scroll_id:
         result = es.scroll(scroll_id=scroll_id, **kwargs)
         if not result['hits']['hits']:
             return None
     else:
-        body = build_body(queries and queries.values(), filters, highlight)
+        body = build_body(queries.values(), filters, highlight)
 
         if fields:
             fields = fields if isinstance(fields, list) else list(fields)
@@ -129,8 +135,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
     for hit in result['hits']['hits']:
         hitdict = dict(_id=hit['_id'], **hit['_source'])
         if annotations:
-            assert queries is not None
-            hitdict['_annotations'] = query_annotations(index, hit['_id'], queries)
+            hitdict['_annotations'] = list(query_annotations(index, hit['_id'], queries))
         if 'highlight' in hit:
             for key in hit['highlight'].keys():
                 if hit['highlight'][key]:
@@ -145,16 +150,15 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
         return QueryResult(data, n=result['hits']['total'], per_page=per_page,  page=page)
 
 
-def query_annotations(index: str, id: str, queries: Union[Mapping[str,  str]]):
+def query_annotations(index: str, id: str, queries: Mapping[str,  str]) -> Iterable[Dict]:
     """
     get query matches in annotation format. Currently does so per hit per query.
     Per hit could be optimized, but per query seems necessary:
     https://stackoverflow.com/questions/44621694/elasticsearch-highlight-with-multiple-queries-not-work-as-expected
     """
 
-    annotations = []
     if not queries:
-        return annotations
+        return
     for label, query in queries.items():
         body = build_body([query], {'_id': {'value': id}}, True)
 
@@ -167,11 +171,10 @@ def query_annotations(index: str, id: str, queries: Union[Mapping[str,  str]]):
                 span['variable'] = 'query'
                 span['value'] = label
                 span['field'] = field
-                annotations.append(span)
-    return annotations
+                yield span
 
 
-def extract_highlight_span(highlight):
+def extract_highlight_span(highlight) -> Iterable[Dict]:
     """
     It doesn't seem possible to get the offsets of highlights:
     https://github.com/elastic/elasticsearch/issues/5736
