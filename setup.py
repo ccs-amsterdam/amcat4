@@ -21,6 +21,7 @@ setup(
         "Flask",
         "Flask-HTTPAuth",
         "flask-cors",
+        "flask-selfdoc",
         "elasticsearch",
         "bcrypt",
         "peewee",
