@@ -32,6 +32,9 @@ setup(
         'dev': [
             'nose',
             'codecov',
+            'mypy',
+            'types-Flask',
+            'flake8'
         ]
     },
 )

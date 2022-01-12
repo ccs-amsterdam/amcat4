@@ -43,7 +43,7 @@ def _list_indices(exclude_system_index=True) -> List[str]:
     List all indices on the connected elastic cluster.
     You should probably use the methods in amcat4.index rather than this.
     """
-    result = es.indices.get("*")
+    result = es.indices.get(index="*")
     return [x for x in result.keys() if not (exclude_system_index and x == SYS_INDEX)]
 
 
