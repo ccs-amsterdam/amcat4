@@ -145,7 +145,6 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
         return QueryResult(data, n=result['hits']['total'], per_page=per_page,  page=page)
 
 
-
 def query_annotations(index: str, id: str, queries: Union[Mapping[str,  str]]):
     """
     get query matches in annotation format. Currently does so per hit per query.
