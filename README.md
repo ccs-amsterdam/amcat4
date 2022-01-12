@@ -1,5 +1,6 @@
 
 ![Build status](https://github.com/ccs-amsterdam/amcat4/actions/workflows/unittests.yml/badge.svg)
+![Linting](https://github.com/ccs-amsterdam/amcat4/actions/workflows/linting.yml/badge.svg)
 
 # AmCAT4
 
