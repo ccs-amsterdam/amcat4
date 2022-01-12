@@ -130,7 +130,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
         hitdict = dict(_id=hit['_id'], **hit['_source'])
         if annotations:
             assert queries is not None
-            hitdict['_annotations'] = query_annotations(index, hit['_id'], queries.values())
+            hitdict['_annotations'] = query_annotations(index, hit['_id'], queries)
         if 'highlight' in hit:
             for key in hit['highlight'].keys():
                 if hit['highlight'][key]:
@@ -145,7 +145,8 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
         return QueryResult(data, n=result['hits']['total'], per_page=per_page,  page=page)
 
 
-def query_annotations(index: str, id: str, queries: Iterable[str]):
+
+def query_annotations(index: str, id: str, queries: Union[Mapping[str,  str]]):
     """
     get query matches in annotation format. Currently does so per hit per query.
     Per hit could be optimized, but per query seems necessary:
@@ -156,7 +157,7 @@ def query_annotations(index: str, id: str, queries: Iterable[str]):
     if not queries:
         return annotations
     for label, query in queries.items():
-        body = build_body({label: query}, {'_id': {'value': id}}, True)
+        body = build_body([query], {'_id': {'value': id}}, True)
 
         result = es.search(index=index, body=body)
         hit = result['hits']['hits']
