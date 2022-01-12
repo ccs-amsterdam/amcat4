@@ -45,7 +45,9 @@ env/bin/mypy -p amcat4
 env/bin/nosetests
 ```
 
-(obviously, feel free to place your virtaal environment in any other location, this is just how I set things up)
+Please make sure to run these tests before making any commits!
+
+(obviously, feel free to place your virtual environment in any other location, this is just how I set things up)
 
 
 
