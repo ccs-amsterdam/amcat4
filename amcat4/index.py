@@ -19,7 +19,6 @@ Authorisation rules:
 
 Note that these rules are not enforced in this module, they should be enforced by the API!
 """
-import logging
 
 from peewee import Model, CharField, IntegerField, ForeignKeyField
 
@@ -43,7 +42,6 @@ class Index(Model):
         self.delete_instance()
         if delete_from_elastic:
             elastic._delete_index(self.name)
-        indices = [i.name for i in self.select()]
 
     def has_role(self, user: User, role: Role) -> bool:
         """

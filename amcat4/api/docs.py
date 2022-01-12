@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template
 
-from amcat4.api.common import auto
 import amcat4.api.query
+from amcat4.api.common import auto
 
 app_docs = Blueprint('app_docs', __name__)
 

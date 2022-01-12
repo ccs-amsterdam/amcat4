@@ -3,8 +3,8 @@ from datetime import datetime, date
 
 from flask import g, json, jsonify
 from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth, MultiAuth
-from werkzeug.exceptions import Unauthorized
 from flask_selfdoc import Autodoc
+from werkzeug.exceptions import Unauthorized
 
 from amcat4 import auth
 from amcat4.auth import Role
@@ -15,6 +15,7 @@ token_auth = HTTPTokenAuth()
 multi_auth = MultiAuth(basic_auth, token_auth)
 
 auto = Autodoc()
+
 
 @basic_auth.verify_password
 def verify_password(username, password):

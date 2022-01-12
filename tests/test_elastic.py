@@ -1,13 +1,11 @@
 import random
 import string
-import time
 
 from nose.tools import assert_equal
 
+from amcat4 import elastic
 from amcat4.elastic import get_fields
 from tests.tools import with_index, upload
-
-from amcat4 import elastic
 
 
 def test_create_delete_list_index():
@@ -33,8 +31,6 @@ def test_upload_retrieve_document(index_name):
     # todo check date type
 
 
-
-
 @with_index
 def test_fields(index_name):
     assert_equal(get_fields(index_name), dict(title='text', date='date', text='text', url='keyword'))
@@ -45,4 +41,3 @@ def test_values(index_name):
     upload([dict(bla=x) for x in ["odd", "even", "even"] * 10], columns={"bla": "keyword"})
     # time.sleep(3)
     assert_equal(set(elastic.get_values(index_name, "bla")), {"odd", "even"})
-

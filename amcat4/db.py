@@ -1,6 +1,6 @@
 import logging
 
-from peewee import *
+from peewee import SqliteDatabase
 import sys
 
 # IF we're running nose tests, we want an in-memory db

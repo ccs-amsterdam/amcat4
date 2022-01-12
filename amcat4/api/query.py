@@ -2,12 +2,11 @@
 API Endpoints for querying
 """
 
-from flask import Blueprint, jsonify, request, abort
-
-
-from amcat4 import query, aggregate
 from http import HTTPStatus
 
+from flask import Blueprint, jsonify, request, abort
+
+from amcat4 import query, aggregate
 from amcat4.api.common import multi_auth, auto
 
 app_query = Blueprint('app_query', __name__)
@@ -53,10 +52,12 @@ def query_documents(index: str):
                 f = f[2:]
             if "__" in f:  # range query
                 (field, operator) = f.split("__")
-                if field not in filters: filters[field] = {}
+                if field not in filters:
+                    filters[field] = {}
                 filters[field][operator] = v
             else:  # value query
-                if f not in filters: filters[f] = {'values': []}
+                if f not in filters:
+                    filters[f] = {'values': []}
                 filters[f]['values'].append(v)
 
     if filters:
@@ -75,27 +76,27 @@ def query_documents(index: str):
 def query_documents_post(index: str):
     """
     List or query documents in this index. POST body should be a json dict structured as follows (all keys optional):
-    
-    
+
+
     {
         # for optional param in {sort, per_page, page, scroll, scroll_id, highlight, annotations}
-        param: value,   
+        param: value,
 
         # select fields
         fields: field                                    ## single field
         fields: [field1, field2]                         ## multiple fields
-     
-        # elastic queries. 
+
+        # elastic queries.
         'queries':  query,                               ## single query
         'queries': [query1, query2],                     ## OR without labels
         'queries': {label1: query1, label2: query2}      ## OR with labels
 
-        # filters 
+        # filters
         'filters': {field: value},                       ## exact value
-                   {field: [value1, value2]},            ## OR   
+                   {field: [value1, value2]},            ## OR
                    {field: {gt(e): value, lt(e): value}  ## range or multiple
                    {field: {values: [v1,v2]}             ## can also use values inside dict
-        }        
+        }
     }
 
     Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
@@ -103,7 +104,7 @@ def query_documents_post(index: str):
 
     """
     params = request.get_json(force=True)
-    
+
     # first standardize fields, queries and filters to their most versatile format
     if 'fields' in params:
         # to array format: fields: [field1, field2]
@@ -122,9 +123,9 @@ def query_documents_post(index: str):
         for field, filter in params['filters'].items():
             if isinstance(filter, str):
                 filter = [filter]
-            if isinstance(filter, list): 
+            if isinstance(filter, list):
                 params['filters'][field] = {'values': filter}
-         
+
     r = query.query_documents(index, **params)
     if r is None:
         abort(404)

@@ -1,11 +1,11 @@
 import random
 import string
 
-from nose.tools import assert_is_not_none, assert_equals, assert_false, assert_true, assert_is_none, assert_raises, \
+from nose.tools import assert_equals, assert_false, assert_true, assert_raises, \
     assert_not_in
 
 from amcat4 import index, elastic
-from amcat4.auth import create_user, Role, User
+from amcat4.auth import create_user, Role
 from tests.tools import with_index
 
 
@@ -78,7 +78,3 @@ def test_roles(index_name):
         test(user_admin, [Role.METAREADER, Role.READER, Role.WRITER, Role.ADMIN])
     finally:
         ix.delete_index()
-
-
-
-

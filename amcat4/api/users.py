@@ -3,14 +3,14 @@ AmCAT4 can use either Basic or Token-based authentication.
 A client can request a token with basic authentication and store that token for future requests.
 """
 
+from http import HTTPStatus
+
 from flask import Blueprint, jsonify, request, abort, g
 
 from amcat4 import auth
-from http import HTTPStatus
-
 from amcat4.api.common import multi_auth, check_role, bad_request, auto
-from amcat4.auth import Role, User, hash_password
 from amcat4.api.index import _index
+from amcat4.auth import Role, User, hash_password
 
 app_users = Blueprint('app_users', __name__)
 
@@ -61,11 +61,11 @@ def get_user(email):
 def get_users():
     check_role(Role.ADMIN)
     try:
-        result=[]
+        result = []
         res1 = [dict(user=u.email, role=u.global_role) for u in User.select()]
         for entry in res1:
             for ix, role in User.get(User.email == entry['user']).indices().items():
-                result.append(dict(user= entry['user'], index_name= ix.name, role=role.name))
+                result.append(dict(user=entry['user'], index_name=ix.name, role=role.name))
         return jsonify(result)
     except User.DoesNotExist:
         abort(404)

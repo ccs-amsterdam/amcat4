@@ -3,7 +3,7 @@ from nose.tools import assert_equal
 from amcat4 import elastic
 from amcat4.api.index import _index
 from amcat4.auth import User, Role
-from tests.tools import QueryTestCase, with_index, upload
+from tests.tools import QueryTestCase, upload
 
 ANNOTATIONS = [{'x': 1}, {'x': 2, 'y': 1}]
 _TEST_DOCUMENTS = [
@@ -37,14 +37,7 @@ class TestAPIAnnotations(QueryTestCase):
         url = f"/index/{self.index_name}/documents/0"
         self.put(url, json={"x": 1}, user=self.user,
                  check=401, check_error="User without rights on index can't update a document")
-        #TODO: do this using API
+        # TODO: do this using API
         user = User.get(User.email == self.user.email)
         _index(self.index_name).set_role(user, Role.WRITER)
         self.put(url, json={"x": 1}, user=self.user)
-
-
-
-
-
-
-

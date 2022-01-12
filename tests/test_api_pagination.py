@@ -1,4 +1,3 @@
-import urllib
 from nose.tools import assert_equal, assert_is_not_none
 
 from tests.tools import QueryTestCase

@@ -67,4 +67,3 @@ class TestQuery(QueryTestCase):
         assert_equal(dict(q(axes=[{'field': 'cat'}])), {("a",): 3, ("b",): 1})
         assert_equal(dict(q(axes=[{'field': 'cat'}, {'field': 'date', 'interval': 'year'}])),
                      {("a", "2018-01-01"): 2, ("a", "2020-01-01"): 1, ("b", "2018-01-01"): 1})
-

@@ -11,9 +11,8 @@ from .elastic import es
 def build_body(queries: Mapping[str, str] = None, filters: Mapping = None, highlight: bool = False):
     def parse_filter(field, filter):
         field_filters = []
-        if 'values' in filter:
-            for value in filter.pop('values'):
-                field_filters.append({"term": {field: value}})      
+        for value in filter.pop('values', []):
+            field_filters.append({"term": {field: value}})
         if 'value' in filter:
             field_filters.append({"term": {field: filter.pop('value')}})
 
@@ -21,15 +20,15 @@ def build_body(queries: Mapping[str, str] = None, filters: Mapping = None, highl
         for rangevar in ['gt', 'gte', 'lt', 'lte']:
             if rangevar in filter:
                 rangefilter[rangevar] = filter.pop(rangevar)
-        if rangefilter: 
+        if rangefilter:
             field_filters.append({"range": {field: rangefilter}})
         if filter:
             raise ValueError(f"Unknown filter type(s): {filter}")
-        return {'bool': {'should': field_filters}} 
+        return {'bool': {'should': field_filters}}
 
     def parse_query(q):
-        return {"query_string": {"query":  q }}
-        
+        return {"query_string": {"query":  q}}
+
     def parse_queries(qs):
         if len(qs.values()) == 1:
             return parse_query(list(qs.values())[0])
@@ -44,9 +43,8 @@ def build_body(queries: Mapping[str, str] = None, filters: Mapping = None, highl
         fs.append(parse_queries(queries))
 
     body = {"query": {"bool": {"filter": fs}}}
-    print("!!!!!!", body)
     if highlight:
-        body['highlight'] = {"type": 'plain', "fields" : {"*" : {"number_of_fragments": 0}}}
+        body['highlight'] = {"type": 'plain', "fields": {"*": {"number_of_fragments": 0}}}
     return body
 
 
@@ -76,7 +74,7 @@ class QueryResult:
 def query_documents(index: str, queries: Union[Dict[str,  str], Iterable[str]] = None, *,
                     page: int = 0, per_page: int = 10,
                     scroll=None, scroll_id: str = None, fields: Iterable[str] = None,
-                    filters: Mapping[str, Mapping] = None, 
+                    filters: Mapping[str, Mapping] = None,
                     highlight=False, annotations=False,
                     **kwargs) -> Optional[QueryResult]:
     """
@@ -98,8 +96,8 @@ def query_documents(index: str, queries: Union[Dict[str,  str], Iterable[str]] =
                                 'value': value,
                                 'gte/gt/lte/lt': value,
                                 ...}}
-    :param highlight: if True, add highlight tags (<em>) to results. 
-    :param annotations: if True, get query matches as annotations. 
+    :param highlight: if True, add highlight tags (<em>) to results.
+    :param annotations: if True, get query matches as annotations.
     :param kwargs: Additional elements passed to Elasticsearch.search(), for example:
            sort=col1:desc,col2
     :return: a QueryResult, or None if there is not scroll result anymore
@@ -124,16 +122,16 @@ def query_documents(index: str, queries: Union[Dict[str,  str], Iterable[str]] =
         if not scroll:
             kwargs['from_'] = page * per_page
         result = es.search(index=index, body=body, size=per_page, **kwargs)
-    
+
     data = []
     for hit in result['hits']['hits']:
         hitdict = dict(_id=hit['_id'], **hit['_source'])
-        if annotations: 
+        if annotations:
             hitdict['_annotations'] = query_annotations(index, hit['_id'], queries)
-        if 'highlight' in hit: 
+        if 'highlight' in hit:
             for key in hit['highlight'].keys():
-                if hit['highlight'][key]: 
-                    hitdict[key] = hit['highlight'][key][0] 
+                if hit['highlight'][key]:
+                    hitdict[key] = hit['highlight'][key][0]
         data.append(hitdict)
 
     if scroll_id:
@@ -175,6 +173,6 @@ def extract_highlight_span(highlight):
     regex = '<em>.+</em>'
     tagsize = 9  # <em></em>
     for i, m in enumerate(finditer(regex, highlight)):
-        offset = m.start(0) - tagsize*i 
+        offset = m.start(0) - tagsize*i
         length = len(m.group(0)) - tagsize
         yield dict(offset=offset, length=length)

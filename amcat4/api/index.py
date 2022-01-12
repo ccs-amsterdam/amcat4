@@ -2,14 +2,14 @@
 API Endpoints for document and index management
 """
 
+from http import HTTPStatus
+
 import elasticsearch
 from flask import Blueprint, jsonify, request, abort, g
 
 from amcat4 import elastic, index
-from amcat4.auth import Role
-from http import HTTPStatus
-
 from amcat4.api.common import multi_auth, check_role, auto
+from amcat4.auth import Role
 from amcat4.index import Index
 
 app_index = Blueprint('app_index', __name__)
@@ -99,7 +99,6 @@ def delete_index(ix: str):
     return "", HTTPStatus.NO_CONTENT
 
 
-
 @app_index.route("/index/<ix>/documents", methods=['POST'])
 @auto.doc(group='index')
 @multi_auth.login_required
@@ -111,7 +110,7 @@ def upload_documents(ix: str):
     """
     check_role(Role.WRITER, _index(ix))
     body = request.get_json(force=True)
-    
+
     result = elastic.upload_documents(ix, body['documents'], body['columns'])
     return jsonify(result), HTTPStatus.CREATED
 

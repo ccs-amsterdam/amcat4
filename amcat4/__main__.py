@@ -1,21 +1,21 @@
 """
 AmCAT4 REST API
 """
-import json
+import csv
+import io
 import logging
 import sys
-import io
-import csv
 import urllib.request
+import argparse
 
 from amcat4 import auth
+from amcat4.api import app
+from amcat4.api.common import MyJSONEncoder
 from amcat4.api.docs import docs_html, docs_md, context
 from amcat4.auth import Role, User
 from amcat4.db import initialize_if_needed
 from amcat4.elastic import setup_elastic, upload_documents
-from amcat4.api import app
 from amcat4.index import create_index, Index
-from amcat4.api.common import MyJSONEncoder
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -75,7 +75,6 @@ def document(args):
             raise ValueError(args.format)
 
 
-import argparse
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
 
 subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
@@ -85,10 +84,10 @@ p.set_defaults(func=run)
 p = subparsers.add_parser('create-test-index', help=f'Create the {SOTU_INDEX} test index')
 p.set_defaults(func=create_test_index)
 
-p = subparsers.add_parser('create-admin', help=f'Create the admin:admin superuser')
+p = subparsers.add_parser('create-admin', help='Create the admin:admin superuser')
 p.set_defaults(func=create_admin)
 
-p = subparsers.add_parser('document', help=f'Create the admin:admin superuser')
+p = subparsers.add_parser('document', help='Create the admin:admin superuser')
 p.add_argument("--format", choices=["html", "json", "md"], default="md", help="Output format (default: markdown)")
 p.set_defaults(func=document)
 

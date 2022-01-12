@@ -1,11 +1,9 @@
 from typing import Set
-import time
 
 from nose.tools import assert_equal
 
 from amcat4 import query
 from tests.tools import create_index, upload, delete_index, _TEST_INDEX
-
 
 _TEST_DOCUMENTS = [
     {'cat': 'a', 'subcat': 'x', 'i': 1, 'date': '2018-01-01', 'text': 'this is a text', },
@@ -18,6 +16,7 @@ _TEST_DOCUMENTS = [
 def setup_module():
     create_index()
     upload(_TEST_DOCUMENTS, columns={'cat': 'keyword', 'subcat': 'keyword', 'i': 'int'})
+
 
 def teardown_module():
     delete_index()

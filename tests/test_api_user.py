@@ -1,10 +1,9 @@
-import urllib
 from collections import namedtuple
 
-from amcat4.auth import verify_token, create_user, User, verify_user, Role
-from nose.tools import assert_equal, assert_is_not_none
+from nose.tools import assert_equal
 
-from tests.tools import QueryTestCase, ApiTestCase
+from amcat4.auth import verify_token, create_user, User, verify_user, Role
+from tests.tools import ApiTestCase
 
 
 class TestQuery(ApiTestCase):

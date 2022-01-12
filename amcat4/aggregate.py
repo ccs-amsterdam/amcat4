@@ -41,6 +41,7 @@ class Axis:
     def asdict(self):
         return {"field": self.field, "type": self.ftype, "interval": self.interval}
 
+
 def _get_aggregates(index, sources, queries, filters, after_key=None):
     """
     Recursively get all buckets from a composite query
@@ -88,5 +89,5 @@ def query_aggregate(index: str, axis: Union[str, dict], *axes: Union[str, dict],
         values = [axis.postprocess(bucket['key'][axis.field]) for axis in axes] + [bucket['doc_count']]
         return nt(*values)
     results = [_process(axes, bucket)
-            for bucket in _get_aggregates(index, sources, queries, filters)]
+               for bucket in _get_aggregates(index, sources, queries, filters)]
     return axes, results

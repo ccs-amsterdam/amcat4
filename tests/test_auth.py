@@ -1,8 +1,7 @@
 import random
 import string
-from typing import Iterable
 
-from nose.tools import assert_is_not_none, assert_equals, assert_false, assert_true, assert_is_none, assert_set_equal
+from nose.tools import assert_is_not_none, assert_equals, assert_is_none
 
 from amcat4.auth import verify_user, create_user, verify_token, Role
 from amcat4.elastic import _delete_index
@@ -57,5 +56,3 @@ def test_indices():
     finally:
         _delete_index(ix1_name, ignore_missing=True)
         _delete_index(ix2_name, ignore_missing=True)
-
-

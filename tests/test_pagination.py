@@ -1,5 +1,4 @@
-from typing import Iterable, List
-import time
+from typing import List
 
 from nose.tools import assert_equal, assert_is_none
 

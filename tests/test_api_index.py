@@ -4,7 +4,7 @@ import string
 from nose.tools import assert_equal
 
 from amcat4.auth import Role
-from tests.tools import with_index, upload, ApiTestCase, delete_index
+from tests.tools import upload, ApiTestCase, delete_index
 
 
 class TestIndex(ApiTestCase):

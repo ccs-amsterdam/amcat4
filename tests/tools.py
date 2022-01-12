@@ -92,7 +92,6 @@ class ApiTestCase:
         if cls.index:
             cls.index.delete_index(delete_from_elastic=False)
 
-
     def request(self, url, method='get', user='test_user', password="password",
                 check=None, check_error=None, **kwargs):
         if user == 'test_user':

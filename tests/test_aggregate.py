@@ -28,6 +28,7 @@ def setup_module():
             ], index_name=_INDEX, columns={'cat': 'keyword', 'subcat': 'keyword'})
     time.sleep(5)
 
+
 def teardown_module():
     delete_index(_INDEX)
 

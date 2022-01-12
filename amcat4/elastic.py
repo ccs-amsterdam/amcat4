@@ -56,10 +56,7 @@ def _create_index(name: str) -> None:
               'title': ES_MAPPINGS['text'],
               'date': ES_MAPPINGS['date'],
               'url': ES_MAPPINGS['keyword']}
-    body = {'mappings':
-                     {'properties': fields}}
-    # body = {'mappings':
-    #             {'properties': fields}}
+    body = {'mappings': {'properties': fields}}
     es.indices.create(index=name, body=body)
 
 
@@ -152,7 +149,7 @@ def get_fields(index: str) -> Mapping[str, str]:
     """
     r = es.indices.get_mapping(index=index)
     fields = r[index]['mappings']['properties']
-    return {k:v['type'] for (k,v) in fields.items()}
+    return {k: v['type'] for (k, v) in fields.items()}
 
 
 def field_type(index: str, field_name: str) -> str:
