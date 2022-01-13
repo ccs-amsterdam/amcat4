@@ -166,27 +166,33 @@ def query_annotations(index: str, id: str, queries: Mapping[str,  str]) -> Itera
         hit = result['hits']['hits']
         if len(hit) == 0:
             continue
-        for field, highlights in hit[0]['highlight'].items():
-            for span in extract_highlight_span(highlights[0]):
+        for field, highlights in hit[0]['highlight'].items():  
+            text = hit[0]["_source"][field]
+            for span in extract_highlight_span(text, highlights[0]):
                 span['variable'] = 'query'
                 span['value'] = label
                 span['field'] = field
                 yield span
 
 
-def extract_highlight_span(highlight) -> Iterable[Dict]:
+def extract_highlight_span(text: str, highlight: str):
     """
     It doesn't seem possible to get the offsets of highlights:
     https://github.com/elastic/elasticsearch/issues/5736
 
     We can get the offsets from the tags, but not yet sure how stable this is.
+    text is the text in the _source field. highlight should be elastics highlight if nr of fragments = 0 (i.e. full text)
     """
+    
+    ## elastic highlighting internally trims...
+    ## this hack gets the offset of the trimmed text, but it's not an ideal solution
+    trimmed_offset = len(text) - len(text.lstrip())
+
     side_by_side = '</em> <em>'
     highlight = sub(side_by_side, ' ', highlight)
-
     regex = '<em>.+?</em>'
     tagsize = 9  # <em></em>
     for i, m in enumerate(finditer(regex, highlight)):
-        offset = m.start(0) - tagsize*i
+        offset = trimmed_offset + m.start(0) - tagsize*i
         length = len(m.group(0)) - tagsize
         yield dict(offset=offset, length=length)
