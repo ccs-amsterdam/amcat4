@@ -40,7 +40,7 @@ env/bin/python -m amcat4 run
 To run the unit tests and linting:
 
 ```
-env/bin/flake8 . --exclude=env
+env/bin/flake8 . --max-line-length=127 --exclude=env
 env/bin/mypy -p amcat4
 env/bin/nosetests
 ```
