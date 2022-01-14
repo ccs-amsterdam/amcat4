@@ -4,7 +4,7 @@ from distutils.core import setup
 
 setup(
     name="amcat4",
-    version="0.05",
+    version="0.06",
     description="API for AmCAT4 Text Analysis",
     author="Wouter van Atteveldt",
     author_email="wouter@vanatteveldt.com",
@@ -30,8 +30,8 @@ setup(
     ],
     extras_require={
         'dev': [
-            'nose',
-            'codecov',
+            'pytest',
+            'pytest-flask',
             'mypy',
             'types-Flask',
             'flake8'

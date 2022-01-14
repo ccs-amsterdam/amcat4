@@ -1,76 +1,65 @@
-from collections import namedtuple
-
-from nose.tools import assert_equal
-
-from amcat4.auth import verify_token, create_user, User, verify_user, Role
-from tests.tools import ApiTestCase
+from amcat4.auth import verify_token, verify_user, Role, User
+from tests.tools import get_json, build_headers, post_json
 
 
-class TestQuery(ApiTestCase):
-    def test_get_token(self):
-        self.get('/auth/token/', user=None, check=401, check_error="Getting a token should require authorization")
-        r = self.get('/auth/token/')
-        token = r.json['token']
-        assert_equal(verify_token(token), self.user)
-        self.get('/index/', user=None, check=401)
-        assert_equal(self.get('/index/', headers={"Authorization": "Bearer {}".format(token)}).status_code, 200)
+def test_get_token(client, user):
+    assert client.get('/auth/token/') == 401, "Getting a token should require authorization"
+    r = get_json(client, '/auth/token/', headers=build_headers(user=user.email, password=user.plaintext_password))
+    assert verify_token(r['token']) == user
 
-    def getuser(self, user, as_user=None, **args):
-        if not isinstance(user, str):
-            user = user.email
-        return self.get("/users/" + user, user=as_user, **args).json
 
-    def test_get_user(self):
-        """Test GET user functionality and authorization"""
-        self.getuser("unknown user", as_user=None, check=401)
-        self.getuser(self.user, as_user=None, check=401)
+def test_get_user(client, user, admin, username):
+    """Test GET user functionality and authorization"""
+    assert client.get(f"/users/{user.email}") == 401
 
-        # user can only see its own info:
-        assert_equal(self.getuser(self.user, as_user=self.user), {"email": self.user.email, "global_role": None})
-        self.getuser(self.admin, as_user=self.user, check=401)
-        # admin can see everyone
-        assert_equal(self.getuser(self.admin, as_user=self.admin), {"email": self.admin.email, "global_role": 'ADMIN'})
-        assert_equal(self.getuser(self.user, as_user=self.admin), {"email": self.user.email, "global_role": None})
+    # user can only see its own info:
+    assert get_json(client, f"/users/{user.email}", user=user) == {"email": user.email, "global_role": None}
+    assert client.get(f"/users/{admin.email}", headers=build_headers(user)) == 401
+    # admin can see everyone
+    assert get_json(client, f"/users/{user.email}", user=admin) == {"email": user.email, "global_role": None}
+    assert get_json(client, f"/users/{admin.email}", user=admin) == {"email": admin.email, "global_role": 'ADMIN'}
+    assert client.get(f'/users/{username}', headers=build_headers(admin)) == 404
 
-    def test_create_user(self):
-        self.post('/users/', check=401, check_error="Creating user should require auth")
-        _user = namedtuple("_user", "email pwd")
-        u = _user(email='testuser@example.com', pwd='test')
-        self.post("/users/", check=401, check_error="creating user requires >=WRITER")
-        self.getuser(u, as_user=self.admin, check=404)
-        self.post("/users/", user=self.writer, json=dict(email=u.email, password=u.pwd))
-        assert_equal(self.getuser(u, as_user=u, password=u.pwd), {"email": u.email, "global_role": None})
-        self.post("/users/", user=self.writer, json=dict(email=u.email, password=u.pwd), check=400)
-        self.delete("/users/"+u.email, user=self.writer)
 
-        new_admin = dict(email=u.email, password=u.pwd, global_role='ADMIN')
-        self.post("/users/", user=self.writer, json=new_admin, check=401, check_error="WRITER cannot create ADMIN")
-        self.post("/users/", user=self.admin, json=new_admin)
-        assert_equal(self.getuser(u, as_user=self.writer), {"email": u.email, "global_role": 'ADMIN'})
-        self.delete("/users/" + u.email, user=self.writer, check=401, check_error="WRITER cannot delete ADMIN")
-        self.delete("/users/" + u.email, user=self.admin)
+def test_create_user(client, user, writer, admin, username):
+    # anonymous or unprivileged users cannot create new users
+    assert client.post('/users/') == 401, "Creating user should require auth"
+    assert client.post("/users/", headers=build_headers(user)) == 401, "Creating user should require >=WRITER"
+    # writers can add new users
+    u = dict(email=username, password="geheim")
+    assert set(post_json(client, "/users/", user=writer, json=u).keys()) == {"email", "id"}
+    assert client.post("/users/", headers=build_headers(writer), json=u) == 400, "Duplicate create should return 400"
+    # users can delete themselves, others cannot delete them
+    assert client.delete(f"/users/{username}", headers=build_headers(user)) == 401
+    assert client.delete(f"/users/{username}", headers=build_headers(username, password="geheim")) == 204
+    # only admin can add admins
+    u = dict(email=username, password="geheim", global_role='ADMIN')
+    assert client.post("/users/", headers=build_headers(writer), json=u) == 401, "Creating admins should require ADMIN"
+    assert client.post("/users/", headers=build_headers(admin), json=u) == 201
+    assert get_json(client, f"/users/{username}", user=admin)["global_role"] == "ADMIN"
+    # (only) admin can delete other admins
+    assert client.delete(f"/users/{username}", headers=build_headers(writer)) == 401
+    assert client.delete(f"/users/{username}", headers=build_headers(admin)) == 204
 
-    def test_modify_user_auth(self):
-        """Are the authentication rules for changing users in place"""
-        self.put('/users/unknown', check=401, check_error="Creating user should require auth")
-        self.put('/users/' + self.user.email, json={'global_role': 'writer'},
-                 check=401, check_error="Unprivileged users can't change their role")
-        self.put('/users/' + self.writer.email, json={'email': 'new'},
-                 check=401, check_error="Unprivileged users can't change other users")
-        self.put('/users/' + self.user.email, json={'global_role': 'writer'},
-                 check=401, check_error="Unprivileged users can't change their role")
-        self.put('/users/' + self.admin.email, user=self.writer,
-                 check=401, check_error="Writers can't change admins")
-        self.put('/users/' + self.user.email, user=self.writer, json={'global_role': 'admin'},
-                 check=401, check_error="Writers can't create admins")
 
-    def test_modify_user(self):
-        """Can we change a user"""
-        u = create_user("testmail", "password")
-        self.put('/users/testmail', user=u, json={'email': 'changed', 'password': 'pietje'})
-        assert_equal(User.get(User.id == u.id).email, 'changed')
-        assert_equal(verify_user(email='changed', password='pietje'), u)
-        self.put('/users/changed', user=self.writer, json={'email': 'testmail', 'global_role': 'writer'})
-        assert_equal(User.get(User.id == u.id).role, Role.WRITER)
-        self.put('/users/testmail', user=self.admin, json={'global_role': 'admin'})
-        assert_equal(User.get(User.id == u.id).role, Role.ADMIN)
+def test_modify_user(client, user, writer, admin):
+    """Are the API endpoints and auth for modifying users correct?"""
+    # Normal users can change their own password
+    assert client.put(f"/users/{user.email}", headers=build_headers(user), json={'password': 'x'}) == 200
+    assert verify_user(user.email, 'x') == user
+
+    # Anonymous or normal users can't change other users
+    assert client.put(f"/users/{user.email}") == 401, "Changing user requires AUTH"
+    assert client.put(f"/users/{admin.email}", headers=build_headers(writer), json={'password': 'x'}) == 401
+
+    # Writers can change other users, but not admins
+    assert client.put(f"/users/{user.email}", headers=build_headers(writer), json={'password': 'y'}) == 200
+    assert client.put(f"/users/{admin.email}", headers=build_headers(writer), json={'password': 'y'}) == 401
+
+    # You can change privileges of other users up to your own privilege
+    assert client.put(f"/users/{user.email}", headers=build_headers(user), json={'global_role': 'reader'}) == 401
+    assert client.put(f"/users/{user.email}", headers=build_headers(writer), json={'global_role': 'writer'}) == 200
+    assert User.get_by_id(user.id).global_role == Role.WRITER
+    assert client.put(f"/users/{user.email}", headers=build_headers(writer), json={'global_role': 'admin'}) == 401
+    assert client.put(f"/users/{writer.email}", headers=build_headers(admin), json={'global_role': 'admin'}) == 200
+    assert User.get_by_id(writer.id).global_role == Role.ADMIN

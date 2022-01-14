@@ -81,11 +81,11 @@ def query_documents_post(index: str):
 
     {
         # for optional param in {sort, per_page, page, scroll, scroll_id, highlight, annotations}
-        param: value,
+        <param>: value,
 
         # select fields
-        fields: field                                    ## single field
-        fields: [field1, field2]                         ## multiple fields
+        'fields': field                                    ## single field
+        'fields': [field1, field2]                         ## multiple fields
 
         # elastic queries.
         'queries':  query,                               ## single query

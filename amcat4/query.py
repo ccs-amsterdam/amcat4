@@ -112,6 +112,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
            sort=col1:desc,col2
     :return: a QueryResult, or None if there is not scroll result anymore
     """
+    assert isinstance(index, str), "Index should be a string with the index name"
     if scroll or scroll_id:
         # set scroll to default also if scroll_id is given but no scroll time is known
         kwargs['scroll'] = '2m' if (not scroll or scroll is True) else scroll

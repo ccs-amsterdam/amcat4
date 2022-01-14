@@ -2,7 +2,7 @@
 AmCAT4 can use either Basic or Token-based authentication.
 A client can request a token with basic authentication and store that token for future requests.
 """
-
+import logging
 from http import HTTPStatus
 
 from flask import Blueprint, jsonify, request, abort, g
@@ -110,6 +110,7 @@ def modify_user(email):
     if 'global_role' in data:
         role = Role[data['global_role'].upper()]
         check_role(role)  # need at least same level
+        logging.info(f"Changing {email} to {role}")
         u.global_role = role
     if 'email' in data:
         u.email = data['email']

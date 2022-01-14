@@ -1,70 +1,48 @@
-import random
-import string
-
-from nose.tools import assert_equal
-
+from amcat4 import elastic
 from amcat4.auth import Role
-from tests.tools import upload, ApiTestCase, delete_index
+from amcat4.index import Index
+from tests.tools import build_headers, post_json, get_json
 
 
-class TestIndex(ApiTestCase):
+def test_create_list_delete_index(client, index_name, user, writer, admin):
+    """Test API endpoints to create/list/delete index"""
+    # Anonymous or Unprivileged users cannot create indices
+    assert client.post("/index/") == 401
+    assert client.post("/index/", headers=build_headers(user=user)) == 401
 
-    def test_index_auth(self):
-        """test_index_auth: Check that proper authentication is in place"""
-        self.get('/index/', user=None, check=401, check_error="Getting index list should require authorization")
-        self.post('/index/', user=None, check=401, check_error="Creating a index should require authorization")
-        self.post('/index/', user=self.user, check=401,
-                  check_error="Creating an index should require admin or creator role")
+    # Writers can create indices
+    r = post_json(client, "/index/", user=writer, json=dict(name=index_name, guest_role='METAREADER'))
+    assert set(r.keys()) == {"guest_role", "name"}
 
-        self.get('/index/doesnotexist', check=404, check_error="Unknown index should return 404")
-        self.put('/index/doesnotexist', check=404, check_error="Unknown index should return 404")
+    # All logged in users can list indices
+    assert index_name in {ix['name'] for ix in get_json(client, "/index/", user=user)}
 
-        url = '/index/' + self.index.name
-        self.get(url, user=None, check=401, check_error="Viewing an index requires authorization")
-        self.get(url, user=self.user, check=401, check_error="Viewing an index requires at least metareader role")
-        self.put(url, user=None, check=401, check_error="Modifying an index requires authorization")
-        self.put(url, user=self.user, check=401, check_error="Modifying an index requires writer role on the index")
+    # (Only) index owner/admin and global admin can change index guest role to admin
+    assert client.put(f"/index/{index_name}") == 401
+    assert client.put(f"/index/{index_name}", headers=build_headers(user=user)) == 401
+    assert client.put(f"/index/{index_name}", headers=build_headers(user=writer), json={'guest_role': 'ADMIN'}) == 200
+    assert Index.get(Index.name == index_name).guest_role == Role.ADMIN
+    assert client.put(f"/index/{index_name}", headers=build_headers(user=admin), json={'guest_role': 'WRITER'}) == 200
+    # Guest role is writer, so anyone can change it, but not to admin
+    assert client.put(f"/index/{index_name}", headers=build_headers(user=user), json={'guest_role': 'ADMIN'}) == 401
+    assert client.put(f"/index/{index_name}", headers=build_headers(user=user), json={'guest_role': 'METAREADER'}) == 200
 
-        self.index.guest_role = Role.METAREADER
-        self.index.save()
-        self.get(url, user=self.user)
-        self.put(url, user=self.user, check=401, check_error="Modifying an index requires writer role on the index")
-        self.put(url, user=self.admin, json={})
-        self.index.set_role(self.user, Role.WRITER)
-        self.put(url, user=self.admin, json={})
-        self.put(url, user=self.user, json={'guest_role': 'ADMIN'},
-                 check=401, check_error="Setting guest role to admin requires admin role on the index")
 
-    def test_create_list_index(self):
-        def get_index(user):
-            indices = {i['name']: i['role'] for i in self.get('/index/', user=user).json}
-            return indices.get(_TEST_INDEX)
+def test_fields_upload(client, user, index):
+    """test_fields: Can we upload docs and retrieve field mappings and values?"""
+    # You need METAREADER permissions to read fields, and WRITER to upload docs
+    assert client.get(f"/index/{index.name}/fields") == 401
+    assert client.post(f"/index/{index.name}/documents", headers=build_headers(user)) == 401
 
-        _TEST_INDEX = 'amcat4_test__' + ''.join(random.choices(string.ascii_lowercase, k=32))
-        assert_equal(get_index(user=self.admin), None)
-        try:
-            self.post('/index/', json=dict(name=_TEST_INDEX, guest_role='METAREADER'), user=self.admin)
-            assert_equal(get_index(user=self.admin), 'ADMIN')
-            assert_equal(get_index(user=self.user), 'METAREADER')
-            self.delete(f'/index/{_TEST_INDEX}', user=self.admin)
-        finally:
-            delete_index(_TEST_INDEX)
-
-    def test_set_guest_role(self):
-        url = '/index/' + self.index_name
-        self.index.guest_role = None
-        self.index.save()
-        assert_equal(self.get(url, user=self.admin).json['guest_role'], None)
-        self.put(url, user=self.admin, json={'guest_role': 'READER'})
-        assert_equal(self.get(url, user=self.admin).json['guest_role'], 'READER')
-        self.put(url, user=self.admin, json={'guest_role': None})
-        assert_equal(self.get(url, user=self.admin).json['guest_role'], None)
-
-    def test_fields(self):
-        """test_fields: Can we set and retrieve field mappings and values?"""
-        url = 'index/{}/fields'.format(self.index_name)
-        assert_equal(self.get(url).json, dict(date="date", text="text", title="text", url="keyword"))
-        upload([{'x': x} for x in ("a", "a", "b")], index_name=self.index_name, columns={"x": "keyword"})
-        assert_equal(self.get(url).json, dict(date="date", text="text", title="text", url="keyword", x="keyword"))
-        url = 'index/{}/fields/x/values'.format(self.index_name)
-        assert_equal(self.get(url).json, ["a", "b"])
+    assert (get_json(client, f"/index/{index.name}/fields", user=user)
+            == {'date': "date", 'text': "text", 'title': "text", 'url': "keyword"})
+    index.set_role(user, Role.WRITER)
+    body = {"documents": [{"title": f"doc {i}", "text": "t", "date": "2021-01-01", "x": x}
+                          for i, x in enumerate(["a", "a", "b"])],
+            "columns": {"x": "keyword"}}
+    ids = post_json(client, f"/index/{index.name}/documents", user=user, json=body)
+    assert len(ids) == 3
+    assert get_json(client, f"/index/{index.name}/documents/{ids[0]}", user=user)["title"] == "doc 0"
+    assert get_json(client, f"/index/{index.name}/fields", user=user)["x"] == "keyword"
+    elastic.es.indices.refresh()
+    assert set(get_json(client, f"/index/{index.name}/fields/x/values", user=user)) == {"a", "b"}

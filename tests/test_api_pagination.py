@@ -1,35 +1,43 @@
-from nose.tools import assert_equal, assert_is_not_none
+from tests.conftest import upload
+from tests.tools import get_json, post_json
 
-from tests.tools import QueryTestCase
+
+def test_pagination(client, index, user):
+    """Does basic pagination work?"""
+    upload(index, docs=[{"i": i} for i in range(66)])
+    r = get_json(client, f"/index/{index.name}/query", user=user, query_string={"sort": "i", "per_page": 20})
+    assert r["meta"]["per_page"] == 20
+    assert r["meta"]["page"] == 0
+    assert r["meta"]["page_count"] == 4
+    assert {h["i"] for h in r["results"]} == set(range(20))
+    r = get_json(client, f"/index/{index.name}/query", user=user, query_string={"sort": "i", "per_page": 20, "page": 3})
+    assert r["meta"]["page"] == 3
+    assert {h["i"] for h in r["results"]} == {60, 61, 62, 63, 64, 65}
+    r = get_json(client, f"/index/{index.name}/query", user=user, query_string={"sort": "i", "per_page": 20, "page": 4})
+    assert len(r["results"]) == 0
+    # Test POST query
+    r = post_json(client, f"/index/{index.name}/query", expected=200, user=user, json={"sort": "i", "per_page": 20, "page": 3})
+    assert r["meta"]["page"] == 3
+    assert {h["i"] for h in r["results"]} == {60, 61, 62, 63, 64, 65}
 
 
-class TestQuery(QueryTestCase):
-    documents = [{'i': i} for i in range(66)]
-
-    def test_pagination(self):
-        """Does basic pagination work?"""
-        r = self.query(sort="i", per_page=20)
-        print(r)
-        assert_equal(r['meta']['per_page'], 20)
-        assert_equal(r['meta']['page'], 0)
-        assert_equal(r['meta']['page_count'], 4)
-        assert_equal({h['i'] for h in r['results']}, set(range(20)))
-        r = self.query(sort="i", per_page=20, page=3)
-        assert_equal(r['meta']['per_page'], 20)
-        assert_equal(r['meta']['page'], 3)
-        assert_equal(r['meta']['page_count'], 4)
-        assert_equal({h['i'] for h in r['results']}, {60, 61, 62, 63, 64, 65})
-
-    def test_scrolling(self):
-        """Can we scroll through a query?"""
-        r = self.query(per_page=30, sort="i", scroll="5m")
-        scroll_id = r['meta']['scroll_id']
-        assert_is_not_none(scroll_id)
-        assert_equal({h['i'] for h in r['results']}, set(range(30)))
-        r = self.query(scroll_id=scroll_id)
-        assert_equal({h['i'] for h in r['results']}, set(range(30, 60)))
-        assert_equal(r['meta']['scroll_id'], scroll_id)
-        r = self.query(scroll_id=scroll_id)
-        assert_equal({h['i'] for h in r['results']}, {60, 61, 62, 63, 64, 65})
-        assert_equal(r['meta']['scroll_id'], scroll_id)
-        self.query(scroll_id=scroll_id, check=404, check_error="It should throw 404 to indicate no more results")
+def test_scroll(client, index, user):
+    upload(index, docs=[{"i": i} for i in range(66)])
+    r = get_json(client, f"/index/{index.name}/query", user=user,
+                 query_string={"sort": "i:desc", "per_page": 30, "scroll": "5m"})
+    scroll_id = r["meta"]["scroll_id"]
+    assert scroll_id is not None
+    assert {h["i"] for h in r["results"]} == set(range(36, 66))
+    r = get_json(client, f"/index/{index.name}/query", user=user, query_string={"scroll_id": scroll_id})
+    assert {h["i"] for h in r["results"]} == set(range(6, 36))
+    assert r["meta"]["scroll_id"] == scroll_id
+    r = get_json(client, f"/index/{index.name}/query", user=user, query_string={"scroll_id": scroll_id})
+    assert {h["i"] for h in r["results"]} == set(range(6))
+    # Scrolling past the edge should return 404
+    get_json(client, f"/index/{index.name}/query", user=user, query_string={"scroll_id": scroll_id}, expected=404)
+    # Test POST query
+    r = post_json(client, f"/index/{index.name}/query", user=user, expected=200,
+                  json={"sort": "i:desc", "per_page": 30, "scroll": "5m"})
+    scroll_id = r["meta"]["scroll_id"]
+    assert scroll_id is not None
+    assert {h["i"] for h in r["results"]} == set(range(36, 66))

@@ -104,14 +104,18 @@ def delete_index(ix: str):
 @multi_auth.login_required
 def upload_documents(ix: str):
     """
-    Upload documents to this server
-    JSON payload should be a list of documents with at least a title, date, text and any optional attributes
-    Note: The unique elastic ID will be the hash of title, date, text and url.
+    Upload documents to this server.
+    JSON payload should contain a `documents` key, and may contain a `columns` key:
+    {
+      "documents": [{"title": .., "date": .., "text": .., ...}, ...],
+      "columns": {<field>: <type>, ...}
+    }
+    Returns a list of ids for the uploaded documents
     """
     check_role(Role.WRITER, _index(ix))
     body = request.get_json(force=True)
 
-    result = elastic.upload_documents(ix, body['documents'], body['columns'])
+    result = elastic.upload_documents(ix, body['documents'], body.get('columns'))
     return jsonify(result), HTTPStatus.CREATED
 
 
