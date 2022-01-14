@@ -1,11 +1,18 @@
+import os
 from typing import Iterable
 
 import pytest
 from elasticsearch.exceptions import NotFoundError
 
-from amcat4 import elastic, api
-from amcat4.auth import create_user, Role, User
-from amcat4.index import create_index, Index
+# Set db to in-memory database *before* importing amcat4. Maybe not the most elegant solution...
+os.environ['AMCAT4_DB_NAME'] = ":memory:"
+
+from amcat4 import elastic, api  # noqa: E402
+from amcat4.db import initialize_if_needed  # noqa: E402
+from amcat4.auth import create_user, Role, User  # noqa: E402
+from amcat4.index import create_index, Index  # noqa: E402
+
+initialize_if_needed()
 
 UNITS = [{"unit": {"text": "unit1"}},
          {"unit": {"text": "unit2"}, "gold": {"element": "au"}}]
