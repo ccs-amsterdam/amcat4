@@ -22,7 +22,8 @@ API Endpoints for querying
     {&#39;axes&#39;: [{&#39;field&#39;: .., [&#39;interval&#39;: ..]}, ...],
      &#39;filters&#39;: &lt;filters, see query endpoint&gt;
      }
-    Will return a json list of lists [&lt;axis-1-name&gt;, ..., _n]
+
+    Returns a JSON object {data: [{axis1, ..., n}, ...], meta: {axes: [...]}
     
 </pre>
 
@@ -45,6 +46,8 @@ API Endpoints for querying
     If your field names contain __, it might be better to use POST queries
     highlight - if true, add highlight tags &lt;em&gt;
     annotations - if true, also return _annotations with query matches as annotations
+
+    Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     
 </pre>
 
@@ -53,28 +56,32 @@ API Endpoints for querying
 <pre>
 
     List or query documents in this index. POST body should be a json dict structured as follows (all keys optional):
-    
-    
+
+
     {
         # for optional param in {sort, per_page, page, scroll, scroll_id, highlight, annotations}
-        param: value,   
+        &lt;param&gt;: value,
 
         # select fields
-        fields: field                                    ## single field
-        fields: [field1, field2]                         ## multiple fields
-     
-        # elastic queries. 
+        &#39;fields&#39;: field                                    ## single field
+        &#39;fields&#39;: [field1, field2]                         ## multiple fields
+
+        # elastic queries.
         &#39;queries&#39;:  query,                               ## single query
         &#39;queries&#39;: [query1, query2],                     ## OR without labels
         &#39;queries&#39;: {label1: query1, label2: query2}      ## OR with labels
 
-        # filters 
+        # filters
         &#39;filters&#39;: {field: value},                       ## exact value
-                   {field: [value1, value2]},            ## OR   
+                   {field: [value1, value2]},            ## OR
                    {field: {gt(e): value, lt(e): value}  ## range or multiple
                    {field: {values: [v1,v2]}             ## can also use values inside dict
-        }        
+        }
     }
+
+    Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
+    }
+
     
 </pre>
 
@@ -132,9 +139,13 @@ API Endpoints for document and index management
 
 <pre>
 
-    Upload documents to this server
-    JSON payload should be a list of documents with at least a title, date, text and any optional attributes
-    Note: The unique elastic ID will be the hash of title, date, text and url.
+    Upload documents to this server.
+    JSON payload should contain a `documents` key, and may contain a `columns` key:
+    {
+      &#34;documents&#34;: [{&#34;title&#34;: .., &#34;date&#34;: .., &#34;text&#34;: .., ...}, ...],
+      &#34;columns&#34;: {&lt;field&gt;: &lt;type&gt;, ...}
+    }
+    Returns a list of ids for the uploaded documents
     
 </pre>
 
