@@ -25,7 +25,7 @@ class Axis:
     def query(self):
         if self.interval:
             if self.ftype == "date":
-                return {self.field: {"date_histogram": {"field": self.field, "interval": self.interval}}}
+                return {self.field: {"date_histogram": {"field": self.field, "calendar_interval": self.interval}}}
             else:
                 return {self.field: {"histogram": {"field": self.field, "interval": self.interval}}}
         else:
