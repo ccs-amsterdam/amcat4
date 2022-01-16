@@ -58,7 +58,7 @@ def test_query_post(client, index_docs, user):
 
 def test_aggregate(client, index_docs, user):
     r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
-              json= {'axes': [{'field': 'cat'}]})
+                  json={'axes': [{'field': 'cat'}]})
     assert r['meta']['axes'][0]['field'] == 'cat'
     data = {d['cat']: d['n'] for d in r['data']}
     assert data == {"a": 3, "b": 1}
