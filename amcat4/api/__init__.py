@@ -1,7 +1,6 @@
 from pathlib import Path
 
-from amcat4annotator import app_annotator
-from amcat4annotator import app_annotator_auth
+from amcat4annotator.api import app_annotator
 from flask import Flask
 from flask_cors import CORS
 
@@ -22,5 +21,6 @@ app.register_blueprint(app_query)
 app.register_blueprint(app_users)
 app.register_blueprint(app_docs)
 
-app.register_blueprint(app_annotator)
-app.register_blueprint(app_annotator_auth)
+# "Plugins"
+app.register_blueprint(app_annotator, url_prefix='/annotator')
+
