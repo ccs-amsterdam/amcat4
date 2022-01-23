@@ -19,6 +19,7 @@ ES_MAPPINGS = {
    'date': {"type": "date", "format": "strict_date_optional_time"},
    'num': {"type": "double"},
    'keyword': {"type": "keyword"},
+   'url': {"type": "keyword"},
    'text': {"type": "text"},
    'object': {"type": "object"},
    }
