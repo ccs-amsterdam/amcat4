@@ -23,4 +23,3 @@ app.register_blueprint(app_docs)
 
 # "Plugins"
 app.register_blueprint(app_annotator, url_prefix='/annotator')
-
