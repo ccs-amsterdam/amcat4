@@ -163,6 +163,7 @@ def update_document(ix: str, docid: str):
 def get_fields(ix: str):
     """
     Get the fields (columns) used in this index
+    returns a json array of {name, type} objects
     """
     r = elastic.get_fields(ix)
     return jsonify(r)

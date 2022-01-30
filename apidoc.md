@@ -173,6 +173,7 @@ API Endpoints for document and index management
 <pre>
 
     Get the fields (columns) used in this index
+    returns a json array of {name, type} objects
     
 </pre>
 

@@ -34,8 +34,10 @@ def test_fields_upload(client, user, index):
     assert client.get(f"/index/{index.name}/fields") == 401
     assert client.post(f"/index/{index.name}/documents", headers=build_headers(user)) == 401
 
-    assert (get_json(client, f"/index/{index.name}/fields", user=user)
-            == {'date': "date", 'text': "text", 'title': "text", 'url': "keyword"})
+    fields = get_json(client, f"/index/{index.name}/fields", user=user)
+    assert set(fields.keys()) == {"title", "date", "text", "url"}
+    assert fields['date']['type'] == "date"
+
     index.set_role(user, Role.WRITER)
     body = {"documents": [{"title": f"doc {i}", "text": "t", "date": "2021-01-01", "x": x}
                           for i, x in enumerate(["a", "a", "b"])],
@@ -43,6 +45,6 @@ def test_fields_upload(client, user, index):
     ids = post_json(client, f"/index/{index.name}/documents", user=user, json=body)
     assert len(ids) == 3
     assert get_json(client, f"/index/{index.name}/documents/{ids[0]}", user=user)["title"] == "doc 0"
-    assert get_json(client, f"/index/{index.name}/fields", user=user)["x"] == "keyword"
+    assert get_json(client, f"/index/{index.name}/fields", user=user)["x"]["type"] == "keyword"
     elastic.es.indices.refresh()
     assert set(get_json(client, f"/index/{index.name}/fields/x/values", user=user)) == {"a", "b"}

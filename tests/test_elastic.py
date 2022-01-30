@@ -16,8 +16,9 @@ def test_upload_retrieve_document(index: Index):
 
 def test_fields(index: Index):
     """Can we get the fields from an index"""
-    assert get_fields(index.name) == dict(title='text', date='date', text='text', url='keyword')
-
+    fields = get_fields(index.name)
+    assert set(fields.keys()) == {"title", "date", "text", "url"}
+    assert fields['date']['type'] == "date"
 
 def test_values(index: Index):
     """Can we get values for a specific field"""

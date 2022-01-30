@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from typing import Mapping, List
+from typing import Mapping, List, Iterable
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
@@ -142,15 +142,16 @@ def update_document(index: str, doc_id: str, fields: dict):
     es.update(index=index, id=doc_id, body=body)
 
 
-def get_fields(index: str) -> Mapping[str, str]:
+def get_fields(index: str) -> Mapping[str, dict]:
     """
     Get the field types in use in this index
     :param index:
-    :return: a dictionary of field: type
+    :return: a dict of fieldname: field objects {fieldname: {name, type, ...}]
     """
     r = es.indices.get_mapping(index=index)
-    fields = r[index]['mappings']['properties']
-    return {k: v['type'] for (k, v) in fields.items()}
+
+    return {k: dict(name=k, type=v['type'])
+            for k, v in r[index]['mappings']['properties'].items()}
 
 
 def field_type(index: str, field_name: str) -> str:
@@ -159,7 +160,7 @@ def field_type(index: str, field_name: str) -> str:
     :return: a type name ('text', 'date', ..)
     """
     # TODO: [WvA] cache this as it should be invariant
-    return get_fields(index)[field_name]
+    return get_fields(index)[field_name]["type"]
 
 
 def get_values(index: str, field: str) -> List[str]:
