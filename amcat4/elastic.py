@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from typing import Mapping, List, Iterable
+from typing import Mapping, List
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk

@@ -20,6 +20,7 @@ def test_fields(index: Index):
     assert set(fields.keys()) == {"title", "date", "text", "url"}
     assert fields['date']['type'] == "date"
 
+
 def test_values(index: Index):
     """Can we get values for a specific field"""
     upload(index, [dict(bla=x) for x in ["odd", "even", "even"] * 10], columns={"bla": "keyword"})
