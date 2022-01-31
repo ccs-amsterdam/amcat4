@@ -76,6 +76,7 @@ def document(args):
 
 
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
+parser.add_argument("--elastic", help="Elasticsearch host", default="localhost:9200")
 
 subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
 p = subparsers.add_parser('run', help='Run the backend API in development mode')
@@ -96,7 +97,7 @@ args = parser.parse_args()
 logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=logging.INFO)
 es_logger = logging.getLogger('elasticsearch')
 es_logger.setLevel(logging.WARNING)
-setup_elastic()
+setup_elastic(args.elastic)
 initialize_if_needed()
 
 args.func(args)

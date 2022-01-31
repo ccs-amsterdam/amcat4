@@ -1,13 +1,13 @@
 import hashlib
 import json
 import logging
-from typing import Mapping, List
+from typing import Mapping, List, Optional
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
-es = Elasticsearch()
 
+_ES: Optional[Elasticsearch] = None
 SYS_INDEX = "amcat4system"
 SYS_MAPPING = "sys"
 REQUIRED_FIELDS = ["title", "date", "text"]
@@ -25,18 +25,24 @@ ES_MAPPINGS = {
    }
 
 
+def es() -> Elasticsearch:
+    if _ES is None:
+        raise Exception("Elasticsearch not setup yet")
+    return _ES
+
+
 def setup_elastic(*hosts):
     """
     Check whether we can connect with elastic
     """
-    global es
+    global _ES
     logging.debug("Connecting with elasticsearch at {}".format(hosts or "(default: localhost:9200)"))
-    es = Elasticsearch(hosts or None)
-    if not es.ping():
-        raise Exception("Cannot connect to elasticsearch server [{}]".format(hosts))
-    if not es.indices.exists(SYS_INDEX):
-        logging.info("Creating amcat4 system index: {}".format(SYS_INDEX))
-        es.indices.create(SYS_INDEX)
+    _ES = Elasticsearch(hosts or None)
+    if not _ES.ping():
+        raise Exception(f"Cannot connect to elasticsearch server {hosts}")
+    if not _ES.indices.exists(index=SYS_INDEX):
+        logging.info(f"Creating amcat4 system index: {SYS_INDEX}")
+        _ES.indices.create(index=SYS_INDEX)
 
 
 def _list_indices(exclude_system_index=True) -> List[str]:
@@ -44,7 +50,7 @@ def _list_indices(exclude_system_index=True) -> List[str]:
     List all indices on the connected elastic cluster.
     You should probably use the methods in amcat4.index rather than this.
     """
-    result = es.indices.get(index="*")
+    result = es().indices.get(index="*")
     return [x for x in result.keys() if not (exclude_system_index and x == SYS_INDEX)]
 
 
@@ -58,7 +64,7 @@ def _create_index(name: str) -> None:
               'date': ES_MAPPINGS['date'],
               'url': ES_MAPPINGS['keyword']}
     body = {'mappings': {'properties': fields}}
-    es.indices.create(index=name, body=body)
+    es().indices.create(index=name, body=body)
 
 
 def _delete_index(name: str, ignore_missing=False) -> None:
@@ -68,7 +74,7 @@ def _delete_index(name: str, ignore_missing=False) -> None:
     :param name: The name of the new index (without prefix)
     :param ignore_missing: If True, do not throw exception if index does not exist
     """
-    es.indices.delete(index=name, ignore=([404] if ignore_missing else []))
+    es().indices.delete(index=name, ignore=([404] if ignore_missing else []))
 
 
 def _get_hash(document):
@@ -111,10 +117,10 @@ def upload_documents(index: str, documents, columns: Mapping[str, str] = None) -
     if columns:
         mapping = {field: ES_MAPPINGS[type_] for (field, type_) in columns.items()}
         body = {"properties": mapping}
-        es.indices.put_mapping(index=index, body=body)
+        es().indices.put_mapping(index=index, body=body)
 
     actions = list(_get_es_actions(index, documents))
-    bulk(es, actions)
+    bulk(es(), actions)
     return [action['_id'] for action in actions]
 
 
@@ -126,7 +132,7 @@ def get_document(index: str, doc_id: str, **kargs) -> dict:
     :param doc_id: The document id (hash)
     :return: the source dict of the document
     """
-    return es.get(index=index, id=doc_id, **kargs)['_source']
+    return es().get(index=index, id=doc_id, **kargs)['_source']
 
 
 def update_document(index: str, doc_id: str, fields: dict):
@@ -139,7 +145,7 @@ def update_document(index: str, doc_id: str, fields: dict):
     :param fields: a {field: value} mapping of fields to update
     """
     body = {"doc": fields}
-    es.update(index=index, id=doc_id, body=body)
+    es().update(index=index, id=doc_id, body=body)
 
 
 def get_fields(index: str) -> Mapping[str, dict]:
@@ -148,7 +154,7 @@ def get_fields(index: str) -> Mapping[str, dict]:
     :param index:
     :return: a dict of fieldname: field objects {fieldname: {name, type, ...}]
     """
-    r = es.indices.get_mapping(index=index)
+    r = es().indices.get_mapping(index=index)
 
     return {k: dict(name=k, type=v['type'])
             for k, v in r[index]['mappings']['properties'].items()}
@@ -171,16 +177,16 @@ def get_values(index: str, field: str) -> List[str]:
     :return: A list of values
     """
     body = {"size": 0, "aggs": {"values": {"terms": {"field": field}}}}
-    r = es.search(index=index, body=body)
+    r = es().search(index=index, body=body)
     return [x["key"] for x in r["aggregations"]["values"]["buckets"]]
 
 
 def refresh(index: str):
-    es.indices.refresh(index=index)
+    es().indices.refresh(index=index)
 
 
 def index_exists(name: str) -> bool:
     """
     Check if an index with this name exists
     """
-    return es.indices.exists(index=name)
+    return es().indices.exists(index=name)

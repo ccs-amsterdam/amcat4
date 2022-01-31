@@ -119,7 +119,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
     queries = _normalize_queries(queries)
 
     if scroll_id:
-        result = es.scroll(scroll_id=scroll_id, **kwargs)
+        result = es().scroll(scroll_id=scroll_id, **kwargs)
         if not result['hits']['hits']:
             return None
     else:
@@ -130,7 +130,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
             kwargs['_source'] = fields
         if not scroll:
             kwargs['from_'] = page * per_page
-        result = es.search(index=index, body=body, size=per_page, **kwargs)
+        result = es().search(index=index, body=body, size=per_page, **kwargs)
 
     data = []
     for hit in result['hits']['hits']:
@@ -163,7 +163,7 @@ def query_annotations(index: str, id: str, queries: Mapping[str,  str]) -> Itera
     for label, query in queries.items():
         body = build_body([query], {'_id': {'value': id}}, True)
 
-        result = es.search(index=index, body=body)
+        result = es().search(index=index, body=body)
         hit = result['hits']['hits']
         if len(hit) == 0:
             continue

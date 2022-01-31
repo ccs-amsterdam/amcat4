@@ -5,6 +5,8 @@ import pytest
 from elasticsearch.exceptions import NotFoundError
 
 # Set db to in-memory database *before* importing amcat4. Maybe not the most elegant solution...
+from amcat4.elastic import setup_elastic
+
 os.environ['AMCAT4_DB_NAME'] = ":memory:"
 
 from amcat4 import elastic, api  # noqa: E402
@@ -47,6 +49,7 @@ def admin():
 
 @pytest.fixture()
 def index():
+    setup_elastic()
     i = create_index("amcat4_unittest_index")
     yield i
     try:
@@ -57,6 +60,7 @@ def index():
 
 @pytest.fixture()
 def guest_index():
+    setup_elastic()
     i = create_index("amcat4_unittest_guestindex", guest_role=Role.READER)
     yield i
     try:
@@ -94,6 +98,7 @@ def populate_index(index):
 
 @pytest.fixture()
 def index_docs():
+    setup_elastic()
     i = create_index("amcat4_unittest_indexdocs")
     populate_index(i)
     yield i

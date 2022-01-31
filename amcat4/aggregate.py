@@ -53,7 +53,7 @@ def _get_aggregates(index, sources, queries, filters, after_key=None):
     if filters or queries:
         q = build_body(queries=queries, filters=filters)
         body["query"] = q["query"]
-    result = es.search(index=index, body=body)['aggregations']['aggr']
+    result = es().search(index=index, body=body)['aggregations']['aggr']
     yield from result['buckets']
     after_key = result.get('after_key')
     if after_key:
