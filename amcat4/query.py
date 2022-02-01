@@ -11,6 +11,7 @@ from .elastic import es
 
 def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: bool = False):
     def parse_filter(field, filter):
+        filter = filter.copy()
         field_filters = []
         for value in filter.pop('values', []):
             field_filters.append({"term": {field: value}})
