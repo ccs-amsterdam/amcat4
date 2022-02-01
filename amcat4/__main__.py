@@ -41,8 +41,9 @@ def upload_test_data() -> Index:
     return index
 
 
-def run(_args):
-    app.run(debug=True)
+def run(args):
+    logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}")
+    app.run(debug=not args.nodebug, port=args.port)
 
 
 def create_test_index(_args):
@@ -80,6 +81,9 @@ parser.add_argument("--elastic", help="Elasticsearch host", default="localhost:9
 
 subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
 p = subparsers.add_parser('run', help='Run the backend API in development mode')
+p.add_argument('--no-debug', action='store_true', dest='nodebug',
+               help='Disable debug mode (useful for testing downstream clients)')
+p.add_argument('-p', '--port', help='Port', default=5000)
 p.set_defaults(func=run)
 
 p = subparsers.add_parser('create-test-index', help=f'Create the {SOTU_INDEX} test index')
