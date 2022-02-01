@@ -13,12 +13,12 @@ from amcat4.api.common import multi_auth, auto
 app_query = Blueprint('app_query', __name__)
 
 
-@app_query.route("/index/<index>/query", methods=['GET'])
-@auto.doc(group='Querying')
+@app_query.route("/index/<index>/documents", methods=['GET'])
+@auto.doc(group='Documents')
 @multi_auth.login_required
-def query_documents(index: str):
+def get_documents(index: str):
     """
-    Query (or list) documents in this index. GET request parameters:
+    List (possibly filtered) documents in this index. GET request parameters:
     q - Elastic query string. Argument may be repeated for multiple queries (treated as OR)
     sort - Comma separated list of fields to sort on, e.g. id,date:desc
     fields - Comma separated list of fields to return
@@ -26,17 +26,17 @@ def query_documents(index: str):
     page - Page to fetch
     scroll - If given, create a new scroll_id to download all results in subsequent calls
     scroll_id - Get the next batch from this id.
+    highlight - if true, add highlight tags <em>
+    annotations - if true, also return _annotations with query matches as annotations
+
     Any additional GET parameters are interpreted as filters, and can be
     field=value for a term query, or field__xxx=value for a range query, with xxx in gte, gt, lte, lt
     Note that dates can use relative queries, see elasticsearch 'date math'
     In case of conflict between field names and (other) arguments, you may prepend a field name with __
     If your field names contain __, it might be better to use POST queries
-    highlight - if true, add highlight tags <em>
-    annotations - if true, also return _annotations with query matches as annotations
 
     Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     """
-    # [WvA] GET /documents might be more RESTful, but would not allow a POST query to the same endpoint
     args = {}
     known_args = ["sort", "page", "per_page", "scroll", "scroll_id", "fields", "highlight", "annotations"]
     for name in known_args:
@@ -139,12 +139,14 @@ def query_aggregate_post(index: str):
     """
     Construct an aggregate query. POST body should be a json dict:
     {'axes': [{'field': .., ['interval': ..]}, ...],
-     'filters': <filters, see query endpoint>
+     'filters': <filters, see query endpoint>,
+     'queries': <queries, see query endpoint>,
      }
 
     Returns a JSON object {data: [{axis1, ..., n}, ...], meta: {axes: [...]}
     """
     params = request.get_json(force=True)
+    print(params)
     axes = params.pop('axes', [])
     if len(axes) < 1:
         response = jsonify({'message': 'Aggregation axis not given'})

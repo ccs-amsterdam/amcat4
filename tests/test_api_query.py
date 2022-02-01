@@ -5,7 +5,7 @@ def test_query_get(client, index_docs, user):
     """Can we run a simple query?"""
 
     def q(**query_string):
-        return get_json(client, f"/index/{index_docs.name}/query", user=user, query_string=query_string)['results']
+        return get_json(client, f"/index/{index_docs.name}/documents", user=user, query_string=query_string)['results']
 
     def qi(**query_string):
         return {int(doc['_id']) for doc in q(**query_string)}
