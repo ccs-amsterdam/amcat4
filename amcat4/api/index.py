@@ -1,7 +1,6 @@
 """
 API Endpoints for document and index management
 """
-
 from http import HTTPStatus
 
 import elasticsearch

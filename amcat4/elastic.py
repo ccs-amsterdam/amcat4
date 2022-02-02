@@ -6,7 +6,6 @@ from typing import Mapping, List, Optional
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
-
 _ES: Optional[Elasticsearch] = None
 SYS_INDEX = "amcat4system"
 SYS_MAPPING = "sys"
@@ -19,7 +18,8 @@ ES_MAPPINGS = {
    'date': {"type": "date", "format": "strict_date_optional_time"},
    'num': {"type": "double"},
    'keyword': {"type": "keyword"},
-   'url': {"type": "keyword"},
+   'url': {"type": "keyword", "meta": {"amcat4_type": "url"}},
+   'tag': {"type": "keyword", "meta": {"amcat4_type": "tag"}},
    'text': {"type": "text"},
    'object': {"type": "object"},
    }
@@ -62,7 +62,7 @@ def _create_index(name: str) -> None:
     fields = {'text': ES_MAPPINGS['text'],
               'title': ES_MAPPINGS['text'],
               'date': ES_MAPPINGS['date'],
-              'url': ES_MAPPINGS['keyword']}
+              'url': ES_MAPPINGS['url']}
     body = {'mappings': {'properties': fields}}
     es().indices.create(index=name, body=body)
 
@@ -148,6 +148,16 @@ def update_document(index: str, doc_id: str, fields: dict):
     es().update(index=index, id=doc_id, body=body)
 
 
+def _get_type_from_property(properties: dict) -> str:
+    """
+    Convert an elastic 'property' into an amcat4 field type
+    """
+    result = properties.get("meta", {}).get("amcat4_type")
+    if result:
+        return result
+    return properties['type']
+
+
 def get_fields(index: str) -> Mapping[str, dict]:
     """
     Get the field types in use in this index
@@ -155,8 +165,8 @@ def get_fields(index: str) -> Mapping[str, dict]:
     :return: a dict of fieldname: field objects {fieldname: {name, type, ...}]
     """
     r = es().indices.get_mapping(index=index)
-
-    return {k: dict(name=k, type=v['type'])
+    print(r[index]['mappings']['properties'])
+    return {k: dict(name=k, type=_get_type_from_property(v))
             for k, v in r[index]['mappings']['properties'].items()}
 
 
