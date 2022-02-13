@@ -168,6 +168,21 @@ def get_fields(ix: str):
     return jsonify(r)
 
 
+@app_index.route("/index/<ix>/fields", methods=['POST'])
+@auto.doc(group='index')
+@multi_auth.login_required
+def set_fields(ix: str):
+    """
+    Set the field types used in this index
+    POST body should be a dict of {field: type}
+    """
+    check_role(Role.WRITER, _index(ix))
+    body = request.get_json(force=True)
+
+    elastic.set_columns(ix, body)
+    return "", HTTPStatus.OK
+
+
 @app_index.route("/index/<ix>/fields/<field>/values", methods=['GET'])
 @auto.doc(group='index')
 @multi_auth.login_required

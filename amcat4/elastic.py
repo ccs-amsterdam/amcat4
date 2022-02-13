@@ -116,13 +116,23 @@ def upload_documents(index: str, documents, columns: Mapping[str, str] = None) -
     :return: the list of document ids
     """
     if columns:
-        mapping = {field: ES_MAPPINGS[type_] for (field, type_) in columns.items()}
-        body = {"properties": mapping}
-        es().indices.put_mapping(index=index, body=body)
+        set_columns(index, columns)
 
     actions = list(_get_es_actions(index, documents))
     bulk(es(), actions)
     return [action['_id'] for action in actions]
+
+
+def set_columns(index: str, columns: Mapping[str, str]):
+    """
+    Update the column types for this index
+
+    :param index: The name of the index (without prefix)
+    :param columns: A mapping of field:type for column types
+    """
+    mapping = {field: ES_MAPPINGS[type_] for (field, type_) in columns.items()}
+    body = {"properties": mapping}
+    es().indices.put_mapping(index=index, body=body)
 
 
 def get_document(index: str, doc_id: str, **kargs) -> dict:
