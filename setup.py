@@ -22,7 +22,7 @@ setup(
         "Flask-HTTPAuth",
         "flask-cors",
         "flask-selfdoc",
-        "elasticsearch",
+        "elasticsearch~=7.16",
         "bcrypt",
         "peewee",
         "itsdangerous",
