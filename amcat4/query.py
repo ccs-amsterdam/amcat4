@@ -17,7 +17,11 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
             field_filters.append({"term": {field: value}})
         if 'value' in filter:
             field_filters.append({"term": {field: filter.pop('value')}})
-
+        if 'exists' in filter:
+            if filter.pop('exists'):
+                field_filters.append({"exists": {"field": field}})
+            else:
+                field_filters.append({"bool": {"must_not": {"exists": {"field": field}}}})
         rangefilter = {}
         for rangevar in ['gt', 'gte', 'lt', 'lte']:
             if rangevar in filter:
