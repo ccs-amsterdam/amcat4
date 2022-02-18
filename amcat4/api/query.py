@@ -8,6 +8,7 @@ from typing import Dict
 from flask import Blueprint, jsonify, request, abort
 
 from amcat4 import query, aggregate
+from amcat4.aggregate import Axis
 from amcat4.api.common import multi_auth, auto
 
 app_query = Blueprint('app_query', __name__)
@@ -146,12 +147,12 @@ def query_aggregate_post(index: str):
     Returns a JSON object {data: [{axis1, ..., n}, ...], meta: {axes: [...]}
     """
     params = request.get_json(force=True)
-    print(params)
     axes = params.pop('axes', [])
     if len(axes) < 1:
         response = jsonify({'message': 'Aggregation axis not given'})
         response.status_code = 400
         return response
-    axes, results = aggregate.query_aggregate(index, *axes, **params)
-    return jsonify({"meta": {"axes": [axis.asdict() for axis in axes]},
-                    "data": [b._asdict() for b in results]})
+    axes = [Axis(**x) for x in axes]
+    results = aggregate.query_aggregate(index, axes, **params)
+    return jsonify({"meta": {"axes": [axis.asdict() for axis in results.axes]},
+                    "data": list(results.as_dicts())})
