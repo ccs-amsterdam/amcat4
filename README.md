@@ -1,6 +1,6 @@
 [![Unit tests](https://github.com/ccs-amsterdam/amcat4/actions/workflows/unittests.yml/badge.svg)](https://github.com/ccs-amsterdam/amcat4/actions/workflows/unittests.yml)
 [![Flake8 & Mypy linting](https://github.com/ccs-amsterdam/amcat4/actions/workflows/linting.yml/badge.svg)](https://github.com/ccs-amsterdam/amcat4/actions/workflows/linting.yml)
-[![PyPI version](https://badge.fury.io/py/amcat4.svg)](https://badge.fury.io/py/amcat4)
+[![pip version](https://badge.fury.io/py/amcat4.svg)](https://badge.fury.io/py/amcat4)
 
 # AmCAT4
 
