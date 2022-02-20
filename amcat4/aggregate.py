@@ -159,8 +159,8 @@ def _elastic_aggregate(index: str, sources, queries, filters, aggregations: Sequ
         yield from _elastic_aggregate(index, sources, queries, filters, aggregations, after_key)
 
 
-def _aggregate_results(index: str, axes: Sequence[BoundAxis], queries: Mapping[str, str],
-                       filters: Optional[Mapping[str, Mapping]], aggregations: Sequence[BoundAggregation]) -> Iterable[tuple]:
+def _aggregate_results(index: str, axes: List[BoundAxis], queries: Mapping[str, str],
+                       filters: Optional[Mapping[str, Mapping]], aggregations: List[BoundAggregation]) -> Iterable[tuple]:
     if not axes:
         # No axes, so return aggregations (or total count) only
         if aggregations:
