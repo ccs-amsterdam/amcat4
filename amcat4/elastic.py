@@ -77,7 +77,6 @@ def _delete_index(name: str, ignore_missing=False) -> None:
     es().indices.delete(index=name, ignore=([404] if ignore_missing else []))
 
 
-
 def _get_hash(document):
     """
     Get the hash for a document
