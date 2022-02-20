@@ -4,12 +4,15 @@ Provide authentication for AmCAT4 api
 Authentication can work via password or token
 See amcat4.index for authorisation rules
 """
+import json
 import logging
+from datetime import datetime
 from enum import IntEnum
 from typing import Optional, Mapping
 
 import bcrypt
-from itsdangerous import TimedJSONWebSignatureSerializer, SignatureExpired, BadSignature
+from authlib.jose import JsonWebSignature
+from authlib.jose.errors import DecodeError
 from peewee import Model, CharField, IntegerField
 
 from amcat4.db import db
@@ -24,6 +27,11 @@ class Role(IntEnum):
     ADMIN = 40
 
 
+def now() -> int:
+    """Current time in seconds since epoch"""
+    return int(datetime.now().timestamp())
+
+
 class User(Model):
     email = CharField(unique=True)
     password = CharField()
@@ -32,12 +40,18 @@ class User(Model):
     class Meta:
         database = db
 
-    def create_token(self, expiration: int = None) -> str:
+    def create_token(self, days_valid: int = 7) -> str:
         """
         Create a new token for this user
+        :param days_valid: the number of days from now that the token should be valid
         """
-        s = TimedJSONWebSignatureSerializer(SECRET_KEY, expires_in=expiration)
-        return s.dumps({'id': self.id})
+        header = {'alg': 'HS256'}
+        if days_valid:
+            exp = now() + days_valid * 24*60*60
+            header.update({'crit': ['exp'], 'exp': exp})
+        payload = {'id': self.id}
+        s = JsonWebSignature().serialize_compact(header, json.dumps(payload).encode("utf-8"), SECRET_KEY)
+        return s
 
     def has_role(self, role: Role) -> bool:
         """
@@ -98,11 +112,16 @@ def verify_token(token: str) -> Optional[User]:
     :param token: The token to verify
     :return: a User object if user could be authenticated, None otherwise
     """
-    s = TimedJSONWebSignatureSerializer(SECRET_KEY)
+    jws = JsonWebSignature()
     try:
-        result = s.loads(token)
-    except (SignatureExpired, BadSignature):
+        token = jws.deserialize_compact(token, SECRET_KEY)
+    except DecodeError:
         logging.exception("Token verification failed")
         return None
-    logging.warning("TOKEN RESULT: {}" .format(result))
-    return User.get(User.id == result['id'])
+    logging.warning("TOKEN RESULT: {}" .format(token))
+    if "exp" in token["header"]:
+        if token["header"]["exp"] < now():
+            logging.error("Token expired")
+            return None
+    payload = json.loads(token['payload'].decode("utf-8"))
+    return User.get(User.id == payload['id'])

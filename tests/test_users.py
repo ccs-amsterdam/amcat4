@@ -17,6 +17,12 @@ def test_token(user):
     assert verify_token(token).email == user.email
 
 
+def test_token_expiry(user):
+    """Can we create a token and verify it?"""
+    token = user.create_token(days_valid=-1)
+    assert verify_token(token) is None
+
+
 def test_indices(user, index, guest_index):
     """Does user.indices return the correct results?"""
     assert set(user.indices(include_guest=False)) == set()
