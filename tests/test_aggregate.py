@@ -63,6 +63,8 @@ def test_byquery(index_docs):
     assert do_query(index_docs, Axis("_query"), queries=["text", "test*"]) == {"text": 2, "test*": 3}
     assert (do_query(index_docs, Axis("_query"), Axis("subcat"), queries=["text", "test*"]) ==
             {("text", "x"): 2, ("test*", "x"): 1, ("test*", "y"): 2})
+    assert (do_query(index_docs, Axis("subcat"), Axis("_query"), queries=["text", "test*"]) ==
+            {("x", "text"): 2, ("x", "test*"): 1, ("y", "test*"): 2})
 
 
 def test_metric(index_docs):

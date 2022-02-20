@@ -169,11 +169,14 @@ def _aggregate_results(index: str, axes: Sequence[BoundAxis], queries: Mapping[s
         else:
             result = es().count(index=index, body=build_body(queries=queries, filters=filters))
             yield result['count'],
-    elif axes[0].field == "_query":
+    elif any(ax.field == "_query" for ax in axes):
         # Strip off first axis and run separate aggregation for each query
+        i = [ax.field for ax in axes].index("_query")
+        _axes = axes[:i] + axes[(i+1):]
         for label, query in queries.items():
-            for result_tuple in _aggregate_results(index, axes[1:], {label: query}, filters, aggregations):
-                yield (label,) + result_tuple
+            for result_tuple in _aggregate_results(index, _axes, {label: query}, filters, aggregations):
+                # insert label into the right position on the result tuple
+                yield result_tuple[:i] + (label,) + result_tuple[i:]
     else:
         # Run an aggregation with one or more axes
         sources = [axis.query() for axis in axes]
@@ -201,8 +204,8 @@ def query_aggregate(index: str, axes: Sequence[Axis] = None, aggregations: Seque
                     {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
     :return: a pair of (Axis, results), where results is a sequence of tuples
     """
-    if axes and any(x.field == "_query" for x in axes[1:]):
-        raise ValueError("Only the primary (first) aggregation may be by query")
+    if axes and len([x.field == "_query" for x in axes[1:]]) > 1:
+        raise ValueError("Only one aggregation axis may be by query")
     _axes = [BoundAxis(axis, index) for axis in axes] if axes else []
     _aggregations = [BoundAggregation(a, index) for a in aggregations] if aggregations else []
     queries = _normalize_queries(queries)
