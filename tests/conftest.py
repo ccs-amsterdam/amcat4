@@ -92,7 +92,7 @@ TEST_DOCUMENTS = [
 
 
 def populate_index(index):
-    upload(index, TEST_DOCUMENTS, columns={'cat': 'keyword', 'subcat': 'keyword', 'i': 'int'})
+    upload(index, TEST_DOCUMENTS, columns={'cat': 'keyword', 'subcat': 'keyword', 'i': 'long'})
     return TEST_DOCUMENTS
 
 
