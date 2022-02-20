@@ -18,36 +18,21 @@ API Endpoints for querying
 
 <pre>
 
-    Construct an aggregate query. POST body should be a json dict:
-    {&#39;axes&#39;: [{&#39;field&#39;: .., [&#39;interval&#39;: ..]}, ...],
-     &#39;filters&#39;: &lt;filters, see query endpoint&gt;
+    Construct an aggregate query. POST body should be a json dict with axes and/or aggregations keys,
+    and optional filters and queries keys:
+    :axes: list of dicts containing field and optional interval: [{&#39;field&#39;: .., [&#39;interval&#39;: ..]}, ...],
+    :aggregations: list of dicts containing field, function, and optional name: [{field, function, [name]}, ...]
+    :filters: see POST /query endpoint,
+    :queries: see POST /query endpoint,
      }
 
-    Returns a JSON object {data: [{axis1, ..., n}, ...], meta: {axes: [...]}
-    
-</pre>
+    For example, to get average views per week per publisher
+    {
+     &#39;axes&#39;: [{&#39;field&#39;: &#39;date&#39;, &#39;interval&#39;:&#39;week&#39;}, {&#39;field&#39;: &#39;publisher&#39;}],
+     &#39;aggregations&#39;: [{&#39;field&#39;: &#39;views&#39;, &#39;function&#39;: &#39;avg&#39;}]
+    }
 
-### GET /index/&lt;index&gt;/query</h2>
-
-<pre>
-
-    Query (or list) documents in this index. GET request parameters:
-    q - Elastic query string. Argument may be repeated for multiple queries (treated as OR)
-    sort - Comma separated list of fields to sort on, e.g. id,date:desc
-    fields - Comma separated list of fields to return
-    per_page - Number of results per page
-    page - Page to fetch
-    scroll - If given, create a new scroll_id to download all results in subsequent calls
-    scroll_id - Get the next batch from this id.
-    Any additional GET parameters are interpreted as filters, and can be
-    field=value for a term query, or field__xxx=value for a range query, with xxx in gte, gt, lte, lt
-    Note that dates can use relative queries, see elasticsearch &#39;date math&#39;
-    In case of conflict between field names and (other) arguments, you may prepend a field name with __
-    If your field names contain __, it might be better to use POST queries
-    highlight - if true, add highlight tags &lt;em&gt;
-    annotations - if true, also return _annotations with query matches as annotations
-
-    Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
+    Returns a JSON object {data: [{axis1, ..., n, aggregate1, ...}, ...], meta: {axes: [...], aggregations: [...]}
     
 </pre>
 
@@ -174,6 +159,15 @@ API Endpoints for document and index management
 
     Get the fields (columns) used in this index
     returns a json array of {name, type} objects
+    
+</pre>
+
+### POST /index/&lt;ix&gt;/fields</h2>
+
+<pre>
+
+    Set the field types used in this index
+    POST body should be a dict of {field: type}
     
 </pre>
 

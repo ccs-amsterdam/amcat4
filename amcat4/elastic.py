@@ -14,9 +14,9 @@ HASH_FIELDS = REQUIRED_FIELDS + ["url"]
 DEFAULT_QUERY_FIELDS = HASH_FIELDS
 
 ES_MAPPINGS = {
-   'int': {"type": "long"},
+   'long': {"type": "long"},
    'date': {"type": "date", "format": "strict_date_optional_time"},
-   'num': {"type": "double"},
+   'double': {"type": "double"},
    'keyword': {"type": "keyword"},
    'url': {"type": "keyword", "meta": {"amcat4_type": "url"}},
    'tag': {"type": "keyword", "meta": {"amcat4_type": "tag"}},
