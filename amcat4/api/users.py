@@ -120,7 +120,7 @@ def modify_user(email):
     return jsonify({"email": u.email, "global_role": u.role and u.role.name})
 
 
-@app_users.route("/auth/token/", methods=['GET'])
+@app_users.route("/auth/token", methods=['GET'])
 @auto.doc(group='auth')
 @multi_auth.login_required
 def get_token():

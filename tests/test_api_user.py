@@ -3,8 +3,8 @@ from tests.tools import get_json, build_headers, post_json
 
 
 def test_get_token(client, user):
-    assert client.get('/auth/token/') == 401, "Getting a token should require authorization"
-    r = get_json(client, '/auth/token/', headers=build_headers(user=user.email, password=user.plaintext_password))
+    assert client.get('/auth/token') == 401, "Getting a token should require authorization"
+    r = get_json(client, '/auth/token', headers=build_headers(user=user.email, password=user.plaintext_password))
     assert verify_token(r['token']) == user
 
 

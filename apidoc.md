@@ -187,7 +187,7 @@ AmCAT4 can use either Basic or Token-based authentication.
 A client can request a token with basic authentication and store that token for future requests.
 
 
-### GET /auth/token/</h2>
+### GET /auth/token</h2>
 
 <pre>
 
