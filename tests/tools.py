@@ -1,5 +1,7 @@
 import json
 from base64 import b64encode
+from datetime import datetime, date
+from typing import Set, Iterable
 
 
 def build_headers(user=None, headers=None, password=None):
@@ -25,3 +27,15 @@ def post_json(client, url, expected=201, headers=None, user=None, **kargs):
     response = client.post(url, headers=build_headers(user, headers), **kargs)
     assert response == expected, f"POST {url} returned {response.status_code}, expected {expected}"
     return json.loads(response.get_data(as_text=True))
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        return json.JSONEncoder.default(self, o)
+
+
+def dictset(dicts: Iterable[dict]) -> Set[str]:
+    """Helper method to convert an iterable of dicts into a comparable set of sorted json strings"""
+    return {json.dumps(dict(sorted(d.items())), cls=DateTimeEncoder) for d in dicts}

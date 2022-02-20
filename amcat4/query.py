@@ -4,7 +4,7 @@ All things query
 from math import ceil
 from re import finditer
 from re import sub
-from typing import Mapping, Iterable, Optional, Union, Sequence, Any, Dict
+from typing import Mapping, Iterable, Optional, Union, Sequence, Any, Dict, List
 
 from .elastic import es
 
@@ -91,6 +91,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
                     scroll=None, scroll_id: str = None, fields: Iterable[str] = None,
                     filters: Mapping[str, Mapping] = None,
                     highlight=False, annotations=False,
+                    sort: List[Union[str, Mapping]] = None,
                     **kwargs) -> Optional[QueryResult]:
     """
     Conduct a query_string query, returning the found documents
@@ -113,8 +114,10 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
                                 ...}}
     :param highlight: if True, add highlight tags (<em>) to results.
     :param annotations: if True, get query matches as annotations.
-    :param kwargs: Additional elements passed to Elasticsearch.search(), for example:
-           sort=col1:desc,col2
+    :param sort: Sort order of results, can be either a single field or a list of fields.
+                 In the list, each field is a string or a dict with options, e.g. ["id", {"date": {"order": "desc"}}]
+                 (https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html)
+    :param kwargs: Additional elements passed to Elasticsearch.search()
     :return: a QueryResult, or None if there is not scroll result anymore
     """
     assert isinstance(index, str), "Index should be a string with the index name"
@@ -122,7 +125,8 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
         # set scroll to default also if scroll_id is given but no scroll time is known
         kwargs['scroll'] = '2m' if (not scroll or scroll is True) else scroll
     queries = _normalize_queries(queries)
-
+    if sort is not None:
+        kwargs["sort"] = sort
     if scroll_id:
         result = es().scroll(scroll_id=scroll_id, **kwargs)
         if not result['hits']['hits']:
@@ -135,7 +139,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
             kwargs['_source'] = fields
         if not scroll:
             kwargs['from_'] = page * per_page
-        result = es().search(index=index, body=body, size=per_page, **kwargs)
+        result = es().search(index=index, size=per_page, **body, **kwargs)
 
     data = []
     for hit in result['hits']['hits']:

@@ -59,36 +59,100 @@ class BoundAxis:
         return {"field": self.field, "type": self.ftype, "interval": self.interval}
 
 
+class Aggregation:
+    """
+    Specification of a single aggregation, that is, field and aggregation function
+    """
+    def __init__(self, field: str, function: str, name: str = None):
+        self.field = field
+        self.function = function
+        self.name = name or f"{function}_{field}"
+
+
+class BoundAggregation:
+    """
+    Aggregation bound to an index (for field type information)
+    """
+    def __init__(self, aggregation: Aggregation, index: str):
+        self.aggregation = aggregation
+        self.index = index
+        self.ftype = field_type(index, self.aggregation.field)
+
+    @property
+    def name(self):
+        return self.aggregation.name
+
+    @property
+    def function(self):
+        return self.aggregation.function
+
+    @property
+    def field(self):
+        return self.aggregation.field
+
+    def dsl_item(self):
+        return self.name, {self.function: {"field": self.field}}
+
+    def get_value(self, bucket: dict):
+        result = bucket[self.name]['value']
+        if self.ftype == "date":
+            result = datetime.utcfromtimestamp(result / 1000.)
+        return result
+
+
+def aggregation_dsl(aggregations: Iterable[BoundAggregation]) -> dict:
+    """Get the aggregation DSL dict for a list of aggregations"""
+    return dict(a.dsl_item() for a in aggregations)
+
+
 class AggregateResult:
-    def __init__(self, axes: Sequence[BoundAxis], data: List[tuple], value_column: str="n", aggregations=None):
+    def __init__(self, axes: Sequence[BoundAxis], aggregations: List[BoundAggregation],
+                 data: List[tuple], count_column: str = "n"):
         self.axes = axes
         self.data = data
         self.aggregations = aggregations
-        self.value_column = value_column
+        self.count_column = count_column
 
     def as_dicts(self) -> Iterable[dict]:
         """Return the results as a sequence of {axis1, ..., n} dicts"""
-        keys = tuple(ax.field for ax in self.axes) + (self.value_column, )
-        if self.aggregations: keys += tuple(self.aggregations.keys())
+        keys = tuple(ax.field for ax in self.axes) + (self.count_column, )
+        if self.aggregations:
+            keys += tuple(a.name for a in self.aggregations)
         for row in self.data:
             yield dict(zip(keys, row))
 
 
-def _elastic_aggregate(index, sources, queries, filters, aggregations, after_key=None):
+def _bare_aggregate(index: str, queries, filters, aggregations: Sequence[BoundAggregation]) -> Tuple[int, dict]:
     """
-    Recursively get all buckets from a composite query
+    Aggregate without sources/group_by.
+    Returns a tuple of doc count and aggregegations (doc_count, {metric: value})
+    """
+    kargs = {}
+    if filters or queries:
+        q = build_body(queries=queries, filters=filters)
+        kargs["query"] = q["query"]
+    result = es().search(index=index, size=0, aggregations=aggregation_dsl(aggregations), **kargs)
+    return result["hits"]["total"]["value"], result['aggregations']
+
+
+def _elastic_aggregate(index: str, sources, queries, filters, aggregations: Sequence[BoundAggregation],
+                       after_key=None) -> Iterable[dict]:
+    """
+    Recursively get all buckets from a composite query.
+    Yields 'buckets' consisting of {key: {axis: value}, doc_count: <number>}
     """
     # [WvA] Not sure if we should get all results ourselves or expose the 'after' pagination.
     #       This might get us in trouble if someone e.g. aggregates on url or day for a large corpus
     after = {"after": after_key} if after_key else {}
-    aggr = {"composite": dict(sources=sources, **after)}
+    aggr = {"aggr": {}}
+    aggr["aggr"]["composite"] = dict(sources=sources, **after)
     if aggregations:
-        aggr['aggregations'] = aggregations
-    body = {"size": 0, "aggregations": {"aggr": aggr}}
+        aggr["aggr"]['aggregations'] = aggregation_dsl(aggregations)
+    kargs = {}
     if filters or queries:
         q = build_body(queries=queries, filters=filters)
-        body["query"] = q["query"]
-    result = es().search(index=index, body=body)['aggregations']['aggr']
+        kargs["query"] = q["query"]
+    result = es().search(index=index, size=0, aggregations=aggr, **kargs)['aggregations']['aggr']
     yield from result['buckets']
     after_key = result.get('after_key')
     if after_key:
@@ -96,26 +160,32 @@ def _elastic_aggregate(index, sources, queries, filters, aggregations, after_key
 
 
 def _aggregate_results(index: str, axes: Sequence[BoundAxis], queries: Mapping[str, str],
-                       filters: Mapping[str, Mapping], aggregations) -> Iterable[tuple]:
-    # TODO: metrics without axes, make n optional (?), turn aggregation into object with postprocess (esp for dates)
+                       filters: Mapping[str, Mapping], aggregations: Sequence[BoundAggregation]) -> Iterable[tuple]:
     if not axes:
-        # No axes, so return total count
-        body = build_body(queries=queries, filters=filters)
-        count = es().count(index=index, body=body)
-        yield count['count'],
+        # No axes, so return aggregations (or total count) only
+        if aggregations:
+            count, results = _bare_aggregate(index, queries, filters, aggregations)
+            yield (count,) + tuple(a.get_value(results) for a in aggregations)
+        else:
+            count = es().count(index=index, body=build_body(queries=queries, filters=filters))
+            yield count['count'],
     elif axes[0].field == "_query":
-        # Run query for each count
+        # Strip off first axis and run separate aggregation for each query
         for label, query in queries.items():
             for result_tuple in _aggregate_results(index, axes[1:], {label: query}, filters, aggregations):
                 yield (label,) + result_tuple
     else:
+        # Run an aggregation with one or more axes
         sources = [axis.query() for axis in axes]
         for bucket in _elastic_aggregate(index, sources, queries, filters, aggregations):
-            keys = tuple(axis.postprocess(bucket['key'][axis.field]) for axis in axes)
-            yield keys + (bucket['doc_count'], ) + tuple(bucket[a]['value'] for a in aggregations)
+            row = tuple(axis.postprocess(bucket['key'][axis.field]) for axis in axes)
+            row += (bucket['doc_count'], )
+            if aggregations:
+                row += tuple(a.get_value(bucket) for a in aggregations)
+            yield row
 
 
-def query_aggregate(index: str, axes: Sequence[Axis], aggregations=None, *,
+def query_aggregate(index: str, axes: Sequence[Axis] = None, aggregations: Sequence[Aggregation] = None, *,
                     queries: Union[Mapping[str, str], Sequence[str]] = None,
                     filters: Mapping[str, Mapping] = None) -> AggregateResult:
     """
@@ -124,17 +194,17 @@ def query_aggregate(index: str, axes: Sequence[Axis], aggregations=None, *,
     but only if that is the last axis. [WvA] Not sure if this is desired
 
     :param index: The name of the elasticsearch index
-    :param axis: The primary aggregation axis, should be the name of a field or a dict with keys 'field', 'interval'
-    :param axes: Optional additional axes
-    :param value_column: Name for the value 'column', default n. This might be expanded for other aggregate values (avg etc)
+    :param axes: Aggregation axes
+    :param aggregations: Aggregation fields
     :param queries: Optional query string
     :param filters: if not None, a dict of filters: {field: {'value': value}} or
                     {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
     :return: a pair of (Axis, results), where results is a sequence of tuples
     """
-    if any(x.field == "_query" for x in axes[1:]):
+    if axes and any(x.field == "_query" for x in axes[1:]):
         raise ValueError("Only the primary (first) aggregation may be by query")
-    _axes = [BoundAxis(axis, index) for axis in axes]
+    _axes = [BoundAxis(axis, index) for axis in axes] if axes else []
+    _aggregations = [BoundAggregation(a, index) for a in aggregations] if aggregations else []
     queries = _normalize_queries(queries)
-    data = list(_aggregate_results(index, _axes, queries, filters, aggregations))
-    return AggregateResult(_axes, data, value_column="n", aggregations=aggregations)
+    data = list(_aggregate_results(index, _axes, queries, filters, _aggregations))
+    return AggregateResult(_axes, _aggregations, data, count_column="n", )

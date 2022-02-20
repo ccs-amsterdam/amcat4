@@ -39,17 +39,21 @@ def get_documents(index: str):
     Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     """
     args = {}
-    known_args = ["sort", "page", "per_page", "scroll", "scroll_id", "fields", "highlight", "annotations"]
+    known_args = ["page", "per_page", "scroll", "scroll_id", "highlight", "annotations"]
+    if "sort" in request.args:
+        args["sort"] = [{x.replace(":desc", ""): "desc"} if x.endswith(":desc") else x
+                        for x in request.args["sort"].split(",")]
+    if "fields" in request.args:
+        args["fields"] = request.args["fields"].split(",")
     for name in known_args:
         if name in request.args:
             val = request.args[name]
-            val = int(val) if name in ["page", "per_page"] else val
-            val = val.split(",") if name in ["fields"] else val
+            if name in ["page", "per_page"]:
+                val = int(val)
             args[name] = val
-
     filters: Dict[str, Dict] = {}
     for (f, v) in request.args.items():
-        if f not in known_args + ["q"]:
+        if f not in known_args + ["fields", "sort", "q"]:
             if f.startswith("__"):
                 f = f[2:]
             if "__" in f:  # range query

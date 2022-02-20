@@ -40,7 +40,7 @@ def test_scroll(client, index, user):
     get_json(client, url, user=user, query_string={"scroll_id": scroll_id}, expected=404)
     # Test POST to query endpoint
     r = post_json(client, f"/index/{index.name}/query", user=user, expected=200,
-                  json={"sort": "i:desc", "per_page": 30, "scroll": "5m"})
+                  json={"sort": [{"i": "desc"}], "per_page": 30, "scroll": "5m"})
     scroll_id = r["meta"]["scroll_id"]
     assert scroll_id is not None
     assert {h["i"] for h in r["results"]} == set(range(36, 66))

@@ -1,8 +1,9 @@
 import functools
 from datetime import datetime
 
-from amcat4.aggregate import query_aggregate, Axis
+from amcat4.aggregate import query_aggregate, Axis, Aggregation
 from amcat4.index import Index
+from tests.tools import dictset
 
 
 def do_query(index: Index, *axes, **kargs):
@@ -51,7 +52,6 @@ def test_second_axis(index_docs):
             == {("a", _y(2018)): 2, ("a", _y(2020)): 1, ("b", _y(2018)): 1})
 
 
-
 def test_count(index_docs):
     """Does aggregation without axes work"""
     assert do_query(index_docs) == {(): 4}
@@ -75,10 +75,21 @@ TEST_DOCUMENTS = [
 
 def test_metric(index_docs):
     """Do metric aggregations (e.g. avg(x)) work?"""
-    import json
-    sj = lambda dicts: set(json.dumps(d) for d in dicts)
-    assert (sj(query_aggregate(index_docs.name, [Axis("subcat")],
-                                aggregations={"avg_i": {"avg": {"field": "i"}}}).as_dicts()) ==
-            sj([{"subcat": "x", "n": 2, "avg_i": 1.5},
-             {"subcat": "y", "n": 2, "avg_i": 21.0}]))
-    #assert do_query(index_docs, Axis("subcat")) is None
+    # Single and double aggregation with axis
+    def q(axes, aggregations):
+        return dictset(query_aggregate(index_docs.name, axes, aggregations).as_dicts())
+    assert (q([Axis("subcat")], [Aggregation("i", "avg")]) ==
+            dictset([{"subcat": "x", "n": 2, "avg_i": 1.5}, {"subcat": "y", "n": 2, "avg_i": 21.0}]))
+    assert (q([Axis("subcat")], [Aggregation("i", "avg"), Aggregation("i", "max")]) ==
+            dictset([{"subcat": "x", "n": 2, "avg_i": 1.5, "max_i": 2.0},
+                     {"subcat": "y", "n": 2, "avg_i": 21.0, "max_i": 31.0}]))
+    # Aggregation only
+    assert (q(None, [Aggregation("i", "avg")]) == dictset([{"n": 4, "avg_i": 11.25}]))
+    assert (q(None,  [Aggregation("i", "avg"), Aggregation("i", "max")]) ==
+            dictset([{"n": 4, "avg_i": 11.25, "max_i": 31.0}]))
+
+    # Check value handling - Aggregation on date fields
+    assert (q(None, [Aggregation("date", "max")]) == dictset([{"n": 4, "max_date": "2020-01-01T00:00:00"}]))
+    assert (q([Axis("subcat")], [Aggregation("date", "avg")]) ==
+            dictset([{"subcat": "x", "n": 2, "avg_date": "2018-01-16T12:00:00"},
+                     {"subcat": "y", "n": 2, "avg_date": "2019-01-01T00:00:00"}]))

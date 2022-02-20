@@ -64,8 +64,7 @@ def _create_index(name: str) -> None:
               'title': ES_MAPPINGS['text'],
               'date': ES_MAPPINGS['date'],
               'url': ES_MAPPINGS['url']}
-    body = {'mappings': {'properties': fields}}
-    es().indices.create(index=name, body=body)
+    es().indices.create(index=name, mappings={'properties': fields})
 
 
 def _delete_index(name: str, ignore_missing=False) -> None:
@@ -155,8 +154,7 @@ def update_document(index: str, doc_id: str, fields: dict):
     :param doc_id: The document id (hash)
     :param fields: a {field: value} mapping of fields to update
     """
-    body = {"doc": fields}
-    es().update(index=index, id=doc_id, body=body)
+    es().update(index=index, id=doc_id, doc=fields)
 
 
 def _get_type_from_property(properties: dict) -> str:
@@ -197,8 +195,8 @@ def get_values(index: str, field: str) -> List[str]:
     :param field: The field name
     :return: A list of values
     """
-    body = {"size": 0, "aggs": {"values": {"terms": {"field": field}}}}
-    r = es().search(index=index, body=body)
+    aggs = {"values": {"terms": {"field": field}}}
+    r = es().search(index=index, size=0, aggs=aggs)
     return [x["key"] for x in r["aggregations"]["values"]["buckets"]]
 
 

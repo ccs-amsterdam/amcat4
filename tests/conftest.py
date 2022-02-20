@@ -117,6 +117,7 @@ def _delete_index(name):
 
 @pytest.fixture()
 def index_many():
+    setup_elastic()
     ix = create_index("amcat4_unittest_indexmany")
     upload(ix, [dict(id=i, pagenr=abs(10-i), text=text) for (i, text) in enumerate(["odd", "even"]*10)])
     yield ix
@@ -126,6 +127,7 @@ def index_many():
 @pytest.fixture()
 def index_name():
     """A name to create an index which will be deleted afterwards if needed"""
+    setup_elastic()
     name = "amcat4_unittest_index_name"
     _delete_index(name)
     yield name
@@ -135,6 +137,7 @@ def index_name():
 @pytest.fixture()
 def username():
     """A name to create a user which will be deleted afterwards if needed"""
+    setup_elastic()
     name = "test_user@example.com"
     yield name
     u = User.get_or_none(User.email == name)

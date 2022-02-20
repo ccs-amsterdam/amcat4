@@ -21,8 +21,9 @@ def test_sort(index_many):
         res = query_documents(index_many.name, per_page=per_page, sort=key, *args, **kwargs)
         return [int(h['_id']) for h in res.data]
     assert q('id') == [0, 1, 2, 3, 4]
-    assert q('pagenr,id') == [10, 9, 11, 8, 12]
-    assert q('pagenr:desc,id') == [0, 1, 19, 2, 18]
+    assert q('pagenr') == [10, 9, 11, 8, 12]
+    assert q(['pagenr', 'id']) == [10, 9, 11, 8, 12]
+    assert q([{'pagenr': {"order": "desc"}}, 'id']) == [0, 1, 19, 2, 18]
 
 
 def test_scroll(index_many):
