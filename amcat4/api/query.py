@@ -8,7 +8,7 @@ from typing import Dict
 from flask import Blueprint, jsonify, request, abort
 
 from amcat4 import query, aggregate
-from amcat4.aggregate import Axis
+from amcat4.aggregate import Axis, Aggregation
 from amcat4.api.common import multi_auth, auto
 
 app_query = Blueprint('app_query', __name__)
@@ -142,21 +142,32 @@ def query_documents_post(index: str):
 @multi_auth.login_required
 def query_aggregate_post(index: str):
     """
-    Construct an aggregate query. POST body should be a json dict:
-    {'axes': [{'field': .., ['interval': ..]}, ...],
-     'filters': <filters, see query endpoint>,
-     'queries': <queries, see query endpoint>,
+    Construct an aggregate query. POST body should be a json dict with axes and/or aggregations keys,
+    and optional filters and queries keys:
+    :axes: list of dicts containing field and optional interval: [{'field': .., ['interval': ..]}, ...],
+    :aggregations: list of dicts containing field, function, and optional name: [{field, function, [name]}, ...]
+    :filters: see POST /query endpoint,
+    :queries: see POST /query endpoint,
      }
 
-    Returns a JSON object {data: [{axis1, ..., n}, ...], meta: {axes: [...]}
+    For example, to get average views per week per publisher
+    {
+     'axes': [{'field': 'date', 'interval':'week'}, {'field': 'publisher'}],
+     'aggregations': [{'field': 'views', 'function': 'avg'}]
+    }
+
+    Returns a JSON object {data: [{axis1, ..., n, aggregate1, ...}, ...], meta: {axes: [...], aggregations: [...]}
     """
     params = request.get_json(force=True)
     axes = params.pop('axes', [])
-    if len(axes) < 1:
-        response = jsonify({'message': 'Aggregation axis not given'})
+    aggregations = params.pop('aggregations', [])
+    if len(axes) + len(aggregations) < 1:
+        response = jsonify({'message': 'Aggregation needs at least one axis or aggregation'})
         response.status_code = 400
         return response
     axes = [Axis(**x) for x in axes]
-    results = aggregate.query_aggregate(index, axes, **params)
-    return jsonify({"meta": {"axes": [axis.asdict() for axis in results.axes]},
+    aggregations = [Aggregation(**x) for x in aggregations]
+    results = aggregate.query_aggregate(index, axes, aggregations, **params)
+    return jsonify({"meta": {"axes": [axis.asdict() for axis in results.axes],
+                             "aggregations": [a.asdict() for a in results.aggregations]},
                     "data": list(results.as_dicts())})

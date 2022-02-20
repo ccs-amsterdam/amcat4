@@ -1,4 +1,4 @@
-from tests.tools import get_json, post_json
+from tests.tools import get_json, post_json, dictset
 
 
 def test_query_get(client, index_docs, user):
@@ -62,3 +62,8 @@ def test_aggregate(client, index_docs, user):
     assert r['meta']['axes'][0]['field'] == 'cat'
     data = {d['cat']: d['n'] for d in r['data']}
     assert data == {"a": 3, "b": 1}
+
+    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+                  json={'axes': [{'field': 'subcat'}], 'aggregations': [{'field': "i", 'function': "avg"}]})
+    assert dictset(r['data']) == dictset([{'avg_i': 1.5, 'n': 2, 'subcat': 'x'}, {'avg_i': 21.0, 'n': 2, 'subcat': 'y'}])
+    assert r['meta']['aggregations'] == [{'field': "i", 'function': "avg", "type": "long", "name": "avg_i"}]

@@ -99,6 +99,9 @@ class BoundAggregation:
             result = datetime.utcfromtimestamp(result / 1000.)
         return result
 
+    def asdict(self):
+        return {"field": self.field, "type": self.ftype, "function": self.function, "name": self.name}
+
 
 def aggregation_dsl(aggregations: Iterable[BoundAggregation]) -> dict:
     """Get the aggregation DSL dict for a list of aggregations"""

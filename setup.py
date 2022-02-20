@@ -25,7 +25,7 @@ setup(
         "elasticsearch~=7.16",
         "bcrypt",
         "peewee",
-        "itsdangerous",
+        "itsdangerous~=1.1",
         "amcat4annotator>=0.14"
     ],
     extras_require={
