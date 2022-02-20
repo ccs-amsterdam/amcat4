@@ -2,7 +2,7 @@
 Aggregate queries
 """
 from datetime import datetime
-from typing import Mapping, Iterable, Union, Tuple, Sequence, List
+from typing import Mapping, Iterable, Union, Tuple, Sequence, List, Dict
 
 from amcat4.elastic import es, field_type
 from amcat4.query import build_body, _normalize_queries
@@ -12,12 +12,9 @@ class Axis:
     """
     Class that specifies an aggregation axis
     """
-    def __init__(self, field: str = None, interval: str = None, query_name=None):
-        if bool(field) + bool(query_name) != 1:
-            raise ValueError("Specify field or query_name")
+    def __init__(self, field: str, interval: str = None):
         self.field = field
         self.interval = interval
-        self.query_name = query_name
 
 
 class BoundAxis:
@@ -147,7 +144,7 @@ def _elastic_aggregate(index: str, sources, queries, filters, aggregations: Sequ
     # [WvA] Not sure if we should get all results ourselves or expose the 'after' pagination.
     #       This might get us in trouble if someone e.g. aggregates on url or day for a large corpus
     after = {"after": after_key} if after_key else {}
-    aggr = {"aggr": {}}
+    aggr: Dict[str, Dict[str, dict]] = {"aggr": {}}
     aggr["aggr"]["composite"] = dict(sources=sources, **after)
     if aggregations:
         aggr["aggr"]['aggregations'] = aggregation_dsl(aggregations)
@@ -170,8 +167,8 @@ def _aggregate_results(index: str, axes: Sequence[BoundAxis], queries: Mapping[s
             count, results = _bare_aggregate(index, queries, filters, aggregations)
             yield (count,) + tuple(a.get_value(results) for a in aggregations)
         else:
-            count = es().count(index=index, body=build_body(queries=queries, filters=filters))
-            yield count['count'],
+            result = es().count(index=index, body=build_body(queries=queries, filters=filters))
+            yield result['count'],
     elif axes[0].field == "_query":
         # Strip off first axis and run separate aggregation for each query
         for label, query in queries.items():

@@ -18,7 +18,7 @@ setup(
         "Topic :: Text Processing",
     ],
     install_requires=[
-        "Flask",
+        "Flask~=2.0.3",
         "Flask-HTTPAuth",
         "flask-cors",
         "flask-selfdoc",
