@@ -99,6 +99,7 @@ def populate_index(index):
 @pytest.fixture()
 def index_docs():
     setup_elastic()
+    _delete_index("amcat4_unittest_indexdocs")
     i = create_index("amcat4_unittest_indexdocs")
     populate_index(i)
     yield i

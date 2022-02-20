@@ -41,10 +41,11 @@ def get_documents(index: str):
     args = {}
     known_args = ["page", "per_page", "scroll", "scroll_id", "highlight", "annotations"]
     if "sort" in request.args:
-        args["sort"] = [{x.replace(":desc", ""): "desc"} if x.endswith(":desc") else x
-                        for x in request.args["sort"].split(",")]
-    if "fields" in request.args:
-        args["fields"] = request.args["fields"].split(",")
+        sort = [{x.replace(":desc", ""): "desc"} if x.endswith(":desc") else x
+                for x in request.args["sort"].split(",")]
+    else:
+        sort = None
+    fields = request.args["fields"].split(",") if "fields" in request.args else None
     for name in known_args:
         if name in request.args:
             val = request.args[name]
@@ -65,12 +66,8 @@ def get_documents(index: str):
                 if f not in filters:
                     filters[f] = {'values': []}
                 filters[f]['values'].append(v)
-
-    if filters:
-        args['filters'] = filters
-    if "q" in request.args:
-        args['queries'] = request.args.getlist("q")
-    r = query.query_documents(index, **args)
+    queries = request.args.getlist("q") if "q" in request.args else None
+    r = query.query_documents(index, fields=fields, queries=queries, filters=filters, sort=sort, **args)
     if r is None:
         abort(404)
     return jsonify(r.as_dict())

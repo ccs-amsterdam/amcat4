@@ -77,6 +77,7 @@ def _delete_index(name: str, ignore_missing=False) -> None:
     es().indices.delete(index=name, ignore=([404] if ignore_missing else []))
 
 
+
 def _get_hash(document):
     """
     Get the hash for a document
@@ -130,8 +131,7 @@ def set_columns(index: str, columns: Mapping[str, str]):
     :param columns: A mapping of field:type for column types
     """
     mapping = {field: ES_MAPPINGS[type_] for (field, type_) in columns.items()}
-    body = {"properties": mapping}
-    es().indices.put_mapping(index=index, body=body)
+    es().indices.put_mapping(index=index, body=dict(properties=mapping))
 
 
 def get_document(index: str, doc_id: str, **kargs) -> dict:
@@ -154,7 +154,8 @@ def update_document(index: str, doc_id: str, fields: dict):
     :param doc_id: The document id (hash)
     :param fields: a {field: value} mapping of fields to update
     """
-    es().update(index=index, id=doc_id, doc=fields)
+    # Mypy doesn't understand that body= has been deprecated already...
+    es().update(index=index, id=doc_id, doc=fields)  # type: ignore
 
 
 def _get_type_from_property(properties: dict) -> str:

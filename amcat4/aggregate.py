@@ -2,7 +2,7 @@
 Aggregate queries
 """
 from datetime import datetime
-from typing import Mapping, Iterable, Union, Tuple, Sequence, List, Dict
+from typing import Mapping, Iterable, Union, Tuple, Sequence, List, Dict, Optional
 
 from amcat4.elastic import es, field_type
 from amcat4.query import build_body, _normalize_queries
@@ -160,7 +160,7 @@ def _elastic_aggregate(index: str, sources, queries, filters, aggregations: Sequ
 
 
 def _aggregate_results(index: str, axes: Sequence[BoundAxis], queries: Mapping[str, str],
-                       filters: Mapping[str, Mapping], aggregations: Sequence[BoundAggregation]) -> Iterable[tuple]:
+                       filters: Optional[Mapping[str, Mapping]], aggregations: Sequence[BoundAggregation]) -> Iterable[tuple]:
     if not axes:
         # No axes, so return aggregations (or total count) only
         if aggregations:

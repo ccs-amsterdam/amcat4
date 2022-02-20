@@ -45,7 +45,7 @@ class User(Model):
         Create a new token for this user
         :param days_valid: the number of days from now that the token should be valid
         """
-        header = {'alg': 'HS256'}
+        header: dict = {'alg': 'HS256'}
         if days_valid:
             exp = now() + days_valid * 24*60*60
             header.update({'crit': ['exp'], 'exp': exp})
@@ -114,14 +114,14 @@ def verify_token(token: str) -> Optional[User]:
     """
     jws = JsonWebSignature()
     try:
-        token = jws.deserialize_compact(token, SECRET_KEY)
+        result = jws.deserialize_compact(token, SECRET_KEY)
     except DecodeError:
         logging.exception("Token verification failed")
         return None
     logging.warning("TOKEN RESULT: {}" .format(token))
-    if "exp" in token["header"]:
-        if token["header"]["exp"] < now():
+    if "exp" in result["header"]:
+        if result["header"]["exp"] < now():
             logging.error("Token expired")
             return None
-    payload = json.loads(token['payload'].decode("utf-8"))
+    payload = json.loads(result['payload'].decode("utf-8"))
     return User.get(User.id == payload['id'])
