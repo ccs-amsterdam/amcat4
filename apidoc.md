@@ -59,7 +59,7 @@ API Endpoints for querying
 
         # Control highlighting
         &#39;annotations&#39;: true                        # Return _annotations with query matches as annotations
-        &#39;highglight&#39;: true                         # Highlight document. True highlights whole document
+        &#39;highlight&#39;: true                          # Highlight document. True highlights whole document
         &#39;highlight&#39;: {&#39;number of fragments&#39;: 3}    # Highlight up to 3 snippets per document (see elastic docs below)
         # Docs: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html
 

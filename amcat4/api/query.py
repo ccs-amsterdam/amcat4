@@ -97,7 +97,7 @@ def query_documents_post(index: str):
 
         # Control highlighting
         'annotations': true                        # Return _annotations with query matches as annotations
-        'highglight': true                         # Highlight document. True highlights whole document
+        'highlight': true                          # Highlight document. True highlights whole document
         'highlight': {'number of fragments': 3}    # Highlight up to 3 snippets per document (see elastic docs below)
         # Docs: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html
 
