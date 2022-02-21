@@ -9,7 +9,7 @@ from typing import Mapping, Iterable, Optional, Union, Sequence, Any, Dict, List
 from .elastic import es
 
 
-def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: bool = False):
+def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: Union[bool,dict] = False):
     def parse_filter(field, filter):
         filter = filter.copy()
         field_filters = []
@@ -49,9 +49,13 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
 
     body: Dict[str, Any] = {"query": {"bool": {"filter": fs}}}
 
+    if highlight is True:
+        highlight = {"number_of_fragments": 0}
+    elif highlight:
+        highlight = {**{"number_of_fragments": 0, "fragment_size": 40, "type": "plain"}, **highlight}
     if highlight:
         body['highlight'] = {"type": 'unified', "require_field_match": True,
-                             "fields": {"*": {"number_of_fragments": 0}}}
+                             "fields": {"*": highlight}}
     return body
 
 
@@ -90,7 +94,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
                     page: int = 0, per_page: int = 10,
                     scroll=None, scroll_id: str = None, fields: Iterable[str] = None,
                     filters: Mapping[str, Mapping] = None,
-                    highlight=False, annotations=False,
+                    highlight: Union[bool, dict] = False, annotations=False,
                     sort: List[Union[str, Mapping]] = None,
                     **kwargs) -> Optional[QueryResult]:
     """
@@ -112,7 +116,9 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
                                 'value': value,
                                 'gte/gt/lte/lt': value,
                                 ...}}
-    :param highlight: if True, add highlight tags (<em>) to results.
+    :param highlight: if True, add highlight tags (<em>) to all results.
+                      If a dict, it can be used to control highlighting, e.g. to get multiple snippets
+                      (https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html)
     :param annotations: if True, get query matches as annotations.
     :param sort: Sort order of results, can be either a single field or a list of fields.
                  In the list, each field is a string or a dict with options, e.g. ["id", {"date": {"order": "desc"}}]
@@ -149,7 +155,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
         if 'highlight' in hit:
             for key in hit['highlight'].keys():
                 if hit['highlight'][key]:
-                    hitdict[key] = hit['highlight'][key][0]
+                    hitdict[key] = " ... ".join(hit['highlight'][key])
         data.append(hitdict)
 
     if scroll_id:

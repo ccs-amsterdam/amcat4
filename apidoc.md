@@ -44,8 +44,24 @@ API Endpoints for querying
 
 
     {
-        # for optional param in {sort, per_page, page, scroll, scroll_id, highlight, annotations}
-        &lt;param&gt;: value,
+        # Sorting
+        &#39;sort&#39;: &#39;date&#39;                        # sort by date
+        &#39;sort&#39;: [&#39;date&#39;, &#39;id&#39;]                # sort by date, then by id
+        &#39;sort&#39;: [{&#39;date&#39;: {&#39;order&#39;:&#39;desc&#39;}}]  # sort by date in descending order (see elastic docs below)
+        # Docs: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html
+
+        # Pagination
+        &#39;sort&#39;:
+        &#39;per_page&#39;: &lt;number&gt;            # Number of documents per page
+        &#39;page&#39;: &lt;number&gt;                # Request a specific page
+        &#39;scroll&#39;: &lt;string&gt;              # Create a scroll request. Value should be e.g. 5m for 5 minutes
+        &#39;scoll_id&#39;: &lt;string&gt;            # Get the next page for the scroll request
+
+        # Control highlighting
+        &#39;annotations&#39;: true                        # Return _annotations with query matches as annotations
+        &#39;highglight&#39;: true                         # Highlight document. True highlights whole document
+        &#39;highlight&#39;: {&#39;number of fragments&#39;: 3}    # Highlight up to 3 snippets per document (see elastic docs below)
+        # Docs: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html
 
         # select fields
         &#39;fields&#39;: field                                    ## single field

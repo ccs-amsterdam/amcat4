@@ -27,7 +27,7 @@ def get_documents(index: str):
     page - Page to fetch
     scroll - If given, create a new scroll_id to download all results in subsequent calls
     scroll_id - Get the next batch from this id.
-    highlight - if true, add highlight tags <em>
+    highlight - add highlight tags <em>
     annotations - if true, also return _annotations with query matches as annotations
 
     Any additional GET parameters are interpreted as filters, and can be
@@ -82,8 +82,24 @@ def query_documents_post(index: str):
 
 
     {
-        # for optional param in {sort, per_page, page, scroll, scroll_id, highlight, annotations}
-        <param>: value,
+        # Sorting
+        'sort': 'date'                        # sort by date
+        'sort': ['date', 'id']                # sort by date, then by id
+        'sort': [{'date': {'order':'desc'}}]  # sort by date in descending order (see elastic docs below)
+        # Docs: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html
+
+        # Pagination
+        'sort':
+        'per_page': <number>            # Number of documents per page
+        'page': <number>                # Request a specific page
+        'scroll': <string>              # Create a scroll request. Value should be e.g. 5m for 5 minutes
+        'scoll_id': <string>            # Get the next page for the scroll request
+
+        # Control highlighting
+        'annotations': true                        # Return _annotations with query matches as annotations
+        'highglight': true                         # Highlight document. True highlights whole document
+        'highlight': {'number of fragments': 3}    # Highlight up to 3 snippets per document (see elastic docs below)
+        # Docs: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html
 
         # select fields
         'fields': field                                    ## single field

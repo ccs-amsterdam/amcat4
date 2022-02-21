@@ -1,8 +1,10 @@
 import functools
 from typing import Set, Optional
+import re
 
 from amcat4 import query
 from amcat4.index import Index
+from tests.conftest import populate_index, upload
 
 
 def query_ids(index: Index, q: Optional[str] = None, **kwargs) -> Set[int]:
@@ -36,3 +38,22 @@ def test_range_query(index_docs):
 def test_fields(index_docs):
     res = query.query_documents(index_docs.name, queries=["test"], fields=["cat", "title"])
     assert set(res.data[0].keys()) == {"cat", "title", "_id"}
+
+
+def test_highlight(index):
+    words = "The error of regarding functional notions is not quite equivalent to"
+    text = f"{words} a test document. {words} other text documents. {words} you!"
+    print(text)
+    upload(index, [dict(title="Een test titel", text=text)])
+    res = query.query_documents(index.name, queries=["te*"], highlight=True)
+    doc = res.data[0]
+    assert doc['title'] == "Een <em>test</em> titel"
+    assert doc['text'] == f"{words} a <em>test</em> document. {words} other <em>text</em> documents. {words} you!"
+
+    doc = query.query_documents(index.name, queries=["te*"], highlight={"number_of_fragments": 1}).data[0]
+    assert doc['title'] == "Een <em>test</em> titel"
+    assert " a <em>test</em>" in doc['text']
+    assert "..." not in doc['text']
+
+    doc = query.query_documents(index.name, queries=["te*"], highlight={"number_of_fragments": 2}).data[0]
+    assert re.search(r" a <em>test</em>[^<]*...[^<]*other <em>text</em> documents", doc['text'])
