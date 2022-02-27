@@ -174,7 +174,6 @@ def get_fields(index: str) -> Mapping[str, dict]:
     :return: a dict of fieldname: field objects {fieldname: {name, type, ...}]
     """
     r = es().indices.get_mapping(index=index)
-    print(r[index]['mappings']['properties'])
     return {k: dict(name=k, type=_get_type_from_property(v))
             for k, v in r[index]['mappings']['properties'].items()}
 
