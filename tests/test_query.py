@@ -1,10 +1,10 @@
 import functools
-from typing import Set, Optional
 import re
+from typing import Set, Optional
 
 from amcat4 import query
 from amcat4.index import Index
-from tests.conftest import populate_index, upload
+from tests.conftest import upload
 
 
 def query_ids(index: Index, q: Optional[str] = None, **kwargs) -> Set[int]:

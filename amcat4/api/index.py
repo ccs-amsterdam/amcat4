@@ -146,14 +146,28 @@ def update_document(ix: str, docid: str):
     Update a document
     PUT request body should be a json {field: value} mapping of fields to update
     """
-
     check_role(Role.WRITER, _index(ix))
     update = request.get_json(force=True)
     try:
         elastic.update_document(ix, docid, update)
     except elasticsearch.exceptions.NotFoundError:
         abort(404)
-    return '', HTTPStatus.OK
+    return '', HTTPStatus.NO_CONTENT
+
+
+@app_index.route("/index/<ix>/documents/<docid>", methods=['DELETE'])
+@auto.doc(group='index')
+@multi_auth.login_required
+def delete_document(ix: str, docid: str):
+    """
+    Delete this document
+    """
+    check_role(Role.WRITER, _index(ix))
+    try:
+        elastic.delete_document(ix, docid)
+    except elasticsearch.exceptions.NotFoundError:
+        abort(404)
+    return '', HTTPStatus.NO_CONTENT
 
 
 @app_index.route("/index/<ix>/fields", methods=['GET'])
@@ -180,7 +194,7 @@ def set_fields(ix: str):
     body = request.get_json(force=True)
 
     elastic.set_columns(ix, body)
-    return "", HTTPStatus.OK
+    return "", HTTPStatus.NO_CONTENT
 
 
 @app_index.route("/index/<ix>/fields/<field>/values", methods=['GET'])

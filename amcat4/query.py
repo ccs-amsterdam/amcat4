@@ -9,7 +9,7 @@ from typing import Mapping, Iterable, Optional, Union, Sequence, Any, Dict, List
 from .elastic import es
 
 
-def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: Union[bool,dict] = False):
+def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: Union[bool, dict] = False):
     def parse_filter(field, filter):
         filter = filter.copy()
         field_filters = []

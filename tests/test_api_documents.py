@@ -13,12 +13,14 @@ def test_documents_unauthorized(client, index, user):
 
 
 def test_documents(client, index, user):
-    """Test uploading, modifying, and retrieving documents"""
+    """Test uploading, modifying, deleting, and retrieving documents"""
     index.set_role(user, Role.WRITER)
     r = post_json(client, f"index/{index.name}/documents", user=user,
                   json={"documents": [{"title": "a title", "text": "text", "date": "2020-01-01"}]})
     assert len(r) == 1
     url = f"index/{index.name}/documents/{r[0]}"
     assert get_json(client, url, user=user)["title"] == "a title"
-    assert client.put(url, json={"title": "the headline"}, headers=build_headers(user)) == 200
+    assert client.put(url, json={"title": "the headline"}, headers=build_headers(user)) == 204
     assert get_json(client, url, user=user)["title"] == "the headline"
+    assert client.delete(url, headers=build_headers(user)) == 204
+    assert client.get(url, headers=build_headers(user)) == 404

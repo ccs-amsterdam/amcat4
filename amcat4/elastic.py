@@ -157,6 +157,16 @@ def update_document(index: str, doc_id: str, fields: dict):
     es().update(index=index, id=doc_id, doc=fields)  # type: ignore
 
 
+def delete_document(index: str, doc_id: str):
+    """
+    Delete a single document
+
+    :param index: The name of the index
+    :param doc_id: The document id (hash)
+    """
+    es().delete(index=index, id=doc_id)
+
+
 def _get_type_from_property(properties: dict) -> str:
     """
     Convert an elastic 'property' into an amcat4 field type
