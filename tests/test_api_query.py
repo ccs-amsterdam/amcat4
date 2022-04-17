@@ -1,3 +1,4 @@
+from tests.conftest import upload
 from tests.tools import get_json, post_json, dictset
 
 
@@ -67,3 +68,9 @@ def test_aggregate(client, index_docs, user):
                   json={'axes': [{'field': 'subcat'}], 'aggregations': [{'field': "i", 'function': "avg"}]})
     assert dictset(r['data']) == dictset([{'avg_i': 1.5, 'n': 2, 'subcat': 'x'}, {'avg_i': 21.0, 'n': 2, 'subcat': 'y'}])
     assert r['meta']['aggregations'] == [{'field': "i", 'function': "avg", "type": "long", "name": "avg_i"}]
+
+def test_multiple_index(client, index_docs, index, user):
+    upload(index, [{"text": "also a text", "i": -1}])
+    indices = f"{index.name},{index_docs.name}"
+    assert len(get_json(client, f"/index/{indices}/documents", user=user)['results']) == 5
+    assert len(post_json(client, f"/index/{indices}/query", user=user, expected=200)['results']) == 5

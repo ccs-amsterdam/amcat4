@@ -90,7 +90,7 @@ def _normalize_queries(queries: Optional[Union[Dict[str,  str], Iterable[str]]])
     return {q: q for q in queries}
 
 
-def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]] = None, *,
+def query_documents(index: Union[str, Sequence[str]], queries: Union[Mapping[str,  str], Iterable[str]] = None, *,
                     page: int = 0, per_page: int = 10,
                     scroll=None, scroll_id: str = None, fields: Iterable[str] = None,
                     filters: Mapping[str, Mapping] = None,
@@ -103,7 +103,7 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
     In normal (paginated) mode, the next batch can be  requested by incrementing the page parameter.
     If the scroll parameter is given, the result will contain a scroll_id which can be used to get the next batch.
     In case there are no more documents to scroll, it will return None
-    :param index: The name of the index
+    :param index: The name of the index or indexes
     :param queries: a list of queries OR a dict {label1: query1, ...}
     :param page: The number of the page to request (starting from zero)
     :param per_page: The number of hits per page
@@ -126,7 +126,8 @@ def query_documents(index: str, queries: Union[Mapping[str,  str], Iterable[str]
     :param kwargs: Additional elements passed to Elasticsearch.search()
     :return: a QueryResult, or None if there is not scroll result anymore
     """
-    assert isinstance(index, str), "Index should be a string with the index name"
+    if not isinstance(index, str):
+        index = ",".join(index)
     if scroll or scroll_id:
         # set scroll to default also if scroll_id is given but no scroll time is known
         kwargs['scroll'] = '2m' if (not scroll or scroll is True) else scroll

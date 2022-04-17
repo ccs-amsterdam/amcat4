@@ -122,7 +122,7 @@ def query_documents_post(index: str):
     }
 
     """
-    params = request.get_json(force=True)
+    params = request.json or {}
     # first standardize fields, queries and filters to their most versatile format
     if 'fields' in params:
         # to array format: fields: [field1, field2]
