@@ -43,10 +43,22 @@ class BoundAxis:
         return self.axis.interval
 
     def runtime_mappings(self):
+        # TODO: consider adding to index (or at least checking if it's there)
         if self.interval == "dayofweek":
             return {f"{self.field}_dayofweek":
                     {"type": "keyword",
                      "script": "emit(doc['date'].value.dayOfWeekEnum.getDisplayName(TextStyle.FULL, Locale.ROOT))"
+                     }}
+        if self.interval == "daypart":
+            return {f"{self.field}_daypart":
+                    {"type": "keyword",
+                     "script": """
+                     int hour =doc['date'].value.hour; 
+                     if (hour < 6) emit('Night');
+                     else if (hour < 12) emit('Morning');
+                     else if (hour < 18) emit('Afternoon');
+                     else emit('Evening')
+                     """
                      }}
 
     def query(self):
@@ -56,6 +68,8 @@ class BoundAxis:
             if self.ftype == "date":
                 if self.interval == "dayofweek":
                     return {self.field: {"terms": {"field": f"{self.field}_dayofweek"}}}
+                elif self.interval == "daypart":
+                    return {self.field: {"terms": {"field": f"{self.field}_daypart"}}}
                 return {self.field: {"date_histogram": {"field": self.field, "calendar_interval": self.interval}}}
             else:
                 return {self.field: {"histogram": {"field": self.field, "interval": self.interval}}}
@@ -63,7 +77,7 @@ class BoundAxis:
             return {self.field: {"terms": {"field": self.field}}}
 
     def postprocess(self, value):
-        if self.ftype == "date" and self.interval != "dayofweek":
+        if self.ftype == "date" and self.interval not in ("daypart", "dayofweek"):
             value = datetime.utcfromtimestamp(value / 1000.)
             if self.interval in {"year", "month", "week", "day"}:
                 value = value.date()
@@ -173,7 +187,8 @@ def _elastic_aggregate(index: str, sources, queries, filters, aggregations: Sequ
     yield from result['buckets']
     after_key = result.get('after_key')
     if after_key:
-        yield from _elastic_aggregate(index, sources, queries, filters, aggregations, after_key=after_key)
+        yield from _elastic_aggregate(index, sources, queries, filters, aggregations,
+                                      runtime_mappings=runtime_mappings, after_key=after_key)
 
 
 def _aggregate_results(index: str, axes: List[BoundAxis], queries: Mapping[str, str],
