@@ -1,8 +1,9 @@
 import functools
-from datetime import datetime
+from datetime import datetime, date
 
 from amcat4.aggregate import query_aggregate, Axis, Aggregation
 from amcat4.index import Index
+from tests.conftest import upload
 from tests.tools import dictset
 
 
@@ -87,3 +88,17 @@ def test_metric(index_docs):
     assert (q([Axis("subcat")], [Aggregation("date", "avg")]) ==
             dictset([{"subcat": "x", "n": 2, "avg_date": "2018-01-16T12:00:00"},
                      {"subcat": "y", "n": 2, "avg_date": "2019-01-01T00:00:00"}]))
+
+
+def test_aggregate_datefunctions(index):
+    q = functools.partial(do_query, index)
+    docs = [dict(date=x) for x in ["2018-01-01T04:00:00",  # monday night
+                                   "2018-01-01T09:00:00",  # monday morning
+                                   "2018-01-11T09:00:00",  # thursday morning
+                                   "2018-01-17T11:00:00",  # wednesday morning
+                                   "2018-01-17T19:00:00",  # wednesday evening
+                                   "2018-01-17T23:00:00",  # wednesday evening
+                                   ]]
+    upload(index, docs)
+    assert q(Axis("date", interval="day")) == {date(2018, 1, 1): 2, date(2018, 1, 11): 1, date(2018, 1, 17): 3}
+    assert q(Axis("date", interval="dayofweek")) == {"Monday": 2, "Wednesday": 3, "Thursday": 1}

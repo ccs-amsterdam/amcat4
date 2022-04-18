@@ -69,6 +69,7 @@ def test_aggregate(client, index_docs, user):
     assert dictset(r['data']) == dictset([{'avg_i': 1.5, 'n': 2, 'subcat': 'x'}, {'avg_i': 21.0, 'n': 2, 'subcat': 'y'}])
     assert r['meta']['aggregations'] == [{'field': "i", 'function': "avg", "type": "long", "name": "avg_i"}]
 
+
 def test_multiple_index(client, index_docs, index, user):
     upload(index, [{"text": "also a text", "i": -1}])
     indices = f"{index.name},{index_docs.name}"

@@ -42,7 +42,7 @@ class Index(Model):
         """
         self.delete_instance()
         if delete_from_elastic:
-            elastic._delete_index(self.name)
+            elastic._delete_index(self.name, ignore_missing=True)
 
     def has_role(self, user: User, role: Role) -> bool:
         """

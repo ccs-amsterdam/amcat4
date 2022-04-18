@@ -8,6 +8,14 @@ from amcat4.elastic import es, field_type
 from amcat4.query import build_body, _normalize_queries
 
 
+def _combine_mappings(mappings):
+    result = {}
+    for mapping in mappings:
+        if mapping:
+            result.update(mapping)
+    return result
+
+
 class Axis:
     """
     Class that specifies an aggregation axis
@@ -34,11 +42,20 @@ class BoundAxis:
     def interval(self):
         return self.axis.interval
 
+    def runtime_mappings(self):
+        if self.interval == "dayofweek":
+            return {f"{self.field}_dayofweek":
+                    {"type": "keyword",
+                     "script": "emit(doc['date'].value.dayOfWeekEnum.getDisplayName(TextStyle.FULL, Locale.ROOT))"
+                     }}
+
     def query(self):
         if not self.ftype:
             raise ValueError("Please set index before using axis")
         if self.interval:
             if self.ftype == "date":
+                if self.interval == "dayofweek":
+                    return {self.field: {"terms": {"field": f"{self.field}_dayofweek"}}}
                 return {self.field: {"date_histogram": {"field": self.field, "calendar_interval": self.interval}}}
             else:
                 return {self.field: {"histogram": {"field": self.field, "interval": self.interval}}}
@@ -46,7 +63,7 @@ class BoundAxis:
             return {self.field: {"terms": {"field": self.field}}}
 
     def postprocess(self, value):
-        if self.ftype == "date":
+        if self.ftype == "date" and self.interval != "dayofweek":
             value = datetime.utcfromtimestamp(value / 1000.)
             if self.interval in {"year", "month", "week", "day"}:
                 value = value.date()
@@ -136,7 +153,7 @@ def _bare_aggregate(index: str, queries, filters, aggregations: Sequence[BoundAg
 
 
 def _elastic_aggregate(index: str, sources, queries, filters, aggregations: Sequence[BoundAggregation],
-                       after_key=None) -> Iterable[dict]:
+                       runtime_mappings: Mapping[str, Mapping] = None, after_key=None) -> Iterable[dict]:
     """
     Recursively get all buckets from a composite query.
     Yields 'buckets' consisting of {key: {axis: value}, doc_count: <number>}
@@ -144,19 +161,19 @@ def _elastic_aggregate(index: str, sources, queries, filters, aggregations: Sequ
     # [WvA] Not sure if we should get all results ourselves or expose the 'after' pagination.
     #       This might get us in trouble if someone e.g. aggregates on url or day for a large corpus
     after = {"after": after_key} if after_key else {}
-    aggr: Dict[str, Dict[str, dict]] = {"aggr": {}}
-    aggr["aggr"]["composite"] = dict(sources=sources, **after)
+    aggr: Dict[str, Dict[str, dict]] = {"aggs": {"composite": dict(sources=sources, **after)}}
     if aggregations:
-        aggr["aggr"]['aggregations'] = aggregation_dsl(aggregations)
+        aggr["aggs"]['aggregations'] = aggregation_dsl(aggregations)
     kargs = {}
     if filters or queries:
         q = build_body(queries=queries, filters=filters)
         kargs["query"] = q["query"]
-    result = es().search(index=index, size=0, aggregations=aggr, **kargs)['aggregations']['aggr']
+    result = es().search(index=index, size=0, aggregations=aggr, runtime_mappings=runtime_mappings, **kargs
+                         )['aggregations']['aggs']
     yield from result['buckets']
     after_key = result.get('after_key')
     if after_key:
-        yield from _elastic_aggregate(index, sources, queries, filters, aggregations, after_key)
+        yield from _elastic_aggregate(index, sources, queries, filters, aggregations, after_key=after_key)
 
 
 def _aggregate_results(index: str, axes: List[BoundAxis], queries: Mapping[str, str],
@@ -180,7 +197,8 @@ def _aggregate_results(index: str, axes: List[BoundAxis], queries: Mapping[str, 
     else:
         # Run an aggregation with one or more axes
         sources = [axis.query() for axis in axes]
-        for bucket in _elastic_aggregate(index, sources, queries, filters, aggregations):
+        runtime_mappings = _combine_mappings(axis.runtime_mappings() for axis in axes)
+        for bucket in _elastic_aggregate(index, sources, queries, filters, aggregations, runtime_mappings):
             row = tuple(axis.postprocess(bucket['key'][axis.field]) for axis in axes)
             row += (bucket['doc_count'], )
             if aggregations:
