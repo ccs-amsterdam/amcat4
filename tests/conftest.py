@@ -4,10 +4,12 @@ from typing import Iterable
 import pytest
 from elasticsearch.exceptions import NotFoundError
 
-# Set db to in-memory database *before* importing amcat4. Maybe not the most elegant solution...
+from fastapi.testclient import TestClient
+
 from amcat4.elastic import setup_elastic
 
-os.environ['AMCAT4_DB_NAME'] = ":memory:"
+# Set db to shared in-memory database *before* importing amcat4. Maybe not the most elegant solution...
+os.environ['AMCAT4_DB_NAME'] = ":memory:?cache=shared"
 
 from amcat4 import elastic, api  # noqa: E402
 from amcat4.db import initialize_if_needed  # noqa: E402
@@ -24,8 +26,13 @@ RULES = {"ruleset": "crowdcoding"}
 
 
 @pytest.fixture()
+def client():
+    return TestClient(api.app)
+
+
+@pytest.fixture()
 def user():
-    u = create_user(email="testuser@example.org", password="test")
+    u = create_user(email="testuser@test.com", password="test")
     u.plaintext_password = "test"
     yield u
     u.delete_instance()
@@ -33,7 +40,7 @@ def user():
 
 @pytest.fixture()
 def writer():
-    u = create_user(email="writer@example.org", password="test", global_role=Role.WRITER)
+    u = create_user(email="writer@test.com", password="test", global_role=Role.WRITER)
     u.plaintext_password = "test"
     yield u
     u.delete_instance()
@@ -41,7 +48,7 @@ def writer():
 
 @pytest.fixture()
 def admin():
-    u = create_user(email="admin@example.org", password="secret", global_role=Role.ADMIN)
+    u = create_user(email="admin@test.com", password="secret", global_role=Role.ADMIN)
     u.plaintext_password = "secret"
     yield u
     u.delete_instance()
@@ -139,7 +146,7 @@ def index_name():
 def username():
     """A name to create a user which will be deleted afterwards if needed"""
     setup_elastic()
-    name = "test_user@example.com"
+    name = "test_user@test.com"
     yield name
     u = User.get_or_none(User.email == name)
     if u:

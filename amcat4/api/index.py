@@ -14,11 +14,7 @@ from amcat4.index import Index
 app_index = Blueprint('app_index', __name__)
 
 
-def _index(ix: str) -> Index:
-    try:
-        return Index.get(Index.name == ix)
-    except Index.DoesNotExist:
-        abort(404)
+
 
 
 def index_json(ix: Index):

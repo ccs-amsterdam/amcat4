@@ -102,7 +102,7 @@ def verify_user(email: str, password: str) -> Optional[User]:
     if bcrypt.checkpw(password.encode('utf-8'), user.password.encode("utf-8")):
         return user
     else:
-        logging.warning("Incorrect password for user {email}".format(**locals()))
+        logging.warning(f"Incorrect password for user {email}: {user.password} != {password}")
         return None
 
 

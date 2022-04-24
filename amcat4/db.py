@@ -10,3 +10,4 @@ def initialize_if_needed():
     from amcat4.auth import User
     from amcat4.index import Index, IndexRole
     db.create_tables([User, Index, IndexRole])
+    print("!!!!!!!!!!!!!", list(User.select()))
