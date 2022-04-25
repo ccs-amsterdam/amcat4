@@ -2,102 +2,102 @@
 API Endpoints for document and index management
 """
 from http import HTTPStatus
+from typing import Literal, Optional, Mapping, List
 
 import elasticsearch
-from flask import Blueprint, jsonify, request, abort, g
+from fastapi import APIRouter, HTTPException, status, Response
+from fastapi.params import Depends, Body
+from pydantic import BaseModel
+
+from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 
 from amcat4 import elastic, index
-from amcat4.api.common import multi_auth, check_role, auto
-from amcat4.auth import Role
+from amcat4.api.common import _index
+from amcat4.auth import Role, User
 from amcat4.index import Index
 
-app_index = Blueprint('app_index', __name__)
-
-
-
+app_index = APIRouter(
+    prefix="/index",
+    tags=["index"])
 
 
 def index_json(ix: Index):
-    return jsonify({'name': ix.name, 'guest_role': ix.guest_role and Role(ix.guest_role).name})
+    return {'name': ix.name, 'guest_role': ix.guest_role and Role(ix.guest_role).name}
 
 
-@app_index.route("/index/", methods=['GET'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def index_list():
+@app_index.get("/")
+def index_list(current_user: User = Depends(authenticated_user)):
     """
     List index from this server. Returns a list of dicts containing name, role, and guest attributes
     """
-    result = [dict(name=ix.name, role=role.name) for ix, role in g.current_user.indices(include_guest=True).items()]
-    return jsonify(result)
+    return [dict(name=ix.name, role=role.name) for ix, role in current_user.indices(include_guest=True).items()]
 
 
-@app_index.route("/index/", methods=['POST'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def create_index():
+class NewIndex(BaseModel):
+    name: str
+    guest_role: Optional[Literal["ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader"]]
+
+
+@app_index.post("/", status_code=status.HTTP_201_CREATED)
+def create_index(new_index: NewIndex, current_user: User = Depends(authenticated_writer)):
     """
     Create a new index, setting the current user to admin (owner).
     POST data should be json containing name and optional guest_role
     """
-    check_role(Role.WRITER)
-    data = request.get_json(force=True)
-    name = data['name']
-    guest_role = Role[data['guest_role'].upper()] if 'guest_role' in data else None
-    ix = index.create_index(name, admin=g.current_user, guest_role=guest_role)
-    return index_json(ix), HTTPStatus.CREATED
+    guest_role = Role[new_index.guest_role.upper()] if new_index.guest_role else None
+    ix = index.create_index(new_index.name, admin=current_user, guest_role=guest_role)
+    return index_json(ix)
+
+# Yes, we should fix this mess
+class ChangeIndex(BaseModel):
+    guest_role: Literal["ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader"]
 
 
-@app_index.route("/index/<ix>", methods=['PUT'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def modify_index(ix: str):
+@app_index.put("/{ix}")
+def modify_index(ix: str, data: ChangeIndex, user: User = Depends(authenticated_user)):
     """
     Modify the index. Currently only supports modifying guest_role
     POST data should be json containing the changed values (i.e. guest_role)
     """
     ix = _index(ix)
-    check_role(Role.WRITER, ix)
-    data = request.get_json(force=True)
-    if 'guest_role' in data:
-        guest_role = Role[data['guest_role'].upper()] if data['guest_role'] else None
+    check_role(user, Role.WRITER, ix)
+    if data.guest_role:
+        guest_role = Role[data.guest_role.upper()] if data.guest_role else None
         if guest_role == Role.ADMIN:
-            check_role(Role.ADMIN, ix)
+            check_role(user, Role.ADMIN, ix)
         ix.guest_role = guest_role
     ix.save()
     return index_json(ix)
 
 
-@app_index.route("/index/<ix>", methods=['GET'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def view_index(ix: str):
+@app_index.get("/{ix}")
+def view_index(ix: str, user: User = Depends(authenticated_user)):
     """
     Modify the index. Currently only supports modifying guest_role
     POST data should be json containing the changed values (i.e. guest_role)
     """
     ix = _index(ix)
-    check_role(Role.METAREADER, ix)
+    check_role(user, Role.METAREADER, ix)
     return index_json(ix)
 
 
-@app_index.route("/index/<ix>", methods=['DELETE'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def delete_index(ix: str):
+@app_index.delete("/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def delete_index(ix: str, user: User = Depends(authenticated_user)):
     """
     Delete the index.
     """
     ix = _index(ix)
-    check_role(Role.ADMIN, ix)
+    check_role(user, Role.ADMIN, ix)
     ix.delete_index()
-    return "", HTTPStatus.NO_CONTENT
 
 
-@app_index.route("/index/<ix>/documents", methods=['POST'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def upload_documents(ix: str):
+class UploadForm(BaseModel):
+    documents: List[dict]
+    columns: Mapping[str, str]
+
+
+@app_index.post("/{ix}/documents", status_code=status.HTTP_201_CREATED)
+def upload_documents(ix: str, body: UploadForm, user: User = Depends(authenticated_user)):
     """
     Upload documents to this server.
     JSON payload should contain a `documents` key, and may contain a `columns` key:
@@ -107,98 +107,76 @@ def upload_documents(ix: str):
     }
     Returns a list of ids for the uploaded documents
     """
-    check_role(Role.WRITER, _index(ix))
-    body = request.get_json(force=True)
-
-    result = elastic.upload_documents(ix, body['documents'], body.get('columns'))
-    return jsonify(result), HTTPStatus.CREATED
+    check_role(user, Role.WRITER, _index(ix))
+    return elastic.upload_documents(ix, body.documents, body.columns)
 
 
-@app_index.route("/index/<ix>/documents/<docid>", methods=['GET'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def get_document(ix: str, docid: str):
+@app_index.get("/{ix}/documents/{docid}")
+def get_document(ix: str, docid: str, fields: Optional[str]=None, user: User = Depends(authenticated_user)):
     """
     Get a single document by id
     GET request parameters:
     fields - Comma separated list of fields to return (default: all fields)
     """
-    check_role(Role.READER, _index(ix))
+    check_role(user, Role.READER, _index(ix))
     kargs = {}
-    if 'fields' in request.args:
-        kargs['_source'] = request.args['fields']
+    if fields:
+        kargs['_source'] = fields
     try:
-        doc = elastic.get_document(ix, docid, **kargs)
+        return elastic.get_document(ix, docid, **kargs)
     except elasticsearch.exceptions.NotFoundError:
-        abort(404)
-    return jsonify(doc)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Document {ix}/{docid} not found")
 
 
-@app_index.route("/index/<ix>/documents/<docid>", methods=['PUT'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def update_document(ix: str, docid: str):
+@app_index.put("/{ix}/documents/{docid}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def update_document(ix: str, docid: str, update: dict = Body(...), user: User = Depends(authenticated_user)):
     """
     Update a document
     PUT request body should be a json {field: value} mapping of fields to update
     """
-    check_role(Role.WRITER, _index(ix))
-    update = request.get_json(force=True)
+    check_role(user, Role.WRITER, _index(ix))
     try:
         elastic.update_document(ix, docid, update)
     except elasticsearch.exceptions.NotFoundError:
-        abort(404)
-    return '', HTTPStatus.NO_CONTENT
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Document {ix}/{docid} not found")
 
 
-@app_index.route("/index/<ix>/documents/<docid>", methods=['DELETE'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def delete_document(ix: str, docid: str):
+@app_index.delete("/{ix}/documents/{docid}")
+def delete_document(ix: str, docid: str, user: User = Depends(authenticated_user)):
     """
     Delete this document
     """
-    check_role(Role.WRITER, _index(ix))
+    check_role(user, Role.WRITER, _index(ix))
     try:
         elastic.delete_document(ix, docid)
     except elasticsearch.exceptions.NotFoundError:
-        abort(404)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Document {ix}/{docid} not found")
     return '', HTTPStatus.NO_CONTENT
 
 
-@app_index.route("/index/<ix>/fields", methods=['GET'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def get_fields(ix: str):
+@app_index.get("/{ix}/fields")
+def get_fields(ix: str, _=Depends(authenticated_user)):
     """
     Get the fields (columns) used in this index
     returns a json array of {name, type} objects
     """
-    r = elastic.get_fields(ix)
-    return jsonify(r)
+    return elastic.get_fields(ix)
 
 
-@app_index.route("/index/<ix>/fields", methods=['POST'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def set_fields(ix: str):
+@app_index.post("/{ix}/fields")
+def set_fields(ix: str, body: dict = Body(...), user: User = Depends(authenticated_user)):
     """
     Set the field types used in this index
     POST body should be a dict of {field: type}
     """
-    check_role(Role.WRITER, _index(ix))
-    body = request.get_json(force=True)
-
+    check_role(user, Role.WRITER, _index(ix))
     elastic.set_columns(ix, body)
     return "", HTTPStatus.NO_CONTENT
 
 
-@app_index.route("/index/<ix>/fields/<field>/values", methods=['GET'])
-@auto.doc(group='index')
-@multi_auth.login_required
-def get_values(ix: str, field: str):
+@app_index.get("/{ix}/fields/{field}/values")
+def get_values(ix: str, field: str, _=Depends(authenticated_user)):
     """
     Get the fields (columns) used in this index
     """
-    r = elastic.get_values(ix, field)
-    return jsonify(r)
+    return elastic.get_values(ix, field)

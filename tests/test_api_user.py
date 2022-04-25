@@ -4,7 +4,7 @@ import requests
 from fastapi.testclient import TestClient
 
 from amcat4.auth import verify_token, verify_user, Role, User
-from tests.tools import get_json, build_headers, post_json
+from tests.tools import get_json, build_headers, post_json, check
 
 
 def test_get_token(client: TestClient, user: User):
@@ -48,11 +48,6 @@ def test_create_user(client: TestClient, user, writer, admin, username):
     # (only) admin can delete other admins
     assert client.delete(f"/users/{username}", headers=build_headers(writer)).status_code == 401
     assert client.delete(f"/users/{username}", headers=build_headers(admin)).status_code == 204
-
-
-def check(response: requests.Response, expected: int, msg: Optional[str] = None):
-    assert response.status_code == expected, \
-        f"{msg}{': ' if msg else ''}Unexpected status: {response.status_code} != {expected}; reply: {response.json()}"
 
 
 def test_modify_user(client: TestClient, user, writer, admin):

@@ -17,6 +17,10 @@ from amcat4.auth import Role, User, hash_password
 from pydantic import BaseModel
 
 
+app_users = APIRouter(
+    tags=["users"])
+
+
 class Username(EmailStr):
     """Subclass of EmailStr to allow 'admin' username. """
     # WVA: Not sure we should actually keep admin?
@@ -27,11 +31,8 @@ class Username(EmailStr):
         return super().validate(value)
 
 
-app_users = APIRouter(
-    tags=["users"])
-
-
 ROLE = Literal["ADMIN", "WRITER", "admin", "writer"]
+
 
 class UserForm(BaseModel):
     email: Username
