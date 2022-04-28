@@ -60,9 +60,10 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
 
 
 class QueryResult:
-    def __init__(self, data, n=None, per_page=None, page=None, page_count=None, scroll_id=None):
+    def __init__(self, data: List[dict],
+                 n: int = None, per_page: int = None, page: int = None, page_count: int = None, scroll_id: str = None):
         if n and page_count is None:
-            page_count = ceil(n.get("value") / per_page)
+            page_count = ceil(n / per_page)
         self.data = data
         self.total_count = n
         self.page = page
@@ -146,6 +147,7 @@ def query_documents(index: Union[str, Sequence[str]], queries: Union[Mapping[str
             kwargs['_source'] = fields
         if not scroll:
             kwargs['from_'] = page * per_page
+        print("!!!!", body)
         result = es().search(index=index, size=per_page, **body, **kwargs)
 
     data = []
@@ -158,13 +160,12 @@ def query_documents(index: Union[str, Sequence[str]], queries: Union[Mapping[str
                 if hit['highlight'][key]:
                     hitdict[key] = " ... ".join(hit['highlight'][key])
         data.append(hitdict)
-
     if scroll_id:
         return QueryResult(data, scroll_id=scroll_id)
     elif scroll:
-        return QueryResult(data, n=result['hits']['total'], per_page=per_page, scroll_id=result['_scroll_id'])
+        return QueryResult(data, n=result['hits']['total']['value'], per_page=per_page, scroll_id=result['_scroll_id'])
     else:
-        return QueryResult(data, n=result['hits']['total'], per_page=per_page,  page=page)
+        return QueryResult(data, n=result['hits']['total']['value'], per_page=per_page,  page=page)
 
 
 def query_annotations(index: str, id: str, queries: Mapping[str,  str]) -> Iterable[Dict]:
