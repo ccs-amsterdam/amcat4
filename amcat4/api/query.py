@@ -140,6 +140,7 @@ def query_documents_post(
 
     Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     """
+    # TODO check user rights on index
     # Standardize fields, queries and filters to their most versatile format
     if fields:
         # to array format: fields: [field1, field2]
@@ -163,7 +164,6 @@ def query_documents_post(
                 _filters[field] = {k: v for (k,v) in filter_.dict().items() if v is not None}
             else:
                 raise ValueError(f"Cannot parse filter: {filter_}")
-    print(">>>", _filters)
     r = query.query_documents(index, queries=queries, filters=_filters, fields=fields,
                               sort=sort, per_page=per_page, page=page, scroll_id=scroll_id, scroll=scroll,
                               annotations=annotations, highlight=highlight)
@@ -172,17 +172,35 @@ def query_documents_post(
     return r.as_dict()
 
 
+class AggregationSpec(BaseModel):
+    # TODO: can probably merge wth Aggregation class?
+    field: str
+    function: str
+    name: Optional[str]
 
-@app_query.post("/index/{index}/aggregate")
-def query_aggregate_post(index: str, user: User = Depends(authenticated_user)):
+
+class AxisSpec(BaseModel):
+    # TODO: can probably merge wth Axis class?
+    field: str
+    interval: Optional[str]
+
+
+@app_query.post("/{index}/aggregate")
+def query_aggregate_post(
+        index: str,
+        axes: Optional[List[AxisSpec]] = Body(None, description="Axes to aggregate on (i.e. group by)"),
+        aggregations: Optional[List[AggregationSpec]] = Body(None, description="Aggregate functions to compute"),
+        queries: Optional[Union[str, List[str], List[Dict[str, str]]]] = Body(
+            None, description="Query/Queries to run. Value should be a single query string, a list of query strings, "
+                              "or a list of {'label': 'query'} dicts"
+        ),
+        fields: Optional[List[str]] = Body(None, description="List of fields to retrieve for each document"),
+        filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = Body(
+            None, description="Field filters, should be a dict of field names to filter specifications,"
+                              "which can be either a value, a list of values, or a FilterSpec dict"),
+        user: User = Depends(authenticated_user)):
     """
-    Construct an aggregate query. POST body should be a json dict with axes and/or aggregations keys,
-    and optional filters and queries keys:
-    :axes: list of dicts containing field and optional interval: [{'field': .., ['interval': ..]}, ...],
-    :aggregations: list of dicts containing field, function, and optional name: [{field, function, [name]}, ...]
-    :filters: see POST /query endpoint,
-    :queries: see POST /query endpoint,
-     }
+    Construct an aggregate query.
 
     For example, to get average views per week per publisher
     {
@@ -192,16 +210,13 @@ def query_aggregate_post(index: str, user: User = Depends(authenticated_user)):
 
     Returns a JSON object {data: [{axis1, ..., n, aggregate1, ...}, ...], meta: {axes: [...], aggregations: [...]}
     """
-    params = request.get_json(force=True)
-    axes = params.pop('axes', [])
-    aggregations = params.pop('aggregations', [])
+    # TODO check user rights on index
+    axes = [Axis(**x.dict()) for x in axes] if axes else []
+    aggregations = [Aggregation(**x.dict()) for x in aggregations] if aggregations else []
     if len(axes) + len(aggregations) < 1:
-        response = jsonify({'message': 'Aggregation needs at least one axis or aggregation'})
-        response.status_code = 400
-        return response
-    axes = [Axis(**x) for x in axes]
-    aggregations = [Aggregation(**x) for x in aggregations]
-    results = aggregate.query_aggregate(index, axes, aggregations, **params)
-    return jsonify({"meta": {"axes": [axis.asdict() for axis in results.axes],
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail='Aggregation needs at least one axis or aggregation')
+    results = aggregate.query_aggregate(index, axes, aggregations, queries=queries, filters=filters)
+    return {"meta": {"axes": [axis.asdict() for axis in results.axes],
                              "aggregations": [a.asdict() for a in results.aggregations]},
-                    "data": list(results.as_dicts())})
+                    "data": list(results.as_dicts())}
