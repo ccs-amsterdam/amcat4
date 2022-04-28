@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from amcat4.elastic import setup_elastic
 
 # Set db to shared in-memory database *before* importing amcat4. Maybe not the most elegant solution...
-os.environ['AMCAT4_DB_NAME'] = ":memory:?cache=shared"
+os.environ['AMCAT4_DB_NAME'] = "file::memory:?cache=shared"
 
 from amcat4 import elastic, api  # noqa: E402
 from amcat4.db import initialize_if_needed  # noqa: E402
