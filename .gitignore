@@ -67,6 +67,7 @@ amcat/scripts/query/r_plugins/package_library
 MANIFEST
 
 amcat4.db
+annotator.db
 coverage.xml
 venv/
 
