@@ -21,8 +21,8 @@ app_query = APIRouter(
 
 class QueryMeta(BaseModel):
     total_count: int
-    per_page: int
-    page_count: int
+    per_page: Optional[int]
+    page_count: Optional[int]
     page: Optional[int]
     scroll_id: Optional[str]
 

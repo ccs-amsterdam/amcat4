@@ -62,7 +62,7 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
 class QueryResult:
     def __init__(self, data: List[dict],
                  n: int = None, per_page: int = None, page: int = None, page_count: int = None, scroll_id: str = None):
-        if n and page_count is None:
+        if n and (page_count is None) and (per_page is not None):
             page_count = ceil(n / per_page)
         self.data = data
         self.total_count = n
@@ -160,7 +160,7 @@ def query_documents(index: Union[str, Sequence[str]], queries: Union[Mapping[str
                     hitdict[key] = " ... ".join(hit['highlight'][key])
         data.append(hitdict)
     if scroll_id:
-        return QueryResult(data, scroll_id=scroll_id)
+        return QueryResult(data, n=result['hits']['total']['value'], scroll_id=result['_scroll_id'])
     elif scroll:
         return QueryResult(data, n=result['hits']['total']['value'], per_page=per_page, scroll_id=result['_scroll_id'])
     else:
