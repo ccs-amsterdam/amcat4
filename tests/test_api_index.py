@@ -12,7 +12,6 @@ def test_create_list_delete_index(client, index_name, user, writer, admin):
 
     # Writers can create indices
     r = post_json(client, "/index/", user=writer, json=dict(name=index_name, guest_role='METAREADER'))
-    print(r)
     assert set(r.keys()) == {"guest_role", "name"}
 
     # All logged in users can list indices

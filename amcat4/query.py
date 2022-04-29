@@ -147,7 +147,6 @@ def query_documents(index: Union[str, Sequence[str]], queries: Union[Mapping[str
             kwargs['_source'] = fields
         if not scroll:
             kwargs['from_'] = page * per_page
-        print("!!!!", body)
         result = es().search(index=index, size=per_page, **body, **kwargs)
 
     data = []

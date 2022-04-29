@@ -21,7 +21,6 @@ def check_role(u: User, role: Role, ix: Index = None):
 
 
 async def authenticated_user(token: str = Depends(oauth2_scheme)) -> User:
-    print(f"VERIFYING {token}")
     user = auth.verify_token(token)
     if not user:
         raise HTTPException(status_code=400, detail="Invalid token")
