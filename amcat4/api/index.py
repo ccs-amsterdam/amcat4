@@ -8,11 +8,12 @@ import elasticsearch
 from fastapi import APIRouter, HTTPException, status, Response
 from fastapi.params import Depends, Body
 from pydantic import BaseModel
+from pydantic.config import Extra
 
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 
 from amcat4 import elastic, index
-from amcat4.api.common import _index
+from amcat4.api.common import _index, py2dict
 from amcat4.auth import Role, User
 from amcat4.index import Index
 
@@ -48,7 +49,8 @@ def create_index(new_index: NewIndex, current_user: User = Depends(authenticated
     ix = index.create_index(new_index.name, admin=current_user, guest_role=guest_role)
     return index_json(ix)
 
-# Yes, we should fix this mess
+
+# TODO Yes, this should we linked to the actual roles enum
 class ChangeIndex(BaseModel):
     guest_role: Literal["ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader"]
 
@@ -91,13 +93,22 @@ def delete_index(ix: str, user: User = Depends(authenticated_user)):
     ix.delete_index()
 
 
-class UploadForm(BaseModel):
-    documents: List[dict]
-    columns: Mapping[str, str]
+class Document(BaseModel):
+    title: str
+    date: str
+    text: str
+    url: Optional[str]
+
+    class Config:
+        extra = Extra.allow
 
 
 @app_index.post("/{ix}/documents", status_code=status.HTTP_201_CREATED)
-def upload_documents(ix: str, body: UploadForm, user: User = Depends(authenticated_user)):
+def upload_documents(
+        ix: str,
+        documents: List[Document] = Body(None, description="The documents to upload"),
+        columns: Optional[Mapping[str, str]] = Body(None, description="Optional Specification of field (column) types"),
+        user: User = Depends(authenticated_user)):
     """
     Upload documents to this server.
     JSON payload should contain a `documents` key, and may contain a `columns` key:
@@ -108,7 +119,8 @@ def upload_documents(ix: str, body: UploadForm, user: User = Depends(authenticat
     Returns a list of ids for the uploaded documents
     """
     check_role(user, Role.WRITER, _index(ix))
-    return elastic.upload_documents(ix, body.documents, body.columns)
+    documents = [py2dict(doc) for doc in documents]
+    return elastic.upload_documents(ix, documents, columns)
 
 
 @app_index.get("/{ix}/documents/{docid}")
@@ -141,7 +153,7 @@ def update_document(ix: str, docid: str, update: dict = Body(...), user: User = 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Document {ix}/{docid} not found")
 
 
-@app_index.delete("/{ix}/documents/{docid}")
+@app_index.delete("/{ix}/documents/{docid}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_document(ix: str, docid: str, user: User = Depends(authenticated_user)):
     """
     Delete this document
@@ -151,7 +163,6 @@ def delete_document(ix: str, docid: str, user: User = Depends(authenticated_user
         elastic.delete_document(ix, docid)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Document {ix}/{docid} not found")
-    return '', HTTPStatus.NO_CONTENT
 
 
 @app_index.get("/{ix}/fields")
