@@ -17,6 +17,7 @@ from amcat4.api.common import _index
 from amcat4.auth import Role, User, hash_password
 
 app_users = APIRouter(
+
     tags=["users"])
 
 
