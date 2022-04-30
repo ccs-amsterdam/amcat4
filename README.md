@@ -14,7 +14,7 @@ See also the [API Documentation](apidoc.md)
 AmCAT requires an elasticsearch instance. The easiest way to run one for development is using docker:
 
 ```
-sudo docker run --name elastic7 -dp 9200:9200 -p 9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:7.11.1
+sudo docker run --name elastic7 -dp 9200:9200 -p 9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:7.17.2
 ```
 
 ## Installing from PyPi
@@ -25,6 +25,9 @@ To install and run AmCAT4 from pypi simply run:
 pip3 install amcat4
 python3 -m amcat4 run
 ```
+
+This will run the API at (default) locahost port 5000. 
+To see documentation, visit http://localhost:5000/docs (Swagger, which comes with interactive "try now" mode) or http://localhost:5000/redoc (redoc, looks somewhat nicer)
 
 ## Installing from source
 
@@ -42,8 +45,7 @@ To run the unit tests and linting:
 
 ```
 env/bin/flake8 . --max-line-length=127 --exclude=env
-env/bin/mypy -p amcat4
-env/bin/nosetests
+env/bin/pytest
 ```
 
 Please make sure to run these tests before making any commits!
