@@ -18,23 +18,22 @@ setup(
         "Topic :: Text Processing",
     ],
     install_requires=[
-        "Flask~=2.0.3",
-        "Flask-HTTPAuth",
-        "flask-cors",
-        "flask-selfdoc",
+        "fastapi",
         "elasticsearch~=7.16",
+        "python-multipart",
         "bcrypt",
         "peewee",
         "authlib",
-        "amcat4annotator>=0.14"
+        "pydantic[email]"
+        # "amcat4annotator>=0.14"
     ],
     extras_require={
         'dev': [
+            'uvicorn',
             'pytest',
-            'pytest-flask',
             'mypy',
-            'types-Flask',
-            'flake8'
+            'flake8',
+            'requests'
         ]
     },
 )

@@ -29,7 +29,7 @@ def test_sort(index_many):
 def test_scroll(index_many):
     r = query_documents(index_many.name, queries=["odd"], scroll='5m', per_page=4)
     assert len(r.data) == 4
-    assert r.total_count.get("value"), 10
+    assert r.total_count, 10
     assert r.page_count == 3
     allids = list(r.data)
 

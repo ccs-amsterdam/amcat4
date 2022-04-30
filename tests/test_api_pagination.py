@@ -6,15 +6,15 @@ def test_pagination(client, index, user):
     """Does basic pagination work?"""
     upload(index, docs=[{"i": i} for i in range(66)])
     url = f"/index/{index.name}/documents"
-    r = get_json(client, url, user=user, query_string={"sort": "i", "per_page": 20})
+    r = get_json(client, url, user=user, params={"sort": "i", "per_page": 20})
     assert r["meta"]["per_page"] == 20
     assert r["meta"]["page"] == 0
     assert r["meta"]["page_count"] == 4
     assert {h["i"] for h in r["results"]} == set(range(20))
-    r = get_json(client, url, user=user, query_string={"sort": "i", "per_page": 20, "page": 3})
+    r = get_json(client, url, user=user, params={"sort": "i", "per_page": 20, "page": 3})
     assert r["meta"]["page"] == 3
     assert {h["i"] for h in r["results"]} == {60, 61, 62, 63, 64, 65}
-    r = get_json(client, url, user=user, query_string={"sort": "i", "per_page": 20, "page": 4})
+    r = get_json(client, url, user=user, params={"sort": "i", "per_page": 20, "page": 4})
     assert len(r["results"]) == 0
     # Test POST query
 
@@ -26,18 +26,17 @@ def test_pagination(client, index, user):
 def test_scroll(client, index, user):
     upload(index, docs=[{"i": i} for i in range(66)])
     url = f"/index/{index.name}/documents"
-    r = get_json(client, url, user=user,
-                 query_string={"sort": "i:desc", "per_page": 30, "scroll": "5m"})
+    r = get_json(client, url, user=user, params={"sort": "i:desc", "per_page": 30, "scroll": "5m"})
     scroll_id = r["meta"]["scroll_id"]
     assert scroll_id is not None
     assert {h["i"] for h in r["results"]} == set(range(36, 66))
-    r = get_json(client, url, user=user, query_string={"scroll_id": scroll_id})
+    r = get_json(client, url, user=user, params={"scroll_id": scroll_id})
     assert {h["i"] for h in r["results"]} == set(range(6, 36))
     assert r["meta"]["scroll_id"] == scroll_id
-    r = get_json(client, url, user=user, query_string={"scroll_id": scroll_id})
+    r = get_json(client, url, user=user, params={"scroll_id": scroll_id})
     assert {h["i"] for h in r["results"]} == set(range(6))
     # Scrolling past the edge should return 404
-    get_json(client, url, user=user, query_string={"scroll_id": scroll_id}, expected=404)
+    get_json(client, url, user=user, params={"scroll_id": scroll_id}, expected=404)
     # Test POST to query endpoint
     r = post_json(client, f"/index/{index.name}/query", user=user, expected=200,
                   json={"sort": [{"i": "desc"}], "per_page": 30, "scroll": "5m"})

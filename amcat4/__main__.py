@@ -8,10 +8,10 @@ import sys
 import urllib.request
 import argparse
 
+import uvicorn
+
 from amcat4 import auth
 from amcat4.api import app
-from amcat4.api.common import MyJSONEncoder
-from amcat4.api.docs import docs_html, docs_md, context
 from amcat4.auth import Role, User
 from amcat4.db import initialize_if_needed
 from amcat4.elastic import setup_elastic, upload_documents
@@ -43,7 +43,7 @@ def upload_test_data() -> Index:
 
 def run(args):
     logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}")
-    app.run(debug=not args.nodebug, port=args.port)
+    uvicorn.run(app, host="0.0.0.0", port=args.port)
 
 
 def create_test_index(_args):
@@ -63,19 +63,6 @@ def create_admin(_args):
     auth.create_user("admin", "admin", Role.ADMIN)
 
 
-def document(args):
-    with app.app_context():
-        if args.format == "html":
-            print(docs_html())
-        elif args.format == "md":
-            print(docs_md())
-        elif args.format == "json":
-            rules = context()
-            print(MyJSONEncoder(indent=4).encode(rules))
-        else:
-            raise ValueError(args.format)
-
-
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
 parser.add_argument("--elastic", help="Elasticsearch host", default="localhost:9200")
 
@@ -91,10 +78,6 @@ p.set_defaults(func=create_test_index)
 
 p = subparsers.add_parser('create-admin', help='Create the admin:admin superuser')
 p.set_defaults(func=create_admin)
-
-p = subparsers.add_parser('document', help='Create the admin:admin superuser')
-p.add_argument("--format", choices=["html", "json", "md"], default="md", help="Output format (default: markdown)")
-p.set_defaults(func=document)
 
 args = parser.parse_args()
 

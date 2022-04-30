@@ -8,7 +8,7 @@ import json
 import logging
 from datetime import datetime
 from enum import IntEnum
-from typing import Optional, Mapping
+from typing import Optional, Mapping, Any
 
 import bcrypt
 from authlib.jose import JsonWebSignature
@@ -59,7 +59,7 @@ class User(Model):
         """
         return self.global_role and self.global_role >= role
 
-    def indices(self, include_guest: bool = False) -> Mapping[object, Role]:
+    def indices(self, include_guest: bool = False) -> Mapping[Any, Role]:
         from amcat4.index import Index  # Prevent circular import
         indices = {i.index: Role(i.role) for i in self.indexrole_set.join(Index)}
         if include_guest:
@@ -102,7 +102,7 @@ def verify_user(email: str, password: str) -> Optional[User]:
     if bcrypt.checkpw(password.encode('utf-8'), user.password.encode("utf-8")):
         return user
     else:
-        logging.warning("Incorrect password for user {email}".format(**locals()))
+        logging.warning(f"Incorrect password for user {email}: {user.password} != {password}")
         return None
 
 

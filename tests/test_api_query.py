@@ -1,12 +1,19 @@
 from tests.conftest import upload
 from tests.tools import get_json, post_json, dictset
 
+TEST_DOCUMENTS = [
+    {'cat': 'a', 'subcat': 'x', 'i': 1, 'date': '2018-01-01', 'text': 'this is a text', },
+    {'cat': 'a', 'subcat': 'x', 'i': 2, 'date': '2018-02-01', 'text': 'a test text', },
+    {'cat': 'a', 'subcat': 'y', 'i': 11, 'date': '2020-01-01', 'text': 'and this is another test toto', 'title': 'bla'},
+    {'cat': 'b', 'subcat': 'y', 'i': 31, 'date': '2018-01-01', 'text': 'Toto je testovací článek', 'title': 'more bla'},
+]
+
 
 def test_query_get(client, index_docs, user):
     """Can we run a simple query?"""
 
     def q(**query_string):
-        return get_json(client, f"/index/{index_docs.name}/documents", user=user, query_string=query_string)['results']
+        return get_json(client, f"/index/{index_docs.name}/documents", user=user, params=query_string)['results']
 
     def qi(**query_string):
         return {int(doc['_id']) for doc in q(**query_string)}
@@ -53,7 +60,7 @@ def test_query_post(client, index_docs, user):
     # Can we request specific fields?
     all_fields = {"_id", "date", "text", "title", "cat", "subcat", "i"}
     assert set(q()[0].keys()) == all_fields
-    assert set(q(fields="cat")[0].keys()) == {"_id", "cat"}
+    assert set(q(fields=["cat"])[0].keys()) == {"_id", "cat"}
     assert set(q(fields=["date", "title"])[0].keys()) == {"_id", "date", "title"}
 
 
