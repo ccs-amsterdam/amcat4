@@ -124,7 +124,7 @@ def upload_documents(
 
 
 @app_index.get("/{ix}/documents/{docid}")
-def get_document(ix: str, docid: str, fields: Optional[str]=None, user: User = Depends(authenticated_user)):
+def get_document(ix: str, docid: str, fields: Optional[str] = None, user: User = Depends(authenticated_user)):
     """
     Get a single document by id
     GET request parameters:

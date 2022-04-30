@@ -8,14 +8,13 @@ from typing import Literal, Optional, Union
 from fastapi import APIRouter, HTTPException, status, Response
 from fastapi.params import Depends
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic.networks import EmailStr, validate_email
+from pydantic import BaseModel
+from pydantic.networks import EmailStr
 
 from amcat4 import auth
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 from amcat4.api.common import _index
 from amcat4.auth import Role, User, hash_password
-from pydantic import BaseModel
-
 
 app_users = APIRouter(
     tags=["users"])
@@ -64,7 +63,7 @@ def create_user(new_user: UserForm, current_user: User = Depends(authenticated_w
 
 
 @app_users.get("/users/me")
-def get_user(current_user: User = Depends(authenticated_user)):
+def get_current_user(current_user: User = Depends(authenticated_user)):
     """
     View the current user.
     """
@@ -72,7 +71,7 @@ def get_user(current_user: User = Depends(authenticated_user)):
 
 
 @app_users.get("/users/{email}")
-def get_user(email: Username, current_user: User=Depends(authenticated_user)):
+def get_user(email: Username, current_user: User = Depends(authenticated_user)):
     """
     View the current user. Users can view themselves, writer can view others
     """
@@ -96,7 +95,7 @@ def list_users():
 
 
 @app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def delete_user(email: Username, current_user: User=Depends(authenticated_user)):
+def delete_user(email: Username, current_user: User = Depends(authenticated_user)):
     """
     Delete the given user. Users can delete themselves, admin can delete everyone, and writer can delete non-admin
     """
@@ -112,7 +111,7 @@ def delete_user(email: Username, current_user: User=Depends(authenticated_user))
 
 
 @app_users.put("/users/{email}")
-def modify_user(email: Username, data: ChangeUserForm, current_user: User=Depends(authenticated_user)):
+def modify_user(email: Username, data: ChangeUserForm, current_user: User = Depends(authenticated_user)):
     """
     Modify the given user.
     Users can modify themselves (but not their role), admin can change everyone, and writer can change non-admin.

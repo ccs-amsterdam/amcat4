@@ -12,4 +12,4 @@ def _index(ix: str) -> Index:
 
 
 def py2dict(m: BaseModel) -> dict:
-    return {k: v for (k,v) in m.dict().items() if v is not None}
+    return {k: v for (k, v) in m.dict().items() if v is not None}

@@ -53,7 +53,7 @@ class BoundAxis:
             return {f"{self.field}_daypart":
                     {"type": "keyword",
                      "script": """
-                     int hour =doc['date'].value.hour; 
+                     int hour =doc['date'].value.hour;
                      if (hour < 6) emit('Night');
                      else if (hour < 12) emit('Morning');
                      else if (hour < 18) emit('Afternoon');

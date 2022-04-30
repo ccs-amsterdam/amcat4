@@ -1,6 +1,3 @@
-from typing import Optional
-
-import requests
 from fastapi.testclient import TestClient
 
 from amcat4.auth import verify_token, verify_user, Role, User
@@ -17,7 +14,7 @@ def test_get_token(client: TestClient, user: User):
 
 def test_get_user(client: TestClient, user: User, admin: User, username: str):
     """Test GET user functionality and authorization"""
-    assert client.get(f"/users/me").status_code == 401
+    assert client.get("/users/me").status_code == 401
 
     # user can only see its own info:
     assert get_json(client, f"/users/{user.email}", user=user) == {"email": user.email, "global_role": None}
@@ -35,14 +32,16 @@ def test_create_user(client: TestClient, user, writer, admin, username):
     # writers can add new users
     u = dict(email=username, password="geheim")
     assert set(post_json(client, "/users/", user=writer, json=u).keys()) == {"email", "id"}
-    assert client.post("/users/", headers=build_headers(writer), json=u).status_code == 400, "Duplicate create should return 400"
+    assert client.post("/users/", headers=build_headers(writer), json=u).status_code == 400, \
+           "Duplicate create should return 400"
     # users can delete themselves, others cannot delete them
     assert client.delete(f"/users/{username}", headers=build_headers(user)).status_code == 401
     u = User.get(User.email == username)
     assert client.delete(f"/users/{username}", headers=build_headers(u)).status_code == 204
     # only admin can add admins
     u = dict(email=username, password="geheim", global_role='ADMIN')
-    assert client.post("/users/", headers=build_headers(writer), json=u).status_code == 401, "Creating admins should require ADMIN"
+    assert client.post("/users/", headers=build_headers(writer), json=u).status_code == 401, \
+           "Creating admins should require ADMIN"
     assert client.post("/users/", headers=build_headers(admin), json=u).status_code == 201
     assert get_json(client, f"/users/{username}", user=admin)["global_role"] == "ADMIN"
     # (only) admin can delete other admins

@@ -6,7 +6,6 @@ from typing import Dict, List, Optional, Any, Union
 
 from fastapi import APIRouter, HTTPException, status, Request, Query, Depends
 from fastapi.params import Body
-from pydantic.config import Extra
 from pydantic.main import BaseModel
 
 from amcat4 import query, aggregate
@@ -120,7 +119,7 @@ def query_documents_post(
         examples={"simple": {"summary": "Sort by single field", "value": "'date'"},
                   "multiple": {"summary": "Sort by multiple fields", "value": "['date', 'title']"},
                   "dict": {"summary": "Use dict to specify sort options", "value": " [{'date': {'order':'desc'}}]"},
-        }),
+                  }),
     per_page: Optional[int] = Body(10, description="Number of documents per page"),
     page: Optional[int] = Body(0, description="Which page to retrieve"),
     scroll: Optional[str] = Body(
@@ -161,7 +160,7 @@ def query_documents_post(
             if isinstance(filter_, list):
                 _filters[field] = {'values': filter_}
             elif isinstance(filter_, FilterSpec):
-                _filters[field] = {k: v for (k,v) in filter_.dict().items() if v is not None}
+                _filters[field] = {k: v for (k, v) in filter_.dict().items() if v is not None}
             else:
                 raise ValueError(f"Cannot parse filter: {filter_}")
     r = query.query_documents(index, queries=queries, filters=_filters, fields=fields,
@@ -211,12 +210,12 @@ def query_aggregate_post(
     Returns a JSON object {data: [{axis1, ..., n, aggregate1, ...}, ...], meta: {axes: [...], aggregations: [...]}
     """
     # TODO check user rights on index
-    axes = [Axis(**x.dict()) for x in axes] if axes else []
-    aggregations = [Aggregation(**x.dict()) for x in aggregations] if aggregations else []
+    _axes = [Axis(**x.dict()) for x in axes] if axes else []
+    _aggregations = [Aggregation(**x.dict()) for x in aggregations] if aggregations else []
     if len(axes) + len(aggregations) < 1:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail='Aggregation needs at least one axis or aggregation')
-    results = aggregate.query_aggregate(index, axes, aggregations, queries=queries, filters=filters)
+    results = aggregate.query_aggregate(index, _axes, _aggregations, queries=queries, filters=filters)
     return {"meta": {"axes": [axis.asdict() for axis in results.axes],
-                             "aggregations": [a.asdict() for a in results.aggregations]},
-                    "data": list(results.as_dicts())}
+                     "aggregations": [a.asdict() for a in results.aggregations]},
+            "data": list(results.as_dicts())}

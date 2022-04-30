@@ -44,7 +44,6 @@ def upload_test_data() -> Index:
 def run(args):
     logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}")
     uvicorn.run(app, host="0.0.0.0", port=args.port)
-    #app.run(debug=not args.nodebug, port=args.port)
 
 
 def create_test_index(_args):

@@ -6,8 +6,6 @@ from typing import Set, Iterable, Optional
 import requests
 from fastapi.testclient import TestClient
 
-from amcat4 import auth
-
 
 def build_headers(user=None, headers=None, password=None):
     if not headers:

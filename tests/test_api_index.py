@@ -50,7 +50,8 @@ def test_fields_upload(client, user, index):
     assert doc["title"] == "doc 0"
 
     # field selection
-    assert set(get_json(client, f"/index/{index.name}/documents/{ids[0]}", user=user, params={'fields': 'title'}).keys()) == {'title'}
+    assert set(get_json(client, f"/index/{index.name}/documents/{ids[0]}",
+                        user=user, params={'fields': 'title'}).keys()) == {'title'}
 
     assert get_json(client, f"/index/{index.name}/fields", user=user)["x"]["type"] == "keyword"
     elastic.es().indices.refresh()

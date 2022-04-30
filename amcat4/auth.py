@@ -59,7 +59,7 @@ class User(Model):
         """
         return self.global_role and self.global_role >= role
 
-    def indices(self, include_guest: bool = False) -> Mapping[object, Role]:
+    def indices(self, include_guest: bool = False) -> Mapping["Index", Role]:
         from amcat4.index import Index  # Prevent circular import
         indices = {i.index: Role(i.role) for i in self.indexrole_set.join(Index)}
         if include_guest:
