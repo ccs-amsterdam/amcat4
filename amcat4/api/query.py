@@ -212,7 +212,7 @@ def query_aggregate_post(
     # TODO check user rights on index
     _axes = [Axis(**x.dict()) for x in axes] if axes else []
     _aggregations = [Aggregation(**x.dict()) for x in aggregations] if aggregations else []
-    if len(axes) + len(aggregations) < 1:
+    if not (_axes or _aggregations):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail='Aggregation needs at least one axis or aggregation')
     results = aggregate.query_aggregate(index, _axes, _aggregations, queries=queries, filters=filters)
