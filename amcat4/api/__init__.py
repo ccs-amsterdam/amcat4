@@ -12,7 +12,6 @@ from amcat4.db import initialize_if_needed
 from amcat4.elastic import setup_elastic
 
 
-
 app = FastAPI(
     title="AmCAT4",
     description=__doc__,
