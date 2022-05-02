@@ -6,6 +6,8 @@ from typing import Mapping, List, Optional
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
+from amcat4.config import settings
+
 _ES: Optional[Elasticsearch] = None
 SYS_INDEX = "amcat4system"
 SYS_MAPPING = "sys"
@@ -36,9 +38,14 @@ def setup_elastic(*hosts):
     """
     Check whether we can connect with elastic
     """
+    if not hosts:
+        hosts = settings.amcat4_elastic_host
     global _ES
-    logging.debug("Connecting with elasticsearch at {}".format(hosts or "(default: localhost:9200)"))
-    _ES = Elasticsearch(hosts or None)
+    if _ES is None:
+        logging.debug("Connecting with elasticsearch at {}".format(hosts or "(default: localhost:9200)"))
+        _ES = Elasticsearch(hosts or None)
+    else:
+        logging.debug("Elasticsearch already configured")
     if not _ES.ping():
         raise Exception(f"Cannot connect to elasticsearch server {hosts}")
     if not _ES.indices.exists(index=SYS_INDEX):

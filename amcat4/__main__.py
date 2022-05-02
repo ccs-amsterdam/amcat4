@@ -13,6 +13,7 @@ import uvicorn
 from amcat4 import auth
 from amcat4.api import app
 from amcat4.auth import Role, User
+from amcat4.config import settings
 from amcat4.db import initialize_if_needed
 from amcat4.elastic import setup_elastic, upload_documents
 from amcat4.index import create_index, Index
@@ -60,12 +61,12 @@ def create_admin(args):
     if User.select().where(User.email == username).exists():
         print(f"User {username} already exists")
         return
-    logging.warning("**** Creating superuser {username}:*****")
+    logging.warning(f"**** Creating superuser {username}:*****")
     auth.create_user(username, password, Role.ADMIN)
 
 
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
-parser.add_argument("--elastic", help="Elasticsearch host", default="localhost:9200")
+parser.add_argument("--elastic", help="Elasticsearch host", default=settings.amcat4_elastic_host)
 
 subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
 p = subparsers.add_parser('run', help='Run the backend API in development mode')
