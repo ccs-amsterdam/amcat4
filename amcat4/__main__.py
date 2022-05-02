@@ -55,12 +55,13 @@ def create_test_index(_args):
     upload_test_data().set_role(admin, Role.ADMIN)
 
 
-def create_admin(_args):
-    if User.select().where(User.email == "admin").exists():
-        print("User admin already exists")
+def create_admin(args):
+    username, password = args.username, args.password
+    if User.select().where(User.email == username).exists():
+        print(f"User {username} already exists")
         return
-    logging.warning("**** Creating superuser admin:admin ****")
-    auth.create_user("admin", "admin", Role.ADMIN)
+    logging.warning("**** Creating superuser {username}:*****")
+    auth.create_user(username, password, Role.ADMIN)
 
 
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
@@ -77,6 +78,8 @@ p = subparsers.add_parser('create-test-index', help=f'Create the {SOTU_INDEX} te
 p.set_defaults(func=create_test_index)
 
 p = subparsers.add_parser('create-admin', help='Create the admin:admin superuser')
+p.add_argument("--username", default="admin", help="Username for the new user (default: admin)")
+p.add_argument("--password", default="admin", help="Password for the new user (default: admin)")
 p.set_defaults(func=create_admin)
 
 args = parser.parse_args()
