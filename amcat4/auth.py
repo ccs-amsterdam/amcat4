@@ -118,7 +118,6 @@ def verify_token(token: str) -> Optional[User]:
     except DecodeError:
         logging.exception("Token verification failed")
         return None
-    logging.warning("TOKEN RESULT: {}" .format(token))
     if "exp" in result["header"]:
         if result["header"]["exp"] < now():
             logging.error("Token expired")
