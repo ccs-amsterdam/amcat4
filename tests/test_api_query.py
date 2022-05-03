@@ -72,10 +72,23 @@ def test_aggregate(client, index_docs, user):
     data = {d['cat']: d['n'] for d in r['data']}
     assert data == {"a": 3, "b": 1}
 
+    # test calculated field
     r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
                   json={'axes': [{'field': 'subcat'}], 'aggregations': [{'field': "i", 'function': "avg"}]})
     assert dictset(r['data']) == dictset([{'avg_i': 1.5, 'n': 2, 'subcat': 'x'}, {'avg_i': 21.0, 'n': 2, 'subcat': 'y'}])
     assert r['meta']['aggregations'] == [{'field': "i", 'function': "avg", "type": "long", "name": "avg_i"}]
+
+    # test filtered aggregate
+    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+                  json={'axes': [{'field': 'subcat'}], 'filters': {'cat': {'values': ['b']}}})
+    data = {d['subcat']: d['n'] for d in r['data']}
+    assert data == {"y": 1}
+
+    # test filter+query aggregate
+    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+                  json={'axes': [{'field': 'subcat'}], 'queries': 'text', 'filters': {'cat': {'values': ['a']}}})
+    data = {d['subcat']: d['n'] for d in r['data']}
+    assert data == {"x": 2}
 
 
 def test_multiple_index(client, index_docs, index, user):

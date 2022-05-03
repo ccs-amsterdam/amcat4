@@ -180,7 +180,7 @@ def _elastic_aggregate(index: str, sources, queries, filters, aggregations: Sequ
         aggr["aggs"]['aggregations'] = aggregation_dsl(aggregations)
     kargs = {}
     if filters or queries:
-        q = build_body(queries=queries, filters=filters)
+        q = build_body(queries=queries.values(), filters=filters)
         kargs["query"] = q["query"]
     result = es().search(index=index, size=0, aggregations=aggr, runtime_mappings=runtime_mappings, **kargs
                          )['aggregations']['aggs']

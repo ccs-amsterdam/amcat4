@@ -2,7 +2,7 @@
 API Endpoints for querying
 """
 
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, Iterable, Tuple
 
 from fastapi import APIRouter, HTTPException, status, Request, Query, Depends
 from fastapi.params import Body
@@ -102,6 +102,33 @@ class FilterSpec(BaseModel):
     lte: Optional[FilterValue]
 
 
+def _process_queries(queries: Optional[Union[str, List[str], List[Dict[str, str]]]] = None) -> Optional[dict]:
+    """Convert query json to dict format: {label1:query1, label2: query2}  uses indices if no labels given"""
+    if queries:
+        # to dict format: {label1:query1, label2: query2}  uses indices if no labels given
+        if isinstance(queries, str):
+            queries = [queries]
+        if isinstance(queries, list):
+            queries = {str(i): q for i, q in enumerate(queries)}
+        return queries
+
+
+def _process_filters(filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = None
+                     ) -> Iterable[Tuple[str, dict]]:
+    """Convert filters to dict format: {field: {values: []}}"""
+    if not filters:
+        return
+    for field, filter_ in filters.items():
+        if isinstance(filter_, str):
+            filter_ = [filter_]
+        if isinstance(filter_, list):
+            yield field, {'values': filter_}
+        elif isinstance(filter_, FilterSpec):
+            yield field, {k: v for (k, v) in filter_.dict().items() if v is not None}
+        else:
+            raise ValueError(f"Cannot parse filter: {filter_}")
+
+
 @app_query.post("/{index}/query", response_model=QueryResult)
 def query_documents_post(
     index: str,
@@ -145,25 +172,9 @@ def query_documents_post(
         # to array format: fields: [field1, field2]
         if isinstance(fields, str):
             fields = [fields]
-    if queries:
-        # to dict format: {label1:query1, label2: query2}  uses indices if no labels given
-        if isinstance(queries, str):
-            queries = [queries]
-        if isinstance(queries, list):
-            queries = {str(i): q for i, q in enumerate(queries)}
-    _filters = {}
-    if filters:
-        # to dict format: {field: {values: []}}
-        for field, filter_ in filters.items():
-            if isinstance(filter_, str):
-                filter_ = [filter_]
-            if isinstance(filter_, list):
-                _filters[field] = {'values': filter_}
-            elif isinstance(filter_, FilterSpec):
-                _filters[field] = {k: v for (k, v) in filter_.dict().items() if v is not None}
-            else:
-                raise ValueError(f"Cannot parse filter: {filter_}")
-    r = query.query_documents(index, queries=queries, filters=_filters, fields=fields,
+    queries = _process_queries(queries)
+    filters = dict(_process_filters(filters))
+    r = query.query_documents(index, queries=queries, filters=filters, fields=fields,
                               sort=sort, per_page=per_page, page=page, scroll_id=scroll_id, scroll=scroll,
                               annotations=annotations, highlight=highlight)
     if r is None:
@@ -193,7 +204,6 @@ def query_aggregate_post(
             None, description="Query/Queries to run. Value should be a single query string, a list of query strings, "
                               "or a list of {'label': 'query'} dicts"
         ),
-        fields: Optional[List[str]] = Body(None, description="List of fields to retrieve for each document"),
         filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = Body(
             None, description="Field filters, should be a dict of field names to filter specifications,"
                               "which can be either a value, a list of values, or a FilterSpec dict"),
@@ -215,6 +225,8 @@ def query_aggregate_post(
     if not (_axes or _aggregations):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail='Aggregation needs at least one axis or aggregation')
+    queries = _process_queries(queries)
+    filters = dict(_process_filters(filters))
     results = aggregate.query_aggregate(index, _axes, _aggregations, queries=queries, filters=filters)
     return {"meta": {"axes": [axis.asdict() for axis in results.axes],
                      "aggregations": [a.asdict() for a in results.aggregations]},
