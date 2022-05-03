@@ -56,6 +56,7 @@ def test_query_post(client, index_docs, user):
     assert qi(filters={'date': {'gte': "2018-02-01"}}) == {1, 2}
     assert qi(filters={'date': {'gt': "2018-02-01"}}) == {2}
     assert qi(filters={'date': {'gte': "2018-02-01", "lt": "2020-01-01"}}) == {1}
+    assert qi(filters={'cat': {'values': ['a']}}) == {0, 1, 2}
 
     # Can we request specific fields?
     all_fields = {"_id", "date", "text", "title", "cat", "subcat", "i"}

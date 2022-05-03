@@ -95,7 +95,7 @@ FilterValue = Union[str, int]
 
 
 class FilterSpec(BaseModel):
-    values: Optional[FilterValue]
+    values: Optional[List[FilterValue]]
     gt: Optional[FilterValue]
     lt: Optional[FilterValue]
     gte: Optional[FilterValue]
