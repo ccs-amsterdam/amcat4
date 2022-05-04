@@ -48,6 +48,8 @@ def test_query_post(client, index_docs, user):
     # Query strings
     assert qi(queries="text") == {0, 1}
     assert qi(queries="test*") == {1, 2, 3}
+    assert qi(queries={}) == {0, 1, 2, 3}
+    assert qi(queries={"test": "test*"}) == {1, 2, 3}
 
     # Filters
     assert qi(filters={'cat': 'a'}) == {0, 1, 2}

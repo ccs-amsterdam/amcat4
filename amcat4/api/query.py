@@ -132,9 +132,9 @@ def _process_filters(filters: Optional[Dict[str, Union[FilterValue, List[FilterV
 @app_query.post("/{index}/query", response_model=QueryResult)
 def query_documents_post(
     index: str,
-    queries: Optional[Union[str, List[str], List[Dict[str, str]]]] = Body(
+    queries: Optional[Union[str, List[str], Dict[str, str]]] = Body(
         None, description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-                          "or a list of {'label': 'query'} dicts"
+                          "or a dict of {'label': 'query'}"
     ),
     fields: Optional[List[str]] = Body(None, description="List of fields to retrieve for each document"),
     filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = Body(
@@ -200,9 +200,9 @@ def query_aggregate_post(
         index: str,
         axes: Optional[List[AxisSpec]] = Body(None, description="Axes to aggregate on (i.e. group by)"),
         aggregations: Optional[List[AggregationSpec]] = Body(None, description="Aggregate functions to compute"),
-        queries: Optional[Union[str, List[str], List[Dict[str, str]]]] = Body(
+        queries: Optional[Union[str, List[str], Dict[str, str]]] = Body(
             None, description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-                              "or a list of {'label': 'query'} dicts"
+                              "or a dict of queries {'label': 'query'}"
         ),
         filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = Body(
             None, description="Field filters, should be a dict of field names to filter specifications,"
