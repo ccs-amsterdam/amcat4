@@ -24,8 +24,8 @@ setup(
         "bcrypt",
         "peewee",
         "authlib",
-        "pydantic[email]"
-        # "amcat4annotator>=0.14"
+        "pydantic[email]",
+        "amcat4annotator>=0.21"
     ],
     extras_require={
         'dev': [
