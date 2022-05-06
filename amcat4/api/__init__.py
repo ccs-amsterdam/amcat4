@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from amcat4.api.index import app_index
 from amcat4.api.query import app_query
 from amcat4.api.users import app_users
+
 from amcat4annotator.api.users import app_annotator_users
 from amcat4annotator.api.codingjob import app_annotator_codingjob
 from amcat4annotator.api.guest import app_annotator_guest

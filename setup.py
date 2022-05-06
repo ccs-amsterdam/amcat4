@@ -8,7 +8,7 @@ setup(
     description="API for AmCAT4 Text Analysis",
     author="Wouter van Atteveldt",
     author_email="wouter@vanatteveldt.com",
-    packages=["amcat4"],
+    packages=["amcat4", "amcat4.api"],
     include_package_data=True,
     zip_safe=False,
     keywords=["API", "text"],
@@ -25,7 +25,7 @@ setup(
         "peewee",
         "authlib",
         "pydantic[email]",
-        "amcat4annotator>=0.23"
+        "amcat4annotator>=0.24"
     ],
     extras_require={
         'dev': [
