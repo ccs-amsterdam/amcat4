@@ -23,9 +23,9 @@ app = FastAPI(
         dict(name="users", description="Endpoints for user management"),
         dict(name="index", description="Endpoints to create, list, and delete indices; and to add or modify documents"),
         dict(name="query", description="Endpoints to list or query documents or run aggregate queries"),
-        dict(name="annotator/users", description="Endpoints for user authentication and management, and getting user specific data"),
-        dict(name="annotator/annotator", description="Endpoints for creating and managing codingjobs, and the core process of getting units and posting annotations"),
-        dict(name="annotator/guest", description="Endpoints for unregistered guests"),
+        dict(name="annotator users", description="Annotator module endpoints for user management"),
+        dict(name="annotator codingjob", description="Annotator module endpoints for creating and managing annotator codingjobs, and the core process of getting units and posting annotations"),
+        dict(name="annotator guest", description="Annotator module endpoints for unregistered guests"),
     ]
 
 )
