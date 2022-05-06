@@ -25,7 +25,7 @@ setup(
         "peewee",
         "authlib",
         "pydantic[email]",
-        "amcat4annotator>=0.21"
+        "amcat4annotator>=0.22"
     ],
     extras_require={
         'dev': [
