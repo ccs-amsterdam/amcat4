@@ -22,6 +22,7 @@ ES_MAPPINGS = {
    'keyword': {"type": "keyword"},
    'url': {"type": "keyword", "meta": {"amcat4_type": "url"}},
    'tag': {"type": "keyword", "meta": {"amcat4_type": "tag"}},
+   'id': {"type": "keyword", "meta": {"amcat4_type": "id"}},
    'text': {"type": "text"},
    'object': {"type": "object"},
    'geo_point': {"type": "geo_point"}

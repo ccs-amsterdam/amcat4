@@ -33,7 +33,7 @@ def test_create_user(client: TestClient, user, writer, admin, username):
     u = dict(email=username, password="geheim")
     assert set(post_json(client, "/users/", user=writer, json=u).keys()) == {"email", "id"}
     assert client.post("/users/", headers=build_headers(writer), json=u).status_code == 400, \
-           "Duplicate create should return 400"
+        "Duplicate create should return 400"
     # users can delete themselves, others cannot delete them
     assert client.delete(f"/users/{username}", headers=build_headers(user)).status_code == 401
     u = User.get(User.email == username)
@@ -41,7 +41,7 @@ def test_create_user(client: TestClient, user, writer, admin, username):
     # only admin can add admins
     u = dict(email=username, password="geheim", global_role='ADMIN')
     assert client.post("/users/", headers=build_headers(writer), json=u).status_code == 401, \
-           "Creating admins should require ADMIN"
+        "Creating admins should require ADMIN"
     assert client.post("/users/", headers=build_headers(admin), json=u).status_code == 201
     assert get_json(client, f"/users/{username}", user=admin)["global_role"] == "ADMIN"
     # (only) admin can delete other admins
