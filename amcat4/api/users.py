@@ -148,3 +148,12 @@ def get_token(form_data: OAuth2PasswordRequestForm = Depends()):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
     token = user.create_token()
     return {"access_token": token, "token_type": "bearer"}
+
+
+@app_users.get("/auth/token")
+def refresh_token(current_user: User = Depends(authenticated_user)):
+    """
+    Create a new token for the authenticated user
+    """
+    token = current_user.create_token()
+    return {"access_token": token, "token_type": "bearer"}
