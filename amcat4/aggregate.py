@@ -123,7 +123,7 @@ class BoundAggregation:
 
     def get_value(self, bucket: dict):
         result = bucket[self.name]['value']
-        if self.ftype == "date":
+        if result and self.ftype == "date":
             result = datetime.utcfromtimestamp(result / 1000.)
         return result
 
