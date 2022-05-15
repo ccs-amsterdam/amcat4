@@ -100,6 +100,7 @@ class FilterSpec(BaseModel):
     lt: Optional[FilterValue]
     gte: Optional[FilterValue]
     lte: Optional[FilterValue]
+    exists: Optional[bool]
 
 
 def _process_queries(queries: Optional[Union[str, List[str], List[Dict[str, str]]]] = None) -> Optional[dict]:
