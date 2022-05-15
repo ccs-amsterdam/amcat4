@@ -140,7 +140,7 @@ def query_documents_post(
     filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = Body(
         None, description="Field filters, should be a dict of field names to filter specifications,"
                           "which can be either a value, a list of values, or a FilterSpec dict"),
-    sort: Optional[Union[str, List[str], List[Dict[str, str]]]] = Body(
+    sort: Optional[Union[str, List[str], List[Dict[str, dict]]]] = Body(
         None, description="Sort by field name(s) or dict (see "
         "https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html for dict format)",
         examples={"simple": {"summary": "Sort by single field", "value": "'date'"},
