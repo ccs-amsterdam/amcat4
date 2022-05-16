@@ -6,7 +6,7 @@ from amcat4 import auth
 from amcat4.auth import Role, User
 from amcat4.index import Index
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
 def check_role(u: User, role: Role, ix: Index = None):

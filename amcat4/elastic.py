@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from typing import Mapping, List, Optional
+from typing import Mapping, List, Optional, Iterable, Tuple
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
@@ -185,15 +185,22 @@ def _get_type_from_property(properties: dict) -> str:
     return properties['type']
 
 
+def _get_fields(index: str) -> Iterable[Tuple[str, dict]]:
+    r = es().indices.get_mapping(index=index)
+    for k, v in r[index]['mappings']['properties'].items():
+        t = dict(name=k, type=_get_type_from_property(v))
+        if meta := v.get('meta'):
+            t['meta'] = meta
+        yield k, t
+
+
 def get_fields(index: str) -> Mapping[str, dict]:
     """
     Get the field types in use in this index
     :param index:
     :return: a dict of fieldname: field objects {fieldname: {name, type, ...}]
     """
-    r = es().indices.get_mapping(index=index)
-    return {k: dict(name=k, type=_get_type_from_property(v))
-            for k, v in r[index]['mappings']['properties'].items()}
+    return dict(_get_fields(index))
 
 
 def field_type(index: str, field_name: str) -> str:
