@@ -55,7 +55,7 @@ class Index(Model):
         else:
             return actual_role and actual_role >= role
 
-    def set_role(self, user: User, role: Optional[Role]=None) -> None:
+    def set_role(self, user: User, role: Optional[Role] = None) -> None:
         """
         Sets the role for the given new or existing user; set role to None to remove user from this index.
         This will create/update/delete the role as needed

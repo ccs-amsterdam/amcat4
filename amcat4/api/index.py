@@ -10,13 +10,11 @@ from fastapi.params import Depends, Body
 from pydantic import BaseModel
 from pydantic.config import Extra
 
-from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
-
 from amcat4 import elastic, index
+from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 from amcat4.api.common import _index, py2dict, get_user_or_404, get_indexrole_or_404
-from amcat4.api.users import get_user
 from amcat4.auth import Role, User
-from amcat4.index import Index, IndexRole
+from amcat4.index import Index
 
 app_index = APIRouter(
     prefix="/index",
