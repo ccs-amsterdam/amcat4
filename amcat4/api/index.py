@@ -13,13 +13,16 @@ from pydantic.config import Extra
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 
 from amcat4 import elastic, index
-from amcat4.api.common import _index, py2dict
+from amcat4.api.common import _index, py2dict, get_user_or_404, get_indexrole_or_404
+from amcat4.api.users import get_user
 from amcat4.auth import Role, User
-from amcat4.index import Index
+from amcat4.index import Index, IndexRole
 
 app_index = APIRouter(
     prefix="/index",
     tags=["index"])
+
+RoleType = Literal["ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader"]
 
 
 def index_json(ix: Index):
@@ -36,7 +39,7 @@ def index_list(current_user: User = Depends(authenticated_user)):
 
 class NewIndex(BaseModel):
     name: str
-    guest_role: Optional[Literal["ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader"]]
+    guest_role: Optional[RoleType]
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
@@ -191,3 +194,74 @@ def get_values(ix: str, field: str, _=Depends(authenticated_user)):
     Get the fields (columns) used in this index
     """
     return elastic.get_values(ix, field)
+
+
+@app_index.get("/{ix}/users")
+def list_index_users(ix: str, user: User = Depends(authenticated_user)):
+    """
+    List the users in this index
+    """
+    index = _index(ix)
+    if not user.has_role(Role.ADMIN):
+        check_role(user, Role.READER, index)
+    return [{"email": u.email, "role": r.name}
+            for (u, r) in index.get_roles()]
+
+
+@app_index.post("/{ix}/users", status_code=status.HTTP_201_CREATED)
+def add_index_users(
+        ix: str,
+        email: str = Body(..., description="Email address of the user to add"),
+        role: RoleType = Body(..., description="Role of the user to add"),
+        user: User = Depends(authenticated_user)
+):
+    """
+    Add an existing user to this index.
+
+    To create regular users you need WRITER permission. To create ADMIN users, you need ADMIN permission.
+    Global ADMINs can always add users.
+    """
+    index = _index(ix)
+    r = Role[role]
+    if not user.has_role(Role.ADMIN):
+        check_role(user, Role.ADMIN if r == Role.ADMIN else Role.WRITER, index)
+    u = get_user_or_404(email)
+
+    index.set_role(u, Role[role])
+    return {"user": u.email, "index": ix, "role": r.name}
+
+
+@app_index.put("/{ix}/users/{email}")
+def modify_index_user(
+        ix: str,
+        email: str,
+        role: RoleType = Body(..., description="New role for the user", embed=True),
+        user: User = Depends(authenticated_user)
+):
+    """
+    Change the role of an existing user
+
+    This requires WRITER rights on the index.
+    If changing a user from or to ADMIN, it requires ADMIN rights
+    """
+    ir = get_indexrole_or_404(email, ix)
+    r = Role[role]
+    if not user.has_role(Role.ADMIN):
+        check_role(user, Role.ADMIN if (r == Role.ADMIN or ir.role == Role.ADMIN) else Role.WRITER, ir.index)
+    ir.index.set_role(ir.user, r)
+    return {"user": email, "index": ix, "role": r.name}
+
+
+@app_index.delete("/{ix}/users/{email}")
+def remove_index_user(ix: str, email: str, user: User = Depends(authenticated_user)):
+    """
+    Remove this user from the index
+
+    This requires WRITER rights on the index.
+    If removing an ADMIN user, it requires ADMIN rights
+    """
+    ir = get_indexrole_or_404(email, ix)
+    if not user.has_role(Role.ADMIN):
+        check_role(user, Role.ADMIN if ir.role == Role.ADMIN else Role.WRITER, ir.index)
+    ir.index.set_role(ir.user, None)
+    return {"user": email, "index": ix, "role": None}

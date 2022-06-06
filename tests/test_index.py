@@ -55,3 +55,9 @@ def test_roles(index, guest_index, user, admin):
 
     test(guest_index, user, {Role.METAREADER, Role.READER})
     test(guest_index, admin, {Role.METAREADER, Role.READER, Role.WRITER, Role.ADMIN})
+
+
+def test_list_users(index, user):
+    assert {u.email: r.name for (u, r) in index.get_roles()} == {}
+    index.set_role(user, Role.READER)
+    assert {u.email: r.name for (u, r) in index.get_roles()} == {user.email: "READER"}

@@ -19,7 +19,7 @@ Authorisation rules:
 
 Note that these rules are not enforced in this module, they should be enforced by the API!
 """
-
+from typing import Iterable, Tuple, Optional
 
 from peewee import Model, CharField, IntegerField, ForeignKeyField
 
@@ -55,7 +55,7 @@ class Index(Model):
         else:
             return actual_role and actual_role >= role
 
-    def set_role(self, user: User, role: Role) -> None:
+    def set_role(self, user: User, role: Optional[Role]=None) -> None:
         """
         Sets the role for the given new or existing user; set role to None to remove user from this index.
         This will create/update/delete the role as needed
@@ -69,6 +69,13 @@ class Index(Model):
                 ir.save()
         elif role is not None:
             IndexRole.create(user=user, index=self, role=role)
+
+    def get_roles(self) -> Iterable[Tuple[User, Role]]:
+        """
+        Get all user: Role pairs in this index
+        """
+        for ir in IndexRole.select().where(IndexRole.index == self):
+            yield ir.user, Role(ir.role)
 
 
 class IndexRole(Model):

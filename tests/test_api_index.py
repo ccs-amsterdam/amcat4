@@ -56,3 +56,52 @@ def test_fields_upload(client, user, index):
     assert get_json(client, f"/index/{index.name}/fields", user=user)["x"]["type"] == "keyword"
     elastic.es().indices.refresh()
     assert set(get_json(client, f"/index/{index.name}/fields/x/values", user=user)) == {"a", "b"}
+
+
+def test_set_get_delete_roles(client, admin, writer, user, index: Index):
+    body = {"email": user.email, "role": "READER"}
+    # Anon, unauthorized; READER can't add users
+    check(client.post(f"/index/{index.name}/users", json=body), 401)
+    check(client.post(f"/index/{index.name}/users", json=body, headers=build_headers(writer)), 401)
+    index.set_role(writer, Role.READER)
+    check(client.post(f"/index/{index.name}/users", json=body, headers=build_headers(writer)), 401)
+    # WRITER can't add or change ADMIN
+    index.set_role(writer, Role.WRITER)
+    check(client.post(f"/index/{index.name}/users", json={"email": user.email, "role": "ADMIN"},
+                      headers=build_headers(writer)), 401)
+    index.set_role(writer, None)
+
+    # Admin can add anyone
+    post_json(client, f"/index/{index.name}/users", json={"email": writer.email, "role": "WRITER"}, user=admin)
+    assert get_json(client, f"/index/{index.name}/users", user=writer) == [{"email": writer.email, "role": "WRITER"}]
+    # Writer can now add a new user
+    post_json(client, f"/index/{index.name}/users", json=body, user=writer)
+    users = {u['email']: u['role'] for u in get_json(client, f"/index/{index.name}/users", user=writer)}
+    assert users == {writer.email: "WRITER", user.email: "READER"}
+
+    # Anon, unauthorized or READER can't change users
+    writer_url = f"/index/{index.name}/users/{writer.email}"
+    user_url = f"/index/{index.name}/users/{user.email}"
+    check(client.put(writer_url, json={"role": "READER"}), 401)
+    check(client.put(writer_url, json={"role": "READER"}, headers=build_headers(user)), 401)
+    # Writer can change to writer
+    check(client.put(user_url, json={"role": "WRITER"}, headers=build_headers(writer)), 200)
+    users = {u['email']: u['role'] for u in get_json(client, f"/index/{index.name}/users", user=writer)}
+    assert users == {writer.email: "WRITER", user.email: "WRITER"}
+    # Writer can't change to admin
+    check(client.put(writer_url, json={"role": "ADMIN"}, headers=build_headers(user)), 401)
+    # Writer can't change from admin
+    index.set_role(writer, Role.ADMIN)
+    check(client.put(writer_url, json={"role": "WRITER"}, headers=build_headers(user)), 401)
+
+    # Anon, unauthorized or READER can't delete users
+    check(client.delete(writer_url), 401)
+    check(client.delete(writer_url, headers=build_headers(user)), 401)
+    # Writer can't delete admin
+    index.set_role(user, Role.WRITER)
+    check(client.delete(writer_url, headers=build_headers(user)), 401)
+    # Admin can delete writer
+    check(client.delete(user_url, headers=build_headers(writer)), 200)
+    # Global admin can delete anyone
+    check(client.delete(writer_url, headers=build_headers(admin)), 200)
+    assert get_json(client, f"/index/{index.name}/users", user=admin) == []
