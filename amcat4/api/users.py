@@ -91,7 +91,9 @@ def list_users():
     res1 = [dict(user=u.email, role=u.global_role) for u in User.select()]
     for entry in res1:
         for ix, role in User.get(User.email == entry['user']).indices().items():
-            result.append(dict(user=entry['user'], index_name=ix.name, role=role.name))
+            result.append(dict(user=entry['user'], index=ix.name, role=role.name))
+        else:
+            result.append(dict(user=entry['user'], index=None, role=None))
     return result
 
 
