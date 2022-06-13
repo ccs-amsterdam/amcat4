@@ -37,7 +37,7 @@ def upload_test_data() -> Index:
                  year=row['Year'],
                  party=row['Party'])
             for row in csvfile]
-    columns = {"president": "keyword", "party": "keyword", "year": "int"}
+    columns = {"president": "keyword", "party": "keyword", "year": "double"}
     upload_documents(SOTU_INDEX, docs, columns)
     return index
 
@@ -48,9 +48,10 @@ def run(args):
 
 
 def create_test_index(_args):
-    if Index.select().where(Index.name == SOTU_INDEX):
-        print(f"Index {SOTU_INDEX} already exists")
-        return
+    if ix := Index.get_or_none(Index.name == SOTU_INDEX):
+        print(f"Index {SOTU_INDEX} already exists, deleting")
+        ix.delete_index()
+
     logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
     admin = User.get(User.email == "admin")
     upload_test_data().set_role(admin, Role.ADMIN)

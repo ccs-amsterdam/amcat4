@@ -179,7 +179,7 @@ def get_fields(ix: str, _=Depends(authenticated_user)):
 def set_fields(ix: str, body: dict = Body(...), user: User = Depends(authenticated_user)):
     """
     Set the field types used in this index
-    POST body should be a dict of {field: type}
+    POST body should be a dict of {field: type} or {field: {type: type, meta: meta}}
     """
     check_role(user, Role.WRITER, _index(ix))
     elastic.set_columns(ix, body)

@@ -159,7 +159,6 @@ def query_documents_post(
     highlight: Optional[Union[bool, Dict]] = Body(
         None, description="Highlight document. 'true' highlights whole document, see elastic docs for dict format"
                           "https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html"),
-
         user: User = Depends(authenticated_user)
 ):
     """

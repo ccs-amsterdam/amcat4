@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from typing import Mapping, List, Optional, Iterable, Tuple
+from typing import Mapping, List, Optional, Iterable, Tuple, Union
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
@@ -130,6 +130,18 @@ def upload_documents(index: str, documents, columns: Mapping[str, str] = None) -
     return [action['_id'] for action in actions]
 
 
+def get_mapping(type_: Union[str, dict]):
+    if isinstance(type_, str):
+        return ES_MAPPINGS[type_]
+    else:
+        mapping = ES_MAPPINGS[type_['type']]
+        meta = mapping.get('meta', {})
+        if m := type_.get('meta'):
+            meta.update(m)
+        mapping['meta'] = meta
+        return mapping
+
+
 def set_columns(index: str, columns: Mapping[str, str]):
     """
     Update the column types for this index
@@ -137,7 +149,7 @@ def set_columns(index: str, columns: Mapping[str, str]):
     :param index: The name of the index (without prefix)
     :param columns: A mapping of field:type for column types
     """
-    mapping = {field: ES_MAPPINGS[type_] for (field, type_) in columns.items()}
+    mapping = {field: get_mapping(type_) for (field, type_) in columns.items()}
     es().indices.put_mapping(index=index, body=dict(properties=mapping))
 
 
