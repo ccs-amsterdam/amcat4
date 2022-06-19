@@ -105,3 +105,5 @@ def test_aggregate_datefunctions(index):
     assert q(Axis("date", interval="daypart")) == {"Night": 1, "Morning": 3, "Evening": 2}
     assert q(Axis("date", interval="monthnr")) == {1: 5, 3: 1}
     assert q(Axis("date", interval="yearnr")) == {2018: 6}
+    assert q(Axis("date", interval="dayofmonth")) == {1: 2, 11: 1, 17: 2, 7: 1}
+    assert q(Axis("date", interval="weeknr")) == {1: 2, 2: 1, 3: 2, 10: 1}

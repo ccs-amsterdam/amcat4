@@ -70,6 +70,32 @@ class YearNr(DateMapping):
         return int(value)
 
 
+class DayOfMonth(DateMapping):
+    interval = "dayofmonth"
+
+    def mapping_type(self):
+        return "double"
+
+    def mapping_script(self, field):
+        return "emit(doc['date'].value.getDayOfMonth())"
+
+    def postprocess(self, value):
+        return int(value)
+
+
+class Weeknr(DateMapping):
+    interval = "weeknr"
+
+    def mapping_type(self):
+        return "double"
+
+    def mapping_script(self, field):
+        #TODO: this is deprecated, but get(DateFormatters.WEEK_FIELDS_ROOT.weekOfWeekBasedYear()) errors
+        return "emit(doc['date'].value.getWeekOfWeekyear())"
+
+    def postprocess(self, value):
+        return int(value)
+
 def interval_mapping(interval: str) -> Optional[DateMapping]:
     for c in globals().values():
         if isclass(c) and issubclass(c, DateMapping) and getattr(c, 'interval') == interval:
