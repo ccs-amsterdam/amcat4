@@ -4,14 +4,16 @@ All things query
 from math import ceil
 from re import finditer
 from re import sub
-from typing import Mapping, Iterable, Optional, Union, Sequence, Any, Dict, List
+from typing import Mapping, Iterable, Optional, Union, Sequence, Any, Dict, List, Tuple
 
+from .date_mappings import mappings
 from .elastic import es
 
 
 def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: Union[bool, dict] = False):
-    def parse_filter(field, filter):
+    def parse_filter(field, filter) -> Tuple[Mapping, Mapping]:
         filter = filter.copy()
+        extra_runtime_mappings = {}
         field_filters = []
         for value in filter.pop('values', []):
             field_filters.append({"term": {field: value}})
@@ -22,6 +24,11 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
                 field_filters.append({"exists": {"field": field}})
             else:
                 field_filters.append({"bool": {"must_not": {"exists": {"field": field}}}})
+        for mapping in mappings():
+            if mapping.interval in filter:
+                value = filter.pop(mapping.interval)
+                extra_runtime_mappings.update(mapping.mapping(field))
+                field_filters.append({"term": {mapping.fieldname(field): value}})
         rangefilter = {}
         for rangevar in ['gt', 'gte', 'lt', 'lte']:
             if rangevar in filter:
@@ -30,7 +37,7 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
             field_filters.append({"range": {field: rangefilter}})
         if filter:
             raise ValueError(f"Unknown filter type(s): {filter}")
-        return {'bool': {'should': field_filters}}
+        return extra_runtime_mappings, {'bool': {'should': field_filters}}
 
     def parse_query(q: str) -> dict:
         return {"query_string": {"query":  q}}
@@ -43,12 +50,20 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
     if not queries and not filters:
         return {'query': {'match_all': {}}}
 
-    fs = [parse_filter(*item) for item in filters.items()] if filters else []
+    fs, runtime_mappings = [], {}
+    if filters:
+        for field, filter in filters.items():
+            extra_runtime_mappings, filter_term = parse_filter(field, filter)
+            fs.append(filter_term)
+            if extra_runtime_mappings:
+                runtime_mappings.update(extra_runtime_mappings)
     if queries:
         fs.append(parse_queries(list(queries)))
 
     body: Dict[str, Any] = {"query": {"bool": {"filter": fs}}}
-
+    if runtime_mappings:
+        body['runtime_mappings'] = runtime_mappings
+    print(body)
     if highlight is True:
         highlight = {"number_of_fragments": 0}
     elif highlight:
@@ -99,7 +114,8 @@ def query_documents(index: Union[str, Sequence[str]], queries: Union[Mapping[str
                     sort: List[Union[str, Mapping]] = None,
                     **kwargs) -> Optional[QueryResult]:
     """
-    Conduct a query_string query, returning the found documents
+    Conduct a query_string query, returning the found documents.
+
     It will return at most per_page results.
     In normal (paginated) mode, the next batch can be  requested by incrementing the page parameter.
     If the scroll parameter is given, the result will contain a scroll_id which can be used to get the next batch.

@@ -61,3 +61,15 @@ def test_highlight(index):
 def test_query_multiple_index(index_docs, index):
     upload(index, [{"text": "also a text", "i": -1}])
     assert len(query.query_documents([index_docs.name, index.name]).data) == 5
+
+TEST_DOCUMENTS = [
+    {'cat': 'a', 'subcat': 'x', 'i': 1, 'date': '2018-01-01', 'text': 'this is a text', },
+    {'cat': 'a', 'subcat': 'x', 'i': 2, 'date': '2018-02-01', 'text': 'a test text', },
+    {'cat': 'a', 'subcat': 'y', 'i': 11, 'date': '2020-01-01', 'text': 'and this is another test toto', 'title': 'bla'},
+    {'cat': 'b', 'subcat': 'y', 'i': 31, 'date': '2018-01-01', 'text': 'Toto je testovací článek', 'title': 'more bla'},
+]
+
+def test_query_filter_mapping(index_docs):
+    q = functools.partial(query_ids, index_docs)
+    assert q(filters={"date": {"monthnr": "2"}}) == {1}
+    assert q(filters={"date": {"dayofweek": "Monday"}}) == {0, 3}

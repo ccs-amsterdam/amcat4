@@ -1,5 +1,5 @@
 from inspect import isclass
-from typing import Optional
+from typing import Optional, Iterable, Type
 
 
 class DateMapping:
@@ -98,7 +98,12 @@ class Weeknr(DateMapping):
 
 
 def interval_mapping(interval: str) -> Optional[DateMapping]:
+    for m in mappings():
+        if m.interval == interval:
+            return m
+
+
+def mappings() -> Iterable[DateMapping]:
     for c in globals().values():
-        if (isclass(c) and issubclass(c, DateMapping) and c != DateMapping and
-                c.interval is not None and getattr(c, 'interval') == interval):
-            return c()
+        if isclass(c) and issubclass(c, DateMapping) and c != DateMapping and c.interval is not None:
+            yield c()
