@@ -100,7 +100,8 @@ def test_aggregate_datefunctions(index):
                                    "2018-03-07T23:59:00",  # wednesday evening
                                    ]]
     upload(index, docs)
-    assert q(Axis("date", interval="day")) == {date(2018, 1, 1): 2, date(2018, 1, 11): 1, date(2018, 1, 17): 2, date(2018, 3, 7): 1}
+    assert q(Axis("date", interval="day")) == {date(2018, 1, 1): 2, date(2018, 1, 11): 1,
+                                               date(2018, 1, 17): 2, date(2018, 3, 7): 1}
     assert q(Axis("date", interval="dayofweek")) == {"Monday": 2, "Wednesday": 3, "Thursday": 1}
     assert q(Axis("date", interval="daypart")) == {"Night": 1, "Morning": 3, "Evening": 2}
     assert q(Axis("date", interval="monthnr")) == {1: 5, 3: 1}

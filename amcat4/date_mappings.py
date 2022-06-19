@@ -90,11 +90,12 @@ class Weeknr(DateMapping):
         return "double"
 
     def mapping_script(self, field):
-        #TODO: this is deprecated, but get(DateFormatters.WEEK_FIELDS_ROOT.weekOfWeekBasedYear()) errors
+        # TODO: this is deprecated, but get(DateFormatters.WEEK_FIELDS_ROOT.weekOfWeekBasedYear()) errors
         return "emit(doc['date'].value.getWeekOfWeekyear())"
 
     def postprocess(self, value):
         return int(value)
+
 
 def interval_mapping(interval: str) -> Optional[DateMapping]:
     for c in globals().values():
