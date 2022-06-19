@@ -4,6 +4,7 @@ Aggregate queries
 from datetime import datetime
 from typing import Mapping, Iterable, Union, Tuple, Sequence, List, Dict, Optional
 
+from amcat4.date_mappings import interval_mapping
 from amcat4.elastic import es, field_type
 from amcat4.query import build_body, _normalize_queries
 
@@ -42,34 +43,13 @@ class BoundAxis:
     def interval(self):
         return self.axis.interval
 
-    def runtime_mappings(self):
-        # TODO: consider adding to index (or at least checking if it's there)
-        if self.interval == "dayofweek":
-            return {f"{self.field}_dayofweek":
-                    {"type": "keyword",
-                     "script": "emit(doc['date'].value.dayOfWeekEnum.getDisplayName(TextStyle.FULL, Locale.ROOT))"
-                     }}
-        if self.interval == "daypart":
-            return {f"{self.field}_daypart":
-                    {"type": "keyword",
-                     "script": """
-                     int hour =doc['date'].value.hour;
-                     if (hour < 6) emit('Night');
-                     else if (hour < 12) emit('Morning');
-                     else if (hour < 18) emit('Afternoon');
-                     else emit('Evening')
-                     """
-                     }}
-
     def query(self):
         if not self.ftype:
             raise ValueError("Please set index before using axis")
         if self.interval:
             if self.ftype == "date":
-                if self.interval == "dayofweek":
-                    return {self.field: {"terms": {"field": f"{self.field}_dayofweek"}}}
-                elif self.interval == "daypart":
-                    return {self.field: {"terms": {"field": f"{self.field}_daypart"}}}
+                if m := interval_mapping(self.interval):
+                    return {self.field: {"terms": {"field": m.fieldname(self.field)}}}
                 return {self.field: {"date_histogram": {"field": self.field, "calendar_interval": self.interval}}}
             else:
                 return {self.field: {"histogram": {"field": self.field, "interval": self.interval}}}
@@ -77,14 +57,21 @@ class BoundAxis:
             return {self.field: {"terms": {"field": self.field}}}
 
     def postprocess(self, value):
-        if self.ftype == "date" and self.interval not in ("daypart", "dayofweek"):
-            value = datetime.utcfromtimestamp(value / 1000.)
-            if self.interval in {"year", "month", "week", "day"}:
-                value = value.date()
+        if self.ftype == "date":
+            if m := interval_mapping(self.interval):
+                return m.postprocess(value)
+            else:
+                value = datetime.utcfromtimestamp(value / 1000.)
+                if self.interval in {"year", "month", "week", "day"}:
+                    value = value.date()
         return value
 
     def asdict(self):
         return {"field": self.field, "type": self.ftype, "interval": self.interval}
+
+    def runtime_mappings(self):
+        if m := interval_mapping(self.interval):
+            return m.mapping(self.field)
 
 
 class Aggregation:
