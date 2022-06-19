@@ -49,21 +49,22 @@ class BoundAxis:
         if self.interval:
             if self.ftype == "date":
                 if m := interval_mapping(self.interval):
-                    return {self.field: {"terms": {"field": m.fieldname(self.field)}}}
+                    return {m.fieldname(self.field): {"terms": {"field": m.fieldname(self.field)}}}
                 return {self.field: {"date_histogram": {"field": self.field, "calendar_interval": self.interval}}}
             else:
                 return {self.field: {"histogram": {"field": self.field, "interval": self.interval}}}
         else:
             return {self.field: {"terms": {"field": self.field}}}
 
-    def postprocess(self, value):
+    def get_value(self, values):
+        if m := interval_mapping(self.interval):
+            return m.postprocess(values[m.fieldname(self.field)])
+
+        value = values[self.field]
         if self.ftype == "date":
-            if m := interval_mapping(self.interval):
-                return m.postprocess(value)
-            else:
-                value = datetime.utcfromtimestamp(value / 1000.)
-                if self.interval in {"year", "month", "week", "day"}:
-                    value = value.date()
+            value = datetime.utcfromtimestamp(value / 1000.)
+            if self.interval in {"year", "month", "week", "day"}:
+                value = value.date()
         return value
 
     def asdict(self):
@@ -201,7 +202,7 @@ def _aggregate_results(index: str, axes: List[BoundAxis], queries: Mapping[str, 
         sources = [axis.query() for axis in axes]
         runtime_mappings = _combine_mappings(axis.runtime_mappings() for axis in axes)
         for bucket in _elastic_aggregate(index, sources, queries, filters, aggregations, runtime_mappings):
-            row = tuple(axis.postprocess(bucket['key'][axis.field]) for axis in axes)
+            row = tuple(axis.get_value(bucket['key']) for axis in axes)
             row += (bucket['doc_count'], )
             if aggregations:
                 row += tuple(a.get_value(bucket) for a in aggregations)
