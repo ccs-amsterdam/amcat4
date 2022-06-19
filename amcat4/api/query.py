@@ -1,6 +1,4 @@
-"""
-API Endpoints for querying
-"""
+"""API Endpoints for querying."""
 
 from typing import Dict, List, Optional, Any, Union, Iterable, Tuple
 
@@ -19,6 +17,8 @@ app_query = APIRouter(
 
 
 class QueryMeta(BaseModel):
+    """Form for query metadata."""
+
     total_count: int
     per_page: Optional[int]
     page_count: Optional[int]
@@ -27,6 +27,8 @@ class QueryMeta(BaseModel):
 
 
 class QueryResult(BaseModel):
+    """Form for query results."""
+
     results: List[Dict[str, Any]]
     meta: QueryMeta
 
@@ -95,6 +97,8 @@ FilterValue = Union[str, int]
 
 
 class FilterSpec(BaseModel):
+    """Form for filter specification."""
+
     values: Optional[List[FilterValue]]
     gt: Optional[FilterValue]
     lt: Optional[FilterValue]
@@ -104,7 +108,7 @@ class FilterSpec(BaseModel):
 
 
 def _process_queries(queries: Optional[Union[str, List[str], List[Dict[str, str]]]] = None) -> Optional[dict]:
-    """Convert query json to dict format: {label1:query1, label2: query2}  uses indices if no labels given"""
+    """Convert query json to dict format: {label1:query1, label2: query2} uses indices if no labels given."""
     if queries:
         # to dict format: {label1:query1, label2: query2}  uses indices if no labels given
         if isinstance(queries, str):
@@ -116,7 +120,7 @@ def _process_queries(queries: Optional[Union[str, List[str], List[Dict[str, str]
 
 def _process_filters(filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = None
                      ) -> Iterable[Tuple[str, dict]]:
-    """Convert filters to dict format: {field: {values: []}}"""
+    """Convert filters to dict format: {field: {values: []}}."""
     if not filters:
         return
     for field, filter_ in filters.items():
@@ -183,6 +187,8 @@ def query_documents_post(
 
 
 class AggregationSpec(BaseModel):
+    """Form for an aggregation."""
+
     # TODO: can probably merge wth Aggregation class?
     field: str
     function: str
@@ -190,6 +196,8 @@ class AggregationSpec(BaseModel):
 
 
 class AxisSpec(BaseModel):
+    """Form for an axis specification."""
+
     # TODO: can probably merge wth Axis class?
     field: str
     interval: Optional[str]

@@ -1,4 +1,6 @@
 """
+User/Account and authentication endpoints.
+
 AmCAT4 can use either Basic or Token-based authentication.
 A client can request a token with basic authentication and store that token for future requests.
 """
@@ -22,10 +24,12 @@ app_users = APIRouter(
 
 
 class Username(EmailStr):
-    """Subclass of EmailStr to allow 'admin' username. """
+    """Subclass of EmailStr to allow 'admin' username."""
+
     # WVA: Not sure we should actually keep admin?
     @classmethod
     def validate(cls, value: Union[str]) -> str:
+        """Check for valid email or 'admin'."""
         if value == "admin":
             return "admin"
         return super().validate(value)
@@ -35,6 +39,8 @@ ROLE = Literal["ADMIN", "WRITER", "admin", "writer"]
 
 
 class UserForm(BaseModel):
+    """Form to create a new user."""
+
     email: Username
     password: str
     global_role: Optional[ROLE]
@@ -42,6 +48,8 @@ class UserForm(BaseModel):
 
 
 class ChangeUserForm(BaseModel):
+    """Form to change an existing user."""
+
     email: Optional[Username]
     password: Optional[str]
     global_role: Optional[ROLE]
@@ -49,9 +57,7 @@ class ChangeUserForm(BaseModel):
 
 @app_users.post("/users/", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: UserForm, current_user: User = Depends(authenticated_writer)):
-    """
-    Create a new user. Request body should be a json with email, password, and optional (global) role
-    """
+    """Create a new user."""
     if User.select().where(User.email == new_user.email).exists():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"User {new_user.email} already exists")
     role = Role[new_user.global_role.upper()] if new_user.global_role else None
@@ -65,16 +71,16 @@ def create_user(new_user: UserForm, current_user: User = Depends(authenticated_w
 
 @app_users.get("/users/me")
 def get_current_user(current_user: User = Depends(authenticated_user)):
-    """
-    View the current user.
-    """
+    """View the current user."""
     return {"email": current_user.email, "global_role": current_user.role and current_user.role.name}
 
 
 @app_users.get("/users/{email}")
 def get_user(email: Username, current_user: User = Depends(authenticated_user)):
     """
-    View the current user. Users can view themselves, writer can view others
+    View a specified current user.
+
+    Users can view themselves, writer can view others
     """
     if current_user.email != email:
         check_role(current_user, Role.WRITER)
@@ -87,6 +93,7 @@ def get_user(email: Username, current_user: User = Depends(authenticated_user)):
 
 @app_users.get("/users", dependencies=[Depends(authenticated_writer)])
 def list_users():
+    """List all users."""
     result = []
     res1 = [dict(user=u.email, role=u.global_role) for u in User.select()]
     for entry in res1:
@@ -102,7 +109,9 @@ def list_users():
 @app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_user(email: Username, current_user: User = Depends(authenticated_user)):
     """
-    Delete the given user. Users can delete themselves, admin can delete everyone, and writer can delete non-admin
+    Delete the given user.
+
+    Users can delete themselves, admin can delete everyone, and writer can delete non-admin
     """
     if current_user.email != email:
         check_role(current_user, Role.WRITER)
@@ -119,6 +128,7 @@ def delete_user(email: Username, current_user: User = Depends(authenticated_user
 def modify_user(email: Username, data: ChangeUserForm, current_user: User = Depends(authenticated_user)):
     """
     Modify the given user.
+
     Users can modify themselves (but not their role), admin can change everyone, and writer can change non-admin.
     """
     if current_user.email != email:
@@ -144,9 +154,7 @@ def modify_user(email: Username, data: ChangeUserForm, current_user: User = Depe
 
 @app_users.post("/auth/token")
 def get_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    """
-    Create a new token for the authenticated user
-    """
+    """Create a new token for the user authenticating with a form."""
     user = auth.verify_user(email=form_data.username, password=form_data.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
@@ -156,8 +164,6 @@ def get_token(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @app_users.get("/auth/token")
 def refresh_token(current_user: User = Depends(authenticated_user)):
-    """
-    Create a new token for the authenticated user
-    """
+    """Create a new token for the user authenticated with an existing token."""
     token = current_user.create_token()
     return {"access_token": token, "token_type": "bearer"}

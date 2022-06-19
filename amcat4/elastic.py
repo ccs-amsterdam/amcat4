@@ -155,7 +155,7 @@ def set_columns(index: str, columns: Mapping[str, str]):
 
 def get_document(index: str, doc_id: str, **kargs) -> dict:
     """
-    Get a single document from this index
+    Get a single document from this index.
 
     :param index: The name of the index
     :param doc_id: The document id (hash)
@@ -166,8 +166,7 @@ def get_document(index: str, doc_id: str, **kargs) -> dict:
 
 def update_document(index: str, doc_id: str, fields: dict):
     """
-    Update a single document
-
+    Update a single document.
 
     :param index: The name of the index
     :param doc_id: The document id (hash)

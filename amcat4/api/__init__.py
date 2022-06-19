@@ -1,6 +1,4 @@
-"""
-AmCAT4 API
-"""
+"""AmCAT4 API."""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,6 +47,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def init():
+    """Initialize the elastic and peewee database."""
     setup_elastic()
     initialize_if_needed()
 
