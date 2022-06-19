@@ -98,3 +98,15 @@ def test_multiple_index(client, index_docs, index, user):
     indices = f"{index.name},{index_docs.name}"
     assert len(get_json(client, f"/index/{indices}/documents", user=user)['results']) == 5
     assert len(post_json(client, f"/index/{indices}/query", user=user, expected=200)['results']) == 5
+
+
+def test_aggregate_datemappings(client, index_docs, user):
+    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+                  json={'axes': [{'field': 'date', 'interval': 'monthnr'}]})
+    assert r['data'] == [{'date_monthnr': 1, 'n': 3}, {'date_monthnr': 2, 'n': 1}]
+    assert [x['name'] for x in r['meta']['axes']] == ["date_monthnr"]
+    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+                  json={'axes': [{'field': 'date', 'interval': 'monthnr'}, {'field': 'date', 'interval': 'dayofmonth'}]})
+    assert [x['name'] for x in r['meta']['axes']] == ["date_monthnr", "date_dayofmonth"]
+    assert r['data'] == [{'date_monthnr': 1, 'date_dayofmonth': 1, 'n': 3},
+                         {'date_monthnr': 2, 'date_dayofmonth': 1, 'n': 1}]

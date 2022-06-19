@@ -44,7 +44,7 @@ class DayPart(DateMapping):
         """
 
 
-class MonthNr(DateMapping):
+class MonthName(DateMapping):
     interval = "monthnr"
 
     def mapping_type(self):
@@ -98,5 +98,6 @@ class Weeknr(DateMapping):
 
 def interval_mapping(interval: str) -> Optional[DateMapping]:
     for c in globals().values():
-        if isclass(c) and issubclass(c, DateMapping) and getattr(c, 'interval') == interval:
+        if (isclass(c) and issubclass(c, DateMapping) and c != DateMapping and
+                c.interval is not None and getattr(c, 'interval') == interval):
             return c()

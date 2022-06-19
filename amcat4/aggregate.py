@@ -21,9 +21,15 @@ class Axis:
     """
     Class that specifies an aggregation axis
     """
-    def __init__(self, field: str, interval: str = None):
+    def __init__(self, field: str, interval: str = None, name: str = None):
         self.field = field
         self.interval = interval
+        if name:
+            self.name = name
+        elif interval:
+            self.name = f"{field}_{interval}"
+        else:
+            self.name = field
 
 
 class BoundAxis:
@@ -40,6 +46,10 @@ class BoundAxis:
         return self.axis.field
 
     @property
+    def name(self):
+        return self.axis.name
+
+    @property
     def interval(self):
         return self.axis.interval
 
@@ -49,26 +59,25 @@ class BoundAxis:
         if self.interval:
             if self.ftype == "date":
                 if m := interval_mapping(self.interval):
-                    return {m.fieldname(self.field): {"terms": {"field": m.fieldname(self.field)}}}
-                return {self.field: {"date_histogram": {"field": self.field, "calendar_interval": self.interval}}}
+                    return {self.name: {"terms": {"field": m.fieldname(self.field)}}}
+                return {self.name: {"date_histogram": {"field": self.field, "calendar_interval": self.interval}}}
             else:
-                return {self.field: {"histogram": {"field": self.field, "interval": self.interval}}}
+                return {self.name: {"histogram": {"field": self.field, "interval": self.interval}}}
         else:
-            return {self.field: {"terms": {"field": self.field}}}
+            return {self.name: {"terms": {"field": self.field}}}
 
     def get_value(self, values):
+        value = values[self.name]
         if m := interval_mapping(self.interval):
-            return m.postprocess(values[m.fieldname(self.field)])
-
-        value = values[self.field]
-        if self.ftype == "date":
+            value = m.postprocess(value)
+        elif self.ftype == "date":
             value = datetime.utcfromtimestamp(value / 1000.)
             if self.interval in {"year", "month", "week", "day"}:
                 value = value.date()
         return value
 
     def asdict(self):
-        return {"field": self.field, "type": self.ftype, "interval": self.interval}
+        return {"name": self.name, "field": self.field, "type": self.ftype, "interval": self.interval}
 
     def runtime_mappings(self):
         if m := interval_mapping(self.interval):
@@ -134,7 +143,7 @@ class AggregateResult:
 
     def as_dicts(self) -> Iterable[dict]:
         """Return the results as a sequence of {axis1, ..., n} dicts"""
-        keys = tuple(ax.field for ax in self.axes) + (self.count_column, )
+        keys = tuple(ax.name for ax in self.axes) + (self.count_column, )
         if self.aggregations:
             keys += tuple(a.name for a in self.aggregations)
         for row in self.data:
