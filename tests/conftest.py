@@ -58,6 +58,7 @@ def admin():
 @pytest.fixture()
 def index():
     setup_elastic()
+    _delete_index("amcat4_unittest_index")
     i = create_index("amcat4_unittest_index")
     yield i
     try:

@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from typing import Mapping, List, Optional, Iterable, Tuple, Union
+from typing import Mapping, List, Optional, Iterable, Tuple, Union, Sequence, Dict
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
@@ -127,6 +127,7 @@ def upload_documents(index: str, documents, columns: Mapping[str, str] = None) -
 
     actions = list(_get_es_actions(index, documents))
     bulk(es(), actions)
+    invalidate_field_cache(index)
     return [action['_id'] for action in actions]
 
 
@@ -151,6 +152,7 @@ def set_columns(index: str, columns: Mapping[str, str]):
     """
     mapping = {field: get_mapping(type_) for (field, type_) in columns.items()}
     es().indices.put_mapping(index=index, body=dict(properties=mapping))
+    invalidate_field_cache(index)
 
 
 def get_document(index: str, doc_id: str, **kargs) -> dict:
@@ -174,6 +176,7 @@ def update_document(index: str, doc_id: str, fields: dict):
     """
     # Mypy doesn't understand that body= has been deprecated already...
     es().update(index=index, id=doc_id, doc=fields)  # type: ignore
+    invalidate_field_cache(index)
 
 
 def delete_document(index: str, doc_id: str):
@@ -205,21 +208,55 @@ def _get_fields(index: str) -> Iterable[Tuple[str, dict]]:
         yield k, t
 
 
-def get_fields(index: str) -> Mapping[str, dict]:
+FIELD_CACHE: Dict[str, Mapping[str, dict]] = {}
+
+
+def invalidate_field_cache(index):
+    if index in FIELD_CACHE:
+        del FIELD_CACHE[index]
+
+
+def get_index_fields(index: str) -> Mapping[str, dict]:
     """
     Get the field types in use in this index
     :param index:
+    :param invalidate_cache: Force re-getting the field types from elastic
+    :return: a dict of fieldname: field objects {fieldname: {name, type, meta, ...}]
+    """
+    # TODO Is this thread safe? I think worst case is two threads overwrite the cache, but should be the same data?
+    if result := FIELD_CACHE.get(index):
+        return result
+    else:
+        result = dict(_get_fields(index))
+        FIELD_CACHE[index] = result
+        return result
+
+
+def get_fields(index: Union[str, Sequence[str]]):
+    """
+    Get the field types in use in this index or indices
+    :param index: name(s) of index(es) to query
+    :param invalidate_cache: Force re-getting the field types from elastic
     :return: a dict of fieldname: field objects {fieldname: {name, type, ...}]
     """
-    return dict(_get_fields(index))
+    if isinstance(index, str):
+        return get_index_fields(index)
+    result = {}
+    for ix in index:
+        for f, ftype in get_index_fields(ix).items():
+            if f in result:
+                if result[f] != ftype:
+                    result[f] = {"type": "keyword", "meta": {"merged": True}}
+            else:
+                result[f] = ftype
+    return result
 
 
-def field_type(index: str, field_name: str) -> str:
+def field_type(index: Union[str, Sequence[str]], field_name: str) -> str:
     """
     Get the field type for the given field.
     :return: a type name ('text', 'date', ..)
     """
-    # TODO: [WvA] cache this as it should be invariant
     return get_fields(index)[field_name]["type"]
 
 

@@ -94,10 +94,12 @@ def test_aggregate(client, index_docs, user):
 
 
 def test_multiple_index(client, index_docs, index, user):
-    upload(index, [{"text": "also a text", "i": -1}])
+    upload(index, [{"text": "also a text", "i": -1, 'cat': 'c'}], columns={'cat': 'keyword', 'i': 'long'})
     indices = f"{index.name},{index_docs.name}"
     assert len(get_json(client, f"/index/{indices}/documents", user=user)['results']) == 5
     assert len(post_json(client, f"/index/{indices}/query", user=user, expected=200)['results']) == 5
+    r = post_json(client, f"/index/{indices}/aggregate", user=user, json={'axes': [{'field': 'cat'}]}, expected=200)
+    assert dictset(r['data']) == dictset([{'cat': 'a', 'n': 3}, {'n': 1, 'cat': 'b'}, {'n': 1, 'cat': 'c'}])
 
 
 def test_aggregate_datemappings(client, index_docs, user):

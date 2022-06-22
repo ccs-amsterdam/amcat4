@@ -163,7 +163,7 @@ def _bare_aggregate(index: str, queries, filters, aggregations: Sequence[BoundAg
     return result["hits"]["total"]["value"], result['aggregations']
 
 
-def _elastic_aggregate(index: str, sources, queries, filters, aggregations: Sequence[BoundAggregation],
+def _elastic_aggregate(index: Union[str, List[str]], sources, queries, filters, aggregations: Sequence[BoundAggregation],
                        runtime_mappings: Mapping[str, Mapping] = None, after_key=None) -> Iterable[dict]:
     """
     Recursively get all buckets from a composite query.
@@ -179,16 +179,19 @@ def _elastic_aggregate(index: str, sources, queries, filters, aggregations: Sequ
     if filters or queries:
         q = build_body(queries=queries.values(), filters=filters)
         kargs["query"] = q["query"]
-    result = es().search(index=index, size=0, aggregations=aggr, runtime_mappings=runtime_mappings, **kargs
-                         )['aggregations']['aggs']
-    yield from result['buckets']
-    after_key = result.get('after_key')
+    result = es().search(index=index if isinstance(index, str) else ",".join(index),
+                         size=0, aggregations=aggr, runtime_mappings=runtime_mappings, **kargs
+                         )
+    if failure := result.get("_shards", {}).get("failures"):
+        raise Exception(f'Error on running aggregate search: {failure}')
+    yield from result['aggregations']['aggs']['buckets']
+    after_key = result['aggregations']['aggs'].get('after_key')
     if after_key:
         yield from _elastic_aggregate(index, sources, queries, filters, aggregations,
                                       runtime_mappings=runtime_mappings, after_key=after_key)
 
 
-def _aggregate_results(index: str, axes: List[BoundAxis], queries: Mapping[str, str],
+def _aggregate_results(index: Union[str, List[str]], axes: List[BoundAxis], queries: Mapping[str, str],
                        filters: Optional[Mapping[str, Mapping]], aggregations: List[BoundAggregation]) -> Iterable[tuple]:
     if not axes:
         # No axes, so return aggregations (or total count) only
@@ -196,7 +199,8 @@ def _aggregate_results(index: str, axes: List[BoundAxis], queries: Mapping[str, 
             count, results = _bare_aggregate(index, queries, filters, aggregations)
             yield (count,) + tuple(a.get_value(results) for a in aggregations)
         else:
-            result = es().count(index=index, body=build_body(queries=queries, filters=filters))
+            result = es().count(index=index if isinstance(index, str) else ",".join(index),
+                                body=build_body(queries=queries, filters=filters))
             yield result['count'],
     elif any(ax.field == "_query" for ax in axes):
         # Strip off first axis and run separate aggregation for each query
@@ -218,7 +222,7 @@ def _aggregate_results(index: str, axes: List[BoundAxis], queries: Mapping[str, 
             yield row
 
 
-def query_aggregate(index: str, axes: Sequence[Axis] = None, aggregations: Sequence[Aggregation] = None, *,
+def query_aggregate(index: Union[str, List[str]], axes: Sequence[Axis] = None, aggregations: Sequence[Aggregation] = None, *,
                     queries: Union[Mapping[str, str], Sequence[str]] = None,
                     filters: Mapping[str, Mapping] = None) -> AggregateResult:
     """

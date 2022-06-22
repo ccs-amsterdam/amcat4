@@ -64,6 +64,7 @@ def get_documents(index: str,
 
     Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     """
+    indices = index.split(",")
     args = {}
     sort = sort and [{x.replace(":desc", ""): "desc"} if x.endswith(":desc") else x
                      for x in sort.split(",")]
@@ -87,7 +88,7 @@ def get_documents(index: str,
                 if f not in filters:
                     filters[f] = {'values': []}
                 filters[f]['values'].append(v)
-    r = query.query_documents(index, fields=fields, queries=q, filters=filters, sort=sort, **args)
+    r = query.query_documents(indices, fields=fields, queries=q, filters=filters, sort=sort, **args)
     if r is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No results")
     return r.as_dict()
@@ -172,13 +173,14 @@ def query_documents_post(
     """
     # TODO check user rights on index
     # Standardize fields, queries and filters to their most versatile format
+    indices = index.split(",")
     if fields:
         # to array format: fields: [field1, field2]
         if isinstance(fields, str):
             fields = [fields]
     queries = _process_queries(queries)
     filters = dict(_process_filters(filters))
-    r = query.query_documents(index, queries=queries, filters=filters, fields=fields,
+    r = query.query_documents(indices, queries=queries, filters=filters, fields=fields,
                               sort=sort, per_page=per_page, page=page, scroll_id=scroll_id, scroll=scroll,
                               annotations=annotations, highlight=highlight)
     if r is None:
@@ -228,6 +230,7 @@ def query_aggregate_post(
     Returns a JSON object {data: [{axis1, ..., n, aggregate1, ...}, ...], meta: {axes: [...], aggregations: [...]}
     """
     # TODO check user rights on index
+    indices = index.split(",")
     _axes = [Axis(**x.dict()) for x in axes] if axes else []
     _aggregations = [Aggregation(**x.dict()) for x in aggregations] if aggregations else []
     if not (_axes or _aggregations):
@@ -235,7 +238,7 @@ def query_aggregate_post(
                             detail='Aggregation needs at least one axis or aggregation')
     queries = _process_queries(queries)
     filters = dict(_process_filters(filters))
-    results = aggregate.query_aggregate(index, _axes, _aggregations, queries=queries, filters=filters)
+    results = aggregate.query_aggregate(indices, _axes, _aggregations, queries=queries, filters=filters)
     return {"meta": {"axes": [axis.asdict() for axis in results.axes],
                      "aggregations": [a.asdict() for a in results.aggregations]},
             "data": list(results.as_dicts())}

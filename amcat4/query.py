@@ -143,8 +143,6 @@ def query_documents(index: Union[str, Sequence[str]], queries: Union[Mapping[str
     :param kwargs: Additional elements passed to Elasticsearch.search()
     :return: a QueryResult, or None if there is not scroll result anymore
     """
-    if not isinstance(index, str):
-        index = ",".join(index)
     if scroll or scroll_id:
         # set scroll to default also if scroll_id is given but no scroll time is known
         kwargs['scroll'] = '2m' if (not scroll or scroll is True) else scroll

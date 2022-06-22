@@ -186,7 +186,8 @@ def get_fields(ix: str, _=Depends(authenticated_user)):
 
     Returns a json array of {name, type} objects
     """
-    return elastic.get_fields(ix)
+    indices = ix.split(',')
+    return elastic.get_fields(indices)
 
 
 @app_index.post("/{ix}/fields")
