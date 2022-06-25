@@ -41,6 +41,9 @@ class BoundAxis:
         self.index = index
         self.ftype = "_query" if axis.field == "_query" else field_type(index, axis.field)
 
+    def __repr__(self):
+        return f"<BoundAxis axis.field={self.axis.field} index={self.index}>"
+
     @property
     def field(self):
         return self.axis.field
@@ -203,7 +206,7 @@ def _aggregate_results(index: Union[str, List[str]], axes: List[BoundAxis], quer
                                 body=build_body(queries=queries, filters=filters))
             yield result['count'],
     elif any(ax.field == "_query" for ax in axes):
-        # Strip off first axis and run separate aggregation for each query
+        # Strip off _query axis and run separate aggregation for each query
         i = [ax.field for ax in axes].index("_query")
         _axes = axes[:i] + axes[(i+1):]
         for label, query in queries.items():

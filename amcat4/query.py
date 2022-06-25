@@ -58,12 +58,13 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
             if extra_runtime_mappings:
                 runtime_mappings.update(extra_runtime_mappings)
     if queries:
+        if isinstance(queries, dict):
+            queries = queries.values()
         fs.append(parse_queries(list(queries)))
 
     body: Dict[str, Any] = {"query": {"bool": {"filter": fs}}}
     if runtime_mappings:
         body['runtime_mappings'] = runtime_mappings
-    print(body)
     if highlight is True:
         highlight = {"number_of_fragments": 0}
     elif highlight:
