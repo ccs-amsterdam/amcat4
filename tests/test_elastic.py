@@ -1,6 +1,7 @@
 from amcat4 import elastic
 from amcat4.elastic import get_fields
 from amcat4.index import Index
+from amcat4.query import query_documents
 from tests.conftest import upload
 
 
@@ -32,3 +33,23 @@ def test_update(index_docs):
     assert elastic.get_document(index_docs.name, '0', _source=['annotations']) == {}
     elastic.update_document(index_docs.name, '0', {'annotations': {'x': 3}})
     assert elastic.get_document(index_docs.name, '0', _source=['annotations'])['annotations'] == {'x': 3}
+
+
+def test_add_tag(index_docs):
+    def tags():
+        return {doc['_id']: doc['tag']
+                for doc in query_documents(index_docs.name, fields=["tag"]).data
+                if doc.get('tag')}
+    assert tags() == {}
+    elastic.add_tag(index_docs.name, "tag", "x", ['0', '1'])
+    elastic.refresh(index_docs.name)
+    assert tags() == {'0': ['x'], '1': ['x']}
+    elastic.add_tag(index_docs.name, "tag", "x", ['1', '2'])
+    elastic.refresh(index_docs.name)
+    assert tags() == {'0': ['x'], '1': ['x'], '2': ['x']}
+    elastic.add_tag(index_docs.name, "tag", "y", ['2', '3'])
+    elastic.refresh(index_docs.name)
+    assert tags() == {'0': ['x'], '1': ['x'], '2': ['x', 'y'], '3': ['y']}
+    elastic.remove_tag(index_docs.name, "tag", "x", ['0', '2', '3'])
+    elastic.refresh(index_docs.name)
+    assert tags() == {'1': ['x'], '2': ['y'], '3': ['y']}

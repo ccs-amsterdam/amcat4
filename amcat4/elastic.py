@@ -281,3 +281,40 @@ def index_exists(name: str) -> bool:
     Check if an index with this name exists
     """
     return es().indices.exists(index=name)
+
+
+def _update_by_query(index: str, script: str, query: dict, params: dict = None):
+    body = dict(
+        query=query,
+        script=dict(
+            source=script,
+            lang="painless",
+            params=params or {}
+        )
+    )
+    es().update_by_query(index=index, body=body)
+
+
+ADD_TAG_SCRIPT = """
+    if (ctx._source[params.field] == null) {
+      ctx._source[params.field] = [params.tag]
+    } else if (!ctx._source[params.field].contains(params.tag)) {
+      ctx._source[params.field].add(params.tag)
+    }
+    """
+REMOVE_TAG_SCRIPT = """
+    if (ctx._source[params.field] != null && ctx._source[params.field].contains(params.tag)) {
+      ctx._source[params.field].removeAll([params.tag])
+    }"""
+
+
+def add_tag(index: str, field: str, tag: str, ids: Iterable[str]):
+    """Add this tag to all ids"""
+
+    query = dict(ids={"values": ids})
+    _update_by_query(index, ADD_TAG_SCRIPT, query, params=dict(field=field, tag=tag))
+
+
+def remove_tag(index: str, field: str, tag: str, ids: Iterable[str]):
+    query = dict(ids={"values": ids})
+    _update_by_query(index, REMOVE_TAG_SCRIPT, query, params=dict(field=field, tag=tag))
