@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from typing import Mapping, List, Optional, Iterable, Tuple, Union, Sequence, Dict
+from typing import Mapping, List, Optional, Iterable, Tuple, Union, Sequence, Dict, Literal
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
@@ -283,38 +283,34 @@ def index_exists(name: str) -> bool:
     return es().indices.exists(index=name)
 
 
-def _update_by_query(index: str, script: str, query: dict, params: dict = None):
+def update_by_query(index: str, script: str, query: dict, params: dict = None):
     body = dict(
-        query=query,
+        **query,
         script=dict(
             source=script,
             lang="painless",
             params=params or {}
         )
     )
+    print(json.dumps(body, indent=2))
     es().update_by_query(index=index, body=body)
 
 
-ADD_TAG_SCRIPT = """
+TAG_SCRIPTS = dict(
+    add="""
     if (ctx._source[params.field] == null) {
       ctx._source[params.field] = [params.tag]
     } else if (!ctx._source[params.field].contains(params.tag)) {
       ctx._source[params.field].add(params.tag)
     }
-    """
-REMOVE_TAG_SCRIPT = """
+    """,
+    remove="""
     if (ctx._source[params.field] != null && ctx._source[params.field].contains(params.tag)) {
       ctx._source[params.field].removeAll([params.tag])
-    }"""
+    }""")
 
 
-def add_tag(index: str, field: str, tag: str, ids: Iterable[str]):
-    """Add this tag to all ids"""
-
-    query = dict(ids={"values": ids})
-    _update_by_query(index, ADD_TAG_SCRIPT, query, params=dict(field=field, tag=tag))
-
-
-def remove_tag(index: str, field: str, tag: str, ids: Iterable[str]):
-    query = dict(ids={"values": ids})
-    _update_by_query(index, REMOVE_TAG_SCRIPT, query, params=dict(field=field, tag=tag))
+def update_tag_by_query(index: str, action: Literal["add", "remove"], query: dict, field: str, tag: str):
+    script = TAG_SCRIPTS[action]
+    params = dict(field=field, tag=tag)
+    update_by_query(index, script, query, params)

@@ -32,7 +32,8 @@ def post_json(client: TestClient, url, expected=201, headers=None, user=None, **
     response = client.post(url, headers=build_headers(user, headers), **kargs)
     assert response.status_code == expected, f"POST {url} returned {response.status_code}, expected {expected}\n" \
                                              f"{response.json()}"
-    return response.json()
+    if expected != 204:
+        return response.json()
 
 
 class DateTimeEncoder(json.JSONEncoder):

@@ -36,20 +36,22 @@ def test_update(index_docs):
 
 
 def test_add_tag(index_docs):
+    def q(*ids):
+        return dict(query=dict(ids={"values": ids}))
     def tags():
         return {doc['_id']: doc['tag']
                 for doc in query_documents(index_docs.name, fields=["tag"]).data
                 if doc.get('tag')}
     assert tags() == {}
-    elastic.add_tag(index_docs.name, "tag", "x", ['0', '1'])
+    elastic.update_tag_by_query(index_docs.name, "add",  q('0', '1'), "tag", "x")
     elastic.refresh(index_docs.name)
     assert tags() == {'0': ['x'], '1': ['x']}
-    elastic.add_tag(index_docs.name, "tag", "x", ['1', '2'])
+    elastic.update_tag_by_query(index_docs.name, "add", q('1', '2'), "tag", "x")
     elastic.refresh(index_docs.name)
     assert tags() == {'0': ['x'], '1': ['x'], '2': ['x']}
-    elastic.add_tag(index_docs.name, "tag", "y", ['2', '3'])
+    elastic.update_tag_by_query(index_docs.name, "add", q('2', '3'), "tag", "y")
     elastic.refresh(index_docs.name)
     assert tags() == {'0': ['x'], '1': ['x'], '2': ['x', 'y'], '3': ['y']}
-    elastic.remove_tag(index_docs.name, "tag", "x", ['0', '2', '3'])
+    elastic.update_tag_by_query(index_docs.name, "remove", q('0', '2', '3'), "tag", "x")
     elastic.refresh(index_docs.name)
     assert tags() == {'1': ['x'], '2': ['y'], '3': ['y']}

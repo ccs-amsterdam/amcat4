@@ -1,3 +1,5 @@
+from amcat4.elastic import refresh
+from amcat4.query import query_documents
 from tests.conftest import upload
 from tests.tools import get_json, post_json, dictset
 
@@ -112,3 +114,19 @@ def test_aggregate_datemappings(client, index_docs, user):
     assert [x['name'] for x in r['meta']['axes']] == ["date_monthnr", "date_dayofmonth"]
     assert r['data'] == [{'date_monthnr': 1, 'date_dayofmonth': 1, 'n': 3},
                          {'date_monthnr': 2, 'date_dayofmonth': 1, 'n': 1}]
+
+
+def test_query_tags(client, index_docs, user):
+    def tags():
+        return {doc['_id']: doc['tag']
+                for doc in query_documents(index_docs.name, fields=["tag"]).data
+                if doc.get('tag')}
+    assert tags() == {}
+    post_json(client, f"/index/{index_docs.name}/tags_update", user=user, expected=204,
+              json=dict(action="add", field="tag", tag="x", filters={'cat': 'a'}))
+    refresh(index_docs.name)
+    assert tags() == {'0': ['x'], '1': ['x'], '2': ['x']}
+    post_json(client, f"/index/{index_docs.name}/tags_update", user=user, expected=204,
+              json=dict(action="remove", field="tag", tag="x", queries=["text"]))
+    refresh(index_docs.name)
+    assert tags() == {'2': ['x']}

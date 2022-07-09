@@ -4,10 +4,10 @@ All things query
 from math import ceil
 from re import finditer
 from re import sub
-from typing import Mapping, Iterable, Optional, Union, Sequence, Any, Dict, List, Tuple
+from typing import Mapping, Iterable, Optional, Union, Sequence, Any, Dict, List, Tuple, Literal
 
 from .date_mappings import mappings
-from .elastic import es
+from .elastic import es, update_tag_by_query
 
 
 def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: Union[bool, dict] = False):
@@ -227,3 +227,11 @@ def extract_highlight_span(text: str, highlight: str):
         offset = trimmed_offset + m.start(0) - tagsize*i
         length = len(m.group(0)) - tagsize
         yield dict(offset=offset, length=length)
+
+
+def update_tag_query(index: Union[str, Sequence[str]], action: Literal["add", "remove"],
+                     field: str, tag: str,
+                     queries: Union[Mapping[str,  str], Iterable[str]] = None,
+                     filters: Mapping[str, Mapping] = None):
+    body = build_body(queries and queries.values(), filters)
+    update_tag_by_query(index, action, body, field, tag)

@@ -1,8 +1,8 @@
 """API Endpoints for querying."""
 
-from typing import Dict, List, Optional, Any, Union, Iterable, Tuple
+from typing import Dict, List, Optional, Any, Union, Iterable, Tuple, Literal
 
-from fastapi import APIRouter, HTTPException, status, Request, Query, Depends
+from fastapi import APIRouter, HTTPException, status, Request, Query, Depends, Response
 from fastapi.params import Body
 from pydantic.main import BaseModel
 
@@ -10,6 +10,7 @@ from amcat4 import query, aggregate
 from amcat4.aggregate import Axis, Aggregation
 from amcat4.api.auth import authenticated_user
 from amcat4.auth import User
+from amcat4.query import update_tag_query
 
 app_query = APIRouter(
     prefix="/index",
@@ -242,3 +243,25 @@ def query_aggregate_post(
     return {"meta": {"axes": [axis.asdict() for axis in results.axes],
                      "aggregations": [a.asdict() for a in results.aggregations]},
             "data": list(results.as_dicts())}
+
+
+@app_query.post("/{index}/tags_update", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def query_update_tags(
+    index: str,
+    action: Literal["add", "remove"] = Body(None, description="Action (add or remove) on tags"),
+    field: str = Body(None, description="Tag field to update"),
+    tag: str = Body(None, description="Tag to add or remove"),
+    queries: Optional[Union[str, List[str], Dict[str, str]]] = Body(
+        None, description="Query/Queries to run. Value should be a single query string, a list of query strings, "
+                          "or a dict of {'label': 'query'}"
+    ),
+    filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = Body(
+        None, description="Field filters, should be a dict of field names to filter specifications,"
+                          "which can be either a value, a list of values, or a FilterSpec dict"),
+    user: User = Depends(authenticated_user),
+):
+    indices = index.split(",")
+    queries = _process_queries(queries)
+    filters = dict(_process_filters(filters))
+    update_tag_query(indices, action, field, tag, queries, filters)
+    return
