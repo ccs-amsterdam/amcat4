@@ -292,7 +292,6 @@ def update_by_query(index: str, script: str, query: dict, params: dict = None):
             params=params or {}
         )
     )
-    print(json.dumps(body, indent=2))
     es().update_by_query(index=index, body=body)
 
 

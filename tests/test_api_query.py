@@ -130,3 +130,7 @@ def test_query_tags(client, index_docs, user):
               json=dict(action="remove", field="tag", tag="x", queries=["text"]))
     refresh(index_docs.name)
     assert tags() == {'2': ['x']}
+    post_json(client, f"/index/{index_docs.name}/tags_update", user=user, expected=204,
+              json=dict(action="add", field="tag", tag="y", ids=["1", "2"]))
+    refresh(index_docs.name)
+    assert tags() == {'1': ['y'], '2': ['x', 'y']}

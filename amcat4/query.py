@@ -10,7 +10,8 @@ from .date_mappings import mappings
 from .elastic import es, update_tag_by_query
 
 
-def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: Union[bool, dict] = False):
+def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight: Union[bool, dict] = False,
+               ids: Iterable[str] = None):
     def parse_filter(field, filter) -> Tuple[Mapping, Mapping]:
         filter = filter.copy()
         extra_runtime_mappings = {}
@@ -47,9 +48,8 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
             return parse_query(list(qs)[0])
         else:
             return {"bool": {"should": [parse_query(q) for q in qs]}}
-    if not queries and not filters:
+    if not (queries or filters or ids):
         return {'query': {'match_all': {}}}
-
     fs, runtime_mappings = [], {}
     if filters:
         for field, filter in filters.items():
@@ -61,7 +61,8 @@ def build_body(queries: Iterable[str] = None, filters: Mapping = None, highlight
         if isinstance(queries, dict):
             queries = queries.values()
         fs.append(parse_queries(list(queries)))
-
+    if ids:
+        fs.append({"ids": {"values": list(ids)}})
     body: Dict[str, Any] = {"query": {"bool": {"filter": fs}}}
     if runtime_mappings:
         body['runtime_mappings'] = runtime_mappings
@@ -200,6 +201,8 @@ def query_annotations(index: str, id: str, queries: Mapping[str,  str]) -> Itera
             continue
         for field, highlights in hit[0]['highlight'].items():
             text = hit[0]["_source"][field]
+            if isinstance(text, list):
+                continue
             for span in extract_highlight_span(text, highlights[0]):
                 span['variable'] = 'query'
                 span['value'] = label
@@ -232,6 +235,8 @@ def extract_highlight_span(text: str, highlight: str):
 def update_tag_query(index: Union[str, Sequence[str]], action: Literal["add", "remove"],
                      field: str, tag: str,
                      queries: Union[Mapping[str,  str], Iterable[str]] = None,
-                     filters: Mapping[str, Mapping] = None):
-    body = build_body(queries and queries.values(), filters)
+                     filters: Mapping[str, Mapping] = None,
+                     ids: Sequence[str] = None):
+    """Add or remove tags using a query"""
+    body = build_body(queries and queries.values(), filters, ids=ids)
     update_tag_by_query(index, action, body, field, tag)

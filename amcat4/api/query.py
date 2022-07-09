@@ -258,10 +258,16 @@ def query_update_tags(
     filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = Body(
         None, description="Field filters, should be a dict of field names to filter specifications,"
                           "which can be either a value, a list of values, or a FilterSpec dict"),
+    ids: Optional[Union[str, List[str]]] = Body(None, description="Document IDs of documents to update"),
     user: User = Depends(authenticated_user),
 ):
+    """
+    Add or remove tags by query or by id
+    """
     indices = index.split(",")
     queries = _process_queries(queries)
     filters = dict(_process_filters(filters))
-    update_tag_query(indices, action, field, tag, queries, filters)
+    if isinstance(ids, (str, int)):
+        ids = [ids]
+    update_tag_query(indices, action, field, tag, queries, filters, ids)
     return
