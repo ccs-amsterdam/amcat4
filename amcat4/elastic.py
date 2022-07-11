@@ -246,7 +246,7 @@ def get_fields(index: Union[str, Sequence[str]]):
         for f, ftype in get_index_fields(ix).items():
             if f in result:
                 if result[f] != ftype:
-                    result[f] = {"type": "keyword", "meta": {"merged": True}}
+                    result[f] = {"name": f, "type": "keyword", "meta": {"merged": True}}
             else:
                 result[f] = ftype
     return result
