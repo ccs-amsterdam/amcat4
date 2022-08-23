@@ -159,8 +159,8 @@ def _bare_aggregate(index: str, queries, filters, aggregations: Sequence[BoundAg
     Returns a tuple of doc count and aggregegations (doc_count, {metric: value})
     """
     query = build_body(queries=queries, filters=filters) if filters or queries else  {"match_all": {}}
-    aresult = es().search(query=query, index=index, size=0, aggregations=aggregation_dsl(aggregations), )
-    cresult = es().count(body={'query': query}, index=index)
+    aresult = es().search(query=query['query'], index=index, size=0, aggregations=aggregation_dsl(aggregations), )
+    cresult = es().count(body=query, index=index)
     return cresult['count'], aresult['aggregations']
 
 
