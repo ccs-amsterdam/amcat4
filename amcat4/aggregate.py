@@ -158,12 +158,10 @@ def _bare_aggregate(index: str, queries, filters, aggregations: Sequence[BoundAg
     Aggregate without sources/group_by.
     Returns a tuple of doc count and aggregegations (doc_count, {metric: value})
     """
-    kargs = {}
-    if filters or queries:
-        q = build_body(queries=queries, filters=filters)
-        kargs["query"] = q["query"]
-    result = es().search(index=index, size=0, aggregations=aggregation_dsl(aggregations), **kargs)
-    return result["hits"]["total"]["value"], result['aggregations']
+    query = build_body(queries=queries, filters=filters) if filters or queries else  {"match_all": {}}
+    aresult = es().search(query=query, index=index, size=0, aggregations=aggregation_dsl(aggregations), )
+    cresult = es().count(body={'query': query}, index=index)
+    return cresult['count'], aresult['aggregations']
 
 
 def _elastic_aggregate(index: Union[str, List[str]], sources, queries, filters, aggregations: Sequence[BoundAggregation],
