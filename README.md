@@ -17,29 +17,44 @@ AmCAT requires an elasticsearch instance. The easiest way to run one for develop
 sudo docker run --name elastic7 -dp 9200:9200 -p 9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:7.17.2
 ```
 
-## Installing from PyPi
-
-To install and run AmCAT4 from pypi simply run:
-
-```
-pip3 install amcat4
-python3 -m amcat4 run
-```
-
-This will run the API at (default) locahost port 5000. 
-To see documentation, visit http://localhost:5000/docs (Swagger, which comes with interactive "try now" mode) or http://localhost:5000/redoc (redoc, looks somewhat nicer)
-
 ## Installing from source
 
-To install AmCAT4 from github and create a virutal environment, run:
+To install AmCAT4 from github and create a virtual environment, run:
 
 ```
 git clone https://github.com/ccs-amsterdam/amcat4
 cd amcat4
 python3 -m venv env
 env/bin/pip install -e .[dev]
+```
+
+Before being able to do anything useful through the API, you will need at least one user which can be created with the command below:
+
+```
+env/bin/python amcat4 create-admin --username admin --password supergeheim
+```
+
+Now, you can run the backend server:
+
+```
 env/bin/python -m amcat4 run
 ```
+
+This will run the API at (default) locahost port 5000. 
+To see documentation, visit http://localhost:5000/docs (Swagger, which comes with interactive "try now" mode) or http://localhost:5000/redoc (redoc, looks somewhat nicer)
+
+Of course, this new instance is still completely empty, so there is little to see. 
+If you want to add some test data, you can use the `create-test-data` command, which will upload some State of the Union speeches:
+
+```
+env/bin/python -m amcat4 create-test-index
+```
+
+(Note: if you get an SSL error, especially on a mac, try running `env/bin/pip install -U certifi`
+
+
+
+## Unit tests
 
 To run the unit tests and linting:
 
