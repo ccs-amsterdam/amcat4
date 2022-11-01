@@ -52,7 +52,13 @@ env/bin/python -m amcat4 create-test-index
 
 (Note: if you get an SSL error, especially on a mac, try running `env/bin/pip install -U certifi`
 
+## Using AmCAT
 
+Congrats, you've just installed the AmCAT backend! 
+
+To use this, you probably want to look at either the [react-based web client](https://github.com/ccs-amsterdam/amcat4client) or the [python API bindings](https://github.com/ccs-amsterdam/amcat4apiclient) or [R API bindings](https://github.com/ccs-amsterdam/amcat4r)
+
+(there will also be an open client soon, stay tuned)
 
 ## Unit tests
 
