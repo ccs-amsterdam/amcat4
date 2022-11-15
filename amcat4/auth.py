@@ -26,7 +26,6 @@ class Role(IntEnum):
     WRITER = 30
     ADMIN = 40
 
-
 def now() -> int:
     """Current time in seconds since epoch"""
     return int(datetime.now().timestamp())

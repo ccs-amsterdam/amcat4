@@ -4,7 +4,7 @@
 
 # AmCAT4
 
-Server for document management and automatic text analysis, developed as part of [OPTED](https://opted.eu). 
+Server for document management and automatic text analysis, developed as part of [OPTED](https://opted.eu).
 [Learn more](https://opted.eu/fileadmin/user_upload/k_opted/OPTED_deliverable_D7.1.pdf)
 
 See also the [API Documentation](apidoc.md)
@@ -28,10 +28,10 @@ python3 -m venv env
 env/bin/pip install -e .[dev]
 ```
 
-Before being able to do anything useful through the API, you will need at least one user which can be created with the command below:
+Before being able to do anything useful through the API, you will need to run the following command to create a .env file that contains environment variables and generates a random secret for signing the JSON Web Tokens (so also make sure to keep this file secret). Here you also need to provide the email address of the admin user.
 
 ```
-env/bin/python amcat4 create-admin --username admin --password supergeheim
+env/bin/python amcat4 create-env admin@something.com
 ```
 
 Now, you can run the backend server:
@@ -40,10 +40,10 @@ Now, you can run the backend server:
 env/bin/python -m amcat4 run
 ```
 
-This will run the API at (default) locahost port 5000. 
+This will run the API at (default) locahost port 5000.
 To see documentation, visit http://localhost:5000/docs (Swagger, which comes with interactive "try now" mode) or http://localhost:5000/redoc (redoc, looks somewhat nicer)
 
-Of course, this new instance is still completely empty, so there is little to see. 
+Of course, this new instance is still completely empty, so there is little to see.
 If you want to add some test data, you can use the `create-test-data` command, which will upload some State of the Union speeches:
 
 ```
@@ -54,7 +54,7 @@ env/bin/python -m amcat4 create-test-index
 
 ## Using AmCAT
 
-Congrats, you've just installed the AmCAT backend! 
+Congrats, you've just installed the AmCAT backend!
 
 To use this, you probably want to look at either the [react-based web client](https://github.com/ccs-amsterdam/amcat4client) or the [python API bindings](https://github.com/ccs-amsterdam/amcat4apiclient) or [R API bindings](https://github.com/ccs-amsterdam/amcat4r)
 
@@ -72,6 +72,3 @@ env/bin/pytest
 Please make sure to run these tests before making any commits!
 
 (obviously, feel free to place your virtual environment in any other location, this is just how I set things up)
-
-
-

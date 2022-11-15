@@ -7,7 +7,8 @@ import logging
 import sys
 import urllib.request
 import argparse
-
+import secrets
+import os
 import uvicorn
 
 from amcat4 import auth
@@ -20,6 +21,11 @@ from amcat4.index import create_index, Index
 
 SOTU_INDEX = "state_of_the_union"
 
+ENV_TEMPLATE = """\
+SECRET_KEY={secret}
+ADMIN_EMAIL={admin_email}
+MIDDLECAT_HOST=https://middlecat.netlify.app
+"""
 
 def upload_test_data() -> Index:
     url = "https://raw.githubusercontent.com/ccs-amsterdam/example-text-data/master/sotu.csv"
@@ -44,8 +50,17 @@ def upload_test_data() -> Index:
 
 def run(args):
     logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}")
-    uvicorn.run(app, host="0.0.0.0", port=args.port)
+    uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port)
 
+def create_env(args):
+    if os.path.exists('.env'):
+        raise Exception('.env already exists')
+    env = ENV_TEMPLATE.format(admin_email=args.admin_email, 
+                              secret=secrets.token_hex(nbytes=32))
+    with open('.env', 'w') as f:
+        f.write(env)
+    os.chmod('.env', 0o600)
+    print('Created .env')
 
 def create_test_index(_args):
     if ix := Index.get_or_none(Index.name == SOTU_INDEX):
@@ -75,6 +90,10 @@ p.add_argument('--no-debug', action='store_true', dest='nodebug',
                help='Disable debug mode (useful for testing downstream clients)')
 p.add_argument('-p', '--port', help='Port', default=5000)
 p.set_defaults(func=run)
+
+p = subparsers.add_parser('create-env', help='Create the .env file with a random secret key')
+p.add_argument("admin_email", help="The email address of the admin user.")
+p.set_defaults(func=create_env)
 
 p = subparsers.add_parser('create-test-index', help=f'Create the {SOTU_INDEX} test index')
 p.set_defaults(func=create_test_index)

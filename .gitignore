@@ -1,5 +1,8 @@
 *.py[cod]
 
+# .env environment variables
+.env
+
 # C extensions
 *.so
 
@@ -54,6 +57,7 @@ navigator/media/static
 static/components/
 env
 .eggs
+
 
 # R package library
 amcat/scripts/query/r_plugins/package_library

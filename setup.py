@@ -23,6 +23,8 @@ setup(
         "python-multipart",
         "bcrypt",
         "peewee",
+        "python-dotenv",
+        "requests",
         "authlib",
         "pydantic[email]",
         "amcat4annotator>=0.25"
