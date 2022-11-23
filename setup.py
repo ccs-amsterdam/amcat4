@@ -18,7 +18,7 @@ setup(
         "Topic :: Text Processing",
     ],
     install_requires=[
-        "fastapi",
+        "fastapi[all]",
         "elasticsearch~=7.16",
         "python-multipart",
         "bcrypt",
