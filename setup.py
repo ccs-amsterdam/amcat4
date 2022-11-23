@@ -27,15 +27,15 @@ setup(
         "requests",
         "authlib",
         "pydantic[email]",
-        "amcat4annotator>=0.25"
+        "amcat4annotator>=0.25",
+        'uvicorn',
+        'requests'
     ],
     extras_require={
         'dev': [
-            'uvicorn',
             'pytest',
             'mypy',
             'flake8',
-            'requests'
         ]
     },
 )
