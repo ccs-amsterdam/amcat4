@@ -38,10 +38,12 @@ def test_update(index_docs):
 def test_add_tag(index_docs):
     def q(*ids):
         return dict(query=dict(ids={"values": ids}))
+
     def tags():
         return {doc['_id']: doc['tag']
                 for doc in query_documents(index_docs.name, fields=["tag"]).data
                 if doc.get('tag')}
+
     assert tags() == {}
     elastic.update_tag_by_query(index_docs.name, "add",  q('0', '1'), "tag", "x")
     elastic.refresh(index_docs.name)

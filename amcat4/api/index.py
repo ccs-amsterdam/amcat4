@@ -276,6 +276,7 @@ def remove_index_user(ix: str, email: str, user: User = Depends(authenticated_us
     ir.index.set_role(ir.user, None)
     return {"user": email, "index": ix, "role": None}
 
+
 @app_index.get("/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def refresh_index(ix: str):
     elastic.refresh(ix)

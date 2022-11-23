@@ -1,18 +1,18 @@
 """
 AmCAT4 REST API
 """
+import argparse
 import csv
 import io
 import logging
+import os
+import secrets
 import sys
 import urllib.request
-import argparse
-import secrets
-import os
+
 import uvicorn
 
 from amcat4 import auth
-from amcat4.api import app
 from amcat4.auth import Role, User
 from amcat4.config import settings
 from amcat4.db import initialize_if_needed
@@ -26,6 +26,7 @@ SECRET_KEY={secret}
 ADMIN_EMAIL={admin_email}
 MIDDLECAT_HOST=https://middlecat.netlify.app
 """
+
 
 def upload_test_data() -> Index:
     url = "https://raw.githubusercontent.com/ccs-amsterdam/example-text-data/master/sotu.csv"
@@ -52,15 +53,17 @@ def run(args):
     logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}")
     uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port)
 
+
 def create_env(args):
     if os.path.exists('.env'):
         raise Exception('.env already exists')
-    env = ENV_TEMPLATE.format(admin_email=args.admin_email, 
+    env = ENV_TEMPLATE.format(admin_email=args.admin_email,
                               secret=secrets.token_hex(nbytes=32))
     with open('.env', 'w') as f:
         f.write(env)
     os.chmod('.env', 0o600)
     print('Created .env')
+
 
 def create_test_index(_args):
     if ix := Index.get_or_none(Index.name == SOTU_INDEX):

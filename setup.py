@@ -27,7 +27,6 @@ setup(
         "requests",
         "authlib",
         "pydantic[email]",
-        "amcat4annotator>=0.25",
         'uvicorn',
         'requests'
     ],

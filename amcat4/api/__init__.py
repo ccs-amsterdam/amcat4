@@ -6,12 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from amcat4.api.index import app_index
 from amcat4.api.query import app_query
 from amcat4.api.users import app_users
-from amcat4.api.middlecat import app_middlecat
-
-from amcat4annotator.api.users import app_annotator_users
-from amcat4annotator.api.codingjob import app_annotator_codingjob
-from amcat4annotator.api.guest import app_annotator_guest
-
 
 from amcat4.db import initialize_if_needed
 from amcat4.elastic import setup_elastic
@@ -36,10 +30,6 @@ app = FastAPI(
 app.include_router(app_users)
 app.include_router(app_index)
 app.include_router(app_query)
-app.include_router(app_middlecat)
-app.include_router(app_annotator_users, prefix='/annotator')
-app.include_router(app_annotator_codingjob, prefix='/annotator')
-app.include_router(app_annotator_guest, prefix='/annotator')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
