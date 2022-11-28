@@ -25,15 +25,12 @@ from peewee import Model, CharField, IntegerField, ForeignKeyField
 
 from amcat4 import elastic
 from amcat4.auth import Role, User
-from amcat4.db import db
 
 
 class Index(Model):
     name = CharField(unique=True)
     guest_role = IntegerField(null=True)
 
-    class Meta:
-        database = db
 
     def delete_index(self, delete_from_elastic=True):
         """
@@ -84,7 +81,6 @@ class IndexRole(Model):
     role = IntegerField()
 
     class Meta:
-        database = db
         indexes = (
             (('user', 'index'), True),  # unique constraint user & index
         )

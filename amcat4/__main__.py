@@ -15,7 +15,6 @@ import uvicorn
 from amcat4 import auth
 from amcat4.auth import Role, User
 from amcat4.config import settings
-from amcat4.db import initialize_if_needed
 from amcat4.elastic import setup_elastic, upload_documents
 from amcat4.index import create_index, Index
 
@@ -85,7 +84,7 @@ def create_admin(args):
 
 
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
-parser.add_argument("--elastic", help="Elasticsearch host", default=settings.amcat4_elastic_host)
+parser.add_argument("--elastic", help="Elasticsearch host", default=settings.elastic_host)
 
 subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
 p = subparsers.add_parser('run', help='Run the backend API in development mode')
@@ -112,6 +111,5 @@ logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=lo
 es_logger = logging.getLogger('elasticsearch')
 es_logger.setLevel(logging.WARNING)
 setup_elastic(args.elastic)
-initialize_if_needed()
 
 args.func(args)

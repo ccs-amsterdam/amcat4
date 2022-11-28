@@ -40,7 +40,7 @@ def setup_elastic(*hosts):
     Check whether we can connect with elastic
     """
     if not hosts:
-        hosts = settings.amcat4_elastic_host
+        hosts = settings.elastic_host
     global _ES
     if _ES is None:
         logging.debug("Connecting with elasticsearch at {}".format(hosts or "(default: localhost:9200)"))

@@ -15,8 +15,6 @@ from authlib.jose import JsonWebSignature
 from authlib.jose.errors import DecodeError
 from peewee import Model, CharField, IntegerField
 
-from amcat4.db import db
-
 SECRET_KEY = "NOT VERY SECRET YET!"
 
 
@@ -36,9 +34,6 @@ class User(Model):
     email = CharField(unique=True)
     password = CharField()
     global_role = IntegerField(null=True)
-
-    class Meta:
-        database = db
 
     def create_token(self, days_valid: int = 7) -> str:
         """
