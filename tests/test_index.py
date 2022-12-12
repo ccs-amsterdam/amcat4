@@ -2,41 +2,38 @@ import pytest
 
 from amcat4 import elastic
 from amcat4.auth import Role
-from amcat4.index import create_index, list_all_indices, list_known_indices, delete_index, refresh
+from amcat4.index import create_index, list_all_indices, list_known_indices, delete_index, refresh, register_index, \
+    deregister_index
+from amcat4.elastic import es
 
-
-def test_create_index():
+def test_create_delete_index():
     index = "amcat4_unittest"
     delete_index(index, ignore_missing=True)
-
     assert index not in list_all_indices()
     assert index not in list_known_indices()
     create_index(index)
     assert index in list_all_indices()
     assert index in list_known_indices()
+    # Cannot create or register duplicate index
+    with pytest.raises(Exception):
+        create_index(index.name)
+    with pytest.raises(Exception):
+        register_index(index.name)
+    delete_index(index)
+    assert index not in list_all_indices()
+    assert index not in list_known_indices()
 
-    assert 1==2
-    return
-    assert elastic.index_exists(index.name) is True
-    assert index.name in elastic._list_indices()
-    with pytest.raises(Exception):
-        create_index(index.name, create_in_elastic=True)  # can't create duplicate index
-    with pytest.raises(Exception):
-        create_index(index.name, create_in_elastic=False)  # can't create duplicate index
 
-    # De-register the index. It should still exist in elastic, so we can't re-create it
-    index.delete_index(delete_from_elastic=False)
-    assert elastic.index_exists(index.name) is True
-    with pytest.raises(Exception):
-        create_index(index.name, create_in_elastic=True)  # can't create duplicate index
-
-    # Re-register the index and delete it. It should now be really gone
-    ix = create_index(index.name, create_in_elastic=False)
-    ix.delete_index(delete_from_elastic=True)
-    assert elastic.index_exists(index.name) is False
-    with pytest.raises(Exception):
-        create_index(index.name, create_in_elastic=False)
-    assert index.name not in elastic._list_indices()
+def test_register_index():
+    index = "amcat4_unittest"
+    delete_index(index, ignore_missing=True)
+    es().indices.create(index=index)
+    assert index in list_all_indices()
+    assert index not in list_known_indices()
+    register_index(index)
+    assert index in list_known_indices()
+    deregister_index(index)
+    assert index not in list_known_indices()
 
 
 def test_roles(index, guest_index, user, admin):

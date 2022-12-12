@@ -42,13 +42,23 @@ def list_all_indices(exclude_system_index=True) -> List[str]:
 
 def create_index(name: str, guest_role=None) -> None:
     """
-    Create a new index
+    Create a new index in elasticsearch and register it with this AmCAT instance
     """
-    settings = get_settings()
+    es().indices.create(index=name, mappings={'properties': DEFAULT_MAPPING})
+    register_index(name, guest_role=guest_role)
+
+
+def register_index(name: str, guest_role=None) -> None:
+    """
+    Register an existing elastic index with this AmCAT instance, i.e. create an entry in the system index
+    """
     if not es().indices.exists(index=name):
-        es().indices.create(index=name, mappings={'properties': DEFAULT_MAPPING})
-    es().index(index=settings.system_index, id=name, document={guest_role: guest_role})
-    refresh(settings.system_index)
+        raise ValueError(f"Index {name} does not exist")
+    system_index = get_settings().system_index
+    if es().exists(index=system_index, id=name):
+        raise ValueError(f"Index {name} is already registered")
+    es().index(index=system_index, id=name, document={guest_role: guest_role})
+    refresh(system_index)
 
 
 def list_known_indices() -> Set[str]:
@@ -76,7 +86,17 @@ def index_exists(name: str) -> bool:
 
 def delete_index(name: str, ignore_missing=False) -> None:
     """
-    Delete an index
+    Delete an index from AmCAT and deregister it from this instance
+    :param name: The name of the index (without prefix)
+    :param ignore_missing: If True, do not throw exception if index does not exist
+    """
+    deregister_index(name, ignore_missing=ignore_missing)
+    es().indices.delete(index=name, ignore=([404] if ignore_missing else []))
+
+
+def deregister_index(name: str, ignore_missing=False) -> None:
+    """
+    Deregister an existing elastic index from this AmCAT instance, i.e. remove the entry in the system index
     :param name: The name of the index (without prefix)
     :param ignore_missing: If True, do not throw exception if index does not exist
     """
@@ -85,5 +105,5 @@ def delete_index(name: str, ignore_missing=False) -> None:
     except NotFoundError:
         if not ignore_missing:
             raise
-
-    es().indices.delete(index=name, ignore=([404] if ignore_missing else []))
+    else:
+        refresh(get_settings().system_index)
