@@ -5,25 +5,26 @@ from elasticsearch.exceptions import NotFoundError
 
 from fastapi.testclient import TestClient
 
-from amcat4.elastic import setup_elastic
-
-# Set db to shared in-memory database *before* importing amcat4. Maybe not the most elegant solution...
-from amcat4.config import settings
-settings.amcat4_db_name = "testme.db"
-
-
 from amcat4 import elastic, api  # noqa: E402
-from amcat4.db import initialize_if_needed  # noqa: E402
 from amcat4.auth import create_user, Role, User  # noqa: E402
-from amcat4.index import create_index, Index  # noqa: E402
-
-initialize_if_needed()
+from amcat4.config import get_settings
+from amcat4.elastic import es
 
 UNITS = [{"unit": {"text": "unit1"}},
          {"unit": {"text": "unit2"}, "gold": {"element": "au"}}]
 CODEBOOK = {"foo": "bar"}
 PROVENANCE = {"bar": "foo"}
 RULES = {"ruleset": "crowdcoding"}
+UNITTEST_SYSTEM_INDEX = "amcat4_unittest_system"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def my_setup():
+    # Override system db
+    get_settings().system_index = UNITTEST_SYSTEM_INDEX
+    es.cache_clear()
+    yield None
+    es().indices.delete(index=UNITTEST_SYSTEM_INDEX, ignore=[404])
 
 
 @pytest.fixture()
@@ -78,7 +79,7 @@ def guest_index():
         pass
 
 
-def upload(index: Index, docs: Iterable[dict], **kwargs):
+def upload(index: str, docs: Iterable[dict], **kwargs):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """

@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 
 class Settings(BaseSettings):
     elastic_host: str = "http://localhost:9200"
+    system_index = "amcat4_system"
     middlecat_url: str = None
     admin_password: str = None
     config_file: Path = None

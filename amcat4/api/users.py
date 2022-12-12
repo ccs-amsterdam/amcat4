@@ -15,7 +15,6 @@ from pydantic.networks import EmailStr
 
 from amcat4 import auth
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
-from amcat4.api.common import _index
 from amcat4.auth import Role, User, hash_password
 
 app_users = APIRouter(

@@ -10,9 +10,8 @@ from pydantic.config import Extra
 
 from amcat4 import elastic, index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
-from amcat4.api.common import _index, py2dict, get_user_or_404, get_indexrole_or_404
+from amcat4.api.common import py2dict, get_user_or_404, get_indexrole_or_404
 from amcat4.auth import Role, User
-from amcat4.index import Index
 
 app_index = APIRouter(
     prefix="/index",
@@ -21,7 +20,7 @@ app_index = APIRouter(
 RoleType = Literal["ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader"]
 
 
-def index_json(ix: Index):
+def index_json(ix: str):
     """Convert an index object to a standard json form."""
     return {'name': ix.name, 'guest_role': ix.guest_role and Role(ix.guest_role).name}
 

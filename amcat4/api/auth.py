@@ -6,12 +6,11 @@ from fastapi.security import OAuth2PasswordBearer
 
 from amcat4 import auth
 from amcat4.auth import Role, User
-from amcat4.index import Index
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
-def check_role(u: User, role: Role, ix: Index = None):
+def check_role(u: User, role: Role, ix: str = None):
     """Check if the given user have at least the given role (in the index, if given), raise Exception otherwise."""
     if not u:
         raise HTTPException(status_code=401, detail="No authenticated user")

@@ -1,4 +1,6 @@
 """
+Index and authorization management
+
 Encapsulates elasticsearch indices  and provides authorisation through user roles
 
 Authorisation rules:
@@ -19,94 +21,69 @@ Authorisation rules:
 
 Note that these rules are not enforced in this module, they should be enforced by the API!
 """
-from typing import Iterable, Tuple, Optional
+from typing import List, Sequence, Set
 
-from peewee import Model, CharField, IntegerField, ForeignKeyField
+import elasticsearch.helpers
+from elasticsearch import NotFoundError
 
-from amcat4 import elastic
-from amcat4.auth import Role, User
-
-
-class Index(Model):
-    name = CharField(unique=True)
-    guest_role = IntegerField(null=True)
+from amcat4.config import get_settings
+from amcat4.elastic import es, DEFAULT_MAPPING
 
 
-    def delete_index(self, delete_from_elastic=True):
-        """
-        Delete this index
-        :param delete_from_elastic: if True (default), also delete the underlying elastic table
-        """
-        self.delete_instance()
-        if delete_from_elastic:
-            elastic._delete_index(self.name, ignore_missing=True)
-
-    def has_role(self, user: User, role: Role) -> bool:
-        """
-        Checks whether the given User has at least the required Role
-        """
-        ir = IndexRole.get_or_none(IndexRole.user == user, IndexRole.index == self)
-        actual_role = self.guest_role if ir is None else ir.role
-        if not actual_role:
-            return False
-        else:
-            return actual_role and actual_role >= role
-
-    def set_role(self, user: User, role: Optional[Role] = None) -> None:
-        """
-        Sets the role for the given new or existing user; set role to None to remove user from this index.
-        This will create/update/delete the role as needed
-        """
-        ir = IndexRole.get_or_none(IndexRole.user == user, IndexRole.index == self)
-        if ir:
-            if role is None:
-                ir.delete_instance()
-            elif role != ir.role:
-                ir.role = role
-                ir.save()
-        elif role is not None:
-            IndexRole.create(user=user, index=self, role=role)
-
-    def get_roles(self) -> Iterable[Tuple[User, Role]]:
-        """
-        Get all user: Role pairs in this index
-        """
-        for ir in IndexRole.select().where(IndexRole.index == self):
-            yield ir.user, Role(ir.role)
-
-
-class IndexRole(Model):
-    user = ForeignKeyField(User, on_delete="CASCADE")
-    index = ForeignKeyField(Index, on_delete="CASCADE")
-    role = IntegerField()
-
-    class Meta:
-        indexes = (
-            (('user', 'index'), True),  # unique constraint user & index
-        )
-
-
-def create_index(name: str, guest_role: Role = None, create_in_elastic=True, admin: User = None) -> Index:
+def list_all_indices(exclude_system_index=True) -> List[str]:
     """
-    Create a new index in both elastic and amcat4
-    :param name: Name of the new index (in elastic and amcat4)
-    :param guest_role: Guest role for this index, i.e. a user's role if no explicit role is assigned.
-    :param admin: if given, add this User as admin
-    :param create_in_elastic: if True (default), also create a new elastic index
+    List all indices on the connected elastic cluster.
+    You should probably use the methods in amcat4.index rather than this.
     """
-    if Index.select().where(Index.name == name).exists():
-        raise ValueError("Index {name} is already registered".format(**locals()))
-    if create_in_elastic:
-        if elastic.index_exists(name):
-            raise ValueError("Index {name} already exists in elastic".format(**locals()))
-        elastic._create_index(name)
-    elif not elastic.index_exists(name):
-        raise ValueError("Index {name} does not exist in elastic".format(**locals()))
+    result = es().indices.get(index="*")
+    exclude = get_settings().system_index if exclude_system_index else None
+    return [x for x in result.keys() if not (x == exclude)]
 
-    index = Index.create(name=name, guest_role=guest_role)
-    if admin:
-        IndexRole.create(user=admin, index=index, role=Role.ADMIN)
 
-    indices = [i.name for i in Index.select()]
+def create_index(name: str, guest_role=None) -> None:
+    """
+    Create a new index
+    """
+    settings = get_settings()
+    if not es().indices.exists(index=name):
+        es().indices.create(index=name, mappings={'properties': DEFAULT_MAPPING})
+    es().index(index=settings.system_index, id=name, document={guest_role: guest_role})
+    refresh(settings.system_index)
 
-    return index
+
+def list_known_indices() -> Set[str]:
+    """
+    List all known indices, e.g. indices registered in this amcat4 instance
+    """
+    indices = list(elasticsearch.helpers.scan(es(), index=get_settings().system_index))
+    print(indices)
+    return {ix["_id"] for ix in indices}
+
+
+def refresh(index: str):
+    """
+    Refresh the elasticsearch index
+    """
+    es().indices.refresh(index=index)
+
+
+def index_exists(name: str) -> bool:
+    """
+    Check if an index with this name exists
+    """
+    return es().indices.exists(index=name)
+
+
+def delete_index(name: str, ignore_missing=False) -> None:
+    """
+    Delete an index
+    :param name: The name of the index (without prefix)
+    :param ignore_missing: If True, do not throw exception if index does not exist
+    """
+    try:
+        es().delete(index=get_settings().system_index, id=name)
+    except NotFoundError:
+        if not ignore_missing:
+            raise
+
+    es().indices.delete(index=name, ignore=([404] if ignore_missing else []))

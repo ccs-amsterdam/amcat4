@@ -8,9 +8,6 @@ from amcat4.api.info import app_info
 from amcat4.api.query import app_query
 from amcat4.api.users import app_users
 
-from amcat4.elastic import setup_elastic
-
-
 app = FastAPI(
     title="AmCAT4",
     description=__doc__,
