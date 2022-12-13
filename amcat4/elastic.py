@@ -40,6 +40,12 @@ DEFAULT_MAPPING = {
     'url': ES_MAPPINGS['url'],
 }
 
+SYSTEM_MAPPING = {
+    'index': {"type": "keyword"},
+    'email': {"type": "keyword"},
+    'role': {"type": "keyword"},
+}
+
 
 @functools.lru_cache()
 def es() -> Elasticsearch:
@@ -58,21 +64,8 @@ def _setup_elastic():
         raise Exception(f"Cannot connect to elasticsearch server {host}")
     if not elastic.indices.exists(index=settings.system_index):
         logging.info(f"Creating amcat4 system index: {settings.system_index}")
-        fields = {'email': ES_MAPPINGS['keyword'],
-                  'role': ES_MAPPINGS['keyword']}
-        elastic.indices.create(index=settings.system_index, mappings={'properties': fields})
+        elastic.indices.create(index=settings.system_index, mappings={'properties': SYSTEM_MAPPING})
     return elastic
-
-
-def _get_hash(document):
-    """
-    Get the hash for a document
-    """
-    hash_dict = {key: document.get(key) for key in HASH_FIELDS}
-    hash_str = json.dumps(hash_dict, sort_keys=True, ensure_ascii=True).encode('ascii')
-    m = hashlib.sha224()
-    m.update(hash_str)
-    return m.hexdigest()
 
 
 def upload_documents(index: str, documents, mapping: Mapping[str, str] = None) -> List[str]:

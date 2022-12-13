@@ -1,10 +1,11 @@
 """
 Index and authorization management
 
-Encapsulates elasticsearch indices  and provides authorisation through user roles
+Encapsulates elasticsearch indices and provides authorisation through user roles
 
 Authorisation rules:
 - There are 5 increasing levels of authorisation: None, metareader, reader, writer, admin
+- The 'admin' user automatically has admin rights everywhere (or globally?)
 - Users can have a global role and a role on any index. Every index can also have a guest role
 - Global roles:
   - Writers can create new projects and users (with at most their own global role)
@@ -20,14 +21,34 @@ Authorisation rules:
 - An unauthorized user can still get guest roles, so it can see any indices with a guest role
 
 Note that these rules are not enforced in this module, they should be enforced by the API!
+
+Elasticsearch implementation
+- There is a system index (configurable name, default: amcat4_system)
+- This system index contains authorization records: {index, email, role} with id f"{index}|{email}"
+- Index _global defines the global roles of a user
+- Email _guest defubes the guest roles of an index
+- (elasticsearch index names cannot start with _ or contain |)
+- Every index should have a guest role defined (possibly None), i.e. the list of guest roles is the list of indices
 """
-from typing import List, Sequence, Set
+from enum import IntEnum
+from typing import List, Set
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
 
 from amcat4.config import get_settings
 from amcat4.elastic import es, DEFAULT_MAPPING
+
+
+class Role(IntEnum):
+    NONE = 0
+    METAREADER = 10
+    READER = 20
+    WRITER = 30
+    ADMIN = 40
+
+GUEST_USER = "_guest"
+GLOBAL_ROLES = "_global"
 
 
 def list_all_indices(exclude_system_index=True) -> List[str]:
@@ -40,7 +61,7 @@ def list_all_indices(exclude_system_index=True) -> List[str]:
     return [x for x in result.keys() if not (x == exclude)]
 
 
-def create_index(name: str, guest_role=None) -> None:
+def create_index(name: str, guest_role:Role = Role.NONE) -> None:
     """
     Create a new index in elasticsearch and register it with this AmCAT instance
     """
@@ -48,26 +69,30 @@ def create_index(name: str, guest_role=None) -> None:
     register_index(name, guest_role=guest_role)
 
 
-def register_index(name: str, guest_role=None) -> None:
+def register_index(index: str, guest_role:Role = Role.NONE) -> None:
     """
     Register an existing elastic index with this AmCAT instance, i.e. create an entry in the system index
     """
-    if not es().indices.exists(index=name):
-        raise ValueError(f"Index {name} does not exist")
+    if not es().indices.exists(index=index):
+        raise ValueError(f"Index {index} does not exist")
     system_index = get_settings().system_index
-    if es().exists(index=system_index, id=name):
-        raise ValueError(f"Index {name} is already registered")
-    es().index(index=system_index, id=name, document={guest_role: guest_role})
+    if es().exists(index=system_index, id="{name}|_guest"):
+        raise ValueError(f"Index {index} is already registered")
+    es().index(index=system_index, id=index, document=dict(index=index, email='_guest', role=guest_role.name))
     refresh(system_index)
+
+
+def _term_query(field, value):
+    return {"query": {"term": {field: value}}}
 
 
 def list_known_indices() -> Set[str]:
     """
     List all known indices, e.g. indices registered in this amcat4 instance
     """
-    indices = list(elasticsearch.helpers.scan(es(), index=get_settings().system_index))
-    print(indices)
-    return {ix["_id"] for ix in indices}
+    indices = list(elasticsearch.helpers.scan(
+        es(), index=get_settings().system_index, query=_term_query("email", GUEST_USER), fields=["index"], _source=False))
+    return {ix['fields']["index"][0] for ix in indices}
 
 
 def refresh(index: str):
@@ -75,13 +100,6 @@ def refresh(index: str):
     Refresh the elasticsearch index
     """
     es().indices.refresh(index=index)
-
-
-def index_exists(name: str) -> bool:
-    """
-    Check if an index with this name exists
-    """
-    return es().indices.exists(index=name)
 
 
 def delete_index(name: str, ignore_missing=False) -> None:
@@ -96,14 +114,18 @@ def delete_index(name: str, ignore_missing=False) -> None:
 
 def deregister_index(name: str, ignore_missing=False) -> None:
     """
-    Deregister an existing elastic index from this AmCAT instance, i.e. remove the entry in the system index
+    Deregister an existing elastic index from this AmCAT instance, i.e. remove all authorization entries
     :param name: The name of the index (without prefix)
     :param ignore_missing: If True, do not throw exception if index does not exist
     """
     try:
-        es().delete(index=get_settings().system_index, id=name)
+        es().delete_by_query(index=get_settings().system_index, body=_term_query("index", name))
     except NotFoundError:
         if not ignore_missing:
             raise
     else:
         refresh(get_settings().system_index)
+
+
+# Roles and authorization
+

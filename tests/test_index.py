@@ -1,10 +1,10 @@
 import pytest
 
-from amcat4 import elastic
 from amcat4.auth import Role
 from amcat4.index import create_index, list_all_indices, list_known_indices, delete_index, refresh, register_index, \
     deregister_index
 from amcat4.elastic import es
+
 
 def test_create_delete_index():
     index = "amcat4_unittest"
