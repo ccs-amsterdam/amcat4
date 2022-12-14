@@ -95,6 +95,7 @@ def _get_hash(document):
     m.update(hash_str)
     return m.hexdigest()
 
+
 def check_elastic_type(value, ftype):
     """
     coerces values into the respective type in elastic
@@ -122,14 +123,15 @@ def check_elastic_type(value, ftype):
         value = bool(value)
     return value
 
+
 def _get_es_actions(index, documents):
     """
     Create the Elasticsearch bulk actions from article dicts.
     It also tries to coerce types using the first entry of the index as reference
     If you provide a list to ID_SEQ_LIST, the hashes are copied there
-    """    
+    """
     field_types = get_index_fields(index)
-    for document in documents:        
+    for document in documents:
         for key in document.keys():
             if key in field_types:
                 document[key] = check_elastic_type(document[key], field_types[key].get("type"))

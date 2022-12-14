@@ -18,7 +18,7 @@ def test_upload_retrieve_document(index: Index):
 def test_data_coerced(index: Index):
     """Are field values coerced to the correct field type"""
     elastic.set_columns(index.name, {"i": "long"})
-    a = dict(text="text", title="test-numeric", date="2022-12-13", i = "1")
+    a = dict(text="text", title="test-numeric", date="2022-12-13", i="1")
     ids = elastic.upload_documents(index.name, [a])
     d = elastic.get_document(index.name, ids[0])
     assert isinstance(d["i"], float)
