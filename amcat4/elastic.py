@@ -95,13 +95,44 @@ def _get_hash(document):
     m.update(hash_str)
     return m.hexdigest()
 
+def check_elastic_type(value, ftype):
+    """
+    coerces values into the respective type in elastic
+    based on ES_MAPPINGS and elastic field types
+    """
+    if ftype in ["keyword",
+                 "constant_keyword",
+                 "wildcard",
+                 "url",
+                 "tag",
+                 "text"]:
+        value = str(value)
+    elif ftype in ["long",
+                   "short",
+                   "byte",
+                   "double",
+                   "float",
+                   "half_float",
+                   "half_float",
+                   "unsigned_long"]:
+        value = float(value)
+    elif ftype in ["integer"]:
+        value = int(value)
+    elif ftype == "boolean":
+        value = bool(value)
+    return value
 
 def _get_es_actions(index, documents):
     """
     Create the Elasticsearch bulk actions from article dicts.
+    It also tries to coerce types using the first entry of the index as reference
     If you provide a list to ID_SEQ_LIST, the hashes are copied there
-    """
-    for document in documents:
+    """    
+    field_types = get_index_fields(index)
+    for document in documents:        
+        for key in document.keys():
+            if key in field_types:
+                document[key] = check_elastic_type(document[key], field_types[key].get("type"))
         for f in REQUIRED_FIELDS:
             if f not in document:
                 raise ValueError("Field {f!r} not present in document {document}".format(**locals()))
