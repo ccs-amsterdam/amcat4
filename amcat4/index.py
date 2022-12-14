@@ -170,3 +170,10 @@ def _set_auth_entry(index: str, email: str, role: Role):
     es().index(index=system_index, id=f"{index}|{email}",
                document=dict(index=index, email=email, role=role.name))
     refresh(system_index)
+
+
+def delete_user(email: str) -> None:
+    """Delete this user from all indices"""
+    system_index = get_settings().system_index
+    es().delete_by_query(index=system_index, body={"query": {"term": {"email": email}}})
+    refresh(system_index)

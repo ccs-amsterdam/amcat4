@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     middlecat_url: str = None
     admin_password: str = None
     config_file: Path = None
+    salt: str = "PLEASE CHANGE IN PRODUCTION IF USING ADMIN PASSWORD"
 
     class Config:
         env_prefix = "amcat4_"

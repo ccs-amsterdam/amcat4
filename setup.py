@@ -21,8 +21,6 @@ setup(
         "fastapi[all]",
         "elasticsearch~=7.16",
         "python-multipart",
-        "bcrypt",
-        "peewee",
         "python-dotenv",
         "requests",
         "authlib",

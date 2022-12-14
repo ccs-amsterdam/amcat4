@@ -6,6 +6,8 @@ from typing import Set, Iterable, Optional
 import requests
 from fastapi.testclient import TestClient
 
+from amcat4.api.auth import create_token
+
 
 def build_headers(user=None, headers=None, password=None):
     if not headers:
@@ -15,7 +17,7 @@ def build_headers(user=None, headers=None, password=None):
         credentials = b64encode(f"{user}:{password}".encode('ascii')).decode('ascii')
         headers["Authorization"] = f"Basic {credentials}"
     elif user:
-        headers['Authorization'] = f"Bearer {user.create_token().decode('utf-8')}"
+        headers['Authorization'] = f"Bearer {create_token(user).decode('utf-8')}"
     return headers
 
 

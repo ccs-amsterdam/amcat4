@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from amcat4 import elastic, api  # noqa: E402
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.index import create_index, delete_index, Role, set_role, remove_role, refresh
+from amcat4.index import create_index, delete_index, Role, set_role, remove_role, refresh, delete_user
 
 UNITS = [{"unit": {"text": "unit1"}},
          {"unit": {"text": "unit2"}, "gold": {"element": "au"}}]
@@ -33,27 +33,37 @@ def client():
 
 
 @pytest.fixture()
-def user():
-    u = create_user(email="testuser@test.com", password="test")
-    u.plaintext_password = "test"
-    yield u
-    u.delete_instance()
+def admin():
+    email = "admin@amcat.nl"
+    set_role(email, Role.ADMIN)
+    yield email
+    remove_role(email)
 
 
 @pytest.fixture()
 def writer():
-    u = create_user(email="writer@test.com", password="test", global_role=Role.WRITER)
-    u.plaintext_password = "test"
-    yield u
-    u.delete_instance()
+    email = "writer@amcat.nl"
+    set_role(email, Role.WRITER)
+    yield email
+    remove_role(email)
 
 
 @pytest.fixture()
-def admin():
-    email = "admin@example.com"
-    set_role(email, Role.ADMIN)
-    yield email
-    remove_role(email)
+def user():
+    name = "test_user@amcat.nl"
+    delete_user(name)
+    set_role(name, Role.NONE)
+    yield name
+    delete_user(name)
+
+
+@pytest.fixture()
+def username():
+    """A name to create a user which will be deleted afterwards if needed"""
+    name = "test_username@amcat.nl"
+    delete_user(name)
+    yield name
+    delete_user(name)
 
 
 @pytest.fixture()
@@ -131,17 +141,6 @@ def index_name():
     delete_index(index, ignore_missing=True)
     yield name
     delete_index(index, ignore_missing=True)
-
-
-@pytest.fixture()
-def username():
-    """A name to create a user which will be deleted afterwards if needed"""
-    setup_elastic()
-    name = "test_user@test.com"
-    yield name
-    u = User.get_or_none(User.email == name)
-    if u:
-        u.delete_instance()
 
 
 @pytest.fixture()
