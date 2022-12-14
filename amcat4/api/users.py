@@ -13,9 +13,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from pydantic.networks import EmailStr
 
-from amcat4 import auth
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
-from amcat4.auth import Role, User, hash_password
 
 app_users = APIRouter(
 
@@ -55,7 +53,7 @@ class ChangeUserForm(BaseModel):
 
 
 @app_users.post("/users/", status_code=status.HTTP_201_CREATED)
-def create_user(new_user: UserForm, current_user: User = Depends(authenticated_writer)):
+def create_user(new_user: UserForm, current_user= Depends(authenticated_writer)):
     """Create a new user."""
     if User.select().where(User.email == new_user.email).exists():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"User {new_user.email} already exists")
@@ -69,13 +67,13 @@ def create_user(new_user: UserForm, current_user: User = Depends(authenticated_w
 
 
 @app_users.get("/users/me")
-def get_current_user(current_user: User = Depends(authenticated_user)):
+def get_current_user(current_user = Depends(authenticated_user)):
     """View the current user."""
     return {"email": current_user.email, "global_role": current_user.role and current_user.role.name}
 
 
 @app_users.get("/users/{email}")
-def get_user(email: Username, current_user: User = Depends(authenticated_user)):
+def get_user(email: Username, current_user = Depends(authenticated_user)):
     """
     View a specified current user.
 
@@ -106,7 +104,7 @@ def list_users():
 
 
 @app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def delete_user(email: Username, current_user: User = Depends(authenticated_user)):
+def delete_user(email: Username, current_user = Depends(authenticated_user)):
     """
     Delete the given user.
 
@@ -124,7 +122,7 @@ def delete_user(email: Username, current_user: User = Depends(authenticated_user
 
 
 @app_users.put("/users/{email}")
-def modify_user(email: Username, data: ChangeUserForm, current_user: User = Depends(authenticated_user)):
+def modify_user(email: Username, data: ChangeUserForm, current_user = Depends(authenticated_user)):
     """
     Modify the given user.
 
@@ -162,7 +160,7 @@ def get_token(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 @app_users.get("/auth/token")
-def refresh_token(current_user: User = Depends(authenticated_user)):
+def refresh_token(current_user = Depends(authenticated_user)):
     """Create a new token for the user authenticated with an existing token."""
     token = current_user.create_token()
     return {"access_token": token, "token_type": "bearer"}

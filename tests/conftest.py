@@ -6,9 +6,9 @@ from elasticsearch.exceptions import NotFoundError
 from fastapi.testclient import TestClient
 
 from amcat4 import elastic, api  # noqa: E402
-from amcat4.auth import create_user, Role, User  # noqa: E402
 from amcat4.config import get_settings
 from amcat4.elastic import es
+from amcat4.index import create_index, delete_index, Role, set_role, remove_role, refresh
 
 UNITS = [{"unit": {"text": "unit1"}},
          {"unit": {"text": "unit2"}, "gold": {"element": "au"}}]
@@ -50,46 +50,44 @@ def writer():
 
 @pytest.fixture()
 def admin():
-    u = create_user(email="admin@test.com", password="secret", global_role=Role.ADMIN)
-    u.plaintext_password = "secret"
-    yield u
-    u.delete_instance()
+    email = "admin@example.com"
+    set_role(email, Role.ADMIN)
+    yield email
+    remove_role(email)
 
 
 @pytest.fixture()
 def index():
-    setup_elastic()
-    _delete_index("amcat4_unittest_index")
-    i = create_index("amcat4_unittest_index")
-    yield i
-    try:
-        i.delete_index()
-    except NotFoundError:
-        pass
+    index = "amcat4_unittest_index"
+    delete_index(index, ignore_missing=True)
+    create_index(index)
+    yield index
+    delete_index(index, ignore_missing=True)
 
 
 @pytest.fixture()
 def guest_index():
-    setup_elastic()
-    i = create_index("amcat4_unittest_guestindex", guest_role=Role.READER)
-    yield i
-    try:
-        i.delete_index()
-    except NotFoundError:
-        pass
+    index = "amcat4_unittest_guest_index"
+    delete_index(index, ignore_missing=True)
+    create_index(index, guest_role=Role.READER)
+    yield index
+    delete_index(index, ignore_missing=True)
 
 
 def upload(index: str, docs: Iterable[dict], **kwargs):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
+    ids = []
     for i, doc in enumerate(docs):
-        defaults = {'title': "title", 'date': "2018-01-01", 'text': "text", '_id': str(i)}
+        id = str(i)
+        ids.append(id)
+        defaults = {'title': "title", 'date': "2018-01-01", 'text': "text", '_id': id}
         for k, v in defaults.items():
             if k not in doc:
                 doc[k] = v
-    ids = elastic.upload_documents(index.name, docs, **kwargs)
-    elastic.refresh(index.name)
+    elastic.upload_documents(index, docs, **kwargs)
+    refresh(index)
     return ids
 
 
@@ -102,47 +100,37 @@ TEST_DOCUMENTS = [
 
 
 def populate_index(index):
-    upload(index, TEST_DOCUMENTS, columns={'cat': 'keyword', 'subcat': 'keyword', 'i': 'long'})
+    upload(index, TEST_DOCUMENTS, fields={'cat': 'keyword', 'subcat': 'keyword', 'i': 'long'})
     return TEST_DOCUMENTS
 
 
 @pytest.fixture()
 def index_docs():
-    setup_elastic()
-    _delete_index("amcat4_unittest_indexdocs")
-    i = create_index("amcat4_unittest_indexdocs")
-    populate_index(i)
-    yield i
-    try:
-        i.delete_index()
-    except NotFoundError:
-        pass
-
-
-def _delete_index(name):
-    ix = Index.get_or_none(Index.name == name)
-    if ix:
-        ix.delete_index(delete_from_elastic=False)
-    elastic._delete_index(name, ignore_missing=True)
+    index = "amcat4_unittest_indexdocs"
+    delete_index(index, ignore_missing=True)
+    create_index(index, guest_role=Role.READER)
+    populate_index(index)
+    yield index
+    delete_index(index, ignore_missing=True)
 
 
 @pytest.fixture()
 def index_many():
-    setup_elastic()
-    ix = create_index("amcat4_unittest_indexmany")
-    upload(ix, [dict(id=i, pagenr=abs(10-i), text=text) for (i, text) in enumerate(["odd", "even"]*10)])
-    yield ix
-    _delete_index(ix.name)
+    index = "amcat4_unittest_indexmany"
+    delete_index(index, ignore_missing=True)
+    create_index(index, guest_role=Role.READER)
+    upload(index, [dict(id=i, pagenr=abs(10 - i), text=text) for (i, text) in enumerate(["odd", "even"] * 10)])
+    yield index
+    delete_index(index, ignore_missing=True)
 
 
 @pytest.fixture()
 def index_name():
     """A name to create an index which will be deleted afterwards if needed"""
-    setup_elastic()
     name = "amcat4_unittest_index_name"
-    _delete_index(name)
+    delete_index(index, ignore_missing=True)
     yield name
-    _delete_index(name)
+    delete_index(index, ignore_missing=True)
 
 
 @pytest.fixture()

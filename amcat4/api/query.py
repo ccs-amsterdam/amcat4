@@ -9,7 +9,6 @@ from pydantic.main import BaseModel
 from amcat4 import query, aggregate
 from amcat4.aggregate import Axis, Aggregation
 from amcat4.api.auth import authenticated_user
-from amcat4.auth import User
 from amcat4.query import update_tag_query
 
 app_query = APIRouter(
@@ -53,7 +52,7 @@ def get_documents(index: str,
                   highlight: bool = Query(False, description="add highlight tags <em>"),
                   annotations: bool = Query(False, description="if true, also return _annotations "
                                                                "with query matches as annotations"),
-                  user: User = Depends(authenticated_user)):
+                  user = Depends(authenticated_user)):
     """
     List (possibly filtered) documents in this index.
 
@@ -165,7 +164,7 @@ def query_documents_post(
     highlight: Optional[Union[bool, Dict]] = Body(
         None, description="Highlight document. 'true' highlights whole document, see elastic docs for dict format"
                           "https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html"),
-        user: User = Depends(authenticated_user)
+        user = Depends(authenticated_user)
 ):
     """
     List or query documents in this index.
@@ -218,7 +217,7 @@ def query_aggregate_post(
         filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = Body(
             None, description="Field filters, should be a dict of field names to filter specifications,"
                               "which can be either a value, a list of values, or a FilterSpec dict"),
-        user: User = Depends(authenticated_user)):
+        user = Depends(authenticated_user)):
     """
     Construct an aggregate query.
 
@@ -259,7 +258,7 @@ def query_update_tags(
         None, description="Field filters, should be a dict of field names to filter specifications,"
                           "which can be either a value, a list of values, or a FilterSpec dict"),
     ids: Optional[Union[str, List[str]]] = Body(None, description="Document IDs of documents to update"),
-    user: User = Depends(authenticated_user),
+    user = Depends(authenticated_user),
 ):
     """
     Add or remove tags by query or by id

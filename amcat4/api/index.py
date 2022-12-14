@@ -11,7 +11,6 @@ from pydantic.config import Extra
 from amcat4 import elastic, index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 from amcat4.api.common import py2dict, get_user_or_404, get_indexrole_or_404
-from amcat4.auth import Role, User
 
 app_index = APIRouter(
     prefix="/index",
@@ -26,7 +25,7 @@ def index_json(ix: str):
 
 
 @app_index.get("/")
-def index_list(current_user: User = Depends(authenticated_user)):
+def index_list(current_user = Depends(authenticated_user)):
     """
     List index from this server.
 
@@ -43,7 +42,7 @@ class NewIndex(BaseModel):
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
-def create_index(new_index: NewIndex, current_user: User = Depends(authenticated_writer)):
+def create_index(new_index: NewIndex, current_user = Depends(authenticated_writer)):
     """
     Create a new index, setting the current user to admin (owner).
 
@@ -62,7 +61,7 @@ class ChangeIndex(BaseModel):
 
 
 @app_index.put("/{ix}")
-def modify_index(ix: str, data: ChangeIndex, user: User = Depends(authenticated_user)):
+def modify_index(ix: str, data: ChangeIndex, user = Depends(authenticated_user)):
     """
     Modify the index.
 
@@ -81,7 +80,7 @@ def modify_index(ix: str, data: ChangeIndex, user: User = Depends(authenticated_
 
 
 @app_index.get("/{ix}")
-def view_index(ix: str, user: User = Depends(authenticated_user)):
+def view_index(ix: str, user = Depends(authenticated_user)):
     """
     Modify the index.
 
@@ -94,7 +93,7 @@ def view_index(ix: str, user: User = Depends(authenticated_user)):
 
 
 @app_index.delete("/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def delete_index(ix: str, user: User = Depends(authenticated_user)):
+def delete_index(ix: str, user = Depends(authenticated_user)):
     """Delete the index."""
     ix = _index(ix)
     check_role(user, Role.ADMIN, ix)
@@ -120,7 +119,7 @@ def upload_documents(
         ix: str,
         documents: List[Document] = Body(None, description="The documents to upload"),
         columns: Optional[Mapping[str, str]] = Body(None, description="Optional Specification of field (column) types"),
-        user: User = Depends(authenticated_user)):
+        user = Depends(authenticated_user)):
     """
     Upload documents to this server.
 
@@ -137,7 +136,7 @@ def upload_documents(
 
 
 @app_index.get("/{ix}/documents/{docid}")
-def get_document(ix: str, docid: str, fields: Optional[str] = None, user: User = Depends(authenticated_user)):
+def get_document(ix: str, docid: str, fields: Optional[str] = None, user = Depends(authenticated_user)):
     """
     Get a single document by id.
 
@@ -155,7 +154,7 @@ def get_document(ix: str, docid: str, fields: Optional[str] = None, user: User =
 
 
 @app_index.put("/{ix}/documents/{docid}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def update_document(ix: str, docid: str, update: dict = Body(...), user: User = Depends(authenticated_user)):
+def update_document(ix: str, docid: str, update: dict = Body(...), user = Depends(authenticated_user)):
     """
     Update a document.
 
@@ -169,7 +168,7 @@ def update_document(ix: str, docid: str, update: dict = Body(...), user: User = 
 
 
 @app_index.delete("/{ix}/documents/{docid}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def delete_document(ix: str, docid: str, user: User = Depends(authenticated_user)):
+def delete_document(ix: str, docid: str, user = Depends(authenticated_user)):
     """Delete this document."""
     check_role(user, Role.WRITER, _index(ix))
     try:
@@ -190,7 +189,7 @@ def get_fields(ix: str, _=Depends(authenticated_user)):
 
 
 @app_index.post("/{ix}/fields")
-def set_fields(ix: str, body: dict = Body(...), user: User = Depends(authenticated_user)):
+def set_fields(ix: str, body: dict = Body(...), user = Depends(authenticated_user)):
     """
     Set the field types used in this index.
 
@@ -208,7 +207,7 @@ def get_values(ix: str, field: str, _=Depends(authenticated_user)):
 
 
 @app_index.get("/{ix}/users")
-def list_index_users(ix: str, user: User = Depends(authenticated_user)):
+def list_index_users(ix: str, user = Depends(authenticated_user)):
     """List the users in this index."""
     index = _index(ix)
     if not user.has_role(Role.ADMIN):
@@ -222,7 +221,7 @@ def add_index_users(
         ix: str,
         email: str = Body(..., description="Email address of the user to add"),
         role: RoleType = Body(..., description="Role of the user to add"),
-        user: User = Depends(authenticated_user)
+        user = Depends(authenticated_user)
 ):
     """
     Add an existing user to this index.
@@ -245,7 +244,7 @@ def modify_index_user(
         ix: str,
         email: str,
         role: RoleType = Body(..., description="New role for the user", embed=True),
-        user: User = Depends(authenticated_user)
+        user = Depends(authenticated_user)
 ):
     """
     Change the role of an existing user.
@@ -262,7 +261,7 @@ def modify_index_user(
 
 
 @app_index.delete("/{ix}/users/{email}")
-def remove_index_user(ix: str, email: str, user: User = Depends(authenticated_user)):
+def remove_index_user(ix: str, email: str, user = Depends(authenticated_user)):
     """
     Remove this user from the index.
 

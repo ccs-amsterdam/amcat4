@@ -3,15 +3,13 @@
 from fastapi import HTTPException, status
 from pydantic.main import BaseModel
 
-from amcat4.auth import User
-
 
 def py2dict(m: BaseModel) -> dict:
     """Convert a pydantic object to a regular dict."""
     return {k: v for (k, v) in m.dict().items() if v is not None}
 
 
-def get_user_or_404(email: str) -> User:
+def get_user_or_404(email: str):
     """Get a user or raise an HTTP 404."""
     try:
         return User.get(User.email == email)

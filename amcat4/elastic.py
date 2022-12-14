@@ -10,10 +10,8 @@ Some things to note:
   but use field metadata to define specific fields, see ES_MAPPINGS below.
 """
 import functools
-import hashlib
-import json
 import logging
-from typing import Mapping, List, Optional, Iterable, Tuple, Union, Sequence, Dict, Literal
+from typing import Mapping, List, Iterable, Tuple, Union, Sequence, Dict, Literal
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
@@ -68,35 +66,28 @@ def _setup_elastic():
     return elastic
 
 
-def upload_documents(index: str, documents, mapping: Mapping[str, str] = None) -> List[str]:
+def upload_documents(index: str, documents, fields: Mapping[str, str] = None) -> None:
     """
     Upload documents to this index
 
     :param index: The name of the index (without prefix)
     :param documents: A sequence of article dictionaries
-    :param mapping: A mapping of field:type for column types
-    :return: the list of document ids
+    :param fields: A mapping of field:type for field types
     """
 
     def es_actions(index, documents):
         for document in documents:
-            for f in REQUIRED_FIELDS:
-                if f not in document:
-                    raise ValueError("Field {f!r} not present in document {document}".format(**locals()))
-            if '_id' not in document:
-                document['_id'] = _get_hash(document)
             yield {"_index": index, **document}
 
-    if mapping:
-        set_mapping(index, mapping)
+    if fields:
+        set_fields(index, fields)
 
     actions = list(es_actions(index, documents))
     bulk(es(), actions)
     invalidate_field_cache(index)
-    return [action['_id'] for action in actions]
 
 
-def get_mapping(type_: Union[str, dict]):
+def get_field_mapping(type_: Union[str, dict]):
     if isinstance(type_, str):
         return ES_MAPPINGS[type_]
     else:
@@ -108,14 +99,14 @@ def get_mapping(type_: Union[str, dict]):
         return mapping
 
 
-def set_mapping(index: str, mapping: Mapping[str, str]):
+def set_fields(index: str, fields: Mapping[str, str]):
     """
     Update the column types for this index
 
     :param index: The name of the index (without prefix)
-    :param mapping: A mapping of field:type for column types
+    :param fields: A mapping of field:type for column types
     """
-    body = dict(properties={field: get_mapping(type_) for (field, type_) in mapping.items()})
+    body = dict(properties={field: get_field_mapping(type_) for (field, type_) in fields.items()})
     es().indices.put_mapping(index=index, body=body)
     invalidate_field_cache(index)
 
