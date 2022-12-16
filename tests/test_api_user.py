@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from amcat4.api.auth import verify_token
 from amcat4.config import get_settings
-from amcat4.index import delete_user, get_role, get_global_role
+from amcat4.index import delete_user, get_global_role
 from tests.tools import get_json, build_headers, post_json, check
 
 
@@ -20,7 +20,7 @@ def test_get_user(client: TestClient, writer, user):
     assert client.get("/users/me").status_code == 401
 
     # user can only see its own info:
-    assert get_json(client, f"/users/me", user=user) == {"email": user, "global_role": "NONE"}
+    assert get_json(client, "/users/me", user=user) == {"email": user, "global_role": "NONE"}
     assert get_json(client, f"/users/{user}", user=user) == {"email": user, "global_role": "NONE"}
     # writer can see everyone
     assert get_json(client, f"/users/{user}", user=writer) == {"email": user, "global_role": "NONE"}

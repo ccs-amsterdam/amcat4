@@ -35,12 +35,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def init():
-    """Initialize the elastic and peewee database."""
-    setup_elastic()
-
-# "Plugins"
-# app.register_blueprint(app_annotator, url_prefix='/annotator')

@@ -1,14 +1,12 @@
 from typing import Iterable
 
 import pytest
-from elasticsearch.exceptions import NotFoundError
-
 from fastapi.testclient import TestClient
 
 from amcat4 import elastic, api  # noqa: E402
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.index import create_index, delete_index, Role, set_role, remove_role, refresh, delete_user, \
+from amcat4.index import create_index, delete_index, Role, refresh, delete_user, \
     remove_global_role, set_global_role
 
 UNITS = [{"unit": {"text": "unit1"}},
@@ -142,15 +140,6 @@ def index_many():
     upload(index, [dict(id=i, pagenr=abs(10 - i), text=text) for (i, text) in enumerate(["odd", "even"] * 10)])
     yield index
     delete_index(index, ignore_missing=True)
-
-
-@pytest.fixture()
-def index_name():
-    """A name to create an index which will be deleted afterwards if needed"""
-    name = "amcat4_unittest_index_name"
-    delete_index(name, ignore_missing=True)
-    yield name
-    delete_index(name, ignore_missing=True)
 
 
 @pytest.fixture()

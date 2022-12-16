@@ -74,7 +74,7 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
 
 
 @app_index.get("/{ix}")
-def view_index(ix: str, user:str = Depends(authenticated_user)):
+def view_index(ix: str, user: str = Depends(authenticated_user)):
     """
     Modify the index.
 
@@ -87,11 +87,10 @@ def view_index(ix: str, user:str = Depends(authenticated_user)):
 
 
 @app_index.delete("/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def delete_index(ix: str, user = Depends(authenticated_user)):
+def delete_index(ix: str, user: str = Depends(authenticated_user)):
     """Delete the index."""
-    ix = _index(ix)
     check_role(user, Role.ADMIN, ix)
-    ix.delete_index()
+    index.delete_index(ix)
 
 
 class Document(BaseModel):
@@ -130,7 +129,7 @@ def upload_documents(
 
 
 @app_index.get("/{ix}/documents/{docid}")
-def get_document(ix: str, docid: str, fields: Optional[str] = None, user:str = Depends(authenticated_user)):
+def get_document(ix: str, docid: str, fields: Optional[str] = None, user: str = Depends(authenticated_user)):
     """
     Get a single document by id.
 
@@ -148,7 +147,7 @@ def get_document(ix: str, docid: str, fields: Optional[str] = None, user:str = D
 
 
 @app_index.put("/{ix}/documents/{docid}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def update_document(ix: str, docid: str, update: dict = Body(...), user:str = Depends(authenticated_user)):
+def update_document(ix: str, docid: str, update: dict = Body(...), user: str = Depends(authenticated_user)):
     """
     Update a document.
 
@@ -162,7 +161,7 @@ def update_document(ix: str, docid: str, update: dict = Body(...), user:str = De
 
 
 @app_index.delete("/{ix}/documents/{docid}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def delete_document(ix: str, docid: str, user:str = Depends(authenticated_user)):
+def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)):
     """Delete this document."""
     check_role(user, Role.WRITER, ix)
     try:
@@ -183,7 +182,7 @@ def get_fields(ix: str, _=Depends(authenticated_user)):
 
 
 @app_index.post("/{ix}/fields")
-def set_fields(ix: str, body: dict = Body(...), user:str = Depends(authenticated_user)):
+def set_fields(ix: str, body: dict = Body(...), user: str = Depends(authenticated_user)):
     """
     Set the field types used in this index.
 
@@ -257,7 +256,7 @@ def modify_index_user(
 
 
 @app_index.delete("/{ix}/users/{email}")
-def remove_index_user(ix: str, email: str, user = Depends(authenticated_user)):
+def remove_index_user(ix: str, email: str, user: str = Depends(authenticated_user)):
     """
     Remove this user from the index.
 

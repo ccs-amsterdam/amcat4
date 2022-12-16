@@ -1,8 +1,8 @@
 import pytest
 
-from amcat4.index import create_index, list_all_indices, list_known_indices, delete_index, refresh, register_index, \
-    deregister_index, get_role, set_role, remove_role, Role, get_global_role, remove_global_role, set_global_role
 from amcat4.elastic import es
+from amcat4.index import create_index, list_all_indices, list_known_indices, delete_index, register_index, \
+    deregister_index, get_role, set_role, remove_role, Role, get_global_role, remove_global_role, set_global_role
 
 
 def test_create_delete_index():

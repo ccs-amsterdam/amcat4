@@ -48,7 +48,7 @@ def verify_admin(password: str) -> bool:
         logging.info("Successful admin login")
         return True
     else:
-        logging.warning(f"Incorrect password for admin")
+        logging.warning("Incorrect password for admin")
         return False
 
 
