@@ -16,7 +16,7 @@ from pydantic.networks import EmailStr
 from amcat4.api import auth
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role, create_token, authenticated_admin
 from amcat4.config import get_settings
-from amcat4.index import get_role, Role, set_role
+from amcat4.index import get_role, Role, set_role, list_users, set_global_role, get_global_role
 from amcat4 import index
 
 app_users = APIRouter(
@@ -53,10 +53,10 @@ class ChangeUserForm(BaseModel):
 @app_users.post("/users/", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: UserForm, current_user=Depends(authenticated_admin)):
     """Create a new user."""
-    if get_role(new_user.email) is not None:
+    if get_global_role(new_user.email) is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"User {new_user.email} already exists")
     role = Role[new_user.global_role.upper()] if new_user.global_role else None
-    set_role(email=new_user.email, role=role)
+    set_global_role(email=new_user.email, role=role)
     return {"email": new_user.email, "global_role": role.value}
 
 
@@ -79,27 +79,17 @@ def get_user(email: Username, current_user: str = Depends(authenticated_user)):
 def _get_user(email, current_user):
     if current_user != email:
         check_role(current_user, Role.WRITER)
-    global_role = get_role(email)
+    global_role = get_global_role(email)
     if global_role is not None:
         return {"email": email, "global_role": global_role.name}
     else:
         raise HTTPException(404, detail=f"User {email} unknown")
 
 
-
-@app_users.get("/users", dependencies=[Depends(authenticated_writer)])
-def list_users():
-    """List all users."""
-    result = []
-    res1 = [dict(user=u.email, role=u.global_role) for u in User.select()]
-    for entry in res1:
-        roles = list(User.get(User.email == entry['user']).indices().items())
-        if roles:
-            for ix, role in roles:
-                result.append(dict(user=entry['user'], index=ix.name, role=role.name))
-        else:
-            result.append(dict(user=entry['user'], index=None, role=None))
-    return result
+@app_users.get("/users", dependencies=[Depends(authenticated_admin)])
+def list_global_users():
+    """List all global users"""
+    return [{'email': email, 'global_role': role.name} for (email, role) in index.list_global_users()]
 
 
 @app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
@@ -121,7 +111,7 @@ def modify_user(email: Username, data: ChangeUserForm, _user=Depends(authenticat
     Only admin can change users.
     """
     role = Role[data.global_role.upper()]
-    set_role(email, role)
+    set_global_role(email, role)
     return {"email": email, "global_role": role.name}
 
 
@@ -129,13 +119,13 @@ def modify_user(email: Username, data: ChangeUserForm, _user=Depends(authenticat
 def get_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """Create a new token for the user authenticating with a form."""
     if form_data.username == "admin" and auth.verify_admin(password=form_data.password):
-            token = create_token("admin")
-            return {"access_token": token, "token_type": "bearer"}
+        token = create_token("admin")
+        return {"access_token": token, "token_type": "bearer"}
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
 
 
 @app_users.get("/auth/token")
-def refresh_token(current_user = Depends(authenticated_user)):
+def refresh_token(current_user: str = Depends(authenticated_user)):
     """Create a new token for the user authenticated with an existing token."""
-    token = current_user.create_token()
+    token = create_token(current_user)
     return {"access_token": token, "token_type": "bearer"}

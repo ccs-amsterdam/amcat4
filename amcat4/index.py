@@ -31,7 +31,7 @@ Elasticsearch implementation
 - Every index should have a guest role defined (possibly None), i.e. the list of guest roles is the list of indices
 """
 from enum import IntEnum
-from typing import List, Set, Optional
+from typing import List, Set, Optional, Iterable, Tuple
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
@@ -134,18 +134,23 @@ def deregister_index(index: str, ignore_missing=False) -> None:
         refresh(get_settings().system_index)
 
 
-def set_role(email: str, role: Role, index: Optional[str] = None):
+def set_role(index: str, email: str, role: Role):
     """
-    Set the role for this user (globally or on the given index)
+    Set the role for this user on the given index)
     """
-    if index is None:
-        index = GLOBAL_ROLES
     _set_auth_entry(index=index, email=email, role=role)
 
 
-def remove_role(email: str, index: Optional[str] = None):
+def set_global_role(email: str, role: Role, index: Optional[str] = None):
     """
-    Remove the role of this user (globally or on the given index)
+    Set the global role for this user
+    """
+    set_role(index=GLOBAL_ROLES, email=email, role=role)
+
+
+def remove_role(email: str, index: str):
+    """
+    Remove the role of this user on the given index
     """
     if index is None:
         index = GLOBAL_ROLES
@@ -154,15 +159,44 @@ def remove_role(email: str, index: Optional[str] = None):
     es().indices.refresh(index=system_index)
 
 
-def get_role(email: str, index: Optional[str] = None) -> Optional[Role]:
-    if index is None:
-        index = GLOBAL_ROLES
+def remove_global_role(email: str):
+    """
+    Remove the global role of this user
+    """
+    remove_role(email, GLOBAL_ROLES)
+
+
+def get_role(email: str, index: str) -> Optional[Role]:
     try:
         doc = es().get(index=get_settings().system_index, id=f"{index}|{email}")
     except NotFoundError:
         return None
     role = doc["_source"]["role"]
     return Role[role.upper()]
+
+
+def get_global_role(email: str) -> Optional[Role]:
+    return get_role(email, GLOBAL_ROLES)
+
+
+def list_users(index: str) -> Iterable[Tuple[str, Role]]:
+    """"
+    List all users and their roles on the given index
+    :param index: The index to list roles for. If None, list global roles
+    :returns: an iterable of (user, Role) pairs
+    """
+    r = es().search(index=get_settings().system_index, query={"term": {"index": index}})
+    for doc in r['hits']['hits']:
+        yield doc['_source']['email'], Role[doc['_source']['role'].upper()]
+
+
+def list_global_users() -> Iterable[Tuple[str, Role]]:
+    """"
+    List all global users and their roles
+    :param index: The index to list roles for. If None, list global roles
+    :returns: an iterable of (user, Role) pairs
+    """
+    return list_users(GLOBAL_ROLES)
 
 
 def _set_auth_entry(index: str, email: str, role: Role):

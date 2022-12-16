@@ -11,7 +11,7 @@ from fastapi.security import OAuth2PasswordBearer
 import json
 
 from amcat4.config import get_settings
-from amcat4.index import Role, get_role
+from amcat4.index import Role, get_role, get_global_role
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
@@ -75,7 +75,7 @@ def check_role(user: str, required_role: Role, index: str = None):
         raise HTTPException(status_code=401, detail="No authenticated user")
     if user == "admin":
         return True
-    actual_role = get_role(user, index) if index else get_role(user)
+    actual_role = get_role(user, index) if index else get_global_role(user)
     if actual_role and actual_role >= required_role:
         return True
     else:

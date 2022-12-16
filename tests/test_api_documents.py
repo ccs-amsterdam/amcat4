@@ -1,4 +1,4 @@
-from amcat4.auth import Role
+from amcat4.index import set_role, Role
 from tests.tools import post_json, build_headers, get_json, check
 
 
@@ -15,7 +15,7 @@ def test_documents_unauthorized(client, index, user):
 
 def test_documents(client, index, user):
     """Test uploading, modifying, deleting, and retrieving documents"""
-    index.set_role(user, Role.WRITER)
+    set_role(user, Role.WRITER, index)
     r = post_json(client, f"index/{index.name}/documents", user=user,
                   json={"documents": [{"title": "a title", "text": "text", "date": "2020-01-01"}]})
     assert len(r) == 1

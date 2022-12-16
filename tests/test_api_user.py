@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from amcat4.api.auth import verify_token
 from amcat4.config import get_settings
-from amcat4.index import delete_user, get_role
+from amcat4.index import delete_user, get_role, get_global_role
 from tests.tools import get_json, build_headers, post_json, check
 
 
@@ -53,23 +53,13 @@ def test_modify_user(client: TestClient, user, writer, admin):
     # Only admin can change users
     check(client.put(f"/users/{user}", headers=build_headers(user), json={'global_role': 'metareader'}), 401)
     check(client.put(f"/users/{user}", headers=build_headers(admin), json={'global_role': 'admin'}), 200)
-    assert get_role(user).name == "ADMIN"
+    assert get_global_role(user).name == "ADMIN"
 
 
 def test_list_users(client: TestClient, index, admin, user):
-    def _list_users():
-        result = {}
-        for u in get_json(client, "/users", user=admin):
-            if u['user'] not in result:
-                result[u['user']] = set()
-            if u['index'] is not None:
-                result[u['user']].add(u['index'])
-        return result
     # You need global WRITER rights to list users
     check(client.get("/users"), 401)
     check(client.get("/users", headers=build_headers(user)), 401)
-    gold = {u.email: set() for u in list(User.select())}
-    assert _list_users() == gold
-    index.set_role(user, Role.WRITER)
-    gold[user.email].add(index.name)
-    assert _list_users() == gold
+    result = get_json(client, "/users", user=admin)
+    assert {'email': admin, 'global_role': 'ADMIN'} in result
+    assert {'email': user, 'global_role': 'NONE'} in result

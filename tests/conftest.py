@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 from amcat4 import elastic, api  # noqa: E402
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.index import create_index, delete_index, Role, set_role, remove_role, refresh, delete_user
+from amcat4.index import create_index, delete_index, Role, set_role, remove_role, refresh, delete_user, \
+    remove_global_role, set_global_role
 
 UNITS = [{"unit": {"text": "unit1"}},
          {"unit": {"text": "unit2"}, "gold": {"element": "au"}}]
@@ -35,24 +36,24 @@ def client():
 @pytest.fixture()
 def admin():
     email = "admin@amcat.nl"
-    set_role(email, Role.ADMIN)
+    set_global_role(email, Role.ADMIN)
     yield email
-    remove_role(email)
+    remove_global_role(email)
 
 
 @pytest.fixture()
 def writer():
     email = "writer@amcat.nl"
-    set_role(email, Role.WRITER)
+    set_global_role(email, Role.WRITER)
     yield email
-    remove_role(email)
+    remove_global_role(email)
 
 
 @pytest.fixture()
 def user():
     name = "test_user@amcat.nl"
     delete_user(name)
-    set_role(name, Role.NONE)
+    set_global_role(name, Role.NONE)
     yield name
     delete_user(name)
 
