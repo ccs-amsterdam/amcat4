@@ -2,18 +2,17 @@ import functools
 from datetime import datetime, date
 
 from amcat4.aggregate import query_aggregate, Axis, Aggregation
-from amcat4.index import Index
 from tests.conftest import upload
 from tests.tools import dictset
 
 
-def do_query(index: Index, *axes, **kargs):
+def do_query(index: str, *axes, **kargs):
     def _key(x):
         if len(x) == 1:
             return x[0]
         return x
     axes = [Axis(x) if isinstance(x, str) else x for x in axes]
-    result = query_aggregate(index.name, axes, **kargs)
+    result = query_aggregate(index, axes, **kargs)
     return {_key(vals[:-1]): vals[-1] for vals in result.data}
 
 
@@ -68,11 +67,11 @@ def test_byquery(index_docs):
             {("x", "text"): 2, ("x", "test*"): 1, ("y", "test*"): 2})
 
 
-def test_metric(index_docs):
+def test_metric(index_docs: str):
     """Do metric aggregations (e.g. avg(x)) work?"""
     # Single and double aggregation with axis
     def q(axes, aggregations):
-        return dictset(query_aggregate(index_docs.name, axes, aggregations).as_dicts())
+        return dictset(query_aggregate(index_docs, axes, aggregations).as_dicts())
     assert (q([Axis("subcat")], [Aggregation("i", "avg")]) ==
             dictset([{"subcat": "x", "n": 2, "avg_i": 1.5}, {"subcat": "y", "n": 2, "avg_i": 21.0}]))
     assert (q([Axis("subcat")], [Aggregation("i", "avg"), Aggregation("i", "max")]) ==
@@ -90,7 +89,7 @@ def test_metric(index_docs):
                      {"subcat": "y", "n": 2, "avg_date": "2019-01-01T00:00:00"}]))
 
 
-def test_aggregate_datefunctions(index):
+def test_aggregate_datefunctions(index: str):
     q = functools.partial(do_query, index)
     docs = [dict(date=x) for x in ["2018-01-01T04:00:00",  # monday night
                                    "2018-01-01T09:00:00",  # monday morning

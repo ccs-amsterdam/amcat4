@@ -5,7 +5,7 @@ from tests.tools import get_json, post_json
 def test_pagination(client, index, user):
     """Does basic pagination work?"""
     upload(index, docs=[{"i": i} for i in range(66)])
-    url = f"/index/{index.name}/documents"
+    url = f"/index/{index}/documents"
     r = get_json(client, url, user=user, params={"sort": "i", "per_page": 20})
     assert r["meta"]["per_page"] == 20
     assert r["meta"]["page"] == 0
@@ -18,14 +18,14 @@ def test_pagination(client, index, user):
     assert len(r["results"]) == 0
     # Test POST query
 
-    r = post_json(client, f"/index/{index.name}/query", expected=200, user=user, json={"sort": "i", "per_page": 20, "page": 3})
+    r = post_json(client, f"/index/{index}/query", expected=200, user=user, json={"sort": "i", "per_page": 20, "page": 3})
     assert r["meta"]["page"] == 3
     assert {h["i"] for h in r["results"]} == {60, 61, 62, 63, 64, 65}
 
 
 def test_scroll(client, index, user):
     upload(index, docs=[{"i": i} for i in range(66)])
-    url = f"/index/{index.name}/documents"
+    url = f"/index/{index}/documents"
     r = get_json(client, url, user=user, params={"sort": "i:desc", "per_page": 30, "scroll": "5m"})
     scroll_id = r["meta"]["scroll_id"]
     assert scroll_id is not None
@@ -38,7 +38,7 @@ def test_scroll(client, index, user):
     # Scrolling past the edge should return 404
     get_json(client, url, user=user, params={"scroll_id": scroll_id}, expected=404)
     # Test POST to query endpoint
-    r = post_json(client, f"/index/{index.name}/query", user=user, expected=200,
+    r = post_json(client, f"/index/{index}/query", user=user, expected=200,
                   json={"sort": [{"i": {"order": "desc"}}], "per_page": 30, "scroll": "5m"})
     scroll_id = r["meta"]["scroll_id"]
     assert scroll_id is not None

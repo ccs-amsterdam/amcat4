@@ -1,4 +1,4 @@
-from amcat4.elastic import refresh
+from amcat4.index import refresh
 from amcat4.query import query_documents
 from tests.conftest import upload
 from tests.tools import get_json, post_json, dictset
@@ -15,7 +15,7 @@ def test_query_get(client, index_docs, user):
     """Can we run a simple query?"""
 
     def q(**query_string):
-        return get_json(client, f"/index/{index_docs.name}/documents", user=user, params=query_string)['results']
+        return get_json(client, f"/index/{index_docs}/documents", user=user, params=query_string)['results']
 
     def qi(**query_string):
         return {int(doc['_id']) for doc in q(**query_string)}
@@ -42,7 +42,7 @@ def test_query_get(client, index_docs, user):
 def test_query_post(client, index_docs, user):
 
     def q(**body):
-        return post_json(client, f"/index/{index_docs.name}/query", user=user, expected=200, json=body)['results']
+        return post_json(client, f"/index/{index_docs}/query", user=user, expected=200, json=body)['results']
 
     def qi(**query_string):
         return {int(doc['_id']) for doc in q(**query_string)}
@@ -70,34 +70,34 @@ def test_query_post(client, index_docs, user):
 
 
 def test_aggregate(client, index_docs, user):
-    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+    r = post_json(client, f"/index/{index_docs}/aggregate", user=user, expected=200,
                   json={'axes': [{'field': 'cat'}]})
     assert r['meta']['axes'][0]['field'] == 'cat'
     data = {d['cat']: d['n'] for d in r['data']}
     assert data == {"a": 3, "b": 1}
 
     # test calculated field
-    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+    r = post_json(client, f"/index/{index_docs}/aggregate", user=user, expected=200,
                   json={'axes': [{'field': 'subcat'}], 'aggregations': [{'field': "i", 'function': "avg"}]})
     assert dictset(r['data']) == dictset([{'avg_i': 1.5, 'n': 2, 'subcat': 'x'}, {'avg_i': 21.0, 'n': 2, 'subcat': 'y'}])
     assert r['meta']['aggregations'] == [{'field': "i", 'function': "avg", "type": "long", "name": "avg_i"}]
 
     # test filtered aggregate
-    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+    r = post_json(client, f"/index/{index_docs}/aggregate", user=user, expected=200,
                   json={'axes': [{'field': 'subcat'}], 'filters': {'cat': {'values': ['b']}}})
     data = {d['subcat']: d['n'] for d in r['data']}
     assert data == {"y": 1}
 
     # test filter+query aggregate
-    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+    r = post_json(client, f"/index/{index_docs}/aggregate", user=user, expected=200,
                   json={'axes': [{'field': 'subcat'}], 'queries': 'text', 'filters': {'cat': {'values': ['a']}}})
     data = {d['subcat']: d['n'] for d in r['data']}
     assert data == {"x": 2}
 
 
 def test_multiple_index(client, index_docs, index, user):
-    upload(index, [{"text": "also a text", "i": -1, 'cat': 'c'}], columns={'cat': 'keyword', 'i': 'long'})
-    indices = f"{index.name},{index_docs.name}"
+    upload(index, [{"text": "also a text", "i": -1, 'cat': 'c'}], fields={'cat': 'keyword', 'i': 'long'})
+    indices = f"{index},{index_docs}"
     assert len(get_json(client, f"/index/{indices}/documents", user=user)['results']) == 5
     assert len(post_json(client, f"/index/{indices}/query", user=user, expected=200)['results']) == 5
     r = post_json(client, f"/index/{indices}/aggregate", user=user, json={'axes': [{'field': 'cat'}]}, expected=200)
@@ -105,11 +105,11 @@ def test_multiple_index(client, index_docs, index, user):
 
 
 def test_aggregate_datemappings(client, index_docs, user):
-    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+    r = post_json(client, f"/index/{index_docs}/aggregate", user=user, expected=200,
                   json={'axes': [{'field': 'date', 'interval': 'monthnr'}]})
     assert r['data'] == [{'date_monthnr': 1, 'n': 3}, {'date_monthnr': 2, 'n': 1}]
     assert [x['name'] for x in r['meta']['axes']] == ["date_monthnr"]
-    r = post_json(client, f"/index/{index_docs.name}/aggregate", user=user, expected=200,
+    r = post_json(client, f"/index/{index_docs}/aggregate", user=user, expected=200,
                   json={'axes': [{'field': 'date', 'interval': 'monthnr'}, {'field': 'date', 'interval': 'dayofmonth'}]})
     assert [x['name'] for x in r['meta']['axes']] == ["date_monthnr", "date_dayofmonth"]
     assert r['data'] == [{'date_monthnr': 1, 'date_dayofmonth': 1, 'n': 3},
@@ -119,18 +119,18 @@ def test_aggregate_datemappings(client, index_docs, user):
 def test_query_tags(client, index_docs, user):
     def tags():
         return {doc['_id']: doc['tag']
-                for doc in query_documents(index_docs.name, fields=["tag"]).data
+                for doc in query_documents(index_docs, fields=["tag"]).data
                 if doc.get('tag')}
     assert tags() == {}
-    post_json(client, f"/index/{index_docs.name}/tags_update", user=user, expected=204,
+    post_json(client, f"/index/{index_docs}/tags_update", user=user, expected=204,
               json=dict(action="add", field="tag", tag="x", filters={'cat': 'a'}))
-    refresh(index_docs.name)
+    refresh(index_docs)
     assert tags() == {'0': ['x'], '1': ['x'], '2': ['x']}
-    post_json(client, f"/index/{index_docs.name}/tags_update", user=user, expected=204,
+    post_json(client, f"/index/{index_docs}/tags_update", user=user, expected=204,
               json=dict(action="remove", field="tag", tag="x", queries=["text"]))
-    refresh(index_docs.name)
+    refresh(index_docs)
     assert tags() == {'2': ['x']}
-    post_json(client, f"/index/{index_docs.name}/tags_update", user=user, expected=204,
+    post_json(client, f"/index/{index_docs}/tags_update", user=user, expected=204,
               json=dict(action="add", field="tag", tag="y", ids=["1", "2"]))
-    refresh(index_docs.name)
+    refresh(index_docs)
     assert tags() == {'1': ['y'], '2': ['x', 'y']}

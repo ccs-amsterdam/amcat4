@@ -74,9 +74,11 @@ def check_role(user: str, required_role: Role, index: str = None):
     if not user:
         raise HTTPException(status_code=401, detail="No authenticated user")
     if user == "admin":
+        print(1111)
         return True
-    actual_role = get_role(user, index) if index else get_global_role(user)
+    actual_role = get_role(index, user) if index else get_global_role(user)
     if actual_role and actual_role >= required_role:
+        print(f"Actual role: {actual_role.name} >= {required_role.name} --> OK!")
         return True
     else:
         error = f"User {user} does not have role {required_role}"

@@ -24,10 +24,11 @@ def build_headers(user=None, headers=None, password=None):
 def get_json(client: TestClient, url, expected=200, headers=None, user=None, **kargs):
     """Get the given URL. If expected is 2xx, return the result as parsed json"""
     response = client.get(url, headers=build_headers(user, headers), **kargs)
+    content = response.json() if response.content else None
     assert response.status_code == expected, \
-        f"GET {url} returned {response.status_code}, expected {expected}, {response.json()}"
+        f"GET {url} returned {response.status_code}, expected {expected}, {content}"
     if expected // 100 == 2:
-        return response.json()
+        return content
 
 
 def post_json(client: TestClient, url, expected=201, headers=None, user=None, **kargs):
@@ -52,4 +53,5 @@ def dictset(dicts: Iterable[dict]) -> Set[str]:
 
 def check(response: requests.Response, expected: int, msg: Optional[str] = None):
     assert response.status_code == expected, \
-        f"{msg}{': ' if msg else ''}Unexpected status: {response.status_code} != {expected}; reply: {response.json()}"
+        f"{msg or ''}{': ' if msg else ''}Unexpected status: received {response.status_code} != expected {expected};"\
+        f" reply: {response.json()}"

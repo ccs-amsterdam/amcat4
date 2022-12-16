@@ -1,8 +1,7 @@
 import pytest
 
-from amcat4.auth import Role
 from amcat4.index import create_index, list_all_indices, list_known_indices, delete_index, refresh, register_index, \
-    deregister_index, get_role, set_role, remove_role
+    deregister_index, get_role, set_role, remove_role, Role, get_global_role, remove_global_role, set_global_role
 from amcat4.elastic import es
 
 
@@ -48,21 +47,21 @@ def test_list_indices(index, guest_index, admin):
 
 def test_global_roles():
     user = "user@example.com"
-    assert get_role(user) is None
-    set_role(user, Role.ADMIN)
-    assert get_role(user) == Role.ADMIN
-    set_role(user, Role.WRITER)
-    assert get_role(user) == Role.WRITER
-    remove_role(user)
-    assert get_role(user) is None
+    assert get_global_role(user) is None
+    set_global_role(user, Role.ADMIN)
+    assert get_global_role(user) == Role.ADMIN
+    set_global_role(user, Role.WRITER)
+    assert get_global_role(user) == Role.WRITER
+    remove_global_role(user)
+    assert get_global_role(user) is None
 
 
 def test_index_roles(index):
     user = "user@example.com"
-    assert get_role(user, index) is None
-    set_role(user, Role.METAREADER, index)
-    assert get_role(user, index) == Role.METAREADER
-    set_role(user, Role.ADMIN, index)
-    assert get_role(user, index) == Role.ADMIN
-    remove_role(user, index)
-    assert get_role(user, index) is None
+    assert get_role(index, user) is None
+    set_role(index, user, Role.METAREADER)
+    assert get_role(index, user) == Role.METAREADER
+    set_role(index, user, Role.ADMIN)
+    assert get_role(index, user) == Role.ADMIN
+    remove_role(index, user)
+    assert get_role(index, user) is None

@@ -77,6 +77,15 @@ def index():
 
 
 @pytest.fixture()
+def index_name():
+    """An index name that is guaranteed not to exist and will be cleaned up after the test"""
+    index = "amcat4_unittest_indexname"
+    delete_index(index, ignore_missing=True)
+    yield index
+    delete_index(index, ignore_missing=True)
+
+
+@pytest.fixture()
 def guest_index():
     index = "amcat4_unittest_guest_index"
     delete_index(index, ignore_missing=True)
@@ -139,9 +148,9 @@ def index_many():
 def index_name():
     """A name to create an index which will be deleted afterwards if needed"""
     name = "amcat4_unittest_index_name"
-    delete_index(index, ignore_missing=True)
+    delete_index(name, ignore_missing=True)
     yield name
-    delete_index(index, ignore_missing=True)
+    delete_index(name, ignore_missing=True)
 
 
 @pytest.fixture()

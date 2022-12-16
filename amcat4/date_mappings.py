@@ -91,7 +91,8 @@ class Weeknr(DateMapping):
 
     def mapping_script(self, field):
         # TODO: this is deprecated, but get(DateFormatters.WEEK_FIELDS_ROOT.weekOfWeekBasedYear()) errors
-        return "emit(doc['date'].value.getWeekOfWeekyear())"
+        return "emit(doc['date'].value.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR))"
+        #return "emit(doc['date'].value.getWeekOfWeekyear())"
 
     def postprocess(self, value):
         return int(value)

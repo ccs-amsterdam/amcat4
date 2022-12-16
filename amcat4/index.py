@@ -67,7 +67,7 @@ def list_known_indices(email: str = None) -> Set[str]:
     List all known indices, e.g. indices registered in this amcat4 instance
     :param email: if given, only list indices visible to this user
     """
-    if email is None or get_role(email) == Role.ADMIN:
+    if email is None or get_global_role(email) == Role.ADMIN:
         query = {"query": {"term": {"email": GUEST_USER}}}
     else:
         # Either user has a role in the index, or index has a non-empty guest role
@@ -79,7 +79,7 @@ def list_known_indices(email: str = None) -> Set[str]:
         ]}}}
     indices = list(elasticsearch.helpers.scan(
         es(), index=get_settings().system_index, fields=["index"], _source=False, query=query))
-    return {ix['fields']["index"][0] for ix in indices if ix != GLOBAL_ROLES}
+    return {ix['fields']["index"][0] for ix in indices} - {GLOBAL_ROLES}
 
 
 def create_index(index: str, guest_role: Role = Role.NONE) -> None:
@@ -141,14 +141,21 @@ def set_role(index: str, email: str, role: Role):
     _set_auth_entry(index=index, email=email, role=role)
 
 
-def set_global_role(email: str, role: Role, index: Optional[str] = None):
+def set_global_role(email: str, role: Role):
     """
     Set the global role for this user
     """
     set_role(index=GLOBAL_ROLES, email=email, role=role)
 
 
-def remove_role(email: str, index: str):
+def set_guest_role(index: str, role: Role):
+    """
+    Set the guest role for this index
+    """
+    set_role(index=index, email=GUEST_USER, role=role)
+
+
+def remove_role(index: str, email: str):
     """
     Remove the role of this user on the given index
     """
@@ -163,11 +170,17 @@ def remove_global_role(email: str):
     """
     Remove the global role of this user
     """
-    remove_role(email, GLOBAL_ROLES)
+    remove_role(index=GLOBAL_ROLES, email=email)
 
 
-def get_role(email: str, index: str) -> Optional[Role]:
+def get_role(index: str, email: str) -> Optional[Role]:
+    """
+    Retrieve the role of this user on this index
+
+    :returns: a Role object, or None if the user has no role
+    """
     try:
+        print(f"??? {index}|{email}")
         doc = es().get(index=get_settings().system_index, id=f"{index}|{email}")
     except NotFoundError:
         return None
@@ -175,8 +188,24 @@ def get_role(email: str, index: str) -> Optional[Role]:
     return Role[role.upper()]
 
 
+def get_guest_role(index: str) -> Role:
+    """
+    Return the guest role for this index, raising a ValueError if the index does not exist
+    :returns: a Role object, possibly Role.NONE
+    """
+    role = get_role(index=index, email=GUEST_USER)
+    if role is None:
+        raise ValueError(f"Index {index} does not exist")
+    return role
+
+
 def get_global_role(email: str) -> Optional[Role]:
-    return get_role(email, GLOBAL_ROLES)
+    """
+    Retrieve the global role of this user
+
+    :returns: a Role object, or None if the user has no role
+    """
+    return get_role(index=GLOBAL_ROLES, email=email)
 
 
 def list_users(index: str) -> Iterable[Tuple[str, Role]]:
@@ -187,20 +216,22 @@ def list_users(index: str) -> Iterable[Tuple[str, Role]]:
     """
     r = es().search(index=get_settings().system_index, query={"term": {"index": index}})
     for doc in r['hits']['hits']:
-        yield doc['_source']['email'], Role[doc['_source']['role'].upper()]
+        email = doc['_source']['email']
+        if email != GUEST_USER:
+            yield email, Role[doc['_source']['role'].upper()]
 
 
 def list_global_users() -> Iterable[Tuple[str, Role]]:
     """"
     List all global users and their roles
-    :param index: The index to list roles for. If None, list global roles
     :returns: an iterable of (user, Role) pairs
     """
-    return list_users(GLOBAL_ROLES)
+    return list_users(index=GLOBAL_ROLES)
 
 
 def _set_auth_entry(index: str, email: str, role: Role):
     system_index = get_settings().system_index
+    print(f"+++ {index}|{email} <- {role.name}")
     es().index(index=system_index, id=f"{index}|{email}",
                document=dict(index=index, email=email, role=role.name))
     refresh(system_index)
