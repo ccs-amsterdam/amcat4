@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # Location of a .env file (if used) relative to working directory
     env_file: Path = ".env"
     # Host this instance is served at (needed for checking tokens)
-    host: str = "http://localhost:3000"
+    host: str = "http://localhost:5000"
     # Elasticsearch host
     elastic_host: str = "http://localhost:9200"
     # Elasticsearch index to store authorization information in

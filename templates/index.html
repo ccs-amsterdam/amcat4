@@ -1,14 +1,48 @@
 <html>
+<link href='https://fonts.googleapis.com/css?family=Poppins' rel='stylesheet'>
+<style>
+    body {
+        text-align: center;
+        font-family: 'Poppins';
+    }
+    .header {background-color: black}
+    .header h1 {color: white}
+    .header h2 {color: teal}
+    table {
+        text-align: left;
+  margin-left: auto;
+  margin-right: auto;
+}
+        .good {color: darkgreen}
+    .bad {color: darkred}
+</style>
 <body>
-<h1>Congratulations! This Amcat4 instance is up and running. </h1>
-<h2>Diagnostics</h2>
+<div class="header">
+<h1>AmCAT4 API</h1>
+<h2>At {{ host }}</h2>
+</div>
 
 If you have admin access, you can use <a href="admin">the admin page</a> to change the settings.
+<p>
+Settings summary:
+<table class="center">
+    <tr>
+        <th>Elasticsearch:</th>
+        <td>{% if es_alive %}<span class="good">Connected</span>{%  else  %}<span class="bad">Not Connected</span>{%endif%}</td>
+    </tr>
+    <tr>
+        <th>Admin password:</th>
+        <td>{% if has_admin %}<span class="good">Setup</span>{% else %}<span class="bad">Not set up</span>{%endif%}</td>
+    </tr>
+    <tr>
+        <th>Middlecat:</th>
+        <td>
+            {% if middlecat_url %}<a href="{{middlecat_url}}">{{middlecat_url}}</a>
+            {% else %}<span class="bad">Not set up</span>
+            {% endif %}
 
-<ul>
-    <li>Elasticsearch: {% if es_alive %}CONNECTED{%  else  %}
-</ul>
-
-Hello, <b>world!</b>
+        </td>
+    </tr>
+</table>
 </body>
 </html>

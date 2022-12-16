@@ -84,7 +84,7 @@ def verify_token(token: str) -> dict:
     if payload['exp'] < now:
         raise InvalidToken("Token expired")
     if payload['resource'] != get_settings().host:
-        raise InvalidToken("Wrong host!")
+        raise InvalidToken(f"Wrong host! {payload['resource']} != {get_settings().host}")
     return payload
 
 

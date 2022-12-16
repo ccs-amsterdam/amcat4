@@ -50,7 +50,7 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
     set_role(new_index.name, current_user, Role.ADMIN)
 
 
-# TODO Yes, this should we linked to the actual roles enum
+# TODO Yes, this should be linked to the actual roles enum
 class ChangeIndex(BaseModel):
     """Form to update an existing index."""
 

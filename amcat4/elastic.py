@@ -289,3 +289,10 @@ def update_tag_by_query(index: str, action: Literal["add", "remove"], query: dic
     script = TAG_SCRIPTS[action]
     params = dict(field=field, tag=tag)
     update_by_query(index, script, query, params)
+
+
+def ping():
+    """
+    Can we reach this elasticsearch server
+    """
+    return es().ping()
