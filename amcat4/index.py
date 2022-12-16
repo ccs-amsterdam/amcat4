@@ -180,7 +180,6 @@ def get_role(index: str, email: str) -> Optional[Role]:
     :returns: a Role object, or None if the user has no role
     """
     try:
-        print(f"??? {index}|{email}")
         doc = es().get(index=get_settings().system_index, id=f"{index}|{email}")
     except NotFoundError:
         return None
@@ -231,7 +230,6 @@ def list_global_users() -> Iterable[Tuple[str, Role]]:
 
 def _set_auth_entry(index: str, email: str, role: Role):
     system_index = get_settings().system_index
-    print(f"+++ {index}|{email} <- {role.name}")
     es().index(index=system_index, id=f"{index}|{email}",
                document=dict(index=index, email=email, role=role.name))
     refresh(system_index)

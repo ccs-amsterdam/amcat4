@@ -43,7 +43,6 @@ def verify_admin(password: str) -> bool:
         logging.info("Attempted admin login without AMCAT4_ADMIN_PASSWORD set")
         return False
 
-    print(password, admin_password)
     if password == admin_password:
         logging.info("Successful admin login")
         return True
@@ -74,11 +73,9 @@ def check_role(user: str, required_role: Role, index: str = None):
     if not user:
         raise HTTPException(status_code=401, detail="No authenticated user")
     if user == "admin":
-        print(1111)
         return True
     actual_role = get_role(index, user) if index else get_global_role(user)
     if actual_role and actual_role >= required_role:
-        print(f"Actual role: {actual_role.name} >= {required_role.name} --> OK!")
         return True
     else:
         error = f"User {user} does not have role {required_role}"
@@ -92,7 +89,6 @@ async def authenticated_user(token: str = Depends(oauth2_scheme)):
     user = verify_token(token)
     if not user:
         raise HTTPException(status_code=400, detail="Invalid token")
-    print(f"!! {user!r}")
     return user
 
 
