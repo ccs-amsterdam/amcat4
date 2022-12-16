@@ -14,8 +14,10 @@ See also the [API Documentation](apidoc.md)
 AmCAT requires an elasticsearch instance. The easiest way to run one for development is using docker:
 
 ```
-sudo docker run --name elastic7 -dp 9200:9200 -p 9300:9300 -e ES_JAVA_OPTS="-Xms1g -Xmx1g" -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:7.17.2
+sudo docker run --name elastic7 -dp 9200:9200 -p 9300:9300  -e "xpack.security.enabled=false" -e ES_JAVA_OPTS="-Xms1g -Xmx1g" -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:7.17.2
 ```
+
+Please note that this docker is completely unsecured, so this should be configured differently in production and the used port 9200 should probably not be exposed to the Internet. 
 
 ## Installing from source
 

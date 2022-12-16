@@ -66,6 +66,34 @@ def _setup_elastic():
     return elastic
 
 
+def coerce_type_to_elastic(value, ftype):
+    """
+    Coerces values into the respective type in elastic
+    based on ES_MAPPINGS and elastic field types
+    """
+    if ftype in ["keyword",
+                 "constant_keyword",
+                 "wildcard",
+                 "url",
+                 "tag",
+                 "text"]:
+        value = str(value)
+    elif ftype in ["long",
+                   "short",
+                   "byte",
+                   "double",
+                   "float",
+                   "half_float",
+                   "half_float",
+                   "unsigned_long"]:
+        value = float(value)
+    elif ftype in ["integer"]:
+        value = int(value)
+    elif ftype == "boolean":
+        value = bool(value)
+    return value
+
+
 def upload_documents(index: str, documents, fields: Mapping[str, str] = None) -> None:
     """
     Upload documents to this index
@@ -74,9 +102,12 @@ def upload_documents(index: str, documents, fields: Mapping[str, str] = None) ->
     :param documents: A sequence of article dictionaries
     :param fields: A mapping of field:type for field types
     """
-
     def es_actions(index, documents):
+        field_types = get_index_fields(index)
         for document in documents:
+            for key in document.keys():
+                if key in field_types:
+                    document[key] = coerce_type_to_elastic(document[key], field_types[key].get("type"))
             yield {"_index": index, **document}
 
     if fields:

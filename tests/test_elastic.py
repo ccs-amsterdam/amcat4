@@ -14,6 +14,19 @@ def test_upload_retrieve_document(index):
     # TODO: should a['date'] be a datetime?
 
 
+def test_data_coerced(index):
+    """Are field values coerced to the correct field type"""
+    elastic.set_fields(index, {"i": "long"})
+    a = dict(_id="DoccyMcDocface", text="text", title="test-numeric", date="2022-12-13", i="1")
+    elastic.upload_documents(index, [a])
+    d = elastic.get_document(index, "DoccyMcDocface")
+    assert isinstance(d["i"], float)
+    a = dict(text="text", title=1, date="2022-12-13")
+    elastic.upload_documents(index, [a])
+    d = elastic.get_document(index, "DoccyMcDocface")
+    assert isinstance(d["title"], str)
+
+
 def test_fields(index):
     """Can we get the fields from an index"""
     fields = get_fields(index)
