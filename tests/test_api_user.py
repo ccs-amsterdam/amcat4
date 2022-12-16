@@ -12,7 +12,7 @@ def test_admin_token(client: TestClient):
     check(client.post('/auth/token', data=dict(username="admin", password='wrong')), 401)
     r = client.post('/auth/token', data=dict(username="admin", password="test"))
     assert r.status_code == 200
-    assert verify_token(r.json()['access_token']) == "admin"
+    assert verify_token(r.json()['access_token'])['email'] == "admin"
 
 
 def test_get_user(client: TestClient, writer, user):

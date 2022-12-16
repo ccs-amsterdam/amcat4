@@ -21,6 +21,8 @@ UNITTEST_SYSTEM_INDEX = "amcat4_unittest_system"
 def my_setup():
     # Override system db
     get_settings().system_index = UNITTEST_SYSTEM_INDEX
+    get_settings().admin_password = "very secret"
+
     es.cache_clear()
     yield None
     es().indices.delete(index=UNITTEST_SYSTEM_INDEX, ignore=[404])

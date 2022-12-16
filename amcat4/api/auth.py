@@ -1,14 +1,16 @@
 """Helper methods for authentication."""
+import functools
+import json
 import logging
 from datetime import datetime
-from typing import Optional
 
+import requests
+from authlib.common.errors import AuthlibBaseError
 from authlib.jose import JsonWebSignature
-from authlib.jose.errors import DecodeError
+from authlib.jose import jwt
 from fastapi import HTTPException
 from fastapi.params import Depends
 from fastapi.security import OAuth2PasswordBearer
-import json
 
 from amcat4.config import get_settings
 from amcat4.index import Role, get_role, get_global_role
@@ -16,19 +18,21 @@ from amcat4.index import Role, get_role, get_global_role
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
+class InvalidToken(ValueError):
+    pass
+
+
 def create_token(email: str, days_valid: int = 7) -> bytes:
     """
-    Create a new token for this user
+    Create a new (instance) token for this user
     :param email: the email or username to create a token for
     :param days_valid: the number of days from now that the token should be valid
     """
     header: dict = {'alg': 'HS256'}
-    if days_valid:
-        now = int(datetime.now().timestamp())
-        exp = now + days_valid * 24 * 60 * 60
-        header.update({'crit': ['exp'], 'exp': exp})
-    payload = {'email': email}
-    s = JsonWebSignature().serialize_compact(header, json.dumps(payload).encode("utf-8"), get_settings().salt)
+    now = int(datetime.now().timestamp())
+    exp = now + days_valid * 24 * 60 * 60
+    payload = {'email': email, 'exp': exp, 'resource': get_settings().host}
+    s = JsonWebSignature().serialize_compact(header, json.dumps(payload).encode("utf-8"), get_settings().key)
     return s
 
 
@@ -51,21 +55,63 @@ def verify_admin(password: str) -> bool:
         return False
 
 
-def verify_token(token: str) -> Optional[str]:
-    """Verify the given token and return the email"""
+@functools.lru_cache()
+def get_middlecat_config(middlecat_url) -> dict:
+    r = requests.get(f"{middlecat_url}/api/configuration")
+    r.raise_for_status()
+    return r.json()
+
+
+def verify_token(token: str) -> dict:
+    """
+    Verifies the given token and returns the payload
+
+    raises a InvalidToken exception if the token could not be validated
+    """
+    # If there is an admin password, first try to validate an internal token
+    payload = None
+    try:
+        if get_settings().admin_password:
+            payload = decode_amcat_token(token)
+    except InvalidToken:
+        pass
+    # If token was not validated yet, decode it as a middlecat token
+    if payload is None:
+        payload = decode_middlecat_token(token)
+    if missing := {'email', 'resource', 'exp'} - set(payload.keys()):
+        raise InvalidToken(f"Invalid token, missing keys {missing}")
+    now = int(datetime.now().timestamp())
+    if payload['exp'] < now:
+        raise InvalidToken("Token expired")
+    if payload['resource'] != get_settings().host:
+        raise InvalidToken("Wrong host!")
+    return payload
+
+
+def decode_amcat_token(token: str) -> dict:
+    """
+    Verifies an AmCAT 'internal' token
+    """
     jws = JsonWebSignature()
     try:
-        result = jws.deserialize_compact(token, get_settings().salt)
-    except DecodeError:
-        logging.exception("Token verification failed")
-        return None
-    if "exp" in result["header"]:
-        now = int(datetime.now().timestamp())
-        if result["header"]["exp"] < now:
-            logging.error("Token expired")
-            return None
-    payload = json.loads(result['payload'].decode("utf-8"))
-    return payload['email']
+        payload = jws.deserialize_compact(token, get_settings().key)['payload']
+        return json.loads(payload.decode('utf-8'))
+    except ValueError:
+        raise InvalidToken("AmCAT Admin token verification failed")
+
+
+def decode_middlecat_token(token: str) -> dict:
+    """
+    Verifies a midddlecat token
+    """
+    url = get_settings().middlecat_url
+    if not url:
+        raise InvalidToken("No middlecat defined, cannot decrypt middlecat token")
+    public_key = get_middlecat_config(url)['public_key']
+    try:
+        return jwt.decode(token, public_key)
+    except AuthlibBaseError as e:
+        raise InvalidToken(e)
 
 
 def check_role(user: str, required_role: Role, index: str = None):
@@ -86,10 +132,11 @@ def check_role(user: str, required_role: Role, index: str = None):
 
 async def authenticated_user(token: str = Depends(oauth2_scheme)):
     """Dependency to verify and return a user based on a token."""
-    user = verify_token(token)
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid token")
-    return user
+    try:
+        return verify_token(token)['email']
+    except Exception:
+        logging.exception("Login failed")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 async def authenticated_writer(user: str = Depends(authenticated_user)):

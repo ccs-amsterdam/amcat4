@@ -15,6 +15,7 @@ from pydantic.networks import EmailStr
 from amcat4 import index
 from amcat4.api import auth
 from amcat4.api.auth import authenticated_user, check_role, create_token, authenticated_admin
+from amcat4.config import get_settings
 from amcat4.index import Role, set_global_role, get_global_role
 
 app_users = APIRouter(
@@ -127,3 +128,10 @@ def refresh_token(current_user: str = Depends(authenticated_user)):
     """Create a new token for the user authenticated with an existing token."""
     token = create_token(current_user)
     return {"access_token": token, "token_type": "bearer"}
+
+
+@app_users.get("/middlecat")
+def get_auth_config():
+    return {"middlecat_url": get_settings().middlecat_url,
+            "resource": get_settings().host,
+            "allow_password": bool(get_settings().admin_password)}
