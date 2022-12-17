@@ -28,7 +28,7 @@ def index_list(current_user: str = Depends(authenticated_user)):
 
     Returns a list of dicts containing name, role, and guest attributes
     """
-    return list_known_indices(current_user)
+    return [{"name": index} for index in list_known_indices(current_user)]
 
 
 class NewIndex(BaseModel):

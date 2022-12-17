@@ -18,13 +18,6 @@ from amcat4.index import create_index, set_global_role, Role
 
 SOTU_INDEX = "state_of_the_union"
 
-ENV_TEMPLATE = """\
-SECRET_KEY={secret}
-ADMIN_EMAIL={admin_email}
-MIDDLECAT_HOST=https://middlecat.netlify.app
-"""
-
-
 def upload_test_data() -> str:
     url = "https://raw.githubusercontent.com/ccs-amsterdam/example-text-data/master/sotu.csv"
     url_open = urllib.request.urlopen(url)
@@ -53,13 +46,24 @@ def run(args):
 
 def create_env(args):
     if os.path.exists('.env'):
-        raise Exception('.env already exists')
-    env = ENV_TEMPLATE.format(admin_email=args.admin_email,
-                              secret=secrets.token_hex(nbytes=32))
+        print('*** File .env already exists, quitting ***')
+        sys.exit(1)
+
+    env = dict(
+        amcat4_secret_key=secrets.token_hex(nbytes=32),
+        amcat4_middlecat_host="https://middlecat.up.netlify.app",
+    )
+    if args.admin_email:
+        env['amcat4_admin_email'] = args.admin_email
+    if args.admin_password:
+        env['amcat4_admin_password'] = args.admin_password
+    if args.no_admin_password:
+        env['amcat4_admin_password'] = ""
     with open('.env', 'w') as f:
-        f.write(env)
+        for key, val in env.items():
+            f.write(f"{key}={val}\n")
     os.chmod('.env', 0o600)
-    print('Created .env')
+    print('*** Created .env file ***')
 
 
 def create_test_index(_args):
@@ -84,7 +88,10 @@ p.add_argument('-p', '--port', help='Port', default=5000)
 p.set_defaults(func=run)
 
 p = subparsers.add_parser('create-env', help='Create the .env file with a random secret key')
-p.add_argument("admin_email", help="The email address of the admin user.")
+p.add_argument("-a", "--admin_email", help="The email address of the admin user.")
+p.add_argument("-p", "--admin_password", help="The password of the built-in admin user.")
+p.add_argument("-P", "--no-admin_password", action='store_true', help="Disable admin password")
+
 p.set_defaults(func=create_env)
 
 

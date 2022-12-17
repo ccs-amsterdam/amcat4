@@ -32,7 +32,7 @@ def create_token(email: str, days_valid: int = 7) -> bytes:
     now = int(datetime.now().timestamp())
     exp = now + days_valid * 24 * 60 * 60
     payload = {'email': email, 'exp': exp, 'resource': get_settings().host}
-    s = JsonWebSignature().serialize_compact(header, json.dumps(payload).encode("utf-8"), get_settings().key)
+    s = JsonWebSignature().serialize_compact(header, json.dumps(payload).encode("utf-8"), get_settings().secret_key)
     return s
 
 
@@ -94,7 +94,7 @@ def decode_amcat_token(token: str) -> dict:
     """
     jws = JsonWebSignature()
     try:
-        payload = jws.deserialize_compact(token, get_settings().key)['payload']
+        payload = jws.deserialize_compact(token, get_settings().secret_key)['payload']
         return json.loads(payload.decode('utf-8'))
     except ValueError:
         raise InvalidToken("AmCAT Admin token verification failed")
