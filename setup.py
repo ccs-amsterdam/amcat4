@@ -33,6 +33,7 @@ setup(
             'pytest',
             'mypy',
             'flake8',
+            'responses',
         ]
     },
 )
