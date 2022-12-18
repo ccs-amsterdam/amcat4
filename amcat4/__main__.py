@@ -18,6 +18,7 @@ from amcat4.index import create_index, set_global_role, Role
 
 SOTU_INDEX = "state_of_the_union"
 
+
 def upload_test_data() -> str:
     url = "https://raw.githubusercontent.com/ccs-amsterdam/example-text-data/master/sotu.csv"
     url_open = urllib.request.urlopen(url)
@@ -77,7 +78,6 @@ def add_admin(args):
     set_global_role(args.email, Role.ADMIN)
 
 
-
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
 
 subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
@@ -95,7 +95,7 @@ p.add_argument("-P", "--no-admin_password", action='store_true', help="Disable a
 p.set_defaults(func=create_env)
 
 
-p = subparsers.add_parser('add-admin', help=f'Add a global admin')
+p = subparsers.add_parser('add-admin', help='Add a global admin')
 p.add_argument("email", help="The email address of the admin user.")
 p.set_defaults(func=add_admin)
 

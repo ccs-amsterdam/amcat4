@@ -1,7 +1,6 @@
 from fastapi import Request
 from fastapi import APIRouter
 from fastapi.templating import Jinja2Templates
-from requests import ConnectionError
 
 from amcat4 import elastic
 from amcat4.api.auth import get_middlecat_config
