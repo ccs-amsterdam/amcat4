@@ -26,7 +26,7 @@ def test_create_list_delete_index(client, index_name, user, writer, admin):
     assert get_guest_role(index_name).name == "METAREADER"
 
     # Index should now be visible to non-authorized users
-    assert index_name in  {x['name'] for x in get_json(client, "/index/", user=writer)}
+    assert index_name in {x['name'] for x in get_json(client, "/index/", user=writer)}
 
 
 def test_fields_upload(client: TestClient, user: str, index: str):
