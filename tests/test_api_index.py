@@ -16,8 +16,8 @@ def test_create_list_delete_index(client, index_name, user, writer, admin):
     assert get_json(client, f"/index/{index_name}", user=writer) == {"index": index_name, "guest_role": "NONE"}
 
     # Users can only see indices that they have a role in or that have a guest role
-    assert index_name not in get_json(client, "/index/", user=user)
-    assert index_name in get_json(client, "/index/", user=writer)
+    assert index_name not in {x['name'] for x in get_json(client, "/index/", user=user)}
+    assert index_name in {x['name'] for x in get_json(client, "/index/", user=writer)}
 
     # (Only) index admin can change index guest role
     check(client.put(f"/index/{index_name}"), 401)
@@ -26,7 +26,7 @@ def test_create_list_delete_index(client, index_name, user, writer, admin):
     assert get_guest_role(index_name).name == "METAREADER"
 
     # Index should now be visible to non-authorized users
-    assert index_name in get_json(client, "/index/", user=user)
+    assert index_name in  {x['name'] for x in get_json(client, "/index/", user=writer)}
 
 
 def test_fields_upload(client: TestClient, user: str, index: str):
