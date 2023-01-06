@@ -12,30 +12,21 @@ import urllib.request
 
 import uvicorn
 
-from amcat4 import auth
-from amcat4.auth import Role, User
-from amcat4.config import settings
-from amcat4.db import initialize_if_needed
-from amcat4.elastic import setup_elastic, upload_documents
-from amcat4.index import create_index, Index
+from amcat4 import index
+from amcat4.elastic import upload_documents
+from amcat4.index import create_index, set_global_role, Role
 
 SOTU_INDEX = "state_of_the_union"
 
-ENV_TEMPLATE = """\
-SECRET_KEY={secret}
-ADMIN_EMAIL={admin_email}
-MIDDLECAT_HOST=https://middlecat.netlify.app
-"""
 
-
-def upload_test_data() -> Index:
+def upload_test_data() -> str:
     url = "https://raw.githubusercontent.com/ccs-amsterdam/example-text-data/master/sotu.csv"
     url_open = urllib.request.urlopen(url)
     csv.field_size_limit(sys.maxsize)
     csvfile = csv.DictReader(io.TextIOWrapper(url_open, encoding='utf-8'))
 
     # creates the index info on the sqlite db
-    index = create_index(SOTU_INDEX)
+    create_index(SOTU_INDEX)
 
     docs = [dict(title="{Year}: {President}".format(**row),
                  text=row['Text'],
@@ -46,7 +37,7 @@ def upload_test_data() -> Index:
             for row in csvfile]
     columns = {"president": "keyword", "party": "keyword", "year": "double"}
     upload_documents(SOTU_INDEX, docs, columns)
-    return index
+    return SOTU_INDEX
 
 
 def run(args):
@@ -56,36 +47,38 @@ def run(args):
 
 def create_env(args):
     if os.path.exists('.env'):
-        raise Exception('.env already exists')
-    env = ENV_TEMPLATE.format(admin_email=args.admin_email,
-                              secret=secrets.token_hex(nbytes=32))
+        print('*** File .env already exists, quitting ***')
+        sys.exit(1)
+
+    env = dict(
+        amcat4_secret_key=secrets.token_hex(nbytes=32),
+        amcat4_middlecat_host="https://middlecat.up.netlify.app",
+    )
+    if args.admin_email:
+        env['amcat4_admin_email'] = args.admin_email
+    if args.admin_password:
+        env['amcat4_admin_password'] = args.admin_password
+    if args.no_admin_password:
+        env['amcat4_admin_password'] = ""
     with open('.env', 'w') as f:
-        f.write(env)
+        for key, val in env.items():
+            f.write(f"{key}={val}\n")
     os.chmod('.env', 0o600)
-    print('Created .env')
+    print('*** Created .env file ***')
 
 
 def create_test_index(_args):
-    if ix := Index.get_or_none(Index.name == SOTU_INDEX):
-        print(f"Index {SOTU_INDEX} already exists, deleting")
-        ix.delete_index()
-
     logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
-    admin = User.get(User.email == "admin")
-    upload_test_data().set_role(admin, Role.ADMIN)
+    index.delete_index(SOTU_INDEX, ignore_missing=True)
+    upload_test_data()
 
 
-def create_admin(args):
-    username, password = args.username, args.password
-    if User.select().where(User.email == username).exists():
-        print(f"User {username} already exists")
-        return
-    logging.warning(f"**** Creating superuser {username}:*****")
-    auth.create_user(username, password, Role.ADMIN)
+def add_admin(args):
+    logging.info(f"**** Setting {args.email} to ADMIN ****")
+    set_global_role(args.email, Role.ADMIN)
 
 
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
-parser.add_argument("--elastic", help="Elasticsearch host", default=settings.amcat4_elastic_host)
 
 subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
 p = subparsers.add_parser('run', help='Run the backend API in development mode')
@@ -95,23 +88,24 @@ p.add_argument('-p', '--port', help='Port', default=5000)
 p.set_defaults(func=run)
 
 p = subparsers.add_parser('create-env', help='Create the .env file with a random secret key')
-p.add_argument("admin_email", help="The email address of the admin user.")
+p.add_argument("-a", "--admin_email", help="The email address of the admin user.")
+p.add_argument("-p", "--admin_password", help="The password of the built-in admin user.")
+p.add_argument("-P", "--no-admin_password", action='store_true', help="Disable admin password")
+
 p.set_defaults(func=create_env)
+
+
+p = subparsers.add_parser('add-admin', help='Add a global admin')
+p.add_argument("email", help="The email address of the admin user.")
+p.set_defaults(func=add_admin)
 
 p = subparsers.add_parser('create-test-index', help=f'Create the {SOTU_INDEX} test index')
 p.set_defaults(func=create_test_index)
-
-p = subparsers.add_parser('create-admin', help='Create the admin:admin superuser')
-p.add_argument("--username", default="admin", help="Username for the new user (default: admin)")
-p.add_argument("--password", default="admin", help="Password for the new user (default: admin)")
-p.set_defaults(func=create_admin)
 
 args = parser.parse_args()
 
 logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=logging.INFO)
 es_logger = logging.getLogger('elasticsearch')
 es_logger.setLevel(logging.WARNING)
-setup_elastic(args.elastic)
-initialize_if_needed()
 
 args.func(args)

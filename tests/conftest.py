@@ -1,29 +1,31 @@
 from typing import Iterable
 
 import pytest
-from elasticsearch.exceptions import NotFoundError
-
 from fastapi.testclient import TestClient
 
-from amcat4.elastic import setup_elastic
-
-# Set db to shared in-memory database *before* importing amcat4. Maybe not the most elegant solution...
-from amcat4.config import settings
-settings.amcat4_db_name = "testme.db"
-
-
 from amcat4 import elastic, api  # noqa: E402
-from amcat4.db import initialize_if_needed  # noqa: E402
-from amcat4.auth import create_user, Role, User  # noqa: E402
-from amcat4.index import create_index, Index  # noqa: E402
-
-initialize_if_needed()
+from amcat4.config import get_settings
+from amcat4.elastic import es
+from amcat4.index import create_index, delete_index, Role, refresh, delete_user, \
+    remove_global_role, set_global_role
 
 UNITS = [{"unit": {"text": "unit1"}},
          {"unit": {"text": "unit2"}, "gold": {"element": "au"}}]
 CODEBOOK = {"foo": "bar"}
 PROVENANCE = {"bar": "foo"}
 RULES = {"ruleset": "crowdcoding"}
+UNITTEST_SYSTEM_INDEX = "amcat4_unittest_system"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def my_setup():
+    # Override system db
+    get_settings().system_index = UNITTEST_SYSTEM_INDEX
+    get_settings().admin_password = "very secret"
+
+    es.cache_clear()
+    yield None
+    es().indices.delete(index=UNITTEST_SYSTEM_INDEX, ignore=[404])
 
 
 @pytest.fixture()
@@ -32,63 +34,80 @@ def client():
 
 
 @pytest.fixture()
-def user():
-    u = create_user(email="testuser@test.com", password="test")
-    u.plaintext_password = "test"
-    yield u
-    u.delete_instance()
+def admin():
+    email = "admin@amcat.nl"
+    set_global_role(email, Role.ADMIN)
+    yield email
+    remove_global_role(email)
 
 
 @pytest.fixture()
 def writer():
-    u = create_user(email="writer@test.com", password="test", global_role=Role.WRITER)
-    u.plaintext_password = "test"
-    yield u
-    u.delete_instance()
+    email = "writer@amcat.nl"
+    set_global_role(email, Role.WRITER)
+    yield email
+    remove_global_role(email)
 
 
 @pytest.fixture()
-def admin():
-    u = create_user(email="admin@test.com", password="secret", global_role=Role.ADMIN)
-    u.plaintext_password = "secret"
-    yield u
-    u.delete_instance()
+def user():
+    name = "test_user@amcat.nl"
+    delete_user(name)
+    set_global_role(name, Role.NONE)
+    yield name
+    delete_user(name)
+
+
+@pytest.fixture()
+def username():
+    """A name to create a user which will be deleted afterwards if needed"""
+    name = "test_username@amcat.nl"
+    delete_user(name)
+    yield name
+    delete_user(name)
 
 
 @pytest.fixture()
 def index():
-    setup_elastic()
-    _delete_index("amcat4_unittest_index")
-    i = create_index("amcat4_unittest_index")
-    yield i
-    try:
-        i.delete_index()
-    except NotFoundError:
-        pass
+    index = "amcat4_unittest_index"
+    delete_index(index, ignore_missing=True)
+    create_index(index)
+    yield index
+    delete_index(index, ignore_missing=True)
+
+
+@pytest.fixture()
+def index_name():
+    """An index name that is guaranteed not to exist and will be cleaned up after the test"""
+    index = "amcat4_unittest_indexname"
+    delete_index(index, ignore_missing=True)
+    yield index
+    delete_index(index, ignore_missing=True)
 
 
 @pytest.fixture()
 def guest_index():
-    setup_elastic()
-    i = create_index("amcat4_unittest_guestindex", guest_role=Role.READER)
-    yield i
-    try:
-        i.delete_index()
-    except NotFoundError:
-        pass
+    index = "amcat4_unittest_guest_index"
+    delete_index(index, ignore_missing=True)
+    create_index(index, guest_role=Role.READER)
+    yield index
+    delete_index(index, ignore_missing=True)
 
 
-def upload(index: Index, docs: Iterable[dict], **kwargs):
+def upload(index: str, docs: Iterable[dict], **kwargs):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
+    ids = []
     for i, doc in enumerate(docs):
-        defaults = {'title': "title", 'date': "2018-01-01", 'text': "text", '_id': str(i)}
+        id = str(i)
+        ids.append(id)
+        defaults = {'title': "title", 'date': "2018-01-01", 'text': "text", '_id': id}
         for k, v in defaults.items():
             if k not in doc:
                 doc[k] = v
-    ids = elastic.upload_documents(index.name, docs, **kwargs)
-    elastic.refresh(index.name)
+    elastic.upload_documents(index, docs, **kwargs)
+    refresh(index)
     return ids
 
 
@@ -101,58 +120,28 @@ TEST_DOCUMENTS = [
 
 
 def populate_index(index):
-    upload(index, TEST_DOCUMENTS, columns={'cat': 'keyword', 'subcat': 'keyword', 'i': 'long'})
+    upload(index, TEST_DOCUMENTS, fields={'cat': 'keyword', 'subcat': 'keyword', 'i': 'long'})
     return TEST_DOCUMENTS
 
 
 @pytest.fixture()
 def index_docs():
-    setup_elastic()
-    _delete_index("amcat4_unittest_indexdocs")
-    i = create_index("amcat4_unittest_indexdocs")
-    populate_index(i)
-    yield i
-    try:
-        i.delete_index()
-    except NotFoundError:
-        pass
-
-
-def _delete_index(name):
-    ix = Index.get_or_none(Index.name == name)
-    if ix:
-        ix.delete_index(delete_from_elastic=False)
-    elastic._delete_index(name, ignore_missing=True)
+    index = "amcat4_unittest_indexdocs"
+    delete_index(index, ignore_missing=True)
+    create_index(index, guest_role=Role.READER)
+    populate_index(index)
+    yield index
+    delete_index(index, ignore_missing=True)
 
 
 @pytest.fixture()
 def index_many():
-    setup_elastic()
-    ix = create_index("amcat4_unittest_indexmany")
-    upload(ix, [dict(id=i, pagenr=abs(10-i), text=text) for (i, text) in enumerate(["odd", "even"]*10)])
-    yield ix
-    _delete_index(ix.name)
-
-
-@pytest.fixture()
-def index_name():
-    """A name to create an index which will be deleted afterwards if needed"""
-    setup_elastic()
-    name = "amcat4_unittest_index_name"
-    _delete_index(name)
-    yield name
-    _delete_index(name)
-
-
-@pytest.fixture()
-def username():
-    """A name to create a user which will be deleted afterwards if needed"""
-    setup_elastic()
-    name = "test_user@test.com"
-    yield name
-    u = User.get_or_none(User.email == name)
-    if u:
-        u.delete_instance()
+    index = "amcat4_unittest_indexmany"
+    delete_index(index, ignore_missing=True)
+    create_index(index, guest_role=Role.READER)
+    upload(index, [dict(id=i, pagenr=abs(10 - i), text=text) for (i, text) in enumerate(["odd", "even"] * 10)])
+    yield index
+    delete_index(index, ignore_missing=True)
 
 
 @pytest.fixture()

@@ -1,19 +1,22 @@
-import hashlib
-import json
+"""
+Connection between AmCAT4 and the elasticsearch backend
+
+Some things to note:
+- See config.py for global settings, including elastic host and system index name
+- The elasticsearch backend should contain a system index, which will be created if needed
+- The system index contains a 'document' for each used index containing:
+  {auth: [{email: role}], guest_role: role}
+- We define the mappings (field types) based on existing elasticsearch mappings,
+  but use field metadata to define specific fields, see ES_MAPPINGS below.
+"""
+import functools
 import logging
-from typing import Mapping, List, Optional, Iterable, Tuple, Union, Sequence, Dict, Literal
+from typing import Mapping, List, Iterable, Tuple, Union, Sequence, Dict, Literal
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
-from amcat4.config import settings
-
-_ES: Optional[Elasticsearch] = None
-SYS_INDEX = "amcat4system"
-SYS_MAPPING = "sys"
-REQUIRED_FIELDS = ["title", "date", "text"]
-HASH_FIELDS = REQUIRED_FIELDS + ["url"]
-DEFAULT_QUERY_FIELDS = HASH_FIELDS
+from amcat4.config import get_settings
 
 ES_MAPPINGS = {
    'long': {"type": "long"},
@@ -28,77 +31,44 @@ ES_MAPPINGS = {
    'geo_point': {"type": "geo_point"}
    }
 
+DEFAULT_MAPPING = {
+    'text': ES_MAPPINGS['text'],
+    'title': ES_MAPPINGS['text'],
+    'date': ES_MAPPINGS['date'],
+    'url': ES_MAPPINGS['url'],
+}
 
+SYSTEM_MAPPING = {
+    'index': {"type": "keyword"},
+    'email': {"type": "keyword"},
+    'role': {"type": "keyword"},
+}
+
+
+@functools.lru_cache()
 def es() -> Elasticsearch:
-    if _ES is None:
-        raise Exception("Elasticsearch not setup yet")
-    return _ES
+    return _setup_elastic()
 
 
-def setup_elastic(*hosts):
+def _setup_elastic():
     """
     Check whether we can connect with elastic
     """
-    if not hosts:
-        hosts = settings.amcat4_elastic_host
-    global _ES
-    if _ES is None:
-        logging.debug("Connecting with elasticsearch at {}".format(hosts or "(default: localhost:9200)"))
-        _ES = Elasticsearch(hosts or None)
-    else:
-        logging.debug("Elasticsearch already configured")
-    if not _ES.ping():
-        raise Exception(f"Cannot connect to elasticsearch server {hosts}")
-    if not _ES.indices.exists(index=SYS_INDEX):
-        logging.info(f"Creating amcat4 system index: {SYS_INDEX}")
-        _ES.indices.create(index=SYS_INDEX)
+    settings = get_settings()
+    host = settings.elastic_host
+    logging.debug(f"Connecting with elasticsearch at {settings.elastic_host}")
+    elastic = Elasticsearch(host or None)
+    if not elastic.ping():
+        raise Exception(f"Cannot connect to elasticsearch server {host}")
+    if not elastic.indices.exists(index=settings.system_index):
+        logging.info(f"Creating amcat4 system index: {settings.system_index}")
+        elastic.indices.create(index=settings.system_index, mappings={'properties': SYSTEM_MAPPING})
+    return elastic
 
 
-def _list_indices(exclude_system_index=True) -> List[str]:
+def coerce_type_to_elastic(value, ftype):
     """
-    List all indices on the connected elastic cluster.
-    You should probably use the methods in amcat4.index rather than this.
-    """
-    result = es().indices.get(index="*")
-    return [x for x in result.keys() if not (exclude_system_index and x == SYS_INDEX)]
-
-
-def _create_index(name: str) -> None:
-    """
-    Create a new index
-    You should probably use the methods in amcat4.index rather than this.
-    """
-    fields = {'text': ES_MAPPINGS['text'],
-              'title': ES_MAPPINGS['text'],
-              'date': ES_MAPPINGS['date'],
-              'url': ES_MAPPINGS['url']}
-    es().indices.create(index=name, mappings={'properties': fields})
-
-
-def _delete_index(name: str, ignore_missing=False) -> None:
-    """
-    Delete an index
-    You should probably use the methods in amcat4.index rather than this.
-    :param name: The name of the new index (without prefix)
-    :param ignore_missing: If True, do not throw exception if index does not exist
-    """
-    es().indices.delete(index=name, ignore=([404] if ignore_missing else []))
-
-
-def _get_hash(document):
-    """
-    Get the hash for a document
-    """
-    hash_dict = {key: document.get(key) for key in HASH_FIELDS}
-    hash_str = json.dumps(hash_dict, sort_keys=True, ensure_ascii=True).encode('ascii')
-    m = hashlib.sha224()
-    m.update(hash_str)
-    return m.hexdigest()
-
-
-def check_elastic_type(value, ftype):
-    """
-    coerces values into the respective type in elastic
+    Coerces values into the respective type in elastic
     based on ES_MAPPINGS and elastic field types
     """
     if ftype in ["keyword",
@@ -124,47 +94,31 @@ def check_elastic_type(value, ftype):
     return value
 
 
-def _get_es_actions(index, documents):
-    """
-    Create the Elasticsearch bulk actions from article dicts.
-    It also tries to coerce types using the first entry of the index as reference
-    If you provide a list to ID_SEQ_LIST, the hashes are copied there
-    """
-    field_types = get_index_fields(index)
-    for document in documents:
-        for key in document.keys():
-            if key in field_types:
-                document[key] = check_elastic_type(document[key], field_types[key].get("type"))
-        for f in REQUIRED_FIELDS:
-            if f not in document:
-                raise ValueError("Field {f!r} not present in document {document}".format(**locals()))
-        if '_id' not in document:
-            document['_id'] = _get_hash(document)
-        yield {
-            "_index": index,
-            **document
-        }
-
-
-def upload_documents(index: str, documents, columns: Mapping[str, str] = None) -> List[str]:
+def upload_documents(index: str, documents, fields: Mapping[str, str] = None) -> None:
     """
     Upload documents to this index
 
     :param index: The name of the index (without prefix)
     :param documents: A sequence of article dictionaries
-    :param columns: A mapping of field:type for column types
-    :return: the list of document ids
+    :param fields: A mapping of field:type for field types
     """
-    if columns:
-        set_columns(index, columns)
+    def es_actions(index, documents):
+        field_types = get_index_fields(index)
+        for document in documents:
+            for key in document.keys():
+                if key in field_types:
+                    document[key] = coerce_type_to_elastic(document[key], field_types[key].get("type"))
+            yield {"_index": index, **document}
 
-    actions = list(_get_es_actions(index, documents))
+    if fields:
+        set_fields(index, fields)
+
+    actions = list(es_actions(index, documents))
     bulk(es(), actions)
     invalidate_field_cache(index)
-    return [action['_id'] for action in actions]
 
 
-def get_mapping(type_: Union[str, dict]):
+def get_field_mapping(type_: Union[str, dict]):
     if isinstance(type_, str):
         return ES_MAPPINGS[type_]
     else:
@@ -176,15 +130,15 @@ def get_mapping(type_: Union[str, dict]):
         return mapping
 
 
-def set_columns(index: str, columns: Mapping[str, str]):
+def set_fields(index: str, fields: Mapping[str, str]):
     """
     Update the column types for this index
 
     :param index: The name of the index (without prefix)
-    :param columns: A mapping of field:type for column types
+    :param fields: A mapping of field:type for column types
     """
-    mapping = {field: get_mapping(type_) for (field, type_) in columns.items()}
-    es().indices.put_mapping(index=index, body=dict(properties=mapping))
+    body = dict(properties={field: get_field_mapping(type_) for (field, type_) in fields.items()})
+    es().indices.put_mapping(index=index, body=body)
     invalidate_field_cache(index)
 
 
@@ -305,17 +259,6 @@ def get_values(index: str, field: str) -> List[str]:
     return [x["key"] for x in r["aggregations"]["values"]["buckets"]]
 
 
-def refresh(index: str):
-    es().indices.refresh(index=index)
-
-
-def index_exists(name: str) -> bool:
-    """
-    Check if an index with this name exists
-    """
-    return es().indices.exists(index=name)
-
-
 def update_by_query(index: str, script: str, query: dict, params: dict = None):
     body = dict(
         **query,
@@ -346,3 +289,10 @@ def update_tag_by_query(index: str, action: Literal["add", "remove"], query: dic
     script = TAG_SCRIPTS[action]
     params = dict(field=field, tag=tag)
     update_by_query(index, script, query, params)
+
+
+def ping():
+    """
+    Can we reach this elasticsearch server
+    """
+    return es().ping()

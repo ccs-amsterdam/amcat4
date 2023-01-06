@@ -1,0 +1,65 @@
+<html>
+<link href='https://fonts.googleapis.com/css?family=Poppins' rel='stylesheet'>
+<style>
+    body {
+        text-align: center;
+        font-family: 'Poppins';
+    }
+    .header {background-color: black}
+    .header h1 {color: white}
+    .header h2 {color: teal}
+    .header a {color: white}
+    table {
+        text-align: left;
+  margin-left: auto;
+  margin-right: auto;
+}
+        .good {color: darkgreen}
+    .bad {color: darkred}
+    a {color: teal}
+    b {color: teal}
+</style>
+<body>
+<div class="header">
+<h1>AmCAT4 API</h1>
+<h2>API Documentation: <a href="redoc">[redoc]</a> | <a href="docs">[docs]</a></h2>
+</div>
+
+<h1>Settings</h1>
+Note: To change settings, add environment variables to the API worker process and/or in a .env file in the working directory. <br/>
+<a href="https://github.com/ccs-amsterdam/amcat4/tree/main/.env.example">Example .env file</a>
+<p>
+    <b>Settings summary:</b>
+<table class="center">
+
+    <tr>
+        <th>Host:</th>
+        <td>{{  host }} </td>
+    </tr>
+    <tr>
+        <th>Elasticsearch:</th>
+        <td>{% if es_alive %}<span class="good">Connected</span>{%  else  %}<span class="bad">Not Connected</span>{%endif%}</td>
+    </tr>
+    <tr>
+        <th>Admin password:<span title="Note: This is for the local 'admin' user, not using middlecat">[i]</span></th>
+        <td>{% if has_admin %}<span class="good">Setup</span>{% else %}<span class="bad">Not set up</span>{%endif%}</td>
+    </tr>
+    <tr>
+        <th>Admin email:<span title="Note: Email needs to be authenticated using middlecat">[i]</span></th>
+        <td>{% if has_admin_email %}<span class="good">Setup</span>{% else %}<span class="bad">Not set up</span>{%endif%}</td>
+    </tr>
+    <tr>
+        <th>Middlecat:</th>
+        <td>{% if middlecat_alive %}<span class="good">Connected</span>{%  else  %}<span class="bad">Not Connected</span>{%endif%}</td>
+    </tr>
+    <tr>
+        <th>Middlecat url:</th>
+        <td>
+            {% if middlecat_url %}<a href="{{middlecat_url}}">{{middlecat_url}}</a>
+            {% else %}<span class="bad">Not set up</span>
+            {% endif %}
+        </td>
+    </tr>
+</table>
+</body>
+</html>
