@@ -33,7 +33,7 @@ env/bin/pip install -e .[dev]
 Before being able to do anything useful through the API, you will need to run the following command to create a .env file that contains environment variables and generates a random secret for signing the JSON Web Tokens (so also make sure to keep this file secret). Here you also need to provide the email address of the admin user.
 
 ```
-env/bin/python amcat4 create-env admin@something.com
+env/bin/python -m amcat4 add-admin admin@something.org
 ```
 
 Now, you can run the backend server:
