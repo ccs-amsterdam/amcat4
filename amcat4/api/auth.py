@@ -3,7 +3,6 @@ import functools
 import json
 import logging
 from datetime import datetime
-from typing import Optional
 
 import requests
 from authlib.common.errors import AuthlibBaseError

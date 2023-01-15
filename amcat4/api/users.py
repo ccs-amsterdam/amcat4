@@ -14,7 +14,7 @@ from pydantic.networks import EmailStr
 
 from amcat4 import index
 from amcat4.api import auth
-from amcat4.api.auth import authenticated_user, check_role, create_token, authenticated_admin, check_global_role
+from amcat4.api.auth import authenticated_user, create_token, authenticated_admin, check_global_role
 from amcat4.config import get_settings
 from amcat4.index import Role, set_global_role, get_global_role
 
