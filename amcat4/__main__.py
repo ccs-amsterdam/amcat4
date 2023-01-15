@@ -13,8 +13,9 @@ import urllib.request
 import uvicorn
 
 from amcat4 import index
+from amcat4.config import get_settings
 from amcat4.elastic import upload_documents
-from amcat4.index import create_index, set_global_role, Role
+from amcat4.index import create_index, set_global_role, Role, list_global_users
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -78,6 +79,18 @@ def add_admin(args):
     set_global_role(args.email, Role.ADMIN)
 
 
+def list_users(_args):
+    admin_password = get_settings().admin_password
+    if admin_password:
+        print("ADMIN     : admin (password set via environment AMCAT4_ADMIN_PASSWORD)")
+    users = sorted(list_global_users(), key=lambda ur: (ur[1], ur[0]))
+    if users:
+        for (user, role) in users:
+            print(f"{role.name:10}: {user}")
+    if not (users or admin_password):
+        print("(No users defined yet, set AMCAT4_ADMIN_PASSWORD in environment use add-admin to add users by email)")
+
+
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
 
 subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
@@ -98,6 +111,10 @@ p.set_defaults(func=create_env)
 p = subparsers.add_parser('add-admin', help='Add a global admin')
 p.add_argument("email", help="The email address of the admin user.")
 p.set_defaults(func=add_admin)
+
+p = subparsers.add_parser('list-users', help='List global users')
+p.set_defaults(func=list_users)
+
 
 p = subparsers.add_parser('create-test-index', help=f'Create the {SOTU_INDEX} test index')
 p.set_defaults(func=create_test_index)

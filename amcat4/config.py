@@ -1,11 +1,10 @@
 """
 AmCAT4 Configuration
 
-We read configuration from 3 sources, in order of precedence (higher is more priority)
-- Command line flags (from __main__.py)
-- Environment variables (also read from .env in the working directory)
-- A amcat.env file, either in the current working directory or in a location specified
-  by the --config-file flag or AMCAT4_CONFIG_FILE environment variable
+We read configuration from 2 sources, in order of precedence (higher is more priority)
+- Environment variables
+- A .env file, either in the current working directory or in a location specified
+  by the AMCAT4_CONFIG_FILE environment variable
 """
 import functools
 from pathlib import Path
@@ -40,7 +39,8 @@ def get_settings():
     # This shouldn't be necessary according to the docs, but without the load_dotenv it doesn't work at
     # least when running with python -m amcat4.config...
     temp = Settings()
-    load_dotenv(temp.env_file)
+    # WvA: For some reason, it always seems to override environment variables?
+    load_dotenv(temp.env_file, override=False)
     return Settings()
 
 
