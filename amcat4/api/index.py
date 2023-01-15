@@ -28,7 +28,7 @@ def index_list(current_user: str = Depends(authenticated_user)):
 
     Returns a list of dicts containing name, role, and guest attributes
     """
-    return [{"name": index} for index in list_known_indices(current_user)]
+    return [{"name": ix} for ix in list_known_indices(current_user)]
 
 
 class NewIndex(BaseModel):
@@ -76,14 +76,11 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
 @app_index.get("/{ix}")
 def view_index(ix: str, user: str = Depends(authenticated_user)):
     """
-    Modify the index.
-
-    Currently only supports modifying guest_role
-    POST data should be json containing the changed values (i.e. guest_role)
+    View the index.
     """
-    check_role(user, Role.METAREADER, ix)
+    check_role(user, Role.METAREADER, ix, required_global_role=Role.WRITER)
     guest_role = get_guest_role(ix)
-    return {"index": ix, "guest_role": guest_role.name}
+    return {"index": ix, "guest_role": "NONE" if guest_role is None else guest_role.name}
 
 
 @app_index.delete("/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)

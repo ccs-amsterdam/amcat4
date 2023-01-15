@@ -14,7 +14,7 @@ from pydantic.networks import EmailStr
 
 from amcat4 import index
 from amcat4.api import auth
-from amcat4.api.auth import authenticated_user, check_role, create_token, authenticated_admin
+from amcat4.api.auth import authenticated_user, check_role, create_token, authenticated_admin, check_global_role
 from amcat4.config import get_settings
 from amcat4.index import Role, set_global_role, get_global_role
 
@@ -77,7 +77,7 @@ def get_user(email: Username, current_user: str = Depends(authenticated_user)):
 
 def _get_user(email, current_user):
     if current_user != email:
-        check_role(current_user, Role.WRITER)
+        check_global_role(current_user, Role.WRITER)
     global_role = get_global_role(email)
     if global_role is not None:
         return {"email": email, "global_role": global_role.name}
@@ -99,7 +99,7 @@ def delete_user(email: Username, current_user: str = Depends(authenticated_user)
     Users can delete themselves and admin can delete everyone
     """
     if current_user != email:
-        check_role(current_user, Role.ADMIN)
+        check_global_role(current_user, Role.ADMIN)
     index.delete_user(email)
 
 

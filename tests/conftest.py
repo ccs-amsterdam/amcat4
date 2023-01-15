@@ -50,6 +50,14 @@ def writer():
 
 
 @pytest.fixture()
+def writer2():
+    email = "writer2@amcat.nl"
+    set_global_role(email, Role.WRITER)
+    yield email
+    remove_global_role(email)
+
+
+@pytest.fixture()
 def user():
     name = "test_user@amcat.nl"
     delete_user(name)

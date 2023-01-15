@@ -5,7 +5,7 @@ from amcat4.index import get_guest_role, Role, set_role, remove_role
 from tests.tools import build_headers, post_json, get_json, check
 
 
-def test_create_list_delete_index(client, index_name, user, writer, admin):
+def test_create_list_delete_index(client, index_name, user, writer, writer2, admin):
     """Test API endpoints to create/list/delete index"""
     # Anonymous or Unprivileged users cannot create indices
     check(client.post("/index/"), 401)
@@ -15,18 +15,26 @@ def test_create_list_delete_index(client, index_name, user, writer, admin):
     post_json(client, "/index/", user=writer, json=dict(name=index_name))
     assert get_json(client, f"/index/{index_name}", user=writer) == {"index": index_name, "guest_role": "NONE"}
 
+    # Users can GET their own index, global writer can GET all indices, others cannot GET non-public indices
+    check(client.get(f"/index/{index_name}"), 401)
+    check(client.get(f"/index/{index_name}", headers=build_headers(user=user)), 401)
+    check(client.get(f"/index/{index_name}", headers=build_headers(user=writer)), 200)
+    check(client.get(f"/index/{index_name}", headers=build_headers(user=writer2)), 200)
+
     # Users can only see indices that they have a role in or that have a guest role
     assert index_name not in {x['name'] for x in get_json(client, "/index/", user=user)}
     assert index_name in {x['name'] for x in get_json(client, "/index/", user=writer)}
 
     # (Only) index admin can change index guest role
     check(client.put(f"/index/{index_name}"), 401)
-    check(client.put(f"/index/{index_name}", headers=build_headers(user=user), json={'guest_role': 'METAREADER'}), 401)
     check(client.put(f"/index/{index_name}", headers=build_headers(user=writer), json={'guest_role': 'METAREADER'}), 200)
-    assert get_guest_role(index_name).name == "METAREADER"
+    check(client.put(f"/index/{index_name}", headers=build_headers(user=writer2), json={'guest_role': 'READER'}), 401)
+    check(client.put(f"/index/{index_name}", headers=build_headers(user=admin), json={'guest_role': 'READER'}), 200)
+    assert get_guest_role(index_name).name == "READER"
 
     # Index should now be visible to non-authorized users
     assert index_name in {x['name'] for x in get_json(client, "/index/", user=writer)}
+    check(client.get(f"/index/{index_name}", headers=build_headers(user=user)), 200)
 
 
 def test_fields_upload(client: TestClient, user: str, index: str):

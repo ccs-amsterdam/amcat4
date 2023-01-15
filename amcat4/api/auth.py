@@ -3,6 +3,7 @@ import functools
 import json
 import logging
 from datetime import datetime
+from typing import Optional
 
 import requests
 from authlib.common.errors import AuthlibBaseError
@@ -114,20 +115,44 @@ def decode_middlecat_token(token: str) -> dict:
         raise InvalidToken(e)
 
 
-def check_role(user: str, required_role: Role, index: str = None):
-    """Check if the given user have at least the given role (in the index, if given), raise Exception otherwise."""
+def check_global_role(user: str, required_role: Role, raise_error=True):
+    """
+    Check if the given user has at least the required role
+    :param user: The email address of the authenticated user
+    :param required_role: The minimum global role of the user
+    :param raise_error: If true, raise an error when not authorized, otherwise return False
+                        (will always raise an error if user is not authenticated)
+    """
     if not user:
         raise HTTPException(status_code=401, detail="No authenticated user")
     if user == "admin":
         return True
-    actual_role = get_role(index, user) if index else get_global_role(user)
+    global_role = get_global_role(user)
+    if global_role and global_role >= required_role:
+        return True
+    if raise_error:
+        raise HTTPException(status_code=401, detail=f"User {user} does not have global role {required_role}")
+    else:
+        return False
+
+
+def check_role(user: str, required_role: Role, index: str, required_global_role: Role = Role.ADMIN):
+    """Check if the given user have at least the given role (in the index, if given), raise Exception otherwise.
+
+    :param user: The email address of the authenticated user
+    :param required_role: The minimum role of the user on the given index
+    :param index: The index to check the role on
+    :param required_global_role: If the user has this global role (default: admin), also allow them access
+    """
+    # First, check global role (also checks that user exists and deals with 'admin' special user)
+    if check_global_role(user, required_global_role, raise_error=False):
+        return True
+    # Global role check was false, so now check local role
+    actual_role = get_role(index, user)
     if actual_role and actual_role >= required_role:
         return True
     else:
-        error = f"User {user} does not have role {required_role}"
-        if index:
-            error += f" on index {index}"
-        raise HTTPException(status_code=401, detail=error)
+        raise HTTPException(status_code=401, detail=f"User {user} does not have role {required_role} on index {index}")
 
 
 async def authenticated_user(token: str = Depends(oauth2_scheme)):
@@ -141,11 +166,11 @@ async def authenticated_user(token: str = Depends(oauth2_scheme)):
 
 async def authenticated_writer(user: str = Depends(authenticated_user)):
     """Dependency to verify and return a global writer user based on a token."""
-    check_role(user, Role.WRITER)
+    check_global_role(user, Role.WRITER)
     return user
 
 
 async def authenticated_admin(user: str = Depends(authenticated_user)):
     """Dependency to verify and return a global writer user based on a token."""
-    check_role(user, Role.ADMIN)
+    check_global_role(user, Role.ADMIN)
     return user
