@@ -11,6 +11,10 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
     check(client.post("/index/"), 401)
     check(client.post("/index/", headers=build_headers(user=user)), 401)
 
+    # Authorized users should get 404 if index does not exist
+    check(client.get(f"/index/{index_name}"), 401)
+    check(client.get(f"/index/{index_name}", headers=build_headers(user=writer)), 404)
+
     # Writers can create indices
     post_json(client, "/index/", user=writer, json=dict(name=index_name))
     assert get_json(client, f"/index/{index_name}", user=writer) == {"index": index_name, "guest_role": "NONE"}

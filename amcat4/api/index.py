@@ -12,7 +12,7 @@ from amcat4 import elastic, index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 from amcat4.api.common import py2dict
 from amcat4.index import Role, refresh, set_role, get_role, get_guest_role, list_known_indices, set_guest_role, \
-    get_global_role, list_users, remove_role
+    get_global_role, list_users, remove_role, IndexDoesNotExist
 
 app_index = APIRouter(
     prefix="/index",
@@ -79,7 +79,11 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
     View the index.
     """
     check_role(user, Role.METAREADER, ix, required_global_role=Role.WRITER)
-    guest_role = get_guest_role(ix)
+    try:
+        guest_role = get_guest_role(ix)
+    except IndexDoesNotExist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
+
     return {"index": ix, "guest_role": "NONE" if guest_role is None else guest_role.name}
 
 

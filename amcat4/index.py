@@ -52,6 +52,10 @@ GUEST_USER = "_guest"
 GLOBAL_ROLES = "_global"
 
 
+class IndexDoesNotExist(ValueError):
+    pass
+
+
 def list_all_indices(exclude_system_index=True) -> List[str]:
     """
     List all indices on the connected elastic cluster.
@@ -201,12 +205,12 @@ def get_role(index: str, email: str) -> Optional[Role]:
 
 def get_guest_role(index: str) -> Optional[Role]:
     """
-    Return the guest role for this index, raising a ValueError if the index does not exist
+    Return the guest role for this index, raising a IndexDoesNotExist if the index does not exist
     :returns: a Role object, or None if global role was NONE
     """
     role = _get_role(index=index, email=GUEST_USER)
     if role is None:
-        raise ValueError(f"Index {index} does not exist")
+        raise IndexDoesNotExist(f"Index {index} does not exist")
     return None if role == Role.NONE else role
 
 
