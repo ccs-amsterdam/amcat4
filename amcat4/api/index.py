@@ -78,12 +78,11 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
     """
     View the index.
     """
-    check_role(user, Role.METAREADER, ix, required_global_role=Role.WRITER)
     try:
+        check_role(user, Role.METAREADER, ix, required_global_role=Role.WRITER)
         guest_role = get_guest_role(ix)
     except IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
-
     return {"index": ix, "guest_role": "NONE" if guest_role is None else guest_role.name}
 
 
