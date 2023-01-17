@@ -156,6 +156,8 @@ def check_role(user: str, required_role: Role, index: str, required_global_role:
 
 async def authenticated_user(token: str = Depends(oauth2_scheme)):
     """Dependency to verify and return a user based on a token."""
+    if not get_settings().require_authorization:
+        return "admin"
     try:
         return verify_token(token)['email']
     except Exception:

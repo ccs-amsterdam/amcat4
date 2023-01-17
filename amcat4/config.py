@@ -21,14 +21,12 @@ class Settings(BaseSettings):
     elastic_host: str = "http://localhost:9200"
     # Elasticsearch index to store authorization information in
     system_index = "amcat4_system"
+    # Do we require authorization?
+    require_authorization: bool = False
     # Middlecat server to trust as ID provider
     middlecat_url: str = "https://middlecat.up.railway.app"
-    # Password for a global admin user (useful for setup and recovery)
-    admin_password: str = None
     # Email address for a hardcoded admin email (useful for setup and recovery)
     admin_email: str = None
-    # Key used to create admin tokens. Please change in production if admin password is used!
-    secret_key: str = "PLEASE CHANGE IN PRODUCTION IF USING ADMIN PASSWORD"
 
     class Config:
         env_prefix = "amcat4_"
