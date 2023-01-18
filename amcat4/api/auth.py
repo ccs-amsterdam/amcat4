@@ -3,6 +3,7 @@ import functools
 import json
 import logging
 from datetime import datetime
+from typing import Optional
 
 import requests
 from authlib.common.errors import AuthlibBaseError
@@ -11,11 +12,13 @@ from authlib.jose import jwt
 from fastapi import HTTPException
 from fastapi.params import Depends
 from fastapi.security import OAuth2PasswordBearer
+from starlette.requests import Request
+from starlette.status import HTTP_401_UNAUTHORIZED
 
 from amcat4.config import get_settings
 from amcat4.index import Role, get_role, get_global_role
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
 
 class InvalidToken(ValueError):
@@ -158,11 +161,15 @@ async def authenticated_user(token: str = Depends(oauth2_scheme)):
     """Dependency to verify and return a user based on a token."""
     if not get_settings().require_authorization:
         return "admin"
-    try:
-        return verify_token(token)['email']
-    except Exception:
-        logging.exception("Login failed")
-        raise HTTPException(status_code=401, detail="Invalid token")
+    else:
+        if token is None:
+            raise HTTPException(status_code=HTTP_401_UNAUTHORIZED,
+                                detail="This instance has no guest access, please provide a valid bearer token")
+        try:
+            return verify_token(token)['email']
+        except Exception:
+            logging.exception("Login failed")
+            raise HTTPException(status_code=401, detail="Invalid token")
 
 
 async def authenticated_writer(user: str = Depends(authenticated_user)):

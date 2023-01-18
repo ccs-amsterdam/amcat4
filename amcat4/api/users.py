@@ -130,7 +130,7 @@ def refresh_token(current_user: str = Depends(authenticated_user)):
     return {"access_token": token, "token_type": "bearer"}
 
 
-@app_users.get("/middlecat")
+@app_users.get("/config")
 def get_auth_config():
     return {"middlecat_url": get_settings().middlecat_url,
             "resource": get_settings().host,
