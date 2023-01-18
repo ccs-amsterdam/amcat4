@@ -3,7 +3,6 @@ import functools
 import json
 import logging
 from datetime import datetime
-from typing import Optional
 
 import requests
 from authlib.common.errors import AuthlibBaseError
@@ -12,7 +11,6 @@ from authlib.jose import jwt
 from fastapi import HTTPException
 from fastapi.params import Depends
 from fastapi.security import OAuth2PasswordBearer
-from starlette.requests import Request
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 from amcat4.config import get_settings
@@ -39,25 +37,6 @@ def create_token(email: str, days_valid: int = 7) -> bytes:
     return s
 
 
-def verify_admin(password: str) -> bool:
-    """
-    Check that this user exists and can be authenticated with the given password, returning a User object
-    :param email: Email address identifying the user
-    :param password: Password to check
-    """
-    admin_password = get_settings().admin_password
-    if not admin_password:
-        logging.info("Attempted admin login without AMCAT4_ADMIN_PASSWORD set")
-        return False
-
-    if password == admin_password:
-        logging.info("Successful admin login")
-        return True
-    else:
-        logging.warning("Incorrect password for admin")
-        return False
-
-
 @functools.lru_cache()
 def get_middlecat_config(middlecat_url) -> dict:
     r = requests.get(f"{middlecat_url}/api/configuration")
@@ -71,16 +50,7 @@ def verify_token(token: str) -> dict:
 
     raises a InvalidToken exception if the token could not be validated
     """
-    # If there is an admin password, first try to validate an internal token
-    payload = None
-    try:
-        if get_settings().admin_password:
-            payload = decode_amcat_token(token)
-    except InvalidToken:
-        pass
-    # If token was not validated yet, decode it as a middlecat token
-    if payload is None:
-        payload = decode_middlecat_token(token)
+    payload = decode_middlecat_token(token)
     if missing := {'email', 'resource', 'exp'} - set(payload.keys()):
         raise InvalidToken(f"Invalid token, missing keys {missing}")
     now = int(datetime.now().timestamp())
@@ -89,18 +59,6 @@ def verify_token(token: str) -> dict:
     if payload['resource'] != get_settings().host:
         raise InvalidToken(f"Wrong host! {payload['resource']} != {get_settings().host}")
     return payload
-
-
-def decode_amcat_token(token: str) -> dict:
-    """
-    Verifies an AmCAT 'internal' token
-    """
-    jws = JsonWebSignature()
-    try:
-        payload = jws.deserialize_compact(token, get_settings().secret_key)['payload']
-        return json.loads(payload.decode('utf-8'))
-    except ValueError:
-        raise InvalidToken("AmCAT Admin token verification failed")
 
 
 def decode_middlecat_token(token: str) -> dict:
