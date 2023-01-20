@@ -4,7 +4,7 @@ import responses
 from authlib.jose import jwt
 from starlette.testclient import TestClient
 
-from amcat4.config import get_settings
+from amcat4.config import get_settings, AuthOptions
 from tests.tools import get_json
 
 
@@ -19,8 +19,18 @@ def test_handler_responses(client: TestClient, admin):
     get_settings().middlecat_url = "http://localhost:5000"
     get_settings().host = "http://localhost:3000"
     responses.get("http://localhost:5000/api/configuration", json={"public_key": PUBLIC_KEY})
-    # You need to login to access /users/me
+
+    # Guests have no /me
+    get_settings().auth = AuthOptions.no_auth
+    assert client.get("/users/me").status_code == 404
+    get_settings().auth = AuthOptions.allow_guests
+    assert client.get("/users/me").status_code == 404
+    # You need to login to access /users/me if auth is required
+    get_settings().auth = AuthOptions.allow_authenticated_guests
     assert client.get("/users/me").status_code == 401
+    get_settings().auth = AuthOptions.authorized_users_only
+    assert client.get("/users/me").status_code == 401
+
     # A valid token needs a valid resource, expiry, and email
     now = int(datetime.now().timestamp())
     test(resource='http://localhost:3000', email=admin, expected=401)
@@ -32,9 +42,10 @@ def test_handler_responses(client: TestClient, admin):
     test(resource='http://wrong.com', exp=now + 1000, email=admin, expected=401)
 
 
-def test_middlecat_config(client: TestClient):
-    result = get_json(client, "/middlecat")
+def test_config(client: TestClient):
+    result = get_json(client, "/config")
     assert result['middlecat_url'] == get_settings().middlecat_url
+    assert result['authorization'] == get_settings().auth.name
 
 
 PRIVATE_KEY = """-----BEGIN RSA PRIVATE KEY-----
