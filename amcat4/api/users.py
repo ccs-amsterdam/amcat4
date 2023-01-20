@@ -111,4 +111,4 @@ def refresh_token(current_user: str = Depends(authenticated_user)):
 def get_auth_config():
     return {"middlecat_url": get_settings().middlecat_url,
             "resource": get_settings().host,
-            "require_authorization": bool(get_settings().require_authorization)}
+            "authorization": get_settings().auth}

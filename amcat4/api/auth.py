@@ -13,7 +13,7 @@ from fastapi.params import Depends
 from fastapi.security import OAuth2PasswordBearer
 from starlette.status import HTTP_401_UNAUTHORIZED
 
-from amcat4.config import get_settings
+from amcat4.config import get_settings, AuthOptions
 from amcat4.index import Role, get_role, get_global_role
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
@@ -117,26 +117,31 @@ def check_role(user: str, required_role: Role, index: str, required_global_role:
 
 async def authenticated_user(token: str = Depends(oauth2_scheme)):
     """Dependency to verify and return a user based on a token."""
-    if not get_settings().require_authorization:
-        return "admin"
-    else:
-        if token is None:
+    auth = get_settings().auth
+    if token is None:
+        if auth == AuthOptions.no_auth:
+            return "admin"
+        elif auth == AuthOptions.allow_guests:
+            return "guest"
+        else:
             raise HTTPException(status_code=HTTP_401_UNAUTHORIZED,
                                 detail="This instance has no guest access, please provide a valid bearer token")
-        try:
-            return verify_token(token)['email']
-        except Exception:
-            logging.exception("Login failed")
-            raise HTTPException(status_code=401, detail="Invalid token")
+    try:
+        return verify_token(token)['email']
+    except Exception:
+        logging.exception("Login failed")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 async def authenticated_writer(user: str = Depends(authenticated_user)):
     """Dependency to verify and return a global writer user based on a token."""
-    check_global_role(user, Role.WRITER)
+    if get_settings().auth != AuthOptions.no_auth:
+        check_global_role(user, Role.WRITER)
     return user
 
 
 async def authenticated_admin(user: str = Depends(authenticated_user)):
     """Dependency to verify and return a global writer user based on a token."""
-    check_global_role(user, Role.ADMIN)
+    if get_settings().auth != AuthOptions.no_auth:
+        check_global_role(user, Role.ADMIN)
     return user

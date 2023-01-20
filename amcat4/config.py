@@ -7,9 +7,22 @@ We read configuration from 2 sources, in order of precedence (higher is more pri
   by the AMCAT4_CONFIG_FILE environment variable
 """
 import functools
+from enum import Enum
 from pathlib import Path
 from pydantic import BaseSettings
 from dotenv import load_dotenv
+
+
+class AuthOptions(str, Enum):
+    # everyone (that can reach the server) can do anything they want
+    no_auth = "no_auth"
+    # everyone can use the server, dependent on index-level guest_role authorization settings
+    allow_guests = "allow_guests"
+    # everyone can use the server, if they have a valid middlecat login,
+    # and dependent on index-level guest_role authorization settings
+    allow_authenticated_guests = "allow_authenticated_guests"
+    # only people with a valid middlecat login and an explicit server role can use the server
+    authorized_users_only = "authorized_users_only"
 
 
 class Settings(BaseSettings):
@@ -22,7 +35,7 @@ class Settings(BaseSettings):
     # Elasticsearch index to store authorization information in
     system_index = "amcat4_system"
     # Do we require authorization?
-    require_authorization: bool = False
+    auth: AuthOptions = AuthOptions.no_auth
     # Middlecat server to trust as ID provider
     middlecat_url: str = "https://middlecat.up.railway.app"
     # Email address for a hardcoded admin email (useful for setup and recovery)
