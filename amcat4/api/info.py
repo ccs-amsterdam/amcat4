@@ -17,7 +17,7 @@ def index(request: Request):
     host = get_settings().host
 
     es_alive = elastic.ping()
-    has_admin = bool(get_settings().admin_password)
+    require_auth = get_settings().require_authorization
     has_admin_email = bool(get_settings().admin_email)
     middlecat_url = get_settings().middlecat_url
     middlecat_alive = False

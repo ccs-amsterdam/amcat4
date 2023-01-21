@@ -1,58 +1,24 @@
 """Helper methods for authentication."""
 import functools
-import json
 import logging
 from datetime import datetime
 
 import requests
 from authlib.common.errors import AuthlibBaseError
-from authlib.jose import JsonWebSignature
 from authlib.jose import jwt
 from fastapi import HTTPException
 from fastapi.params import Depends
 from fastapi.security import OAuth2PasswordBearer
+from starlette.status import HTTP_401_UNAUTHORIZED
 
-from amcat4.config import get_settings
+from amcat4.config import get_settings, AuthOptions
 from amcat4.index import Role, get_role, get_global_role
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
 
 class InvalidToken(ValueError):
     pass
-
-
-def create_token(email: str, days_valid: int = 7) -> bytes:
-    """
-    Create a new (instance) token for this user
-    :param email: the email or username to create a token for
-    :param days_valid: the number of days from now that the token should be valid
-    """
-    header: dict = {'alg': 'HS256'}
-    now = int(datetime.now().timestamp())
-    exp = now + days_valid * 24 * 60 * 60
-    payload = {'email': email, 'exp': exp, 'resource': get_settings().host}
-    s = JsonWebSignature().serialize_compact(header, json.dumps(payload).encode("utf-8"), get_settings().secret_key)
-    return s
-
-
-def verify_admin(password: str) -> bool:
-    """
-    Check that this user exists and can be authenticated with the given password, returning a User object
-    :param email: Email address identifying the user
-    :param password: Password to check
-    """
-    admin_password = get_settings().admin_password
-    if not admin_password:
-        logging.info("Attempted admin login without AMCAT4_ADMIN_PASSWORD set")
-        return False
-
-    if password == admin_password:
-        logging.info("Successful admin login")
-        return True
-    else:
-        logging.warning("Incorrect password for admin")
-        return False
 
 
 @functools.lru_cache()
@@ -68,16 +34,7 @@ def verify_token(token: str) -> dict:
 
     raises a InvalidToken exception if the token could not be validated
     """
-    # If there is an admin password, first try to validate an internal token
-    payload = None
-    try:
-        if get_settings().admin_password:
-            payload = decode_amcat_token(token)
-    except InvalidToken:
-        pass
-    # If token was not validated yet, decode it as a middlecat token
-    if payload is None:
-        payload = decode_middlecat_token(token)
+    payload = decode_middlecat_token(token)
     if missing := {'email', 'resource', 'exp'} - set(payload.keys()):
         raise InvalidToken(f"Invalid token, missing keys {missing}")
     now = int(datetime.now().timestamp())
@@ -86,18 +43,6 @@ def verify_token(token: str) -> dict:
     if payload['resource'] != get_settings().host:
         raise InvalidToken(f"Wrong host! {payload['resource']} != {get_settings().host}")
     return payload
-
-
-def decode_amcat_token(token: str) -> dict:
-    """
-    Verifies an AmCAT 'internal' token
-    """
-    jws = JsonWebSignature()
-    try:
-        payload = jws.deserialize_compact(token, get_settings().secret_key)['payload']
-        return json.loads(payload.decode('utf-8'))
-    except ValueError:
-        raise InvalidToken("AmCAT Admin token verification failed")
 
 
 def decode_middlecat_token(token: str) -> dict:
@@ -154,22 +99,38 @@ def check_role(user: str, required_role: Role, index: str, required_global_role:
         raise HTTPException(status_code=401, detail=f"User {user} does not have role {required_role} on index {index}")
 
 
-async def authenticated_user(token: str = Depends(oauth2_scheme)):
+async def authenticated_user(token: str = Depends(oauth2_scheme)) -> str:
     """Dependency to verify and return a user based on a token."""
+    auth = get_settings().auth
+    if token is None:
+        if auth == AuthOptions.no_auth:
+            return "admin"
+        elif auth == AuthOptions.allow_guests:
+            return "guest"
+        else:
+            raise HTTPException(status_code=HTTP_401_UNAUTHORIZED,
+                                detail="This instance has no guest access, please provide a valid bearer token")
     try:
-        return verify_token(token)['email']
+        user = verify_token(token)['email']
     except Exception:
         logging.exception("Login failed")
         raise HTTPException(status_code=401, detail="Invalid token")
+    if auth == AuthOptions.authorized_users_only:
+        if get_global_role(user) is None:
+            raise HTTPException(status_code=401,
+                                detail=f"The user {user} is not authorized to access this AmCAT instance")
+    return user
 
 
 async def authenticated_writer(user: str = Depends(authenticated_user)):
     """Dependency to verify and return a global writer user based on a token."""
-    check_global_role(user, Role.WRITER)
+    if get_settings().auth != AuthOptions.no_auth:
+        check_global_role(user, Role.WRITER)
     return user
 
 
 async def authenticated_admin(user: str = Depends(authenticated_user)):
     """Dependency to verify and return a global writer user based on a token."""
-    check_global_role(user, Role.ADMIN)
+    if get_settings().auth != AuthOptions.no_auth:
+        check_global_role(user, Role.ADMIN)
     return user

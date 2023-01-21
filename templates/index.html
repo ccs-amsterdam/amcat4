@@ -41,8 +41,8 @@ Note: To change settings, add environment variables to the API worker process an
         <td>{% if es_alive %}<span class="good">Connected</span>{%  else  %}<span class="bad">Not Connected</span>{%endif%}</td>
     </tr>
     <tr>
-        <th>Admin password:<span title="Note: This is for the local 'admin' user, not using middlecat">[i]</span></th>
-        <td>{% if has_admin %}<span class="good">Setup</span>{% else %}<span class="bad">Not set up</span>{%endif%}</td>
+        <th>Require Authorization:</th>
+        <td>{% if has_admin %}<span class="good">Yes, users need to log on with middlecat</span>{% else %}<span class="bad">No, everyone that can access this server can view and change all data</span>{%endif%}</td>
     </tr>
     <tr>
         <th>Admin email:<span title="Note: Email needs to be authenticated using middlecat">[i]</span></th>
