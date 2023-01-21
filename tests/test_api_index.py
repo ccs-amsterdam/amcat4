@@ -12,7 +12,7 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
     check(client.post("/index/", headers=build_headers(user=user)), 401)
 
     # Authorized users should get 404 if index does not exist
-    check(client.get(f"/index/{index_name}"), 401)
+    check(client.get(f"/index/{index_name}"), 404)
     check(client.get(f"/index/{index_name}", headers=build_headers(user=writer)), 404)
 
     # Writers can create indices
@@ -30,7 +30,7 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
     assert index_name in {x['name'] for x in get_json(client, "/index/", user=writer)}
 
     # (Only) index admin can change index guest role
-    check(client.put(f"/index/{index_name}"), 401)
+    check(client.put(f"/index/{index_name}", json={'guest_role': 'METAREADER'}), 401)
     check(client.put(f"/index/{index_name}", headers=build_headers(user=writer), json={'guest_role': 'METAREADER'}), 200)
     check(client.put(f"/index/{index_name}", headers=build_headers(user=writer2), json={'guest_role': 'READER'}), 401)
     check(client.put(f"/index/{index_name}", headers=build_headers(user=admin), json={'guest_role': 'READER'}), 200)
@@ -51,9 +51,11 @@ def test_fields_upload(client: TestClient, user: str, index: str):
     check(client.get(f"/index/{index}/fields"), 401)
     check(client.post(f"/index/{index}/documents", headers=build_headers(user), json=body), 401)
 
+    set_role(index, user, Role.METAREADER)
     fields = get_json(client, f"/index/{index}/fields", user=user)
     assert set(fields.keys()) == {"title", "date", "text", "url"}
     assert fields['date']['type'] == "date"
+    check(client.post(f"/index/{index}/documents", headers=build_headers(user), json=body), 401)
 
     set_role(index, user, Role.WRITER)
     post_json(client, f"/index/{index}/documents", user=user, json=body)

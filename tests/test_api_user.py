@@ -34,8 +34,8 @@ def test_auth(client: TestClient, user, admin, index):
 
 def test_get_user(client: TestClient, writer, user):
     """Test GET user functionality and authorization"""
-    assert client.get("/users/me").status_code == 401
-
+    # Guests have no /me
+    assert client.get("/users/me").status_code == 404
     # user can only see its own info:
     assert get_json(client, "/users/me", user=user) == {"email": user, "global_role": "NONE"}
     assert get_json(client, f"/users/{user}", user=user) == {"email": user, "global_role": "NONE"}

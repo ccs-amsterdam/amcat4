@@ -171,12 +171,13 @@ def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)
 
 
 @app_index.get("/{ix}/fields")
-def get_fields(ix: str, _=Depends(authenticated_user)):
+def get_fields(ix: str, user=Depends(authenticated_user)):
     """
     Get the fields (columns) used in this index.
 
     Returns a json array of {name, type} objects
     """
+    check_role(user, Role.METAREADER, ix)
     indices = ix.split(',')
     return elastic.get_fields(indices)
 
