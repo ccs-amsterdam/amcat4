@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from pydantic.networks import EmailStr
 
 from amcat4 import index
-from amcat4.api.auth import authenticated_user, create_token, authenticated_admin, check_global_role
+from amcat4.api.auth import authenticated_user, authenticated_admin, check_global_role
 from amcat4.config import get_settings
 from amcat4.index import Role, set_global_role, get_global_role
 
@@ -97,13 +97,6 @@ def modify_user(email: EmailStr, data: ChangeUserForm, _user=Depends(authenticat
     role = Role[data.global_role.upper()]
     set_global_role(email, role)
     return {"email": email, "global_role": role.name}
-
-
-@app_users.get("/auth/token")
-def refresh_token(current_user: str = Depends(authenticated_user)):
-    """Create a new token for the user authenticated with an existing token."""
-    token = create_token(current_user)
-    return {"access_token": token, "token_type": "bearer"}
 
 
 @app_users.get("/config")

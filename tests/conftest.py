@@ -1,6 +1,7 @@
 from typing import Iterable
 
 import pytest
+import responses
 from fastapi.testclient import TestClient
 
 from amcat4 import elastic, api  # noqa: E402
@@ -8,6 +9,7 @@ from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import es
 from amcat4.index import create_index, delete_index, Role, refresh, delete_user, \
     remove_global_role, set_global_role
+from tests.middlecat_keypair import PUBLIC_KEY
 
 UNITS = [{"unit": {"text": "unit1"}},
          {"unit": {"text": "unit2"}, "gold": {"element": "au"}}]
@@ -18,14 +20,28 @@ UNITTEST_SYSTEM_INDEX = "amcat4_unittest_system"
 
 
 @pytest.fixture(scope="session", autouse=True)
+def mock_middlecat():
+    get_settings().middlecat_url = "http://localhost:5000"
+    get_settings().host = "http://localhost:3000"
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as resp:
+        resp.get("http://localhost:5000/api/configuration", json={"public_key": PUBLIC_KEY})
+        yield None
+
+
+@pytest.fixture(scope="session", autouse=True)
 def my_setup():
     # Override system db
     get_settings().system_index = UNITTEST_SYSTEM_INDEX
-    get_settings().auth = AuthOptions.no_auth
 
     es.cache_clear()
     yield None
     es().indices.delete(index=UNITTEST_SYSTEM_INDEX, ignore=[404])
+
+
+@pytest.fixture(scope="session", autouse=True)
+def default_auth():
+    # Set default auth so tests are free to change the auth setting
+    get_settings().auth = AuthOptions.allow_guests
 
 
 @pytest.fixture()

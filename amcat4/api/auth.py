@@ -1,12 +1,10 @@
 """Helper methods for authentication."""
 import functools
-import json
 import logging
 from datetime import datetime
 
 import requests
 from authlib.common.errors import AuthlibBaseError
-from authlib.jose import JsonWebSignature
 from authlib.jose import jwt
 from fastapi import HTTPException
 from fastapi.params import Depends
@@ -21,20 +19,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
 class InvalidToken(ValueError):
     pass
-
-
-def create_token(email: str, days_valid: int = 7) -> bytes:
-    """
-    Create a new (instance) token for this user
-    :param email: the email or username to create a token for
-    :param days_valid: the number of days from now that the token should be valid
-    """
-    header: dict = {'alg': 'HS256'}
-    now = int(datetime.now().timestamp())
-    exp = now + days_valid * 24 * 60 * 60
-    payload = {'email': email, 'exp': exp, 'resource': get_settings().host}
-    s = JsonWebSignature().serialize_compact(header, json.dumps(payload).encode("utf-8"), get_settings().secret_key)
-    return s
 
 
 @functools.lru_cache()
@@ -115,7 +99,7 @@ def check_role(user: str, required_role: Role, index: str, required_global_role:
         raise HTTPException(status_code=401, detail=f"User {user} does not have role {required_role} on index {index}")
 
 
-async def authenticated_user(token: str = Depends(oauth2_scheme)):
+async def authenticated_user(token: str = Depends(oauth2_scheme)) -> str:
     """Dependency to verify and return a user based on a token."""
     auth = get_settings().auth
     if token is None:
@@ -127,10 +111,15 @@ async def authenticated_user(token: str = Depends(oauth2_scheme)):
             raise HTTPException(status_code=HTTP_401_UNAUTHORIZED,
                                 detail="This instance has no guest access, please provide a valid bearer token")
     try:
-        return verify_token(token)['email']
+        user = verify_token(token)['email']
     except Exception:
         logging.exception("Login failed")
         raise HTTPException(status_code=401, detail="Invalid token")
+    if auth == AuthOptions.authorized_users_only:
+        if get_global_role(user) is None:
+            raise HTTPException(status_code=401,
+                                detail=f"The user {user} is not authorized to access this AmCAT instance")
+    return user
 
 
 async def authenticated_writer(user: str = Depends(authenticated_user)):

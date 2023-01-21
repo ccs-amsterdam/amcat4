@@ -1,18 +1,35 @@
 from fastapi.testclient import TestClient
 
-from amcat4.api.auth import verify_token
-from amcat4.config import get_settings
-from amcat4.index import delete_user, get_global_role
-from tests.tools import get_json, build_headers, post_json, check
+from amcat4.config import AuthOptions
+from amcat4.index import delete_user, get_global_role, set_guest_role, Role
+from tests.tools import get_json, build_headers, post_json, check, set_auth
 
 
-def test_admin_token(client: TestClient):
-    get_settings().admin_password = "test"
-    check(client.post('/auth/token'), 422, "Getting a token requires a form")
-    check(client.post('/auth/token', data=dict(username="admin", password='wrong')), 401)
-    r = client.post('/auth/token', data=dict(username="admin", password="test"))
-    assert r.status_code == 200
-    assert verify_token(r.json()['access_token'])['email'] == "admin"
+def test_auth(client: TestClient, user, admin, index):
+    unknown_user = "unknown@amcat.nl"
+    with set_auth(AuthOptions.no_auth):
+        # No auth - unauthenticated user can do anything
+        assert client.get(f"/index/{index}").status_code == 200
+        assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
+    with set_auth(AuthOptions.allow_guests):
+        # Allow guests - unauthenticated user can access projects with guest roles
+        assert client.get(f"/index/{index}").status_code == 401
+        set_guest_role(index, Role.READER)
+        assert client.get(f"/index/{index}").status_code == 200
+        assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
+    with set_auth(AuthOptions.allow_authenticated_guests):
+        # Only use guest roles if user is authenticated
+        assert client.get(f"/index/{index}").status_code == 401
+        assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 200
+        set_guest_role(index, Role.NONE)
+        assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 401
+        assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
+    with set_auth(AuthOptions.authorized_users_only):
+        # Only users with a index-level role can access other indices (even as guest)
+        set_guest_role(index, Role.READER)
+        assert client.get(f"/index/{index}").status_code == 401
+        assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 401
+        assert client.get(f"/index/{index}", headers=build_headers(user)).status_code == 200
 
 
 def test_get_user(client: TestClient, writer, user):

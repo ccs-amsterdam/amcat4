@@ -154,7 +154,7 @@ def set_global_role(email: str, role: Role):
 
 def set_guest_role(index: str, role: Role):
     """
-    Set the guest role for this index
+    Set the guest role for this index. Set to Role.NONE to disallow guest access
     """
     set_role(index=index, email=GUEST_USER, role=role)
 
