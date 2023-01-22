@@ -9,10 +9,13 @@ import os
 import secrets
 import sys
 import urllib.request
+from enum import Enum
+
 import uvicorn
+from pydantic.fields import ModelField
 
 from amcat4 import index
-from amcat4.config import get_settings, AuthOptions
+from amcat4.config import get_settings, AuthOptions, Settings
 from amcat4.elastic import upload_documents
 from amcat4.index import create_index, set_global_role, Role, list_global_users
 
@@ -46,6 +49,9 @@ def run(args):
     if auth == AuthOptions.no_auth:
         logging.warning("Warning: No authentication is set up - "
                         "everyone who can access this service can view and change all data")
+    logging.info("To change server config, create an .env file and/or set environment parameters,\n"
+                 f"{' '*26}see README.md, amcat4/config.py or .env.example for more information.\n"
+                 f"{' '*26}You can also run `python -m amcat4 config` to create the .env settings file interactively\n")
     uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port)
 
 
@@ -100,56 +106,67 @@ def list_users(_args):
 
 def config_amcat(args):
     settings = get_settings().dict()
-    # location of env should stay the same so it is found on restart
-    del settings["env_file"]
-    # if .env does not exist yet, secret_key should be created
-    if not os.path.exists('.env'):
-        settings["secret_key"] = base_env()["amcat4_secret_key"]
-    if args.name:
-        # some variables should not be changed by the user (currently just secret_key)
-        do_not_change = ["secret_key"] + list(filter(lambda x: x != args.name, settings.keys()))
-    else:
-        do_not_change = ["secret_key"]
-    for k, v in settings.items():
-        # some variables probably shouldn't be changed by the user (currently just secret_key)
-        if k not in do_not_change:
-            v = menu(k, v)
-            if v == "aborted":
-                settings = "aborted"
-                break
-            else:
-                if str(k) == "admin_email" and v is not None:
-                    set_global_role(v, Role.ADMIN)
-                settings[k] = v
+    # env_file is not a useful setting in the .env file itself, only as environment variable
+    env_file_location = settings.pop('env_file')
+    print(f"Reading/writing settings from {env_file_location}")
+    for field in Settings.__fields__.values():
+        if field.name not in settings:
+            continue
+        v = settings[field.name]
+        validation_function = AuthOptions.validate if field.name == "auth" else None
+        v = menu(field, v, validation_function=validation_function)
+        if v is ABORTED:
+            return
+        if v is not UNCHANGED:
+            settings[field.name] = v
 
-    if settings != "aborted":
-        with open(".env", 'w') as f:
-            for key, val in settings.items():
-                if val is not None:
-                    f.write(f"amcat4_{key}={val}\n")
-        os.chmod(".env", 0o600)
-        print(f"*** Changed {bold('.env')} file ***")
+    with open(".env", 'w') as f:
+        for key, val in settings.items():
+            if val is not None:
+                field = Settings.__fields__[key]
+                if doc := field.field_info.description:
+                    f.write(f"# {doc}\n")
+
+                if issubclass(field.type_, Enum):
+                    f.write("# Valid options:\n")
+                    for option in field.type_:
+                        doc = option.__doc__.replace("\n", " ")
+                        f.write(f"# - {option.name}: {doc}\n")
+                f.write(f"amcat4_{key}={val}\n\n")
+    os.chmod(".env", 0o600)
+    print(f"*** Changed {bold('.env')} file to {env_file_location} ***")
 
 
 def bold(x):
     return '\033[1m' + str(x) + '\033[0m'
 
 
-def menu(k, v):
-    choice = input(f"The current value for {bold(k)} is {bold(v)}. Do you want to change it (Yes/{bold('No')}/Cancel)?")
-    # remain on same line to hide settings from onlookers
-    sys.stdout.write("\033[F\033[K")
+ABORTED = object()
+UNCHANGED = object()
+
+
+def menu(field: ModelField, v, validation_function=None):
+    print(f"\n{bold(field.name)}: {field.field_info.description}")
+    if issubclass(field.type_, Enum):
+        print("  Possible choices:")
+        for option in field.type_:
+            print(f"  - {option.name}: {option.__doc__}")
+    print(f"The current value for {bold(field.name)} is {bold(v)}.")
+    choice = input(f"Do you want to change it (Yes/{bold('No')}/Cancel)?")
     if choice in ("No", "NO", "N", "n", ""):
         return v
     elif choice in ("Yes", "YES", "Y", "y"):
-        v = input(f"Enter new value for {k}:")
-        sys.stdout.write("\033[F\033[K")
-        return v
+        while True:
+            v = input(f"Enter new value for {field.name}:")
+            if validation_function and (message := validation_function(v)):
+                print(f"Invalid value: {message}")
+                continue
+            return UNCHANGED
     elif choice in ("Cancel", "CANCEL", "C", "c"):
-        return "aborted"
+        return ABORTED
     else:
         print("Choose one of Yes/No/Cancel")
-        menu(k, v)
+        menu(field, v, validation_function)
 
 
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
@@ -168,8 +185,7 @@ p.add_argument("-P", "--no-admin_password", action='store_true', help="Disable a
 
 p.set_defaults(func=create_env)
 
-p = subparsers.add_parser('config', help='Configure (all) settings in amcat4 in an interactive menu.')
-p.add_argument("-n", "--name", help="Name of a specific setting that should be changed.")
+p = subparsers.add_parser('config', help='Configure amcat4 settings in an interactive menu.')
 p.set_defaults(func=config_amcat)
 
 p = subparsers.add_parser('add-admin', help='Add a global admin')

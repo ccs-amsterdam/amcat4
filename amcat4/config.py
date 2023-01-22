@@ -9,36 +9,61 @@ We read configuration from 2 sources, in order of precedence (higher is more pri
 import functools
 from enum import Enum
 from pathlib import Path
-from pydantic import BaseSettings
+
+from class_doc import extract_docs_from_cls_obj
 from dotenv import load_dotenv
+from pydantic import BaseSettings
+from pydantic.main import BaseModel
+from pydantic_settings import with_attrs_docs
 
 
 class AuthOptions(str, Enum):
-    # everyone (that can reach the server) can do anything they want
+    #: everyone (that can reach the server) can do anything they want
     no_auth = "no_auth"
-    # everyone can use the server, dependent on index-level guest_role authorization settings
+
+    #: everyone can use the server, dependent on index-level guest_role authorization settings
     allow_guests = "allow_guests"
-    # everyone can use the server, if they have a valid middlecat login,
-    # and dependent on index-level guest_role authorization settings
+
+    #: everyone can use the server, if they have a valid middlecat login,
+    #: and dependent on index-level guest_role authorization settings
     allow_authenticated_guests = "allow_authenticated_guests"
-    # only people with a valid middlecat login and an explicit server role can use the server
+
+    #: only people with a valid middlecat login and an explicit server role can use the server
     authorized_users_only = "authorized_users_only"
 
+    @classmethod
+    def validate(cls, value: str):
+        if value not in cls.__members__:
+            options = ", ".join(AuthOptions.__members__.keys())
+            return f"{value} is not a valid authorization option. Choose one of {{{options}}}"
 
+
+# As far as I know, there is no elegant built-in way to set to __doc__ of an enum?
+for field, doc in extract_docs_from_cls_obj(AuthOptions).items():
+    AuthOptions[field].__doc__ = "\n".join(doc)
+
+
+@with_attrs_docs
 class Settings(BaseSettings):
-    # Location of a .env file (if used) relative to working directory
+    #: Location of a .env file (if used) relative to working directory
     env_file: Path = ".env"
-    # Host this instance is served at (needed for checking tokens)
+
+    #: Host this instance is served at (needed for checking tokens)
     host: str = "http://localhost:5000"
-    # Elasticsearch host
+
+    #: Elasticsearch host
     elastic_host: str = "http://localhost:9200"
-    # Elasticsearch index to store authorization information in
+
+    #: Elasticsearch index to store authorization information in
     system_index = "amcat4_system"
-    # Do we require authorization?
+
+    #: Do we require authorization?
     auth: AuthOptions = AuthOptions.no_auth
-    # Middlecat server to trust as ID provider
+
+    #: Middlecat server to trust as ID provider
     middlecat_url: str = "https://middlecat.up.railway.app"
-    # Email address for a hardcoded admin email (useful for setup and recovery)
+
+    #: Email address for a hardcoded admin email (useful for setup and recovery)
     admin_email: str = None
 
     class Config:

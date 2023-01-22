@@ -25,6 +25,7 @@ setup(
         "requests",
         "authlib",
         "pydantic[email]",
+        "pydantic-settings",
         'uvicorn',
         'requests'
     ],

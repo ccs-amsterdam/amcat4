@@ -5,28 +5,54 @@
         text-align: center;
         font-family: 'Poppins';
     }
-    .header {background-color: black}
-    .header h1 {color: white}
-    .header h2 {color: teal}
-    .header a {color: white}
+
+    .header {
+        background-color: black
+    }
+
+    .header h1 {
+        color: white
+    }
+
+    .header h2 {
+        color: teal
+    }
+
+    .header a {
+        color: white
+    }
+
     table {
         text-align: left;
-  margin-left: auto;
-  margin-right: auto;
-}
-        .good {color: darkgreen}
-    .bad {color: darkred}
-    a {color: teal}
-    b {color: teal}
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .good {
+        color: darkgreen
+    }
+
+    .bad {
+        color: darkred
+    }
+
+    a {
+        color: teal
+    }
+
+    b {
+        color: teal
+    }
 </style>
 <body>
 <div class="header">
-<h1>AmCAT4 API</h1>
-<h2>API Documentation: <a href="redoc">[redoc]</a> | <a href="docs">[docs]</a></h2>
+    <h1>AmCAT4 API</h1>
+    <h2>API Documentation: <a href="redoc">[redoc]</a> | <a href="docs">[docs]</a></h2>
 </div>
 
 <h1>Settings</h1>
-Note: To change settings, add environment variables to the API worker process and/or in a .env file in the working directory. <br/>
+Note: To change settings, add environment variables to the API worker process and/or in a .env file in the working
+directory. <br/>
 <a href="https://github.com/ccs-amsterdam/amcat4/tree/main/.env.example">Example .env file</a>
 <p>
     <b>Settings summary:</b>
@@ -34,24 +60,25 @@ Note: To change settings, add environment variables to the API worker process an
 
     <tr>
         <th>Host:</th>
-        <td>{{  host }} </td>
+        <td>{{ host }}</td>
     </tr>
     <tr>
         <th>Elasticsearch:</th>
-        <td>{% if es_alive %}<span class="good">Connected</span>{%  else  %}<span class="bad">Not Connected</span>{%endif%}</td>
+        <td>{% if es_alive %}<span class="good">Connected</span>{% else %}<span class="bad">Not Connected</span>{%endif%}
+        </td>
     </tr>
     <tr>
         <th>Authorization mode:</th>
         <td>
-            {% if auth == "no_auth" %}<span class="bad">No authentication required:<br/>everyone that can access this service can view and change all data</span>{%endif%}
-            {% if auth == "allow_guests" %}<span class="good">Allow guests:<br/>Unauthenticated users can view this service,  <br/>but only access indexes with an explicit guest role</span>{%endif%}
-            {% if auth == "allow_authenticated_guests" %}<span class="good">Allow authenticated guests:<br/>All users need to log on with middlecat, <br/>but any authenticated user can view this service, but only access indexes with an explicit guest role</span>{%endif%}
-            {% if auth == "require_authentication" %}<span class="good">Require authentication:<br/>All users need to log on with middlecat,  <br/>and only users that are authorized for this service can connect</span>{%endif%}
+            <span class="{% if auth == 'no_auth'%}bad{%else%}good{%endif%}">
+                  {{auth.name}}: {{ auth.__doc__ }}
+            </span>
         </td>
     </tr>
     <tr>
         <th>Middlecat:</th>
-        <td>{% if middlecat_alive %}<span class="good">Connected</span>{%  else  %}<span class="bad">Not Connected</span>{%endif%}</td>
+        <td>{% if middlecat_alive %}<span class="good">Connected</span>{% else %}<span class="bad">Not Connected</span>{%endif%}
+        </td>
     </tr>
     <tr>
         <th>Middlecat url:</th>
@@ -63,7 +90,8 @@ Note: To change settings, add environment variables to the API worker process an
     </tr>
     <tr>
         <th>Admin email:<span title="Note: Email needs to be authenticated using middlecat">[i]</span></th>
-        <td>{% if has_admin_email %}<span class="good">Setup</span>{% else %}<span class="bad">Not set up</span>{%endif%}</td>
+        <td>{% if has_admin_email %}<span class="good">Setup</span>{% else %}<span class="bad">Not set up</span>{%endif%}
+        </td>
     </tr>
 </table>
 </body>
