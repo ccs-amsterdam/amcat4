@@ -109,6 +109,7 @@ def config_amcat(args):
     # env_file is not a useful setting in the .env file itself, only as environment variable
     env_file_location = settings.pop('env_file')
     print(f"Reading/writing settings from {env_file_location}")
+    changed = False
     for field in Settings.__fields__.values():
         if field.name not in settings:
             continue
@@ -126,7 +127,6 @@ def config_amcat(args):
                 field = Settings.__fields__[key]
                 if doc := field.field_info.description:
                     f.write(f"# {doc}\n")
-
                 if issubclass(field.type_, Enum):
                     f.write("# Valid options:\n")
                     for option in field.type_:
@@ -134,7 +134,7 @@ def config_amcat(args):
                         f.write(f"# - {option.name}: {doc}\n")
                 f.write(f"amcat4_{key}={val}\n\n")
     os.chmod(".env", 0o600)
-    print(f"*** Changed {bold('.env')} file to {env_file_location} ***")
+    print(f"*** Written {bold('.env')} file to {env_file_location} ***")
 
 
 def bold(x):
@@ -151,22 +151,19 @@ def menu(field: ModelField, v, validation_function=None):
         print("  Possible choices:")
         for option in field.type_:
             print(f"  - {option.name}: {option.__doc__}")
+        print()
     print(f"The current value for {bold(field.name)} is {bold(v)}.")
-    choice = input(f"Do you want to change it (Yes/{bold('No')}/Cancel)?")
-    if choice in ("No", "NO", "N", "n", ""):
-        return v
-    elif choice in ("Yes", "YES", "Y", "y"):
-        while True:
-            v = input(f"Enter new value for {field.name}:")
-            if validation_function and (message := validation_function(v)):
-                print(f"Invalid value: {message}")
-                continue
+    while True:
+        try:
+            value = input("Enter a new value, press [enter] to leave unchanged, or press [control+c] to abort: ")
+        except KeyboardInterrupt:
+            return ABORTED
+        if not value.strip():
             return UNCHANGED
-    elif choice in ("Cancel", "CANCEL", "C", "c"):
-        return ABORTED
-    else:
-        print("Choose one of Yes/No/Cancel")
-        menu(field, v, validation_function)
+        if validation_function and (message := validation_function(value)):
+            print(f"\nInvalid value: {message}")
+            continue
+        return value
 
 
 parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
