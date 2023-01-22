@@ -41,12 +41,13 @@ Note: To change settings, add environment variables to the API worker process an
         <td>{% if es_alive %}<span class="good">Connected</span>{%  else  %}<span class="bad">Not Connected</span>{%endif%}</td>
     </tr>
     <tr>
-        <th>Require Authorization:</th>
-        <td>{% if has_admin %}<span class="good">Yes, users need to log on with middlecat</span>{% else %}<span class="bad">No, everyone that can access this server can view and change all data</span>{%endif%}</td>
-    </tr>
-    <tr>
-        <th>Admin email:<span title="Note: Email needs to be authenticated using middlecat">[i]</span></th>
-        <td>{% if has_admin_email %}<span class="good">Setup</span>{% else %}<span class="bad">Not set up</span>{%endif%}</td>
+        <th>Authorization mode:</th>
+        <td>
+            {% if auth == "no_auth" %}<span class="bad">No authentication required:<br/>everyone that can access this service can view and change all data</span>{%endif%}
+            {% if auth == "allow_guests" %}<span class="good">Allow guests:<br/>Unauthenticated users can view this service,  <br/>but only access indexes with an explicit guest role</span>{%endif%}
+            {% if auth == "allow_authenticated_guests" %}<span class="good">Allow authenticated guests:<br/>All users need to log on with middlecat, <br/>but any authenticated user can view this service, but only access indexes with an explicit guest role</span>{%endif%}
+            {% if auth == "require_authentication" %}<span class="good">Require authentication:<br/>All users need to log on with middlecat,  <br/>and only users that are authorized for this service can connect</span>{%endif%}
+        </td>
     </tr>
     <tr>
         <th>Middlecat:</th>
@@ -59,6 +60,10 @@ Note: To change settings, add environment variables to the API worker process an
             {% else %}<span class="bad">Not set up</span>
             {% endif %}
         </td>
+    </tr>
+    <tr>
+        <th>Admin email:<span title="Note: Email needs to be authenticated using middlecat">[i]</span></th>
+        <td>{% if has_admin_email %}<span class="good">Setup</span>{% else %}<span class="bad">Not set up</span>{%endif%}</td>
     </tr>
 </table>
 </body>

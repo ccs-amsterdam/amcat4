@@ -12,7 +12,7 @@ import urllib.request
 import uvicorn
 
 from amcat4 import index
-from amcat4.config import get_settings
+from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import upload_documents
 from amcat4.index import create_index, set_global_role, Role, list_global_users
 
@@ -41,7 +41,11 @@ def upload_test_data() -> str:
 
 
 def run(args):
-    logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}")
+    auth = get_settings().auth
+    logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}, auth={auth}")
+    if auth == AuthOptions.no_auth:
+        logging.warning("Warning: No authentication is set up - "
+                        "everyone who can access this service can view and change all data")
     uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port)
 
 
