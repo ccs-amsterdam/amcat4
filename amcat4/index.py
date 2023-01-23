@@ -71,7 +71,7 @@ def list_known_indices(email: str = None) -> Set[str]:
     List all known indices, e.g. indices registered in this amcat4 instance
     :param email: if given, only list indices visible to this user
     """
-    if email is None or get_global_role(email) == Role.ADMIN:
+    if email is None or get_global_role(email) == Role.ADMIN or get_settings().auth == "no_auth":
         query = {"query": {"term": {"email": GUEST_USER}}}
     else:
         # Either user has a role in the index, or index has a non-empty guest role
