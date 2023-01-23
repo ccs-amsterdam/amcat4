@@ -69,7 +69,7 @@ def check_global_role(user: str, required_role: Role, raise_error=True):
     """
     if not user:
         raise HTTPException(status_code=401, detail="No authenticated user")
-    if user == "admin":
+    if user == "admin" or user == get_settings().admin_email:
         return True
     global_role = get_global_role(user)
     if global_role and global_role >= required_role:
