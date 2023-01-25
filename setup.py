@@ -4,7 +4,7 @@ from distutils.core import setup
 
 setup(
     name="amcat4",
-    version="0.10",
+    version="4.0.10",
     description="API for AmCAT4 Text Analysis",
     author="Wouter van Atteveldt",
     author_email="wouter@vanatteveldt.com",
@@ -27,8 +27,7 @@ setup(
         "pydantic[email]",
         "pydantic-settings",
         'uvicorn',
-        'requests',
-        'class-doc',
+        'requests'
     ],
     extras_require={
         'dev': [
