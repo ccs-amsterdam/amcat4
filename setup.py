@@ -27,7 +27,8 @@ setup(
         "pydantic[email]",
         "pydantic-settings",
         'uvicorn',
-        'requests'
+        'requests',
+        'class-doc',
     ],
     extras_require={
         'dev': [
