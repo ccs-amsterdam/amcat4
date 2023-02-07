@@ -109,7 +109,6 @@ def config_amcat(args):
     # env_file is not a useful setting in the .env file itself, only as environment variable
     env_file_location = settings.pop('env_file')
     print(f"Reading/writing settings from {env_file_location}")
-    changed = False
     for field in Settings.__fields__.values():
         if field.name not in settings:
             continue

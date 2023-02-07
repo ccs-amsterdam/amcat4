@@ -55,10 +55,12 @@ def _setup_elastic():
     Check whether we can connect with elastic
     """
     settings = get_settings()
-    logging.debug(f"Connecting with elasticsearch at {settings.elastic_host}, password? {'yes' if settings.elastic_password else 'no'} ")
+    logging.debug(f"Connecting with elasticsearch at {settings.elastic_host}, "
+                  "password? {'yes' if settings.elastic_password else 'no'} ")
     if settings.elastic_password:
-        
-        elastic = Elasticsearch(settings.elastic_host or None, basic_auth=("elastic", settings.elastic_password), verify_certs=settings.elastic_verify_ssl)
+        elastic = Elasticsearch(settings.elastic_host or None,
+                                basic_auth=("elastic", settings.elastic_password),
+                                verify_certs=settings.elastic_verify_ssl)
     else:
         elastic = Elasticsearch(settings.elastic_host or None)
     if not elastic.ping():
@@ -140,7 +142,7 @@ def set_fields(index: str, fields: Mapping[str, str]):
     :param index: The name of the index (without prefix)
     :param fields: A mapping of field:type for column types
     """
-    properties={field: get_field_mapping(type_) for (field, type_) in fields.items()}
+    properties = {field: get_field_mapping(type_) for (field, type_) in fields.items()}
     es().indices.put_mapping(index=index, properties=properties)
     invalidate_field_cache(index)
 
@@ -263,7 +265,7 @@ def get_values(index: str, field: str) -> List[str]:
 
 
 def update_by_query(index: str, script: str, query: dict, params: dict = None):
-    script=dict(
+    script = dict(
         source=script,
         lang="painless",
         params=params or {}
