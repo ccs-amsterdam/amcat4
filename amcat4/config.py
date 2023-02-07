@@ -12,7 +12,7 @@ from pathlib import Path
 
 from class_doc import extract_docs_from_cls_obj
 from dotenv import load_dotenv
-from pydantic import BaseSettings
+from pydantic import BaseSettings, validator
 from pydantic.main import BaseModel
 from pydantic_settings import with_attrs_docs
 
@@ -51,8 +51,14 @@ class Settings(BaseSettings):
     #: Host this instance is served at (needed for checking tokens)
     host: str = "http://localhost:5000"
 
-    #: Elasticsearch host
-    elastic_host: str = "http://localhost:9200"
+    #: Elasticsearch password. This the password for the 'elastic' user when Elastic xpack security is enabled
+    elastic_password: str = None
+
+    #: Elasticsearch host. Default: https://localhost:9200 if elastic_password is set, http://localhost:9200 otherwise
+    elastic_host: str = None
+
+    #: Elasticsearch verify SSL (only used if elastic_password is set). Default: True unless host is localhost)
+    elastic_verify_ssl: bool = None
 
     #: Elasticsearch index to store authorization information in
     system_index = "amcat4_system"
@@ -68,6 +74,18 @@ class Settings(BaseSettings):
 
     class Config:
         env_prefix = "amcat4_"
+
+    @validator('elastic_host', always=True)
+    def set_elastic_host(cls, v, values, **kwargs): 
+        if not v:
+            v = "https://localhost:9200" if values['elastic_password'] else "http://localhost:9200"
+        return v
+
+    @validator('elastic_verify_ssl', always=True)
+    def set_elastic_ssl(cls, v, values, **kwargs): 
+        if not v:
+            v = not values['elastic_host'] in ("http://localhost:9200", "https://localhost:9200")
+        return v
 
 
 @functools.lru_cache()

@@ -123,15 +123,17 @@ def config_amcat(args):
 
     with open(".env", 'w') as f:
         for key, val in settings.items():
-            if val is not None:
-                field = Settings.__fields__[key]
-                if doc := field.field_info.description:
-                    f.write(f"# {doc}\n")
-                if issubclass(field.type_, Enum):
-                    f.write("# Valid options:\n")
-                    for option in field.type_:
-                        doc = option.__doc__.replace("\n", " ")
-                        f.write(f"# - {option.name}: {doc}\n")
+            field = Settings.__fields__[key]
+            if doc := field.field_info.description:
+                f.write(f"# {doc}\n")
+            if issubclass(field.type_, Enum):
+                f.write("# Valid options:\n")
+                for option in field.type_:
+                    doc = option.__doc__.replace("\n", " ")
+                    f.write(f"# - {option.name}: {doc}\n")
+            if val is None:
+                f.write(f"#amcat4_{key}=\n\n")
+            else:
                 f.write(f"amcat4_{key}={val}\n\n")
     os.chmod(".env", 0o600)
     print(f"*** Written {bold('.env')} file to {env_file_location} ***")

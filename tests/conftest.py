@@ -35,7 +35,7 @@ def my_setup():
 
     es.cache_clear()
     yield None
-    es().indices.delete(index=UNITTEST_SYSTEM_INDEX, ignore=[404])
+    delete_index(UNITTEST_SYSTEM_INDEX, ignore_missing=True)
 
 
 @pytest.fixture(scope="session", autouse=True)

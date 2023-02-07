@@ -19,7 +19,7 @@ setup(
     ],
     install_requires=[
         "fastapi[all]",
-        "elasticsearch~=7.16",
+        "elasticsearch~=8.6",
         "python-multipart",
         "python-dotenv",
         "requests",

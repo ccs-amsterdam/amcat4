@@ -120,7 +120,8 @@ def delete_index(index: str, ignore_missing=False) -> None:
     :param ignore_missing: If True, do not throw exception if index does not exist
     """
     deregister_index(index, ignore_missing=ignore_missing)
-    es().indices.delete(index=index, ignore=([404] if ignore_missing else []))
+    _es = es().options(ignore_status=404) if ignore_missing else es()
+    _es.indices.delete(index=index)
 
 
 def deregister_index(index: str, ignore_missing=False) -> None:
@@ -130,7 +131,7 @@ def deregister_index(index: str, ignore_missing=False) -> None:
     :param ignore_missing: If True, do not throw exception if index does not exist
     """
     try:
-        es().delete_by_query(index=get_settings().system_index, body={"query": {"term": {"index": index}}})
+        es().delete_by_query(index=get_settings().system_index, query={"term": {"index": index}})
     except NotFoundError:
         if not ignore_missing:
             raise
@@ -166,7 +167,7 @@ def remove_role(index: str, email: str):
     if index is None:
         index = GLOBAL_ROLES
     system_index = get_settings().system_index
-    es().delete(index=system_index, id=f"{index}|{email}", ignore=True)
+    es().options(ignore_status=404).delete(index=system_index, id=f"{index}|{email}")
     es().indices.refresh(index=system_index)
 
 
@@ -254,5 +255,5 @@ def _set_auth_entry(index: str, email: str, role: Role):
 def delete_user(email: str) -> None:
     """Delete this user from all indices"""
     system_index = get_settings().system_index
-    es().delete_by_query(index=system_index, body={"query": {"term": {"email": email}}})
+    es().delete_by_query(index=system_index, query={"term": {"email": email}})
     refresh(system_index)

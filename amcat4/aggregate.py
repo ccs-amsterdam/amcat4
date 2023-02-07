@@ -160,7 +160,7 @@ def _bare_aggregate(index: str, queries, filters, aggregations: Sequence[BoundAg
     """
     body = build_body(queries=queries, filters=filters) if filters or queries else {}
     aresult = es().search(index=index, size=0, aggregations=aggregation_dsl(aggregations), **body)
-    cresult = es().count(index=index, body=body)
+    cresult = es().count(index=index, **body)
     return cresult['count'], aresult['aggregations']
 
 
@@ -201,7 +201,7 @@ def _aggregate_results(index: Union[str, List[str]], axes: List[BoundAxis], quer
             yield (count,) + tuple(a.get_value(results) for a in aggregations)
         else:
             result = es().count(index=index if isinstance(index, str) else ",".join(index),
-                                body=build_body(queries=queries, filters=filters))
+                                **build_body(queries=queries, filters=filters))
             yield result['count'],
     elif any(ax.field == "_query" for ax in axes):
         # Strip off _query axis and run separate aggregation for each query
