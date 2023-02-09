@@ -36,7 +36,7 @@ env/bin/pip install -e .[dev]
 Now, you can run the backend server:
 
 ```
-env/bin/python -m amcat4 run
+env/bin/amcat4 run
 ```
 This will run the API at (default) locahost port 5000.
 To see documentation, visit http://localhost:5000/docs (Swagger, which comes with interactive "try now" mode) or http://localhost:5000/redoc (redoc, looks somewhat nicer)
@@ -45,7 +45,7 @@ Of course, this new instance is still completely empty, so there is little to se
 If you want to add some test data, you can use the `create-test-data` command, which will upload some State of the Union speeches:
 
 ```
-env/bin/python -m amcat4 create-test-index
+env/bin/amcat4 create-test-index
 ```
 
 (Note: if you get an SSL error, especially on a mac, try running `env/bin/pip install -U certifi`
@@ -58,12 +58,8 @@ AmCAT reads its configuration from environment variables, so you can either pass
 You can modify the [example .env file](.env.example) or interactively create the .env file using:
 
 ```
-env/bin/python -m amcat4 config
+env/bin/amcat4 config
 ```
-
-
-
-
 
 ## Using AmCAT
 

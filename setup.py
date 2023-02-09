@@ -37,4 +37,9 @@ setup(
             'responses',
         ]
     },
+    entry_points={
+        'console_scripts': [
+            'amcat4 = amcat4.__main__:amcat'
+        ]
+    },
 )
