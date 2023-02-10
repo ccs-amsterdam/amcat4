@@ -2,7 +2,7 @@ from datetime import datetime
 
 from amcat4 import elastic
 from amcat4.elastic import get_fields
-from amcat4.index import refresh, delete_index, create_index
+from amcat4.index import refresh
 from amcat4.query import query_documents
 from tests.conftest import upload
 

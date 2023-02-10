@@ -70,7 +70,6 @@ def _get_user(email, current_user):
         return {"email": email, "global_role": global_role.name}
 
 
-
 @app_users.get("/users", dependencies=[Depends(authenticated_admin)])
 def list_global_users():
     """List all global users"""
