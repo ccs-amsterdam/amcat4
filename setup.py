@@ -35,6 +35,7 @@ setup(
             'mypy',
             'flake8',
             'responses',
+            'pre-commit',
         ]
     },
     entry_points={
