@@ -1,6 +1,8 @@
+from datetime import datetime
+
 from amcat4 import elastic
 from amcat4.elastic import get_fields
-from amcat4.index import refresh
+from amcat4.index import refresh, delete_index, create_index
 from amcat4.query import query_documents
 from tests.conftest import upload
 
@@ -69,3 +71,13 @@ def test_add_tag(index_docs):
     elastic.update_tag_by_query(index_docs, "remove", q('0', '2', '3'), "tag", "x")
     refresh(index_docs)
     assert tags() == {'1': ['x'], '2': ['y'], '3': ['y']}
+
+
+def test_deduplication(index):
+    doc = {"title": "titel", "text": "text", "date": datetime(2020, 1, 1)}
+    elastic.upload_documents(index, [doc])
+    refresh(index)
+    assert query_documents(index).total_count == 1
+    elastic.upload_documents(index, [doc])
+    refresh(index)
+    assert query_documents(index).total_count == 1

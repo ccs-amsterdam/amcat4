@@ -10,6 +10,8 @@ Some things to note:
   but use field metadata to define specific fields, see ES_MAPPINGS below.
 """
 import functools
+import hashlib
+import json
 import logging
 from typing import Mapping, List, Iterable, Tuple, Union, Sequence, Dict, Literal
 
@@ -99,6 +101,16 @@ def coerce_type_to_elastic(value, ftype):
     return value
 
 
+def _get_hash(document: dict) -> bytes:
+    """
+    Get the hash for a document
+    """
+    hash_str = json.dumps(document, sort_keys=True, ensure_ascii=True, default=str).encode('ascii')
+    m = hashlib.sha224()
+    m.update(hash_str)
+    return m.hexdigest()
+
+
 def upload_documents(index: str, documents, fields: Mapping[str, str] = None) -> None:
     """
     Upload documents to this index
@@ -113,6 +125,8 @@ def upload_documents(index: str, documents, fields: Mapping[str, str] = None) ->
             for key in document.keys():
                 if key in field_types:
                     document[key] = coerce_type_to_elastic(document[key], field_types[key].get("type"))
+            if "_id" not in document:
+                document["_id"] = _get_hash(document)
             yield {"_index": index, **document}
 
     if fields:
