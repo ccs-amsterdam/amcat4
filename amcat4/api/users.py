@@ -64,10 +64,11 @@ def _get_user(email, current_user):
     if current_user != email:
         check_global_role(current_user, Role.WRITER)
     global_role = get_global_role(email)
-    if global_role is not None:
-        return {"email": email, "global_role": global_role.name}
-    else:
+    if email in ("admin", "guest") or global_role is None:
         raise HTTPException(404, detail=f"User {email} unknown")
+    else:
+        return {"email": email, "global_role": global_role.name}
+
 
 
 @app_users.get("/users", dependencies=[Depends(authenticated_admin)])

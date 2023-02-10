@@ -1,5 +1,6 @@
 import pytest
 
+from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.index import create_index, list_all_indices, list_known_indices, delete_index, register_index, \
     deregister_index, get_role, set_role, remove_role, Role, get_global_role, remove_global_role, set_global_role
@@ -65,3 +66,10 @@ def test_index_roles(index):
     assert get_role(index, user) == Role.ADMIN
     remove_role(index, user)
     assert get_role(index, user) is None
+
+
+def test_builtin_admin(index):
+    user = "admin@example.com"
+    get_settings().admin_email = user
+    assert get_global_role(user) == Role.ADMIN
+    assert index in list_known_indices(user)

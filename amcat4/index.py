@@ -74,6 +74,7 @@ def list_known_indices(email: str = None) -> Set[str]:
     if email is None or get_global_role(email) == Role.ADMIN or get_settings().auth == "no_auth":
         query = {"query": {"term": {"email": GUEST_USER}}}
     else:
+        print(2)
         # Either user has a role in the index, or index has a non-empty guest role
         query = {"query": {"bool": {"should": [
             {"term": {"email": email}},
@@ -221,6 +222,9 @@ def get_global_role(email: str) -> Optional[Role]:
 
     :returns: a Role object, or None if the user has no role
     """
+    # The 'admin' user is given to everyone in the no_auth scenario
+    if email == get_settings().admin_email or email == "admin":
+        return Role.ADMIN
     return get_role(index=GLOBAL_ROLES, email=email)
 
 
