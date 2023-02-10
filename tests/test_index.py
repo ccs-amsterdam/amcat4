@@ -7,6 +7,7 @@ from amcat4.index import create_index, list_all_indices, list_known_indices, del
 
 
 def test_create_delete_index():
+    # Can we create and delete indices?
     index = "amcat4_unittest"
     delete_index(index, ignore_missing=True)
     assert index not in list_all_indices()
