@@ -40,7 +40,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'amcat4 = amcat4.__main__:amcat'
+            'amcat4 = amcat4.__main__:main'
         ]
     },
 )

@@ -167,40 +167,40 @@ def menu(field: ModelField, v, validation_function=None):
         return value
 
 
-parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
 
-subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
-p = subparsers.add_parser('run', help='Run the backend API in development mode')
-p.add_argument('--no-debug', action='store_true', dest='nodebug',
-               help='Disable debug mode (useful for testing downstream clients)')
-p.add_argument('-p', '--port', help='Port', default=5000)
-p.set_defaults(func=run)
+    subparsers = parser.add_subparsers(dest="action", title="action", help='Action to perform:', required=True)
+    p = subparsers.add_parser('run', help='Run the backend API in development mode')
+    p.add_argument('--no-debug', action='store_true', dest='nodebug',
+                   help='Disable debug mode (useful for testing downstream clients)')
+    p.add_argument('-p', '--port', help='Port', default=5000)
+    p.set_defaults(func=run)
 
-p = subparsers.add_parser('create-env', help='Create the .env file with a random secret key')
-p.add_argument("-a", "--admin_email", help="The email address of the admin user.")
-p.add_argument("-p", "--admin_password", help="The password of the built-in admin user.")
-p.add_argument("-P", "--no-admin_password", action='store_true', help="Disable admin password")
+    p = subparsers.add_parser('create-env', help='Create the .env file with a random secret key')
+    p.add_argument("-a", "--admin_email", help="The email address of the admin user.")
+    p.add_argument("-p", "--admin_password", help="The password of the built-in admin user.")
+    p.add_argument("-P", "--no-admin_password", action='store_true', help="Disable admin password")
 
-p.set_defaults(func=create_env)
+    p.set_defaults(func=create_env)
 
-p = subparsers.add_parser('config', help='Configure amcat4 settings in an interactive menu.')
-p.set_defaults(func=config_amcat)
+    p = subparsers.add_parser('config', help='Configure amcat4 settings in an interactive menu.')
+    p.set_defaults(func=config_amcat)
 
-p = subparsers.add_parser('add-admin', help='Add a global admin')
-p.add_argument("email", help="The email address of the admin user.")
-p.set_defaults(func=add_admin)
+    p = subparsers.add_parser('add-admin', help='Add a global admin')
+    p.add_argument("email", help="The email address of the admin user.")
+    p.set_defaults(func=add_admin)
 
-p = subparsers.add_parser('list-users', help='List global users')
-p.set_defaults(func=list_users)
+    p = subparsers.add_parser('list-users', help='List global users')
+    p.set_defaults(func=list_users)
 
+    p = subparsers.add_parser('create-test-index', help=f'Create the {SOTU_INDEX} test index')
+    p.set_defaults(func=create_test_index)
 
-p = subparsers.add_parser('create-test-index', help=f'Create the {SOTU_INDEX} test index')
-p.set_defaults(func=create_test_index)
+    args = parser.parse_args()
 
-args = parser.parse_args()
+    logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=logging.INFO)
+    es_logger = logging.getLogger('elasticsearch')
+    es_logger.setLevel(logging.WARNING)
 
-logging.basicConfig(format='[%(levelname)-7s:%(name)-15s] %(message)s', level=logging.INFO)
-es_logger = logging.getLogger('elasticsearch')
-es_logger.setLevel(logging.WARNING)
-
-args.func(args)
+    args.func(args)
