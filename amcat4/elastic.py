@@ -297,7 +297,10 @@ TAG_SCRIPTS = dict(
     """,
     remove="""
     if (ctx._source[params.field] != null && ctx._source[params.field].contains(params.tag)) {
-      ctx._source[params.field].removeAll([params.tag])
+      ctx._source[params.field].removeAll([params.tag]);
+      if (ctx._source[params.field].size() == 0) {
+        ctx._source.remove(params.field);
+      }
     }""")
 
 
