@@ -13,7 +13,7 @@ from pydantic.networks import EmailStr
 
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_admin, check_global_role
-from amcat4.config import get_settings
+from amcat4.config import get_settings, validate_settings
 from amcat4.index import Role, set_global_role, get_global_role
 
 app_users = APIRouter(
@@ -104,4 +104,5 @@ def modify_user(email: EmailStr, data: ChangeUserForm, _user=Depends(authenticat
 def get_auth_config():
     return {"middlecat_url": get_settings().middlecat_url,
             "resource": get_settings().host,
-            "authorization": get_settings().auth}
+            "authorization": get_settings().auth,
+            "warnings": [validate_settings()]}

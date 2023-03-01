@@ -97,6 +97,14 @@ def get_settings():
     return Settings()
 
 
+def validate_settings():
+    if get_settings().auth != 'no_auth':
+        if get_settings().host.startswith("http://") and not get_settings().host.startswith("http://localhost"):
+            return "You have set the host at an http address and enabled authentication." \
+                   "Authentication through middlecat will not work in your browser" \
+                   " without additional steps. See https://github.com/ccs-amsterdam/amcat4py/issues/9"
+
+
 if __name__ == '__main__':
     # Echo the settings
     for k, v in get_settings().dict().items():

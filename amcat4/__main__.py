@@ -15,7 +15,7 @@ import uvicorn
 from pydantic.fields import ModelField
 
 from amcat4 import index
-from amcat4.config import get_settings, AuthOptions, Settings
+from amcat4.config import get_settings, AuthOptions, Settings, validate_settings
 from amcat4.elastic import upload_documents
 from amcat4.index import create_index, set_global_role, Role, list_global_users
 
@@ -49,6 +49,8 @@ def run(args):
     if auth == AuthOptions.no_auth:
         logging.warning("Warning: No authentication is set up - "
                         "everyone who can access this service can view and change all data")
+    if validate_settings():
+        logging.warning(validate_settings())
     logging.info("To change server config, create an .env file and/or set environment parameters,\n"
                  f"{' '*26}see README.md, amcat4/config.py or .env.example for more information.\n"
                  f"{' '*26}You can also run `python -m amcat4 config` to create the .env settings file interactively\n")
