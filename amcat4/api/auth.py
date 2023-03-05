@@ -69,11 +69,14 @@ def check_global_role(user: str, required_role: Role, raise_error=True):
     """
     if not user:
         raise HTTPException(status_code=401, detail="No authenticated user")
-    global_role = get_global_role(user)
+    try:
+        global_role = get_global_role(user)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error on retrieving user {user}: {e}")
     if global_role and global_role >= required_role:
         return True
     if raise_error:
-        raise HTTPException(status_code=401, detail=f"User {user} does not have global role {required_role}")
+        raise HTTPException(status_code=401, detail=f"User {user} does not have global {required_role.name.title()} permissions on this instance")
     else:
         return False
 
@@ -94,7 +97,7 @@ def check_role(user: str, required_role: Role, index: str, required_global_role:
     if actual_role and actual_role >= required_role:
         return True
     else:
-        raise HTTPException(status_code=401, detail=f"User {user} does not have role {required_role} on index {index}")
+        raise HTTPException(status_code=401, detail=f"User {user} does not have {required_role.name.title()} permissions on index {index}")
 
 
 async def authenticated_user(token: str = Depends(oauth2_scheme)) -> str:

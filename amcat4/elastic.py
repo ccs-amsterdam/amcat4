@@ -49,7 +49,10 @@ SYSTEM_MAPPING = {
 
 @functools.lru_cache()
 def es() -> Elasticsearch:
-    return _setup_elastic()
+    try:
+        return _setup_elastic()
+    except ValueError as e:
+        raise ValueError(f"Cannot connect to elastic {get_settings().elastic_host!r}: {e}")
 
 
 def _setup_elastic():

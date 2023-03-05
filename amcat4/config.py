@@ -88,7 +88,7 @@ class Settings(BaseSettings):
 
 
 @functools.lru_cache()
-def get_settings():
+def get_settings() -> Settings:
     # This shouldn't be necessary according to the docs, but without the load_dotenv it doesn't work at
     # least when running with python -m amcat4.config...
     temp = Settings()

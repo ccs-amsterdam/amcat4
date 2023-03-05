@@ -69,3 +69,17 @@ def set_auth(level: AuthOptions = AuthOptions.authorized_users_only):
     get_settings().auth = level
     yield level
     get_settings().auth = old_auth
+
+@contextmanager
+def amcat_settings(**kargs):
+    settings = get_settings()
+    old_settings = settings.dict()
+    try:
+        for k, v in kargs.items():
+            print(k, v)
+            setattr(settings, k, v)
+        yield settings
+    finally:
+        for k, v in old_settings.items():
+            print(k, v)
+            setattr(settings, k, v)
