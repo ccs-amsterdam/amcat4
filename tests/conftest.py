@@ -42,7 +42,6 @@ def my_setup():
 def default_settings():
     # Set default settings so tests are free to change the auth setting
     get_settings().auth = AuthOptions.allow_guests
-    
 
 
 @pytest.fixture()

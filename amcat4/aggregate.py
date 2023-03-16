@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Mapping, Iterable, Union, Tuple, Sequence, List, Dict, Optional
 
 from amcat4.date_mappings import interval_mapping
-from amcat4.elastic import es, field_type
+from amcat4.elastic import es, get_fields
 from amcat4.query import build_body, _normalize_queries
 
 
@@ -21,9 +21,10 @@ class Axis:
     """
     Class that specifies an aggregation axis
     """
-    def __init__(self, field: str, interval: str = None, name: str = None):
+    def __init__(self, field: str, interval: str = None, name: str = None, field_type: str = None):
         self.field = field
         self.interval = interval
+        self.ftype = field_type
         if name:
             self.name = name
         elif interval:
@@ -31,30 +32,8 @@ class Axis:
         else:
             self.name = field
 
-
-class BoundAxis:
-    """
-    Class that specifies an aggregation axis bound to an index
-    """
-    def __init__(self, axis: Axis, index: str):
-        self.axis = axis
-        self.index = index
-        self.ftype = "_query" if axis.field == "_query" else field_type(index, axis.field)
-
     def __repr__(self):
-        return f"<BoundAxis axis.field={self.axis.field} index={self.index}>"
-
-    @property
-    def field(self):
-        return self.axis.field
-
-    @property
-    def name(self):
-        return self.axis.name
-
-    @property
-    def interval(self):
-        return self.axis.interval
+        return f"<Axis field={self.field} fytpe={self.ftype}>"
 
     def query(self):
         if not self.ftype:
@@ -91,32 +70,11 @@ class Aggregation:
     """
     Specification of a single aggregation, that is, field and aggregation function
     """
-    def __init__(self, field: str, function: str, name: str = None):
+    def __init__(self, field: str, function: str, name: str = None, ftype: str = None):
         self.field = field
         self.function = function
         self.name = name or f"{function}_{field}"
-
-
-class BoundAggregation:
-    """
-    Aggregation bound to an index (for field type information)
-    """
-    def __init__(self, aggregation: Aggregation, index: str):
-        self.aggregation = aggregation
-        self.index = index
-        self.ftype = field_type(index, self.aggregation.field)
-
-    @property
-    def name(self):
-        return self.aggregation.name
-
-    @property
-    def function(self):
-        return self.aggregation.function
-
-    @property
-    def field(self):
-        return self.aggregation.field
+        self.ftype = ftype
 
     def dsl_item(self):
         return self.name, {self.function: {"field": self.field}}
@@ -131,13 +89,13 @@ class BoundAggregation:
         return {"field": self.field, "type": self.ftype, "function": self.function, "name": self.name}
 
 
-def aggregation_dsl(aggregations: Iterable[BoundAggregation]) -> dict:
+def aggregation_dsl(aggregations: Iterable[Aggregation]) -> dict:
     """Get the aggregation DSL dict for a list of aggregations"""
     return dict(a.dsl_item() for a in aggregations)
 
 
 class AggregateResult:
-    def __init__(self, axes: Sequence[BoundAxis], aggregations: List[BoundAggregation],
+    def __init__(self, axes: Sequence[Axis], aggregations: List[Aggregation],
                  data: List[tuple], count_column: str = "n"):
         self.axes = axes
         self.data = data
@@ -153,7 +111,7 @@ class AggregateResult:
             yield dict(zip(keys, row))
 
 
-def _bare_aggregate(index: str, queries, filters, aggregations: Sequence[BoundAggregation]) -> Tuple[int, dict]:
+def _bare_aggregate(index: str, queries, filters, aggregations: Sequence[Aggregation]) -> Tuple[int, dict]:
     """
     Aggregate without sources/group_by.
     Returns a tuple of doc count and aggregegations (doc_count, {metric: value})
@@ -164,7 +122,7 @@ def _bare_aggregate(index: str, queries, filters, aggregations: Sequence[BoundAg
     return cresult['count'], aresult['aggregations']
 
 
-def _elastic_aggregate(index: Union[str, List[str]], sources, queries, filters, aggregations: Sequence[BoundAggregation],
+def _elastic_aggregate(index: Union[str, List[str]], sources, queries, filters, aggregations: Sequence[Aggregation],
                        runtime_mappings: Mapping[str, Mapping] = None, after_key=None) -> Iterable[dict]:
     """
     Recursively get all buckets from a composite query.
@@ -192,8 +150,8 @@ def _elastic_aggregate(index: Union[str, List[str]], sources, queries, filters, 
                                       runtime_mappings=runtime_mappings, after_key=after_key)
 
 
-def _aggregate_results(index: Union[str, List[str]], axes: List[BoundAxis], queries: Mapping[str, str],
-                       filters: Optional[Mapping[str, Mapping]], aggregations: List[BoundAggregation]) -> Iterable[tuple]:
+def _aggregate_results(index: Union[str, List[str]], axes: List[Axis], queries: Mapping[str, str],
+                       filters: Optional[Mapping[str, Mapping]], aggregations: List[Aggregation]) -> Iterable[tuple]:
     if not axes:
         # No axes, so return aggregations (or total count) only
         if aggregations:
@@ -241,8 +199,15 @@ def query_aggregate(index: Union[str, List[str]], axes: Sequence[Axis] = None, a
     """
     if axes and len([x.field == "_query" for x in axes[1:]]) > 1:
         raise ValueError("Only one aggregation axis may be by query")
-    _axes = [BoundAxis(axis, index) for axis in axes] if axes else []
-    _aggregations = [BoundAggregation(a, index) for a in aggregations] if aggregations else []
+    fields = get_fields(index)
+    if not axes:
+        axes = []
+    for axis in axes:
+        axis.ftype = "_query" if axis.field == "_query" else fields[axis.field]['type']
+    if not aggregations:
+        aggregations = []
+    for aggregation in aggregations:
+        aggregation.ftype = fields[aggregation.field]['type']
     queries = _normalize_queries(queries)
-    data = list(_aggregate_results(index, _axes, queries, filters, _aggregations))
-    return AggregateResult(_axes, _aggregations, data, count_column="n", )
+    data = list(_aggregate_results(index, axes, queries, filters, aggregations))
+    return AggregateResult(axes, aggregations, data, count_column="n", )

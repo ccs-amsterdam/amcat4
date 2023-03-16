@@ -70,6 +70,7 @@ def set_auth(level: AuthOptions = AuthOptions.authorized_users_only):
     yield level
     get_settings().auth = old_auth
 
+
 @contextmanager
 def amcat_settings(**kargs):
     settings = get_settings()

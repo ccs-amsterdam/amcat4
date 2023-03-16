@@ -49,11 +49,11 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
     try:
         index.create_index(new_index.name, guest_role=guest_role)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error on creating index: {e}") 
+        raise HTTPException(status_code=400, detail=f"Error on creating index: {e}")
     try:
         set_role(new_index.name, current_user, Role.ADMIN)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error on assigning user to index: {e}") 
+        raise HTTPException(status_code=400, detail=f"Error on assigning user to index: {e}")
 
 
 # TODO Yes, this should be linked to the actual roles enum
