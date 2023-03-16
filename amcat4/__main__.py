@@ -204,3 +204,7 @@ def main():
     es_logger.setLevel(logging.WARNING)
 
     args.func(args)
+
+
+if __name__ == '__main__':
+    main()
