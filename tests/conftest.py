@@ -39,9 +39,10 @@ def my_setup():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def default_auth():
-    # Set default auth so tests are free to change the auth setting
+def default_settings():
+    # Set default settings so tests are free to change the auth setting
     get_settings().auth = AuthOptions.allow_guests
+    
 
 
 @pytest.fixture()

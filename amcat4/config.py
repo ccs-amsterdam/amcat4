@@ -88,13 +88,21 @@ class Settings(BaseSettings):
 
 
 @functools.lru_cache()
-def get_settings():
+def get_settings() -> Settings:
     # This shouldn't be necessary according to the docs, but without the load_dotenv it doesn't work at
     # least when running with python -m amcat4.config...
     temp = Settings()
     # WvA: For some reason, it always seems to override environment variables?
     load_dotenv(temp.env_file, override=False)
     return Settings()
+
+
+def validate_settings():
+    if get_settings().auth != 'no_auth':
+        if get_settings().host.startswith("http://") and not get_settings().host.startswith("http://localhost"):
+            return "You have set the host at an http address and enabled authentication." \
+                   "Authentication through middlecat will not work in your browser" \
+                   " without additional steps. See https://github.com/ccs-amsterdam/amcat4py/issues/9"
 
 
 if __name__ == '__main__':

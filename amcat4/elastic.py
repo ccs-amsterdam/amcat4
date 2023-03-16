@@ -49,7 +49,10 @@ SYSTEM_MAPPING = {
 
 @functools.lru_cache()
 def es() -> Elasticsearch:
-    return _setup_elastic()
+    try:
+        return _setup_elastic()
+    except ValueError as e:
+        raise ValueError(f"Cannot connect to elastic {get_settings().elastic_host!r}: {e}")
 
 
 def _setup_elastic():
@@ -297,7 +300,10 @@ TAG_SCRIPTS = dict(
     """,
     remove="""
     if (ctx._source[params.field] != null && ctx._source[params.field].contains(params.tag)) {
-      ctx._source[params.field].removeAll([params.tag])
+      ctx._source[params.field].removeAll([params.tag]);
+      if (ctx._source[params.field].size() == 0) {
+        ctx._source.remove(params.field);
+      }
     }""")
 
 

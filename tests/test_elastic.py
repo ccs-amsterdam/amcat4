@@ -56,7 +56,7 @@ def test_add_tag(index_docs):
     def tags():
         return {doc['_id']: doc['tag']
                 for doc in query_documents(index_docs, fields=["tag"]).data
-                if doc.get('tag')}
+                if 'tag' in doc and doc['tag'] is not None}
 
     assert tags() == {}
     elastic.update_tag_by_query(index_docs, "add",  q('0', '1'), "tag", "x")
