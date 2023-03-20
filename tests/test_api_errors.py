@@ -26,5 +26,5 @@ def test_error_elastic(client, index, admin):
 
 def test_error_index_create(client, writer, index):
     for name in ("Test", "_test", "test test"):
-        check(client, "/index/", 400, "invalid index name", json=dict(name=name), user=writer)
-    check(client, "/index/", 400, "already exists", json=dict(name=index), user=writer)
+        check(client, "/index/", 400, "invalid index name", json=dict(id=name), user=writer)
+    check(client, "/index/", 400, "already exists", json=dict(id=index), user=writer)

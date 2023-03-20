@@ -101,15 +101,18 @@ def get_index(index: str) -> Index:
     return _index_from_elastic(index)
 
 
-def create_index(index: str, guest_role: Optional[Role] = None) -> None:
+def create_index(index: str, guest_role: Optional[Role] = None,
+                 name: Optional[str] = None, description: Optional[str] = None,
+                 admin: Optional[str] = None) -> None:
     """
     Create a new index in elasticsearch and register it with this AmCAT instance
     """
     es().indices.create(index=index, mappings={'properties': DEFAULT_MAPPING})
-    register_index(index, guest_role=guest_role)
+    register_index(index, guest_role=guest_role, name=name, description=description, admin=admin)
 
 
-def register_index(index: str, guest_role: Optional[Role] = None, name: str = None, description: str = None) -> None:
+def register_index(index: str, guest_role: Optional[Role] = None, name: Optional[str] = None,
+                   description: Optional[str] = None, admin: Optional[str] = None) -> None:
     """
     Register an existing elastic index with this AmCAT instance, i.e. create an entry in the system index
     """
@@ -118,10 +121,11 @@ def register_index(index: str, guest_role: Optional[Role] = None, name: str = No
     system_index = get_settings().system_index
     if es().exists(index=system_index, id=index):
         raise ValueError(f"Index {index} is already registered")
+    roles = [dict(email=admin, role="ADMIN")] if admin else []
     es().index(index=system_index,
                id=index,
                document=dict(name=(name or index),
-                             roles=[],
+                             roles=roles,
                              description=description,
                              guest_role=guest_role and guest_role.name))
     refresh_index(system_index)

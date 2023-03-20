@@ -16,7 +16,7 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
     check(client.get(f"/index/{index_name}", headers=build_headers(user=writer)), 404)
 
     # Writers can create indices
-    post_json(client, "/index/", user=writer, json=dict(name=index_name))
+    post_json(client, "/index/", user=writer, json=dict(id=index_name))
     refresh()
     assert index_name in {x['name'] for x in get_json(client, "/index/", user=writer)}
 
@@ -28,6 +28,7 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
 
     # Users can only see indices that they have a role in or that have a guest role
     assert index_name not in {x['name'] for x in get_json(client, "/index/", user=user)}
+    assert index_name not in {x['name'] for x in get_json(client, "/index/", user=writer2)}
     assert index_name in {x['name'] for x in get_json(client, "/index/", user=writer)}
 
     # (Only) index admin can change index guest role
@@ -122,7 +123,7 @@ def test_set_get_delete_roles(client: TestClient, admin: str, writer: str, user:
     assert get_json(client, f"/index/{index}/users", user=admin) == []
 
 
-def test_name_description(client, index, user, admin):
+def test_name_description(client, index, index_name, user, admin):
     # unauthenticated or unauthorized users cannot modify or view an index
     check(client.put(f"/index/{index}", json=dict(name="test")), 401)
     check(client.get(f"/index/{index}"), 401)
@@ -142,9 +143,14 @@ def test_name_description(client, index, user, admin):
     set_role(index, user, None)
     check(client.get(f"/index/{index}", headers=build_headers(user)), 401)
     set_guest_role(index, Role.METAREADER)
-    refresh()
     assert get_json(client, f"/index/{index}", user=user)['name'] == 'test'
 
+    check(client.post("/index", json=dict(id=index_name, description="test2", guest_role="metareader"),
+                      headers=build_headers(admin)), 201)
+    assert get_json(client, f"/index/{index_name}", user=user)['description'] == 'test2'
+
     # name and description should be present in list of indices
+    refresh()
     indices = {ix['id']: ix for ix in get_json(client, "/index")}
     assert indices[index]['description'] == 'ooktest'
+    assert indices[index_name]['description'] == 'test2'

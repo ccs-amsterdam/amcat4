@@ -38,8 +38,10 @@ def index_list(current_user: str = Depends(authenticated_user)):
 class NewIndex(BaseModel):
     """Form to create a new index."""
 
-    name: str
+    id: str
     guest_role: Optional[RoleType]
+    name: Optional[str]
+    description: Optional[str]
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
@@ -51,21 +53,10 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
     """
     guest_role = new_index.guest_role and Role[new_index.guest_role.upper()]
     try:
-        index.create_index(new_index.name, guest_role=guest_role)
+        index.create_index(new_index.id, guest_role=guest_role, name=new_index.name,
+                           description=new_index.description, admin=current_user)
     except ApiError as e:
-        import json
-        print("BODY: ", json.dumps(e.body, indent=2))
-        print("INFO: ", json.dumps(e.body, indent=2))
-        print("MESSAGE: ", json.dumps(e.body, indent=2))
-        print("META: ", json.dumps(e.body, indent=2))
         raise HTTPException(status_code=400, detail=dict(info=f"Error on creating index: {e}", message=e.message, body=e.body))
-        if (e.message == 'resource_already_exists_exception'):
-            raise HTTPException(status_code=400, detail=f"Error on creating index: Index {new_index.name!r} already exists")
-        raise HTTPException(status_code=400, detail=f"Error on creating index: {e}")
-    try:
-        set_role(new_index.name, current_user, Role.ADMIN)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error on assigning user to index: {e}")
 
 
 # TODO Yes, this should be linked to the actual roles enum
