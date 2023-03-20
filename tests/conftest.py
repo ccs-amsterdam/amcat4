@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from amcat4 import elastic, api  # noqa: E402
 from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import es
-from amcat4.index import create_index, delete_index, Role, refresh, delete_user, \
+from amcat4.index import create_index, delete_index, Role, refresh_index, delete_user, \
     remove_global_role, set_global_role
 from tests.middlecat_keypair import PUBLIC_KEY
 
@@ -77,7 +77,7 @@ def writer2():
 def user():
     name = "test_user@amcat.nl"
     delete_user(name)
-    set_global_role(name, Role.NONE)
+    set_global_role(name, Role.READER)
     yield name
     delete_user(name)
 
@@ -131,7 +131,7 @@ def upload(index: str, docs: Iterable[dict], **kwargs):
             if k not in doc:
                 doc[k] = v
     elastic.upload_documents(index, docs, **kwargs)
-    refresh(index)
+    refresh_index(index)
     return ids
 
 

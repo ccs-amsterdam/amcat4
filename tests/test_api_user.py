@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from amcat4.config import AuthOptions
 from amcat4.index import delete_user, get_global_role, set_guest_role, Role
-from tests.tools import get_json, build_headers, post_json, check, set_auth
+from tests.tools import get_json, build_headers, post_json, check, refresh, set_auth
 
 
 def test_auth(client: TestClient, user, admin, index):
@@ -15,18 +15,21 @@ def test_auth(client: TestClient, user, admin, index):
         # Allow guests - unauthenticated user can access projects with guest roles
         assert client.get(f"/index/{index}").status_code == 401
         set_guest_role(index, Role.READER)
+        refresh()
         assert client.get(f"/index/{index}").status_code == 200
         assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
     with set_auth(AuthOptions.allow_authenticated_guests):
         # Only use guest roles if user is authenticated
         assert client.get(f"/index/{index}").status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 200
-        set_guest_role(index, Role.NONE)
+        set_guest_role(index, None)
+        refresh()
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
     with set_auth(AuthOptions.authorized_users_only):
         # Only users with a index-level role can access other indices (even as guest)
         set_guest_role(index, Role.READER)
+        refresh()
         assert client.get(f"/index/{index}").status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(user)).status_code == 200
@@ -37,10 +40,10 @@ def test_get_user(client: TestClient, writer, user):
     # Guests have no /me
     assert client.get("/users/me").status_code == 404
     # user can only see its own info:
-    assert get_json(client, "/users/me", user=user) == {"email": user, "global_role": "NONE"}
-    assert get_json(client, f"/users/{user}", user=user) == {"email": user, "global_role": "NONE"}
+    assert get_json(client, "/users/me", user=user) == {"email": user, "global_role": "READER"}
+    assert get_json(client, f"/users/{user}", user=user) == {"email": user, "global_role": "READER"}
     # writer can see everyone
-    assert get_json(client, f"/users/{user}", user=writer) == {"email": user, "global_role": "NONE"}
+    assert get_json(client, f"/users/{user}", user=writer) == {"email": user, "global_role": "READER"}
     assert get_json(client, f"/users/{writer}", user=writer) == {"email": writer, "global_role": 'WRITER'}
     # Retrieving a non-existing user as admin should give 404
     delete_user(user)
@@ -79,4 +82,4 @@ def test_list_users(client: TestClient, index, admin, user):
     check(client.get("/users", headers=build_headers(user)), 401)
     result = get_json(client, "/users", user=admin)
     assert {'email': admin, 'global_role': 'ADMIN'} in result
-    assert {'email': user, 'global_role': 'NONE'} in result
+    assert {'email': user, 'global_role': 'READER'} in result

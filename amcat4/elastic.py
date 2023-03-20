@@ -20,6 +20,8 @@ from elasticsearch.helpers import bulk
 
 from amcat4.config import get_settings
 
+SYSTEM_INDEX_VERSION = 1
+
 ES_MAPPINGS = {
    'long': {"type": "long"},
    'date': {"type": "date", "format": "strict_date_optional_time"},
@@ -41,9 +43,9 @@ DEFAULT_MAPPING = {
 }
 
 SYSTEM_MAPPING = {
-    'index': {"type": "keyword"},
-    'email': {"type": "keyword"},
-    'role': {"type": "keyword"},
+    'name': {"type": "text"},
+    'description': {"type": "text"},
+    'roles': {"type": "nested"},
 }
 
 
@@ -73,6 +75,8 @@ def _setup_elastic():
     if not elastic.indices.exists(index=settings.system_index):
         logging.info(f"Creating amcat4 system index: {settings.system_index}")
         elastic.indices.create(index=settings.system_index, mappings={'properties': SYSTEM_MAPPING})
+        from amcat4.index import GLOBAL_ROLES
+        elastic.index(index=settings.system_index, id=GLOBAL_ROLES, document=dict(version=SYSTEM_INDEX_VERSION, roles=[]))
     return elastic
 
 

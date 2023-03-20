@@ -73,7 +73,7 @@ def _get_user(email, current_user):
 @app_users.get("/users", dependencies=[Depends(authenticated_admin)])
 def list_global_users():
     """List all global users"""
-    return [{'email': email, 'global_role': role.name} for (email, role) in index.list_global_users()]
+    return [{'email': email, 'global_role': role.name} for (email, role) in index.list_global_users().items()]
 
 
 @app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)

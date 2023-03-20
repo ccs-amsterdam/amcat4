@@ -1,18 +1,22 @@
 """API Endpoints for document and index management."""
 from http import HTTPStatus
-from typing import Literal, Optional, Mapping, List
+from typing import List, Literal, Mapping, Optional
 
 import elasticsearch
-from fastapi import APIRouter, HTTPException, status, Response
-from fastapi.params import Depends, Body
+from elastic_transport import ApiError
+from fastapi import APIRouter, HTTPException, Response, status
+from fastapi.params import Body, Depends
 from pydantic import BaseModel
 from pydantic.config import Extra
 
 from amcat4 import elastic, index
-from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
+from amcat4.api.auth import (authenticated_user, authenticated_writer,
+                             check_role)
 from amcat4.api.common import py2dict
-from amcat4.index import Role, refresh, set_role, get_role, get_guest_role, list_known_indices, set_guest_role, \
-    get_global_role, list_users, remove_role, IndexDoesNotExist
+from amcat4.index import (IndexDoesNotExist, Role, get_global_role, get_index,
+                          get_role, list_known_indices, list_users)
+from amcat4.index import refresh_index as es_refresh_index
+from amcat4.index import remove_role, set_role
 
 app_index = APIRouter(
     prefix="/index",
@@ -28,7 +32,7 @@ def index_list(current_user: str = Depends(authenticated_user)):
 
     Returns a list of dicts containing name, role, and guest attributes
     """
-    return [{"name": ix} for ix in list_known_indices(current_user)]
+    return [ix._asdict() for ix in list_known_indices(current_user)]
 
 
 class NewIndex(BaseModel):
@@ -45,10 +49,18 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
 
     POST data should be json containing name and optional guest_role
     """
-    guest_role = Role[new_index.guest_role.upper()] if new_index.guest_role else Role.NONE
+    guest_role = new_index.guest_role and Role[new_index.guest_role.upper()]
     try:
         index.create_index(new_index.name, guest_role=guest_role)
-    except Exception as e:
+    except ApiError as e:
+        import json
+        print("BODY: ", json.dumps(e.body, indent=2))
+        print("INFO: ", json.dumps(e.body, indent=2))
+        print("MESSAGE: ", json.dumps(e.body, indent=2))
+        print("META: ", json.dumps(e.body, indent=2))
+        raise HTTPException(status_code=400, detail=dict(info=f"Error on creating index: {e}", message=e.message, body=e.body))
+        if (e.message == 'resource_already_exists_exception'):
+            raise HTTPException(status_code=400, detail=f"Error on creating index: Index {new_index.name!r} already exists")
         raise HTTPException(status_code=400, detail=f"Error on creating index: {e}")
     try:
         set_role(new_index.name, current_user, Role.ADMIN)
@@ -60,8 +72,11 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
 class ChangeIndex(BaseModel):
     """Form to update an existing index."""
 
-    guest_role: Literal["ADMIN", "WRITER", "READER", "METAREADER", "NONE",
-                        "admin", "writer", "reader", "metareader", "none"]
+    guest_role: Optional[Literal[
+        "ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader"
+        ]]
+    name: Optional[str]
+    description: Optional[str]
 
 
 @app_index.put("/{ix}")
@@ -69,14 +84,13 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
     """
     Modify the index.
 
-    Currently only supports modifying guest_role
-    POST data should be json containing the changed values (i.e. guest_role)
+    POST data should be json containing the changed values (i.e. name, description, guest_role)
 
     User needs admin rights on the index
     """
     check_role(user, Role.ADMIN, ix)
-    guest_role = Role[data.guest_role.upper()]
-    set_guest_role(ix, guest_role)
+    guest_role = data.guest_role and Role[data.guest_role.upper()]
+    index.modify_index(ix, name=data.name, description=data.description, guest_role=guest_role)
 
 
 @app_index.get("/{ix}")
@@ -86,10 +100,9 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
     """
     try:
         check_role(user, Role.METAREADER, ix, required_global_role=Role.WRITER)
-        guest_role = get_guest_role(ix)
+        return get_index(ix)._asdict()
     except IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
-    return {"index": ix, "guest_role": "NONE" if guest_role is None else guest_role.name}
 
 
 @app_index.delete("/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
@@ -215,7 +228,7 @@ def list_index_users(ix: str, user: str = Depends(authenticated_user)):
     """
     if get_global_role(user) != Role.ADMIN:
         check_role(user, Role.READER, ix)
-    return [{"email": u, "role": r.name} for (u, r) in list_users(ix)]
+    return [{"email": u, "role": r.name} for (u, r) in list_users(ix).items()]
 
 
 def _check_can_modify_user(ix, user, target_user, target_role):
@@ -277,4 +290,4 @@ def remove_index_user(ix: str, email: str, user: str = Depends(authenticated_use
 
 @app_index.get("/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def refresh_index(ix: str):
-    refresh(ix)
+    es_refresh_index(ix)
