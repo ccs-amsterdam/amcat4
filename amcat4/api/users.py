@@ -47,6 +47,7 @@ def create_user(new_user: UserForm, _=Depends(authenticated_admin)):
 @app_users.get("/users/me")
 def get_current_user(current_user: str = Depends(authenticated_user)):
     """View the current user."""
+    print("!!!", current_user)
     return _get_user(current_user, current_user)
 
 

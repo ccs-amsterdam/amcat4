@@ -13,9 +13,9 @@ import functools
 import hashlib
 import json
 import logging
-from typing import Mapping, List, Iterable, Tuple, Union, Sequence, Literal
+from typing import Mapping, List, Iterable, Optional, Tuple, Union, Sequence, Literal
 
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch.helpers import bulk
 
 from amcat4.config import get_settings
@@ -57,25 +57,56 @@ def es() -> Elasticsearch:
         raise ValueError(f"Cannot connect to elastic {get_settings().elastic_host!r}: {e}")
 
 
+def connect_elastic() -> Elasticsearch:
+    """
+    Connect to the elastic server using the system settings
+    """
+    settings = get_settings()
+    if settings.elastic_password:
+        return Elasticsearch(settings.elastic_host or None,
+                             basic_auth=("elastic", settings.elastic_password),
+                             verify_certs=settings.elastic_verify_ssl)
+    else:
+        return Elasticsearch(settings.elastic_host or None)
+
+
+def get_system_version(elastic = None) -> Optional[int]:
+    """
+    Get the elastic system index version
+    """
+    # WvA: I don't like this 'circular' import. Should probably reorganize the elastic and index modules
+    from amcat4.index import GLOBAL_ROLES
+    settings = get_settings()
+    if elastic is None:
+        elastic = es()
+    try:
+        r = elastic.get(index=settings.system_index, id=GLOBAL_ROLES, source_includes="version")
+    except NotFoundError:
+        return None
+    return r['_source']['version']
+
+
 def _setup_elastic():
     """
     Check whether we can connect with elastic
     """
+    # WvA: I don't like this 'circular' import. Should probably reorganize the elastic and index modules
+    from amcat4.index import GLOBAL_ROLES
     settings = get_settings()
     logging.debug(f"Connecting with elasticsearch at {settings.elastic_host}, "
-                  "password? {'yes' if settings.elastic_password else 'no'} ")
-    if settings.elastic_password:
-        elastic = Elasticsearch(settings.elastic_host or None,
-                                basic_auth=("elastic", settings.elastic_password),
-                                verify_certs=settings.elastic_verify_ssl)
-    else:
-        elastic = Elasticsearch(settings.elastic_host or None)
+                  f"password? {'yes' if settings.elastic_password else 'no'} ")
+    elastic = connect_elastic()
     if not elastic.ping():
         raise Exception(f"Cannot connect to elasticsearch server {settings.elastic_host}")
-    if not elastic.indices.exists(index=settings.system_index):
+    if elastic.indices.exists(index=settings.system_index):
+        # Check index format version
+        if get_system_version(elastic) is None:
+            raise ValueError(f"System index {settings.elastic_host}::{settings.system_index} is corrupted or uses an "
+                             f"old format. Please repair or migrate before continuing")
+
+    else:
         logging.info(f"Creating amcat4 system index: {settings.system_index}")
         elastic.indices.create(index=settings.system_index, mappings={'properties': SYSTEM_MAPPING})
-        from amcat4.index import GLOBAL_ROLES
         elastic.index(index=settings.system_index, id=GLOBAL_ROLES, document=dict(version=SYSTEM_INDEX_VERSION, roles=[]))
     return elastic
 

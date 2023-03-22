@@ -2,22 +2,25 @@
 AmCAT4 REST API
 """
 import argparse
+import collections
 import csv
 import io
+import json
 import logging
 import os
 import secrets
 import sys
 import urllib.request
 from enum import Enum
+import elasticsearch
 
 import uvicorn
 from pydantic.fields import ModelField
 
 from amcat4 import index
 from amcat4.config import get_settings, AuthOptions, Settings, validate_settings
-from amcat4.elastic import upload_documents
-from amcat4.index import create_index, set_global_role, Role, list_global_users
+from amcat4.elastic import connect_elastic, get_system_version, ping, upload_documents
+from amcat4.index import GLOBAL_ROLES, _roles_to_elastic, create_index, set_global_role, Role, list_global_users
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -54,7 +57,65 @@ def run(args):
     logging.info("To change server config, create an .env file and/or set environment parameters,\n"
                  f"{' '*26}see README.md, amcat4/config.py or .env.example for more information.\n"
                  f"{' '*26}You can also run `python -m amcat4 config` to create the .env settings file interactively\n")
+    if ping():
+        logging.info(f"Connect to elasticsearch {get_settings().elastic_host}")
     uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port)
+
+
+def val(val_or_list):
+    if isinstance(val_or_list, list):
+        if len(val_or_list) == 1:
+            return val_or_list[0]
+        raise ValueError(f"Cannot extract single value from {val_or_list}")
+    return val_or_list
+
+
+def migrate_index(_args):
+    settings = get_settings()
+    elastic = connect_elastic()
+    if not elastic.ping():
+        logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
+        sys.exit(1)
+    if not elastic.indices.exists(index=settings.system_index):
+        logging.info("System index does not exist yet. It will be created automatically if you run the server")
+        sys.exit(1)
+    # Check index format version
+    version = get_system_version(elastic)
+    logging.info(f"{settings.elastic_host}::{settings.system_index} is at version {version or 0}")
+    if version == 1:
+        logging.info("Nothing to do")
+    else:
+        logging.info("Migrating to version 1")
+        fields = ["index", "email", "role"]
+        indices = collections.defaultdict(dict)
+        for entry in elasticsearch.helpers.scan(elastic, index=settings.system_index, fields=fields, _source=False):
+            index, email, role = [val(entry['fields'][field]) for field in fields]
+            indices[index][email] = role
+        if GLOBAL_ROLES not in indices:
+            indices[GLOBAL_ROLES] = {}
+        try:
+            elastic.indices.delete(index=settings.system_index)
+            for index, roles_dict in indices.items():
+                guest_role = roles_dict.pop("_guest", None)
+                roles_dict.pop("admin", None)
+                roles = [{"email": email, "role": role} for (email, role) in roles_dict.items()]
+                doc = dict(name=index, guest_role=guest_role, roles=roles)
+                if index == GLOBAL_ROLES:
+                    doc["version"] = 1
+                print(doc)
+                elastic.index(index=settings.system_index, id=index, document=doc)
+        except Exception:
+            try:
+                open("roles.csv", "w").write(json.dumps(indices, indent=2))
+                dest = "roles.csv"
+            except:
+                print(json.dumps(indices, indent=2))
+                dest = "screen"
+            logging.exception("Something went wrong in migrating, and the old system index is probably lost. Sorry!"
+                              f"The authorization information is written to {dest}, I hope this can be fixed...")
+            sys.exit(1)
+
+
 
 
 def base_env():
@@ -198,6 +259,9 @@ def main():
 
     p = subparsers.add_parser('create-test-index', help=f'Create the {SOTU_INDEX} test index')
     p.set_defaults(func=create_test_index)
+
+    p = subparsers.add_parser('migrate', help=f'Migrate the system index to the current version')
+    p.set_defaults(func=migrate_index)
 
     args = parser.parse_args()
 
