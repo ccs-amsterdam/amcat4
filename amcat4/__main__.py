@@ -20,7 +20,7 @@ from pydantic.fields import ModelField
 from amcat4 import index
 from amcat4.config import get_settings, AuthOptions, Settings, validate_settings
 from amcat4.elastic import connect_elastic, get_system_version, ping, upload_documents
-from amcat4.index import GLOBAL_ROLES, _roles_to_elastic, create_index, set_global_role, Role, list_global_users
+from amcat4.index import GLOBAL_ROLES, create_index, set_global_role, Role, list_global_users
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -108,14 +108,12 @@ def migrate_index(_args):
             try:
                 open("roles.csv", "w").write(json.dumps(indices, indent=2))
                 dest = "roles.csv"
-            except:
+            except Exception:
                 print(json.dumps(indices, indent=2))
                 dest = "screen"
             logging.exception("Something went wrong in migrating, and the old system index is probably lost. Sorry!"
                               f"The authorization information is written to {dest}, I hope this can be fixed...")
             sys.exit(1)
-
-
 
 
 def base_env():
@@ -260,7 +258,7 @@ def main():
     p = subparsers.add_parser('create-test-index', help=f'Create the {SOTU_INDEX} test index')
     p.set_defaults(func=create_test_index)
 
-    p = subparsers.add_parser('migrate', help=f'Migrate the system index to the current version')
+    p = subparsers.add_parser('migrate', help='Migrate the system index to the current version')
     p.set_defaults(func=migrate_index)
 
     args = parser.parse_args()

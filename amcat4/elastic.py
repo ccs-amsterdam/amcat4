@@ -70,7 +70,7 @@ def connect_elastic() -> Elasticsearch:
         return Elasticsearch(settings.elastic_host or None)
 
 
-def get_system_version(elastic = None) -> Optional[int]:
+def get_system_version(elastic=None) -> Optional[int]:
     """
     Get the elastic system index version
     """
