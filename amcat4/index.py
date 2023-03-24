@@ -89,7 +89,7 @@ def _index_from_elastic(index):
     return Index(id=index['_id'],
                  name=src.get('name', index['_id']),
                  description=src.get('description'),
-                 guest_role=guest_role and Role[guest_role.upper()],
+                 guest_role=guest_role and guest_role != 'NONE' and Role[guest_role.upper()],
                  roles=_roles_from_elastic(src.get('roles', [])))
 
 
