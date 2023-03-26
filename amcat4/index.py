@@ -63,6 +63,13 @@ def refresh_index(index: str):
     es().indices.refresh(index=index)
 
 
+def refresh_system_index():
+    """
+    Refresh the elasticsearch index
+    """
+    es().indices.refresh(index=get_settings().system_index)
+
+
 def list_known_indices(email: str = None) -> Iterable[Index]:
     """
     List all known indices, e.g. indices registered in this amcat4 instance

@@ -13,8 +13,8 @@ from amcat4 import elastic, index
 from amcat4.api.auth import (authenticated_user, authenticated_writer,
                              check_role)
 from amcat4.api.common import py2dict
-from amcat4.index import (IndexDoesNotExist, Role, get_global_role, get_index,
-                          get_role, list_known_indices, list_users)
+from amcat4.index import (GLOBAL_ROLES, IndexDoesNotExist, Role, get_global_role, get_index,
+                          get_role, list_known_indices, list_users, refresh_system_index)
 from amcat4.index import refresh_index as es_refresh_index
 from amcat4.index import remove_role, set_role
 
@@ -64,7 +64,7 @@ class ChangeIndex(BaseModel):
     """Form to update an existing index."""
 
     guest_role: Optional[Literal[
-        "ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader"
+        "ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader", "NONE", "none"
         ]]
     name: Optional[str]
     description: Optional[str]
@@ -80,8 +80,16 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
     User needs admin rights on the index
     """
     check_role(user, Role.ADMIN, ix)
-    guest_role = data.guest_role and Role[data.guest_role.upper()]
-    index.modify_index(ix, name=data.name, description=data.description, guest_role=guest_role)
+    guest_role, remove_guest_role = None, False
+    if data.guest_role:
+        role = data.guest_role.upper()
+        if role == "NONE":
+            remove_guest_role = True
+        else:
+            guest_role = Role[role]
+    index.modify_index(ix, name=data.name, description=data.description, guest_role=guest_role,
+                       remove_guest_role=remove_guest_role)
+    refresh_system_index()
 
 
 @app_index.get("/{ix}")
@@ -91,7 +99,9 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
     """
     try:
         check_role(user, Role.METAREADER, ix, required_global_role=Role.WRITER)
-        return get_index(ix)._asdict()
+        d = get_index(ix)._asdict()
+        d['guest_role'] = d['guest_role'].name if d.get('guest_role') else None
+        return d
     except IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
