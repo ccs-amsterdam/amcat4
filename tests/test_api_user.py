@@ -40,11 +40,11 @@ def test_get_user(client: TestClient, writer, user):
     # Guests have no /me
     assert client.get("/users/me").status_code == 404
     # user can only see its own info:
-    assert get_json(client, "/users/me", user=user) == {"email": user, "global_role": "READER"}
-    assert get_json(client, f"/users/{user}", user=user) == {"email": user, "global_role": "READER"}
+    assert get_json(client, "/users/me", user=user) == {"email": user, "role": "READER"}
+    assert get_json(client, f"/users/{user}", user=user) == {"email": user, "role": "READER"}
     # writer can see everyone
-    assert get_json(client, f"/users/{user}", user=writer) == {"email": user, "global_role": "READER"}
-    assert get_json(client, f"/users/{writer}", user=writer) == {"email": writer, "global_role": 'WRITER'}
+    assert get_json(client, f"/users/{user}", user=writer) == {"email": user, "role": "READER"}
+    assert get_json(client, f"/users/{writer}", user=writer) == {"email": writer, "role": 'WRITER'}
     # Retrieving a non-existing user as admin should give 404
     delete_user(user)
     assert client.get(f'/users/{user}', headers=build_headers(writer)).status_code == 404
@@ -55,7 +55,7 @@ def test_create_user(client: TestClient, user, writer, admin, username):
     assert client.post('/users/').status_code == 401, "Creating user should require auth"
     assert client.post("/users/", headers=build_headers(writer)).status_code == 401, "Creating user should require admin"
     # admin can add new users
-    u = dict(email=username, global_role="writer")
+    u = dict(email=username, role="writer")
     assert "email" in set(post_json(client, "/users/", user=admin, json=u).keys())
     assert client.post("/users/", headers=build_headers(admin), json=u).status_code == 400, \
         "Duplicate create should return 400"
@@ -71,8 +71,8 @@ def test_create_user(client: TestClient, user, writer, admin, username):
 def test_modify_user(client: TestClient, user, writer, admin):
     """Are the API endpoints and auth for modifying users correct?"""
     # Only admin can change users
-    check(client.put(f"/users/{user}", headers=build_headers(user), json={'global_role': 'metareader'}), 401)
-    check(client.put(f"/users/{user}", headers=build_headers(admin), json={'global_role': 'admin'}), 200)
+    check(client.put(f"/users/{user}", headers=build_headers(user), json={'role': 'metareader'}), 401)
+    check(client.put(f"/users/{user}", headers=build_headers(admin), json={'role': 'admin'}), 200)
     assert get_global_role(user).name == "ADMIN"
 
 
@@ -81,5 +81,5 @@ def test_list_users(client: TestClient, index, admin, user):
     check(client.get("/users"), 401)
     check(client.get("/users", headers=build_headers(user)), 401)
     result = get_json(client, "/users", user=admin)
-    assert {'email': admin, 'global_role': 'ADMIN'} in result
-    assert {'email': user, 'global_role': 'READER'} in result
+    assert {'email': admin, 'role': 'ADMIN'} in result
+    assert {'email': user, 'role': 'READER'} in result

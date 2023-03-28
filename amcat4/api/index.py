@@ -13,7 +13,7 @@ from amcat4 import elastic, index
 from amcat4.api.auth import (authenticated_user, authenticated_writer,
                              check_role)
 from amcat4.api.common import py2dict
-from amcat4.index import (IndexDoesNotExist, Role, get_global_role, get_index,
+from amcat4.index import (Index, IndexDoesNotExist, Role, get_global_role, get_index,
                           get_role, list_known_indices, list_users)
 from amcat4.index import refresh_index as es_refresh_index
 from amcat4.index import refresh_system_index, remove_role, set_role
@@ -32,7 +32,13 @@ def index_list(current_user: str = Depends(authenticated_user)):
 
     Returns a list of dicts containing name, role, and guest attributes
     """
-    return [ix._asdict() for ix in list_known_indices(current_user)]
+    def index_to_dict(ix: Index) -> dict:
+        ix = ix._asdict()
+        ix['guest_role'] = ix['guest_role'] and ix['guest_role'].name
+        del ix['roles']
+        return ix
+
+    return [index_to_dict(ix) for ix in list_known_indices(current_user)]
 
 
 class NewIndex(BaseModel):

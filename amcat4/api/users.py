@@ -5,6 +5,7 @@ AmCAT4 can use either Basic or Token-based authentication.
 A client can request a token with basic authentication and store that token for future requests.
 """
 from typing import Literal, Optional
+from importlib.metadata import version
 
 from fastapi import APIRouter, HTTPException, status, Response
 from fastapi.params import Depends
@@ -105,4 +106,5 @@ def get_auth_config():
     return {"middlecat_url": get_settings().middlecat_url,
             "resource": get_settings().host,
             "authorization": get_settings().auth,
-            "warnings": [validate_settings()]}
+            "warnings": [validate_settings()],
+            "api_version": version('amcat4')}
