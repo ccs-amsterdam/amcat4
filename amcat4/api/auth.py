@@ -74,7 +74,7 @@ def check_global_role(user: str, required_role: Role, raise_error=True):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error on retrieving user {user}: {e}")
     if global_role and global_role >= required_role:
-        return True
+        return global_role
     if raise_error:
         raise HTTPException(status_code=401, detail=f"User {user} does not have global "
                             f"{required_role.name.title()} permissions on this instance")
@@ -89,14 +89,15 @@ def check_role(user: str, required_role: Role, index: str, required_global_role:
     :param required_role: The minimum role of the user on the given index
     :param index: The index to check the role on
     :param required_global_role: If the user has this global role (default: admin), also allow them access
+    :return: the actual role of the user on this index
     """
     # First, check global role (also checks that user exists and deals with 'admin' special user)
     if check_global_role(user, required_global_role, raise_error=False):
-        return True
+        return get_role(index, user)
     # Global role check was false, so now check local role
     actual_role = get_role(index, user)
     if actual_role and actual_role >= required_role:
-        return True
+        return actual_role
     else:
         raise HTTPException(status_code=401, detail=f"User {user} does not have "
                             f"{required_role.name.title()} permissions on index {index}")

@@ -8,6 +8,7 @@ from authlib.jose import jwt
 from fastapi.testclient import TestClient
 
 from amcat4.config import AuthOptions, get_settings
+from amcat4.index import refresh_index
 from tests.middlecat_keypair import PRIVATE_KEY
 
 
@@ -77,10 +78,12 @@ def amcat_settings(**kargs):
     old_settings = settings.dict()
     try:
         for k, v in kargs.items():
-            print(k, v)
             setattr(settings, k, v)
         yield settings
     finally:
         for k, v in old_settings.items():
-            print(k, v)
             setattr(settings, k, v)
+
+
+def refresh():
+    refresh_index(get_settings().system_index)

@@ -1,4 +1,4 @@
-from amcat4.index import refresh
+from amcat4.index import refresh_index
 from amcat4.query import query_documents
 from tests.conftest import upload
 from tests.tools import get_json, post_json, dictset
@@ -124,13 +124,13 @@ def test_query_tags(client, index_docs, user):
     assert tags() == {}
     post_json(client, f"/index/{index_docs}/tags_update", user=user, expected=204,
               json=dict(action="add", field="tag", tag="x", filters={'cat': 'a'}))
-    refresh(index_docs)
+    refresh_index(index_docs)
     assert tags() == {'0': ['x'], '1': ['x'], '2': ['x']}
     post_json(client, f"/index/{index_docs}/tags_update", user=user, expected=204,
               json=dict(action="remove", field="tag", tag="x", queries=["text"]))
-    refresh(index_docs)
+    refresh_index(index_docs)
     assert tags() == {'2': ['x']}
     post_json(client, f"/index/{index_docs}/tags_update", user=user, expected=204,
               json=dict(action="add", field="tag", tag="y", ids=["1", "2"]))
-    refresh(index_docs)
+    refresh_index(index_docs)
     assert tags() == {'1': ['y'], '2': ['x', 'y']}
