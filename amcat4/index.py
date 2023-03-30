@@ -8,6 +8,7 @@ Authorisation rules:
 - The 'admin' user automatically has admin rights everywhere (or globally?)
 - Users can have a global role and a role on any index. Every index can also have a guest role
 - Global roles:
+  - Readers can see which indices exist, but cannot access them
   - Writers can create new projects and users (with at most their own global role)
   - Admins can delete projects and assign themselves a role on any index role
 - Index roles:
