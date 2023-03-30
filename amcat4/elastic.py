@@ -48,6 +48,8 @@ SYSTEM_MAPPING = {
     'roles': {"type": "nested"},
 }
 
+class CannotConnectElastic(Exception):
+    pass
 
 @functools.lru_cache()
 def es() -> Elasticsearch:
@@ -97,12 +99,13 @@ def _setup_elastic():
                   f"password? {'yes' if settings.elastic_password else 'no'} ")
     elastic = connect_elastic()
     if not elastic.ping():
-        raise Exception(f"Cannot connect to elasticsearch server {settings.elastic_host}")
+        raise CannotConnectElastic(f"Cannot connect to elasticsearch server {settings.elastic_host}")
     if elastic.indices.exists(index=settings.system_index):
         # Check index format version
         if get_system_version(elastic) is None:
-            raise ValueError(f"System index {settings.elastic_host}::{settings.system_index} is corrupted or uses an "
-                             f"old format. Please repair or migrate before continuing")
+            raise CannotConnectElastic(
+                f"System index {settings.elastic_host}::{settings.system_index} is corrupted or uses an "
+                f"old format. Please repair or migrate before continuing")
 
     else:
         logging.info(f"Creating amcat4 system index: {settings.system_index}")
@@ -325,4 +328,8 @@ def ping():
     """
     Can we reach this elasticsearch server
     """
-    return es().ping()
+    try:
+        return es().ping()
+    except CannotConnectElastic as e:
+        logging.error(e)
+        return False
