@@ -54,6 +54,9 @@ def test_create_user(client: TestClient, user, writer, admin, username):
     # anonymous or unprivileged users cannot create new users
     assert client.post('/users/').status_code == 401, "Creating user should require auth"
     assert client.post("/users/", headers=build_headers(writer)).status_code == 401, "Creating user should require admin"
+    # users need global role
+    assert client.post("/users/", headers=build_headers(admin), json=dict(email=username)).status_code == 400, \
+        "Duplicate create should return 400"
     # admin can add new users
     u = dict(email=username, role="writer")
     assert "email" in set(post_json(client, "/users/", user=admin, json=u).keys())
