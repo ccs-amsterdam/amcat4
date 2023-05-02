@@ -48,8 +48,10 @@ SYSTEM_MAPPING = {
     'roles': {"type": "nested"},
 }
 
+
 class CannotConnectElastic(Exception):
     pass
+
 
 @functools.lru_cache()
 def es() -> Elasticsearch:
@@ -238,6 +240,7 @@ def _get_type_from_property(properties: dict) -> str:
     Convert an elastic 'property' into an amcat4 field type
     """
     result = properties.get("meta", {}).get("amcat4_type")
+    properties["type"] = properties.get("type", "object")
     if result:
         return result
     return properties['type']

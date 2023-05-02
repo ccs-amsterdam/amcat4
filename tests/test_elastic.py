@@ -9,10 +9,14 @@ from tests.conftest import upload
 
 def test_upload_retrieve_document(index):
     """Can we upload and retrieve documents"""
-    a = dict(text="text", title="title", date="2021-03-09", _id="test")
+    a = dict(text="text", title="title", date="2021-03-09", _id="test", term_tfidf = [
+        {"term": "test",  "value": 0.2},
+        {"term": "value", "value": 0.3}
+     ])
     elastic.upload_documents(index, [a])
     d = elastic.get_document(index, "test")
     assert d['title'] == a['title']
+    assert d['term_tfidf'] == a['term_tfidf']
     # TODO: should a['date'] be a datetime?
 
 
