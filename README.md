@@ -38,6 +38,7 @@ Now, you can run the backend server:
 ```
 env/bin/amcat4 run
 ```
+
 This will run the API at (default) locahost port 5000.
 To see documentation, visit http://localhost:5000/docs (Swagger, which comes with interactive "try now" mode) or http://localhost:5000/redoc (redoc, looks somewhat nicer)
 

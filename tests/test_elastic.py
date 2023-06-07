@@ -9,7 +9,7 @@ from tests.conftest import upload
 
 def test_upload_retrieve_document(index):
     """Can we upload and retrieve documents"""
-    a = dict(text="text", title="title", date="2021-03-09", _id="test", term_tfidf = [
+    a = dict(text="text", title="title", date="2021-03-09", _id="test", term_tfidf=[
         {"term": "test",  "value": 0.2},
         {"term": "value", "value": 0.3}
      ])
