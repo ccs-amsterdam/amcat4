@@ -24,7 +24,7 @@ setup(
         "python-dotenv",
         "requests",
         "authlib",
-        "pydantic[email]",
+        "pydantic[email]>=1.10.8",
         "pydantic-settings",
         'uvicorn',
         'requests'
