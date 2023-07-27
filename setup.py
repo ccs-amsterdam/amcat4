@@ -18,14 +18,15 @@ setup(
         "Topic :: Text Processing",
     ],
     install_requires=[
-        "fastapi[all]",
+        "fastapi[all]~=0.78.0",
         "elasticsearch~=8.6",
         "python-multipart",
         "python-dotenv",
         "requests",
         "authlib",
-        "pydantic[email]",
+        "pydantic[email]~=1.9.2",
         "pydantic-settings",
+        "typing_extensions",
         'uvicorn',
         'requests'
     ],
