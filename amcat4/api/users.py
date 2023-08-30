@@ -17,8 +17,7 @@ from amcat4.api.auth import authenticated_user, authenticated_admin, check_globa
 from amcat4.config import get_settings, validate_settings
 from amcat4.index import Role, set_global_role, get_global_role
 
-app_users = APIRouter(
-    tags=["users"])
+app_users = APIRouter(tags=["users"])
 
 
 ROLE = Literal["ADMIN", "WRITER", "READER", "admin", "writer", "reader"]
@@ -26,23 +25,30 @@ ROLE = Literal["ADMIN", "WRITER", "READER", "admin", "writer", "reader"]
 
 class UserForm(BaseModel):
     """Form to create a new global user."""
+
     email: EmailStr
-    role: Optional[ROLE]
+    role: Optional[ROLE] = None
 
 
 class ChangeUserForm(BaseModel):
     """Form to change a global user."""
-    role: Optional[ROLE]
+
+    role: Optional[ROLE] = None
 
 
 @app_users.post("/users/", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: UserForm, _=Depends(authenticated_admin)):
     """Create a new user."""
     if get_global_role(new_user.email) is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"User {new_user.email} already exists")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"User {new_user.email} already exists",
+        )
     if new_user.role is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"User requires a role (one of {', '.join([r.name for r in Role])})")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"User requires a role (one of {', '.join([r.name for r in Role])})",
+        )
     role = Role[new_user.role.upper()]
     set_global_role(email=new_user.email, role=role)
     return {"email": new_user.email, "global_role": role.value}
@@ -77,10 +83,15 @@ def _get_user(email, current_user):
 @app_users.get("/users", dependencies=[Depends(authenticated_admin)])
 def list_global_users():
     """List all global users"""
-    return [{'email': email, 'role': role.name} for (email, role) in index.list_global_users().items()]
+    return [
+        {"email": email, "role": role.name}
+        for (email, role) in index.list_global_users().items()
+    ]
 
 
-@app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+@app_users.delete(
+    "/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response
+)
 def delete_user(email: EmailStr, current_user: str = Depends(authenticated_user)):
     """
     Delete the given user.
@@ -93,7 +104,9 @@ def delete_user(email: EmailStr, current_user: str = Depends(authenticated_user)
 
 
 @app_users.put("/users/{email}")
-def modify_user(email: EmailStr, data: ChangeUserForm, _user=Depends(authenticated_admin)):
+def modify_user(
+    email: EmailStr, data: ChangeUserForm, _user=Depends(authenticated_admin)
+):
     """
     Modify the given user.
     Only admin can change users.
@@ -106,8 +119,10 @@ def modify_user(email: EmailStr, data: ChangeUserForm, _user=Depends(authenticat
 @app_users.get("/config")
 @app_users.get("/middlecat")
 def get_auth_config():
-    return {"middlecat_url": get_settings().middlecat_url,
-            "resource": get_settings().host,
-            "authorization": get_settings().auth,
-            "warnings": [validate_settings()],
-            "api_version": version('amcat4')}
+    return {
+        "middlecat_url": get_settings().middlecat_url,
+        "resource": get_settings().host,
+        "authorization": get_settings().auth,
+        "warnings": [validate_settings()],
+        "api_version": version("amcat4"),
+    }

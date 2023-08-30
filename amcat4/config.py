@@ -9,11 +9,11 @@ We read configuration from 2 sources, in order of precedence (higher is more pri
 import functools
 from enum import Enum
 from pathlib import Path
-
+from typing import Optional
 from class_doc import extract_docs_from_cls_obj
 from dotenv import load_dotenv
-from pydantic import BaseSettings, validator
-from pydantic_settings import with_attrs_docs
+from pydantic import model_validator, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AuthOptions(str, Enum):
@@ -42,49 +42,64 @@ for field, doc in extract_docs_from_cls_obj(AuthOptions).items():
     AuthOptions[field].__doc__ = "\n".join(doc)
 
 
-@with_attrs_docs
 class Settings(BaseSettings):
-    #: Location of a .env file (if used) relative to working directory
-    env_file: Path = ".env"
+    env_file: Path = Field(
+        ".env",
+        description="Location of a .env file (if used) relative to working directory",
+    )
+    host: str = Field(
+        "http://localhost:5000",
+        description="Host this instance is served at (needed for checking tokens)",
+    )
 
-    #: Host this instance is served at (needed for checking tokens)
-    host: str = "http://localhost:5000"
+    elastic_password: Optional[str] = Field(
+        None,
+        description="Elasticsearch password. This the password for the 'elastic' user when Elastic xpack security is enabled",
+    )
 
-    #: Elasticsearch password. This the password for the 'elastic' user when Elastic xpack security is enabled
-    elastic_password: str = None
+    elastic_host: Optional[str] = Field(
+        None,
+        description="Elasticsearch host. Default: https://localhost:9200 if elastic_password is set, http://localhost:9200 otherwise",
+    )
 
-    #: Elasticsearch host. Default: https://localhost:9200 if elastic_password is set, http://localhost:9200 otherwise
-    elastic_host: str = None
+    elastic_verify_ssl: Optional[bool] = Field(
+        None,
+        description="Elasticsearch verify SSL (only used if elastic_password is set). Default: True unless host is localhost)",
+    )
 
-    #: Elasticsearch verify SSL (only used if elastic_password is set). Default: True unless host is localhost)
-    elastic_verify_ssl: bool = None
+    system_index: str = Field(
+        "amcat4_system",
+        description="Elasticsearch index to store authorization information in",
+    )
 
-    #: Elasticsearch index to store authorization information in
-    system_index = "amcat4_system"
+    auth: AuthOptions = Field(
+        AuthOptions.no_auth, description="Do we require authorization?"
+    )
 
-    #: Do we require authorization?
-    auth: AuthOptions = AuthOptions.no_auth
+    middlecat_url: str = Field(
+        "https://middlecat.up.railway.app",
+        description="Middlecat server to trust as ID provider",
+    )
 
-    #: Middlecat server to trust as ID provider
-    middlecat_url: str = "https://middlecat.up.railway.app"
+    admin_email: Optional[str] = Field(
+        None,
+        description="Email address for a hardcoded admin email (useful for setup and recovery)",
+    )
 
-    #: Email address for a hardcoded admin email (useful for setup and recovery)
-    admin_email: str = None
+    @model_validator(mode="after")
+    def set_ssl(self) -> "Settings":
+        if not self.elastic_host:
+            self.elastic_host = (
+                "https" if self.elastic_password else "http"
+            ) + "://localhost:9200"
+        if not self.elastic_verify_ssl:
+            self.elastic_verify_ssl = self.elastic_host not in {
+                "http://localhost:9200",
+                "https://localhost:9200",
+            }
+        return self
 
-    class Config:
-        env_prefix = "amcat4_"
-
-    @validator('elastic_host', always=True)
-    def set_elastic_host(cls, v, values, **kwargs):
-        if not v:
-            v = "https://localhost:9200" if values['elastic_password'] else "http://localhost:9200"
-        return v
-
-    @validator('elastic_verify_ssl', always=True)
-    def set_elastic_ssl(cls, v, values, **kwargs):
-        if not v:
-            v = not values['elastic_host'] in ("http://localhost:9200", "https://localhost:9200")
-        return v
+    model_config = SettingsConfigDict(env_prefix="amcat4_")
 
 
 @functools.lru_cache()
@@ -98,14 +113,18 @@ def get_settings() -> Settings:
 
 
 def validate_settings():
-    if get_settings().auth != 'no_auth':
-        if get_settings().host.startswith("http://") and not get_settings().host.startswith("http://localhost"):
-            return "You have set the host at an http address and enabled authentication." \
-                   "Authentication through middlecat will not work in your browser" \
-                   " without additional steps. See https://github.com/ccs-amsterdam/amcat4py/issues/9"
+    if get_settings().auth != "no_auth":
+        if get_settings().host.startswith(
+            "http://"
+        ) and not get_settings().host.startswith("http://localhost"):
+            return (
+                "You have set the host at an http address and enabled authentication."
+                "Authentication through middlecat will not work in your browser"
+                " without additional steps. See https://github.com/ccs-amsterdam/amcat4py/issues/9"
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Echo the settings
     for k, v in get_settings().dict().items():
         print(f"{Settings.Config.env_prefix.upper()}{k.upper()}={v}")
