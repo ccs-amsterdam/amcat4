@@ -27,21 +27,18 @@ setup(
         "pydantic[email]",
         "pydantic-settings",
         "typing_extensions",
-        'uvicorn',
-        'requests'
+        "uvicorn",
+        "requests",
+        "class_doc",
     ],
     extras_require={
-        'dev': [
-            'pytest',
-            'mypy',
-            'flake8',
-            'responses',
-            'pre-commit',
+        "dev": [
+            "pytest",
+            "mypy",
+            "flake8",
+            "responses",
+            "pre-commit",
         ]
     },
-    entry_points={
-        'console_scripts': [
-            'amcat4 = amcat4.__main__:main'
-        ]
-    },
+    entry_points={"console_scripts": ["amcat4 = amcat4.__main__:main"]},
 )
