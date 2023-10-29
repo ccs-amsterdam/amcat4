@@ -104,6 +104,7 @@ class ChangeIndex(BaseModel):
     ] = "None"
     name: Optional[str] = None
     description: Optional[str] = None
+    summary_field: Optional[str] = None
 
 
 @app_index.put("/{ix}")
@@ -129,6 +130,7 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
         description=data.description,
         guest_role=guest_role,
         remove_guest_role=remove_guest_role,
+        summary_field=data.summary_field,
     )
     refresh_system_index()
 

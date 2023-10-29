@@ -23,29 +23,31 @@ from amcat4.config import get_settings
 SYSTEM_INDEX_VERSION = 1
 
 ES_MAPPINGS = {
-   'long': {"type": "long"},
-   'date': {"type": "date", "format": "strict_date_optional_time"},
-   'double': {"type": "double"},
-   'keyword': {"type": "keyword"},
-   'url': {"type": "keyword", "meta": {"amcat4_type": "url"}},
-   'tag': {"type": "keyword", "meta": {"amcat4_type": "tag"}},
-   'id': {"type": "keyword", "meta": {"amcat4_type": "id"}},
-   'text': {"type": "text"},
-   'object': {"type": "object"},
-   'geo_point': {"type": "geo_point"}
-   }
+    "long": {"type": "long"},
+    "date": {"type": "date", "format": "strict_date_optional_time"},
+    "double": {"type": "double"},
+    "keyword": {"type": "keyword"},
+    "url": {"type": "keyword", "meta": {"amcat4_type": "url"}},
+    "tag": {"type": "keyword", "meta": {"amcat4_type": "tag"}},
+    "id": {"type": "keyword", "meta": {"amcat4_type": "id"}},
+    "text": {"type": "text"},
+    "object": {"type": "object"},
+    "geo_point": {"type": "geo_point"},
+}
 
 DEFAULT_MAPPING = {
-    'text': ES_MAPPINGS['text'],
-    'title': ES_MAPPINGS['text'],
-    'date': ES_MAPPINGS['date'],
-    'url': ES_MAPPINGS['url'],
+    "text": ES_MAPPINGS["text"],
+    "title": ES_MAPPINGS["text"],
+    "date": ES_MAPPINGS["date"],
+    "url": ES_MAPPINGS["url"],
 }
 
 SYSTEM_MAPPING = {
-    'name': {"type": "text"},
-    'description': {"type": "text"},
-    'roles': {"type": "nested"},
+    "name": {"type": "text"},
+    "description": {"type": "text"},
+    "roles": {"type": "nested"},
+    "summary_field": {"type": "keyword"},
+    "guest_role": {"type": "keyword"},
 }
 
 
@@ -58,7 +60,9 @@ def es() -> Elasticsearch:
     try:
         return _setup_elastic()
     except ValueError as e:
-        raise ValueError(f"Cannot connect to elastic {get_settings().elastic_host!r}: {e}")
+        raise ValueError(
+            f"Cannot connect to elastic {get_settings().elastic_host!r}: {e}"
+        )
 
 
 def connect_elastic() -> Elasticsearch:
@@ -67,9 +71,11 @@ def connect_elastic() -> Elasticsearch:
     """
     settings = get_settings()
     if settings.elastic_password:
-        return Elasticsearch(settings.elastic_host or None,
-                             basic_auth=("elastic", settings.elastic_password),
-                             verify_certs=settings.elastic_verify_ssl)
+        return Elasticsearch(
+            settings.elastic_host or None,
+            basic_auth=("elastic", settings.elastic_password),
+            verify_certs=settings.elastic_verify_ssl,
+        )
     else:
         return Elasticsearch(settings.elastic_host or None)
 
@@ -80,14 +86,17 @@ def get_system_version(elastic=None) -> Optional[int]:
     """
     # WvA: I don't like this 'circular' import. Should probably reorganize the elastic and index modules
     from amcat4.index import GLOBAL_ROLES
+
     settings = get_settings()
     if elastic is None:
         elastic = es()
     try:
-        r = elastic.get(index=settings.system_index, id=GLOBAL_ROLES, source_includes="version")
+        r = elastic.get(
+            index=settings.system_index, id=GLOBAL_ROLES, source_includes="version"
+        )
     except NotFoundError:
         return None
-    return r['_source']['version']
+    return r["_source"]["version"]
 
 
 def _setup_elastic():
@@ -96,23 +105,35 @@ def _setup_elastic():
     """
     # WvA: I don't like this 'circular' import. Should probably reorganize the elastic and index modules
     from amcat4.index import GLOBAL_ROLES
+
     settings = get_settings()
-    logging.debug(f"Connecting with elasticsearch at {settings.elastic_host}, "
-                  f"password? {'yes' if settings.elastic_password else 'no'} ")
+    logging.debug(
+        f"Connecting with elasticsearch at {settings.elastic_host}, "
+        f"password? {'yes' if settings.elastic_password else 'no'} "
+    )
     elastic = connect_elastic()
     if not elastic.ping():
-        raise CannotConnectElastic(f"Cannot connect to elasticsearch server {settings.elastic_host}")
+        raise CannotConnectElastic(
+            f"Cannot connect to elasticsearch server {settings.elastic_host}"
+        )
     if elastic.indices.exists(index=settings.system_index):
         # Check index format version
         if get_system_version(elastic) is None:
             raise CannotConnectElastic(
                 f"System index {settings.elastic_host}::{settings.system_index} is corrupted or uses an "
-                f"old format. Please repair or migrate before continuing")
+                f"old format. Please repair or migrate before continuing"
+            )
 
     else:
         logging.info(f"Creating amcat4 system index: {settings.system_index}")
-        elastic.indices.create(index=settings.system_index, mappings={'properties': SYSTEM_MAPPING})
-        elastic.index(index=settings.system_index, id=GLOBAL_ROLES, document=dict(version=SYSTEM_INDEX_VERSION, roles=[]))
+        elastic.indices.create(
+            index=settings.system_index, mappings={"properties": SYSTEM_MAPPING}
+        )
+        elastic.index(
+            index=settings.system_index,
+            id=GLOBAL_ROLES,
+            document=dict(version=SYSTEM_INDEX_VERSION, roles=[]),
+        )
     return elastic
 
 
@@ -121,21 +142,18 @@ def coerce_type_to_elastic(value, ftype):
     Coerces values into the respective type in elastic
     based on ES_MAPPINGS and elastic field types
     """
-    if ftype in ["keyword",
-                 "constant_keyword",
-                 "wildcard",
-                 "url",
-                 "tag",
-                 "text"]:
+    if ftype in ["keyword", "constant_keyword", "wildcard", "url", "tag", "text"]:
         value = str(value)
-    elif ftype in ["long",
-                   "short",
-                   "byte",
-                   "double",
-                   "float",
-                   "half_float",
-                   "half_float",
-                   "unsigned_long"]:
+    elif ftype in [
+        "long",
+        "short",
+        "byte",
+        "double",
+        "float",
+        "half_float",
+        "half_float",
+        "unsigned_long",
+    ]:
         value = float(value)
     elif ftype in ["integer"]:
         value = int(value)
@@ -148,7 +166,9 @@ def _get_hash(document: dict) -> bytes:
     """
     Get the hash for a document
     """
-    hash_str = json.dumps(document, sort_keys=True, ensure_ascii=True, default=str).encode('ascii')
+    hash_str = json.dumps(
+        document, sort_keys=True, ensure_ascii=True, default=str
+    ).encode("ascii")
     m = hashlib.sha224()
     m.update(hash_str)
     return m.hexdigest()
@@ -162,12 +182,15 @@ def upload_documents(index: str, documents, fields: Mapping[str, str] = None) ->
     :param documents: A sequence of article dictionaries
     :param fields: A mapping of field:type for field types
     """
+
     def es_actions(index, documents):
         field_types = get_index_fields(index)
         for document in documents:
             for key in document.keys():
                 if key in field_types:
-                    document[key] = coerce_type_to_elastic(document[key], field_types[key].get("type"))
+                    document[key] = coerce_type_to_elastic(
+                        document[key], field_types[key].get("type")
+                    )
             if "_id" not in document:
                 document["_id"] = _get_hash(document)
             yield {"_index": index, **document}
@@ -183,11 +206,11 @@ def get_field_mapping(type_: Union[str, dict]):
     if isinstance(type_, str):
         return ES_MAPPINGS[type_]
     else:
-        mapping = ES_MAPPINGS[type_['type']]
-        meta = mapping.get('meta', {})
-        if m := type_.get('meta'):
+        mapping = ES_MAPPINGS[type_["type"]]
+        meta = mapping.get("meta", {})
+        if m := type_.get("meta"):
             meta.update(m)
-        mapping['meta'] = meta
+        mapping["meta"] = meta
         return mapping
 
 
@@ -210,7 +233,7 @@ def get_document(index: str, doc_id: str, **kargs) -> dict:
     :param doc_id: The document id (hash)
     :return: the source dict of the document
     """
-    return es().get(index=index, id=doc_id, **kargs)['_source']
+    return es().get(index=index, id=doc_id, **kargs)["_source"]
 
 
 def update_document(index: str, doc_id: str, fields: dict):
@@ -243,15 +266,15 @@ def _get_type_from_property(properties: dict) -> str:
     properties["type"] = properties.get("type", "object")
     if result:
         return result
-    return properties['type']
+    return properties["type"]
 
 
 def _get_fields(index: str) -> Iterable[Tuple[str, dict]]:
     r = es().indices.get_mapping(index=index)
-    for k, v in r[index]['mappings']['properties'].items():
+    for k, v in r[index]["mappings"]["properties"].items():
         t = dict(name=k, type=_get_type_from_property(v))
-        if meta := v.get('meta'):
-            t['meta'] = meta
+        if meta := v.get("meta"):
+            t["meta"] = meta
         yield k, t
 
 
@@ -296,11 +319,7 @@ def get_values(index: str, field: str) -> List[str]:
 
 
 def update_by_query(index: str, script: str, query: dict, params: dict = None):
-    script = dict(
-        source=script,
-        lang="painless",
-        params=params or {}
-    )
+    script = dict(source=script, lang="painless", params=params or {})
     es().update_by_query(index=index, script=script, **query)
 
 
@@ -318,10 +337,13 @@ TAG_SCRIPTS = dict(
       if (ctx._source[params.field].size() == 0) {
         ctx._source.remove(params.field);
       }
-    }""")
+    }""",
+)
 
 
-def update_tag_by_query(index: str, action: Literal["add", "remove"], query: dict, field: str, tag: str):
+def update_tag_by_query(
+    index: str, action: Literal["add", "remove"], query: dict, field: str, tag: str
+):
     script = TAG_SCRIPTS[action]
     params = dict(field=field, tag=tag)
     update_by_query(index, script, query, params)

@@ -37,7 +37,7 @@ import elasticsearch.helpers
 from elasticsearch import NotFoundError
 
 from amcat4.config import get_settings
-from amcat4.elastic import DEFAULT_MAPPING, es
+from amcat4.elastic import DEFAULT_MAPPING, es, get_fields
 
 
 class Role(IntEnum):
@@ -50,7 +50,9 @@ class Role(IntEnum):
 GUEST_USER = "_guest"
 GLOBAL_ROLES = "_global"
 
-Index = collections.namedtuple("Index", ["id", "name", "description", "guest_role", "roles"])
+Index = collections.namedtuple(
+    "Index", ["id", "name", "description", "guest_role", "roles", "summary_field"]
+)
 
 
 class IndexDoesNotExist(ValueError):
@@ -82,8 +84,14 @@ def list_known_indices(email: str = None) -> Iterable[Index]:
     #                      "must_not": {"term": {"guest_role": {"value": "none", "case_insensitive": True}}}}}
     # q_role = {"nested": {"path": "roles", "query": {"term": {"roles.email": email}}}}
     # query = {"bool": {"should": [q_guest, q_role]}}
-    check_role = not (email is None or get_global_role(email) == Role.ADMIN or get_settings().auth == "no_auth")
-    for index in elasticsearch.helpers.scan(es(), index=get_settings().system_index, fields=[], _source=True):
+    check_role = not (
+        email is None
+        or get_global_role(email) == Role.ADMIN
+        or get_settings().auth == "no_auth"
+    )
+    for index in elasticsearch.helpers.scan(
+        es(), index=get_settings().system_index, fields=[], _source=True
+    ):
         ix = _index_from_elastic(index)
         if ix.name == GLOBAL_ROLES:
             continue
@@ -92,13 +100,16 @@ def list_known_indices(email: str = None) -> Iterable[Index]:
 
 
 def _index_from_elastic(index):
-    src = index['_source']
-    guest_role = src.get('guest_role')
-    return Index(id=index['_id'],
-                 name=src.get('name', index['_id']),
-                 description=src.get('description'),
-                 guest_role=guest_role and guest_role != 'NONE' and Role[guest_role.upper()],
-                 roles=_roles_from_elastic(src.get('roles', [])))
+    src = index["_source"]
+    guest_role = src.get("guest_role")
+    return Index(
+        id=index["_id"],
+        name=src.get("name", index["_id"]),
+        description=src.get("description"),
+        guest_role=guest_role and guest_role != "NONE" and Role[guest_role.upper()],
+        roles=_roles_from_elastic(src.get("roles", [])),
+        summary_field=src.get("summary_field"),
+    )
 
 
 def get_index(index: str) -> Index:
@@ -109,18 +120,29 @@ def get_index(index: str) -> Index:
     return _index_from_elastic(index)
 
 
-def create_index(index: str, guest_role: Optional[Role] = None,
-                 name: Optional[str] = None, description: Optional[str] = None,
-                 admin: Optional[str] = None) -> None:
+def create_index(
+    index: str,
+    guest_role: Optional[Role] = None,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    admin: Optional[str] = None,
+) -> None:
     """
     Create a new index in elasticsearch and register it with this AmCAT instance
     """
-    es().indices.create(index=index, mappings={'properties': DEFAULT_MAPPING})
-    register_index(index, guest_role=guest_role, name=name, description=description, admin=admin)
+    es().indices.create(index=index, mappings={"properties": DEFAULT_MAPPING})
+    register_index(
+        index, guest_role=guest_role, name=name, description=description, admin=admin
+    )
 
 
-def register_index(index: str, guest_role: Optional[Role] = None, name: Optional[str] = None,
-                   description: Optional[str] = None, admin: Optional[str] = None) -> None:
+def register_index(
+    index: str,
+    guest_role: Optional[Role] = None,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    admin: Optional[str] = None,
+) -> None:
     """
     Register an existing elastic index with this AmCAT instance, i.e. create an entry in the system index
     """
@@ -130,12 +152,16 @@ def register_index(index: str, guest_role: Optional[Role] = None, name: Optional
     if es().exists(index=system_index, id=index):
         raise ValueError(f"Index {index} is already registered")
     roles = [dict(email=admin, role="ADMIN")] if admin else []
-    es().index(index=system_index,
-               id=index,
-               document=dict(name=(name or index),
-                             roles=roles,
-                             description=description,
-                             guest_role=guest_role and guest_role.name))
+    es().index(
+        index=system_index,
+        id=index,
+        document=dict(
+            name=(name or index),
+            roles=roles,
+            description=description,
+            guest_role=guest_role and guest_role.name,
+        ),
+    )
     refresh_index(system_index)
 
 
@@ -167,11 +193,11 @@ def deregister_index(index: str, ignore_missing=False) -> None:
 
 
 def _roles_from_elastic(roles: List[Dict]) -> Dict[str, Role]:
-    return {role['email']: Role[role['role'].upper()] for role in roles}
+    return {role["email"]: Role[role["role"].upper()] for role in roles}
 
 
 def _roles_to_elastic(roles: dict) -> List[Dict]:
-    return [{'email': email, 'role': role.name} for (email, role) in roles.items()]
+    return [{"email": email, "role": role.name} for (email, role) in roles.items()]
 
 
 def set_role(index: str, email: str, role: Optional[Role]):
@@ -192,7 +218,9 @@ def set_role(index: str, email: str, role: Optional[Role]):
         if email not in roles_dict:
             return  # Nothing to change
         del roles_dict[email]
-    es().update(index=system_index, id=index, doc=dict(roles=_roles_to_elastic(roles_dict)))
+    es().update(
+        index=system_index, id=index, doc=dict(roles=_roles_to_elastic(roles_dict))
+    )
 
 
 def set_global_role(email: str, role: Role):
@@ -209,12 +237,31 @@ def set_guest_role(index: str, guest_role: Optional[Role]):
     modify_index(index, guest_role=guest_role, remove_guest_role=(guest_role is None))
 
 
-def modify_index(index: str, name: Optional[str] = None, description: Optional[str] = None,
-                 guest_role: Optional[Role] = None, remove_guest_role=False):
-    doc = dict(name=name, description=description, guest_role=guest_role and guest_role.name)
+def modify_index(
+    index: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    guest_role: Optional[Role] = None,
+    remove_guest_role=False,
+    summary_field=None,
+):
+    doc = dict(
+        name=name,
+        description=description,
+        guest_role=guest_role and guest_role.name,
+        summary_field=summary_field,
+    )
+    if summary_field is not None:
+        f = get_fields(index)
+        if summary_field not in f:
+            raise ValueError(f"Summary field {summary_field} does not exist!")
+        if f[summary_field]["type"] not in ["date", "keyword", "tag"]:
+            raise ValueError(
+                f"Summary field {summary_field} should be date, keyword or tag, not {f[summary_field]['type']}!"
+            )
     doc = {x: v for (x, v) in doc.items() if v}
     if remove_guest_role:
-        doc['guest_role'] = None
+        doc["guest_role"] = None
     if doc:
         es().update(index=get_settings().system_index, id=index, doc=doc)
 
@@ -240,15 +287,19 @@ def get_role(index: str, email: str) -> Optional[Role]:
     :returns: a Role object, or Role.NONE if the user has no role and no guest role exists
     """
     try:
-        doc = es().get(index=get_settings().system_index, id=index, source_includes=["roles", "guest_role"])
+        doc = es().get(
+            index=get_settings().system_index,
+            id=index,
+            source_includes=["roles", "guest_role"],
+        )
     except NotFoundError:
         raise IndexDoesNotExist(f"Index {index} does not exist or is not registered")
-    roles_dict = _roles_from_elastic(doc['_source'].get('roles', []))
+    roles_dict = _roles_from_elastic(doc["_source"].get("roles", []))
     if role := roles_dict.get(email):
         return role
     if index == GLOBAL_ROLES:
         return None
-    role = doc['_source'].get('guest_role', None)
+    role = doc["_source"].get("guest_role", None)
     if role and role.lower() != "none":
         return Role[role]
 
@@ -259,10 +310,12 @@ def get_guest_role(index: str) -> Optional[Role]:
     :returns: a Role object, or None if global role was NONE
     """
     try:
-        d = es().get(index=get_settings().system_index, id=index, source_includes="guest_role")
+        d = es().get(
+            index=get_settings().system_index, id=index, source_includes="guest_role"
+        )
     except NotFoundError:
         raise IndexDoesNotExist(index)
-    role = d['_source'].get('guest_role')
+    role = d["_source"].get("guest_role")
     if role and role.lower() != "none":
         return Role[role]
 
@@ -280,17 +333,17 @@ def get_global_role(email: str) -> Optional[Role]:
 
 
 def list_users(index: str) -> Dict[str, Role]:
-    """"
+    """ "
     List all users and their roles on the given index
     :param index: The index to list roles for.
     :returns: an iterable of (user, Role) pairs
     """
-    r = es().get(index=get_settings().system_index, id=index, source_includes='roles')
-    return _roles_from_elastic(r['_source'].get('roles', []))
+    r = es().get(index=get_settings().system_index, id=index, source_includes="roles")
+    return _roles_from_elastic(r["_source"].get("roles", []))
 
 
 def list_global_users() -> Dict[str, Role]:
-    """"
+    """ "
     List all global users and their roles
     :returns: an iterable of (user, Role) pairs
     """

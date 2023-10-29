@@ -3,13 +3,28 @@ from typing import List
 import pytest
 
 from amcat4.config import get_settings
-from amcat4.elastic import es
-from amcat4.index import (Role, create_index, delete_index, deregister_index,
-                          get_global_role, get_guest_role, get_index, get_role,
-                          list_global_users, list_known_indices, list_users,
-                          modify_index, refresh_index, register_index,
-                          remove_global_role, remove_role, set_global_role,
-                          set_guest_role, set_role)
+from amcat4.elastic import es, set_fields
+from amcat4.index import (
+    Role,
+    create_index,
+    delete_index,
+    deregister_index,
+    get_global_role,
+    get_guest_role,
+    get_index,
+    get_role,
+    list_global_users,
+    list_known_indices,
+    list_users,
+    modify_index,
+    refresh_index,
+    register_index,
+    remove_global_role,
+    remove_role,
+    set_global_role,
+    set_guest_role,
+    set_role,
+)
 from tests.tools import refresh
 
 
@@ -141,3 +156,15 @@ def test_name_description(index):
     assert get_index(index).description == "ooktest"
     indices = {x.id: x for x in list_known_indices()}
     assert indices[index].name == "test"
+
+
+def test_summary_field(index):
+    with pytest.raises(Exception):
+        modify_index(index, summary_field="doesnotexist")
+    with pytest.raises(Exception):
+        modify_index(index, summary_field="title")
+    set_fields(index, {"party": "keyword"})
+    modify_index(index, summary_field="party")
+    assert get_index(index).summary_field == "party"
+    modify_index(index, summary_field="date")
+    assert get_index(index).summary_field == "date"
