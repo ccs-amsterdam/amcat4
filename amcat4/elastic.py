@@ -306,7 +306,7 @@ def get_fields(index: Union[str, Sequence[str]]):
     return result
 
 
-def get_values(index: str, field: str) -> List[str]:
+def get_values(index: str, field: str, size: int = 100) -> List[str]:
     """
     Get the values for a given field (e.g. to populate list of filter values on keyword field)
     :param index: The index
@@ -314,7 +314,7 @@ def get_values(index: str, field: str) -> List[str]:
     :return: A list of values
     """
     aggs = {"values": {"terms": {"field": field}}}
-    r = es().search(index=index, size=0, aggs=aggs)
+    r = es().search(index=index, size=size, aggs=aggs)
     return [x["key"] for x in r["aggregations"]["values"]["buckets"]]
 
 

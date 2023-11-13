@@ -293,7 +293,7 @@ def set_fields(
 @app_index.get("/{ix}/fields/{field}/values")
 def get_values(ix: str, field: str, _=Depends(authenticated_user)):
     """Get the fields (columns) used in this index."""
-    return elastic.get_values(ix, field)
+    return elastic.get_values(ix, field, size=100)
 
 
 @app_index.get("/{ix}/users")
