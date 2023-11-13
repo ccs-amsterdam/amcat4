@@ -33,7 +33,7 @@ class QueryResult(BaseModel):
 
 
 def _check_query_role(indices: List[str], user: str, fields: List[str]):
-    role = Role.READER if "text" in fields else Role.METAREADER
+    role = Role.READER if ((not fields) or ("text" in fields)) else Role.METAREADER
     for ix in indices:
         check_role(user, role, ix)
 
