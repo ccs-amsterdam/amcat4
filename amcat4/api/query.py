@@ -8,7 +8,8 @@ from pydantic.main import BaseModel
 
 from amcat4 import query, aggregate
 from amcat4.aggregate import Axis, Aggregation
-from amcat4.api.auth import authenticated_user
+from amcat4.api.auth import authenticated_user, check_role
+from amcat4.index import Role
 from amcat4.query import update_tag_query
 
 app_query = APIRouter(prefix="/index", tags=["query"])
@@ -29,6 +30,12 @@ class QueryResult(BaseModel):
 
     results: List[Dict[str, Any]]
     meta: QueryMeta
+
+
+def _check_query_role(indices: List[str], user: str, fields: List[str]):
+    role = Role.READER if "text" in fields else Role.METAREADER
+    for ix in indices:
+        check_role(user, role, ix)
 
 
 @app_query.get("/{index}/documents", response_model=QueryResult)
@@ -79,12 +86,13 @@ def get_documents(
     Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     """
     indices = index.split(",")
+    fields = fields and fields.split(",")
+    _check_query_role(indices, user, fields)
     args = {}
     sort = sort and [
         {x.replace(":desc", ""): "desc"} if x.endswith(":desc") else x
         for x in sort.split(",")
     ]
-    fields = fields and fields.split(",")
     known_args = ["page", "per_page", "scroll", "scroll_id", "highlight", "annotations"]
     for name in known_args:
         val = locals()[name]
@@ -214,7 +222,7 @@ def query_documents_post(
         description="Highlight document. 'true' highlights whole document, see elastic docs for dict format"
         "https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html",
     ),
-    _user=Depends(authenticated_user),
+    user=Depends(authenticated_user),
 ):
     """
     List or query documents in this index.
@@ -228,6 +236,8 @@ def query_documents_post(
         # to array format: fields: [field1, field2]
         if isinstance(fields, str):
             fields = [fields]
+    _check_query_role(indices, user, fields)
+
     queries = _process_queries(queries)
     filters = dict(_process_filters(filters))
     r = query.query_documents(
