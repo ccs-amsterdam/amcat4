@@ -1,6 +1,6 @@
 from turtle import pos
 from amcat4.index import set_role, Role
-from tests.conftest import index_docs
+from tests.conftest import index_docs, populate_index
 from tests.tools import post_json, build_headers, get_json, check
 
 
@@ -52,18 +52,17 @@ def test_documents(client, index, user):
 
 
 def test_metareader(client, index, index_docs, user, reader):
-    set_role(index_docs, user, Role.METAREADER)
-    set_role(index_docs, reader, Role.READER)
-    set_role(index, user, Role.READER)
+    set_role(index, user, Role.METAREADER)
     set_role(index, reader, Role.READER)
+    populate_index(index)
 
     r = get_json(
         client,
-        f"/index/{index_docs}/documents?fields=title",
+        f"/index/{index}/documents?fields=title",
         headers=build_headers(user),
     )
     _id = r["results"][0]["_id"]
-    url = f"index/{index_docs}/documents/{_id}"
+    url = f"index/{index}/documents/{_id}"
     # Metareader should not be able to retrieve document source
     check(client.get(url, headers=build_headers(user)), 401)
     check(client.get(url, headers=build_headers(reader)), 200)
@@ -73,15 +72,15 @@ def test_metareader(client, index, index_docs, user, reader):
 
     # Metareader should not be able to query text (including highlight)
     for ix, u, fields, highlight, outcome in [
-        (index_docs, user, ["text"], False, 401),
-        (index, user, ["text"], False, 200),
+        (index, user, ["text"], False, 401),
+        (index_docs, user, ["text"], False, 200),
         ([index_docs, index], user, ["text"], False, 401),
-        (index_docs, user, ["text", "title"], False, 401),
-        (index_docs, user, ["title"], False, 200),
-        (index_docs, reader, ["text"], False, 200),
+        (index, user, ["text", "title"], False, 401),
+        (index, user, ["title"], False, 200),
+        (index, reader, ["text"], False, 200),
         ([index_docs, index], reader, ["text"], False, 200),
-        (index_docs, user, ["title"], True, 401),
-        (index_docs, reader, ["title"], True, 200),
+        (index, user, ["title"], True, 401),
+        (index, reader, ["title"], True, 200),
     ]:
         check(
             client.get(

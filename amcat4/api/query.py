@@ -39,7 +39,6 @@ def _check_query_role(
         role = Role.READER
     else:
         role = Role.METAREADER
-    print("!!!", highlight, role)
     for ix in indices:
         check_role(user, role, ix)
 
@@ -93,6 +92,8 @@ def get_documents(
     """
     indices = index.split(",")
     fields = fields and fields.split(",")
+    if not fields:
+        fields = ["date", "title", "url"]
     _check_query_role(indices, user, fields, highlight)
     args = {}
     sort = sort and [
@@ -242,6 +243,8 @@ def query_documents_post(
         # to array format: fields: [field1, field2]
         if isinstance(fields, str):
             fields = [fields]
+    else:
+        fields = ["date", "title", "url"]
     _check_query_role(indices, user, fields, highlight is not None)
 
     queries = _process_queries(queries)
