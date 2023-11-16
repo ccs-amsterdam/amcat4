@@ -1,6 +1,5 @@
-from turtle import pos
 from amcat4.index import set_role, Role
-from tests.conftest import index_docs, populate_index
+from tests.conftest import populate_index
 from tests.tools import post_json, build_headers, get_json, check
 
 

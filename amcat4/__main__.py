@@ -18,7 +18,7 @@ import uvicorn
 from pydantic.fields import FieldInfo
 
 from amcat4 import index
-from amcat4.config import get_settings, AuthOptions, Settings, validate_settings
+from amcat4.config import get_settings, AuthOptions, validate_settings
 from amcat4.elastic import connect_elastic, get_system_version, ping, upload_documents
 from amcat4.index import (
     GLOBAL_ROLES,

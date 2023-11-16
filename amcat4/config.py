@@ -54,17 +54,26 @@ class Settings(BaseSettings):
 
     elastic_password: Optional[str] = Field(
         None,
-        description="Elasticsearch password. This the password for the 'elastic' user when Elastic xpack security is enabled",
+        description=(
+            "Elasticsearch password. "
+            "This the password for the 'elastic' user when Elastic xpack security is enabled"
+        ),
     )
 
     elastic_host: Optional[str] = Field(
         None,
-        description="Elasticsearch host. Default: https://localhost:9200 if elastic_password is set, http://localhost:9200 otherwise",
+        description=(
+            "Elasticsearch host. "
+            "Default: https://localhost:9200 if elastic_password is set, http://localhost:9200 otherwise"
+        ),
     )
 
     elastic_verify_ssl: Optional[bool] = Field(
         None,
-        description="Elasticsearch verify SSL (only used if elastic_password is set). Default: True unless host is localhost)",
+        description=(
+            "Elasticsearch verify SSL (only used if elastic_password is set). "
+            "Default: True unless host is localhost)"
+        ),
     )
 
     system_index: str = Field(
