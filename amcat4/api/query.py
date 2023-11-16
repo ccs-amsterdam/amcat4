@@ -32,8 +32,14 @@ class QueryResult(BaseModel):
     meta: QueryMeta
 
 
-def _check_query_role(indices: List[str], user: str, fields: List[str]):
-    role = Role.READER if ((not fields) or ("text" in fields)) else Role.METAREADER
+def _check_query_role(
+    indices: List[str], user: str, fields: List[str], highlight: bool
+):
+    if (not fields) or ("text" in fields) or (highlight):
+        role = Role.READER
+    else:
+        role = Role.METAREADER
+    print("!!!", highlight, role)
     for ix in indices:
         check_role(user, role, ix)
 
@@ -87,7 +93,7 @@ def get_documents(
     """
     indices = index.split(",")
     fields = fields and fields.split(",")
-    _check_query_role(indices, user, fields)
+    _check_query_role(indices, user, fields, highlight)
     args = {}
     sort = sort and [
         {x.replace(":desc", ""): "desc"} if x.endswith(":desc") else x
@@ -236,7 +242,7 @@ def query_documents_post(
         # to array format: fields: [field1, field2]
         if isinstance(fields, str):
             fields = [fields]
-    _check_query_role(indices, user, fields)
+    _check_query_role(indices, user, fields, highlight is not None)
 
     queries = _process_queries(queries)
     filters = dict(_process_filters(filters))

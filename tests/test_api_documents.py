@@ -51,9 +51,12 @@ def test_documents(client, index, user):
     check(client.get(url, headers=build_headers(user)), 404)
 
 
-def test_metareader(client, index, index_docs, user, admin):
+def test_metareader(client, index, index_docs, user, reader):
     set_role(index_docs, user, Role.METAREADER)
+    set_role(index_docs, reader, Role.READER)
     set_role(index, user, Role.READER)
+    set_role(index, reader, Role.READER)
+
     r = get_json(
         client,
         f"/index/{index_docs}/documents?fields=title",
@@ -63,34 +66,39 @@ def test_metareader(client, index, index_docs, user, admin):
     url = f"index/{index_docs}/documents/{_id}"
     # Metareader should not be able to retrieve document source
     check(client.get(url, headers=build_headers(user)), 401)
-    check(client.get(url, headers=build_headers(admin)), 200)
+    check(client.get(url, headers=build_headers(reader)), 200)
 
     def get_join(x):
         return ",".join(x) if isinstance(x, list) else x
 
-    # Metareader should not be able to query text
-    for ix, u, fields, outcome in [
-        (index_docs, user, ["text"], 401),
-        (index, user, ["text"], 200),
-        ([index_docs, index], user, ["text"], 401),
-        (index_docs, user, ["text", "title"], 401),
-        (index_docs, user, ["title"], 200),
-        (index_docs, admin, ["text"], 200),
-        ([index_docs, index], admin, ["text"], 200),
+    # Metareader should not be able to query text (including highlight)
+    for ix, u, fields, highlight, outcome in [
+        (index_docs, user, ["text"], False, 401),
+        (index, user, ["text"], False, 200),
+        ([index_docs, index], user, ["text"], False, 401),
+        (index_docs, user, ["text", "title"], False, 401),
+        (index_docs, user, ["title"], False, 200),
+        (index_docs, reader, ["text"], False, 200),
+        ([index_docs, index], reader, ["text"], False, 200),
+        (index_docs, user, ["title"], True, 401),
+        (index_docs, reader, ["title"], True, 200),
     ]:
         check(
             client.get(
-                f"/index/{get_join(ix)}/documents?fields={get_join(fields)}",
+                f"/index/{get_join(ix)}/documents?fields={get_join(fields)}{'&highlight=true' if highlight else ''}",
                 headers=build_headers(u),
             ),
             outcome,
             msg=f"Index: {ix}, user: {u}, fields: {fields}",
         )
+        body = {"fields": fields}
+        if highlight:
+            body["highlight"] = True
         check(
             client.post(
                 f"/index/{get_join(ix)}/query",
                 headers=build_headers(u),
-                json={"fields": fields},
+                json=body,
             ),
             outcome,
             msg=f"Index: {ix}, user: {u}, fields: {fields}",
