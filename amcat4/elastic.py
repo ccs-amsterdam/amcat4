@@ -33,6 +33,7 @@ ES_MAPPINGS = {
     "text": {"type": "text"},
     "object": {"type": "object"},
     "geo_point": {"type": "geo_point"},
+    "dense_vector": {"type": "dense_vector"},
 }
 
 DEFAULT_MAPPING = {
