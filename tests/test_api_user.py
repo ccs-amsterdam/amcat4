@@ -11,6 +11,7 @@ def test_auth(client: TestClient, user, admin, index):
         # No auth - unauthenticated user can do anything
         assert client.get(f"/index/{index}").status_code == 200
         assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
+        assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 200
     with set_auth(AuthOptions.allow_guests):
         # Allow guests - unauthenticated user can access projects with guest roles
         assert client.get(f"/index/{index}").status_code == 401

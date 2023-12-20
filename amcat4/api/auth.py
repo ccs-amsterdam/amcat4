@@ -96,7 +96,9 @@ def check_role(user: str, required_role: Role, index: str, required_global_role:
         return get_role(index, user)
     # Global role check was false, so now check local role
     actual_role = get_role(index, user)
-    if actual_role and actual_role >= required_role:
+    if get_settings().auth == AuthOptions.no_auth:
+        return actual_role
+    elif actual_role and actual_role >= required_role:
         return actual_role
     else:
         raise HTTPException(status_code=401, detail=f"User {user} does not have "
