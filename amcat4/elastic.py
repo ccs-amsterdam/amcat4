@@ -276,7 +276,7 @@ def _get_fields(index: str) -> Iterable[Tuple[str, dict]]:
         t = dict(name=k, type=_get_type_from_property(v))
         if meta := v.get("meta"):
             t["meta"] = meta
-        yield k, t
+        yield k, t        
 
 
 def get_index_fields(index: str) -> Mapping[str, dict]:
@@ -296,12 +296,44 @@ def get_fields(index: Union[str, Sequence[str]]):
     """
     if isinstance(index, str):
         return get_index_fields(index)
+    
+    def get_meta_value(field, meta_key, default):
+        return field.get("meta", {}).get(meta_key) or default
+    
     result = {}
     for ix in index:
         for f, ftype in get_index_fields(ix).items():
             if f in result:
                 if result[f] != ftype:
-                    result[f] = {"name": f, "type": "keyword", "meta": {"merged": True}}
+                    # for merged fields, use the most restrictive meta settings
+                    metareader_visible_1: bool = get_meta_value(result[f], "metareader_visible", False)
+                    metareader_visible_2: bool = get_meta_value(ftype, "metareader_visible", False)
+                    metareader_visible: bool = metareader_visible_1 and metareader_visible_2
+
+                    metareader_visible_snippet_1: bool = get_meta_value(result[f], "metareader_visible_snippet", False)
+                    metareader_visible_snippet_2: bool = get_meta_value(ftype, "metareader_visible_snippet", False)
+                    metareader_visible_snippet: bool = metareader_visible_snippet_1 and metareader_visible_snippet_2
+
+                    match_snippets_1: int = get_meta_value(result[f], "query_snippets", 0)
+                    match_snippets_2: int = get_meta_value(ftype, "query_snippets", 0)
+                    match_snippets: int = min(match_snippets_1, match_snippets_2)
+
+                    match_snippets_size_1: int = get_meta_value(result[f], "query_snippets_size", 0)
+                    match_snippets_size_2: int = get_meta_value(ftype, "query_snippets_size", 0)
+                    match_snippets_size: int = min(match_snippets_size_1, match_snippets_size_2)
+
+                    nomatch_snippet_size_1: int = get_meta_value(result[f], "nomatch_snippet_size", 0)
+                    nomatch_snippet_size_2: int = get_meta_value(ftype, "nomatch_snippet_size", 0)
+                    nomatch_snippet_size: int = min(nomatch_snippet_size_1, nomatch_snippet_size_2)
+
+                    result[f] = {"name": f, "type": "keyword", "meta": {
+                        "merged": True, 
+                        "metareader_visible": metareader_visible,
+                        "metareader_visible_snippet": metareader_visible_snippet,
+                        "query_snippets": match_snippets,
+                        "query_snippets_size": match_snippets_size,
+                        "nomatch_snippet_size": nomatch_snippet_size,
+                    }}
             else:
                 result[f] = ftype
     return result
@@ -322,6 +354,7 @@ def get_field_values(index: str, field: str, size: int) -> List[str]:
         }}
     r = es().search(index=index, size=0, aggs=aggs)
     return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]
+
 
 def get_field_stats(index: str, field: str) -> List[str]:
     """

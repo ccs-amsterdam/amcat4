@@ -33,26 +33,30 @@ class QueryResult(BaseModel):
 
 
 def _check_query_role(
-    indices: List[str], user: str, fields: List[str], snippets: Optional[List[str]] = None
+    indices: List[str], index_fields: dict, user: str, fields: List[str], snippets: Optional[List[str]] = None
 ):
-    # TODO: index setting for which fields METAREADERS can see.
-    # Each field should say both: metareader_visible and metareader_snippet
-    metareader_visible = ["date", "title", "url"]
-    metareader_snippet = ["text"]
- 
-    all_values_in = lambda a, b: all([x in b for x in a])    
-    meta_visible = (not fields) or all_values_in(fields, metareader_visible)
-    meta_visible_snippet = (not snippets) or all_values_in(snippets, metareader_snippet)
+    """
+    Check whether the user needs to have metareader or reader role.
+    The index_fields (from elastic.get_fields) contains meta information about 
+    field access in the index. For multiple indices, the most restritive setting is used.
+    """
+    metareader_visible = index_fields.get("meta", {}).get("metareader_visible", [])
+    metareader_snippet = index_fields.get("meta", {}).get("metareader_snippet", [])
 
+    def visible_to_metareader(fields, metareader_fields):
+        if (not fields):
+            return True
+        return all([x in metareader_fields for x in fields])
 
-    if (meta_visible and meta_visible_snippet):
-        role = Role.METAREADER
+    meta_visible = visible_to_metareader(fields, metareader_visible)
+    meta_visible_snippet = visible_to_metareader(snippets, metareader_snippet)
+    if meta_visible and meta_visible_snippet:
+        required_role = Role.METAREADER
     else:
-        role = Role.READER
-        
-    print(role)
+        required_role = Role.READER
+
     for ix in indices:
-        check_role(user, role, ix)
+        check_role(user, required_role, ix)
 
 
 @app_query.get("/{index}/documents", response_model=QueryResult)
@@ -115,8 +119,9 @@ def get_documents(
         for field in fields:
             if field in snippets:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Field {field} cannot be in both fields and snippets")
-        
-    _check_query_role(indices, user, fields, snippets)
+    
+    index_fields = elastic.get_fields(indices)    
+    _check_query_role(indices, index_fields, user, fields, snippets)
     
     args = {}
     sort = sort and [
@@ -274,8 +279,8 @@ def query_documents_post(
             if field in snippets:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Field {field} cannot be in both fields and snippets")
         
-    #field_meta = elastic.get_fields(index)    
-    _check_query_role(indices, user, fields, snippets)
+    index_fields = elastic.get_fields(indices)    
+    _check_query_role(indices, index_fields, user, fields, snippets)
 
     queries = _process_queries(queries)
     filters = dict(_process_filters(filters))

@@ -80,10 +80,10 @@ def test_metareader(client, index, index_docs, user, reader):
         ([index_docs, index], reader, ["text"], None, 200),
         (index, reader, ["title"], ["text"], 200)
     ]:
-        snippets_param = get_join(snippets)
+        snippets_param = ("&snippets" + get_join(snippets)) if snippets else ""
         check(
             client.get(
-                f"/index/{get_join(ix)}/documents?fields={get_join(fields)}{'&snippets=' + snippets_param if snippets else ''}",
+                f"/index/{get_join(ix)}/documents?fields={get_join(fields)}{snippets_param}",
                 headers=build_headers(u),
             ),
             outcome,
