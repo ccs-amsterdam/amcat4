@@ -291,10 +291,30 @@ def set_fields(
 
 
 @app_index.get("/{ix}/fields/{field}/values")
-def get_values(ix: str, field: str, _=Depends(authenticated_user)):
-    """Get the fields (columns) used in this index."""
-    return elastic.get_values(ix, field, size=100)
+def get_field_values(ix: str, field: str, user: str =Depends(authenticated_user)):
+    """
+    Get unique values for a specific field. Should mainly/only be used for tag fields.
+    Main purpose is to provide a list of values for a dropdown menu.
+    
+    TODO: at the moment 'only' returns top 2000 values. Currently throws an
+    error if there are more than 2000 unique values. We can increase this limit, but
+    there should be a limit. Querying could be an option, but not sure if that is
+    efficient, since elastic has to aggregate all values first.
+    """
+    check_role(user, Role.READER, ix)
+    values = elastic.get_field_values(ix, field, size=2001)
+    if len(values) > 2000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Field {field} has more than 2000 unique values",
+        )
+    return values
 
+@app_index.get("/{ix}/fields/{field}/stats")
+def get_field_stats(ix: str, field: str, user: str =Depends(authenticated_user)):
+    """Get statistics for a specific value. Only works for numeric (incl date) fields."""
+    check_role(user, Role.READER, ix)
+    return elastic.get_field_stats(ix, field)
 
 @app_index.get("/{ix}/users")
 def list_index_users(ix: str, user: str = Depends(authenticated_user)):

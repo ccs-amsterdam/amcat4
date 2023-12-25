@@ -43,7 +43,7 @@ def test_fields(index):
 def test_values(index):
     """Can we get values for a specific field"""
     upload(index, [dict(bla=x) for x in ["odd", "even", "even"] * 10], fields={"bla": "keyword"})
-    assert set(elastic.get_values(index, "bla")) == {"odd", "even"}
+    assert set(elastic.get_field_values(index, "bla", 10)) == {"odd", "even"}
 
 
 def test_update(index_docs):

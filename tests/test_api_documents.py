@@ -69,29 +69,29 @@ def test_metareader(client, index, index_docs, user, reader):
     def get_join(x):
         return ",".join(x) if isinstance(x, list) else x
 
-    # Metareader should not be able to query text (including highlight)
-    for ix, u, fields, highlight, outcome in [
-        (index, user, ["text"], False, 401),
-        (index_docs, user, ["text"], False, 200),
-        ([index_docs, index], user, ["text"], False, 401),
-        (index, user, ["text", "title"], False, 401),
-        (index, user, ["title"], False, 200),
-        (index, reader, ["text"], False, 200),
-        ([index_docs, index], reader, ["text"], False, 200),
-        (index, user, ["title"], True, 401),
-        (index, reader, ["title"], True, 200),
+    # Metareader should not be able to query text as a field. Only as a snippet
+    for ix, u, fields, snippets, outcome in [
+        (index, user, ["text"], None, 401),
+        (index_docs, user, ["text"], None, 200),
+        ([index_docs, index], user, ["text"], None, 401),
+        (index, user, ["text", "title"], None, 401),
+        (index, user, ["title"], None, 200),
+        (index, reader, ["text"], None, 200),
+        ([index_docs, index], reader, ["text"], None, 200),
+        (index, reader, ["title"], ["text"], 200)
     ]:
+        snippets_param = get_join(snippets)
         check(
             client.get(
-                f"/index/{get_join(ix)}/documents?fields={get_join(fields)}{'&highlight=true' if highlight else ''}",
+                f"/index/{get_join(ix)}/documents?fields={get_join(fields)}{'&snippets=' + snippets_param if snippets else ''}",
                 headers=build_headers(u),
             ),
             outcome,
             msg=f"Index: {ix}, user: {u}, fields: {fields}",
         )
         body = {"fields": fields}
-        if highlight:
-            body["highlight"] = True
+        if snippets:
+            body["snippets"] = snippets
         check(
             client.post(
                 f"/index/{get_join(ix)}/query",

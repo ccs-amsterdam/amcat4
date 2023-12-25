@@ -307,16 +307,32 @@ def get_fields(index: Union[str, Sequence[str]]):
     return result
 
 
-def get_values(index: str, field: str, size: int = 100) -> List[str]:
+def get_field_values(index: str, field: str, size: int) -> List[str]:
     """
     Get the values for a given field (e.g. to populate list of filter values on keyword field)
+    Results are sorted descending by document frequency 
+    see: https://www.elastic.co/guide/en/elasticsearch/reference/7.4/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-order
+    
     :param index: The index
     :param field: The field name
     :return: A list of values
     """
-    aggs = {"values": {"terms": {"field": field}}}
-    r = es().search(index=index, size=size, aggs=aggs)
-    return [x["key"] for x in r["aggregations"]["values"]["buckets"]]
+    aggs = {"unique_values": {
+        "terms": {"field": field, "size": size}
+        }}
+    r = es().search(index=index, size=0, aggs=aggs)
+    return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]
+
+def get_field_stats(index: str, field: str) -> List[str]:
+    """
+    Get field statistics, such as min, max, avg, etc. 
+    :param index: The index
+    :param field: The field name
+    :return: A list of values
+    """
+    aggs = {"facets": {"stats": {"field": field}}}
+    r = es().search(index=index, size=0, aggs=aggs)
+    return r["aggregations"]["facets"]
 
 
 def update_by_query(index: str, script: str, query: dict, params: dict = None):

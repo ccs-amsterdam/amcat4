@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status, Request, Query, Depends, R
 from fastapi.params import Body
 from pydantic.main import BaseModel
 
-from amcat4 import query, aggregate
+from amcat4 import elastic, query, aggregate
 from amcat4.aggregate import Axis, Aggregation
 from amcat4.api.auth import authenticated_user, check_role
 from amcat4.index import Role
@@ -33,12 +33,24 @@ class QueryResult(BaseModel):
 
 
 def _check_query_role(
-    indices: List[str], user: str, fields: List[str], highlight: bool
+    indices: List[str], user: str, fields: List[str], snippets: Optional[List[str]] = None
 ):
-    if (not fields) or ("text" in fields) or (highlight):
-        role = Role.READER
-    else:
+    # TODO: index setting for which fields METAREADERS can see.
+    # Each field should say both: metareader_visible and metareader_snippet
+    metareader_visible = ["date", "title", "url"]
+    metareader_snippet = ["text"]
+ 
+    all_values_in = lambda a, b: all([x in b for x in a])    
+    meta_visible = (not fields) or all_values_in(fields, metareader_visible)
+    meta_visible_snippet = (not snippets) or all_values_in(snippets, metareader_snippet)
+
+
+    if (meta_visible and meta_visible_snippet):
         role = Role.METAREADER
+    else:
+        role = Role.READER
+        
+    print(role)
     for ix in indices:
         check_role(user, role, ix)
 
@@ -63,6 +75,15 @@ def get_documents(
         description="Comma separated list of fields to return",
         pattern=r"\w+(,\w+)*",
     ),
+    snippets: str = Query(
+        None,
+        description="Comma separated list of fields to return as snippets",
+        pattern=r"\w+(,\w+)*",
+    ),
+    highlight: bool = Query(
+        False,
+        description="If true, highlight fields"
+    ),
     per_page: int = Query(None, description="Number of results per page"),
     page: int = Query(None, description="Page to fetch"),
     scroll: str = Query(
@@ -71,12 +92,6 @@ def get_documents(
         examples="3m",
     ),
     scroll_id: str = Query(None, description="Get the next batch from this scroll id"),
-    highlight: bool = Query(False, description="add highlight tags <em>"),
-    annotations: bool = Query(
-        False,
-        description="if true, also return _annotations "
-        "with query matches as annotations",
-    ),
     user: str = Depends(authenticated_user),
 ):
     """
@@ -94,13 +109,21 @@ def get_documents(
     fields = fields and fields.split(",")
     if not fields:
         fields = ["date", "title", "url"]
-    _check_query_role(indices, user, fields, highlight)
+        
+    snippets = snippets and snippets.split(",")
+    if snippets:
+        for field in fields:
+            if field in snippets:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Field {field} cannot be in both fields and snippets")
+        
+    _check_query_role(indices, user, fields, snippets)
+    
     args = {}
     sort = sort and [
         {x.replace(":desc", ""): "desc"} if x.endswith(":desc") else x
         for x in sort.split(",")
     ]
-    known_args = ["page", "per_page", "scroll", "scroll_id", "highlight", "annotations"]
+    known_args = ["page", "per_page", "scroll", "scroll_id", "highlight"]
     for name in known_args:
         val = locals()[name]
         if val:
@@ -186,6 +209,9 @@ def query_documents_post(
     fields: Optional[List[str]] = Body(
         None, description="List of fields to retrieve for each document"
     ),
+    snippets: Optional[List[str]] = Body(
+        None, description="Fields to retrieve as snippets"
+    ),
     filters: Optional[
         Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]
     ] = Body(
@@ -221,13 +247,9 @@ def query_documents_post(
     scroll_id: Optional[str] = Body(
         None, description="Scroll id from previous response to continue scrolling"
     ),
-    annotations: Optional[bool] = Body(
-        None, description="Return _annotations with query matches as annotations"
-    ),
-    highlight: Optional[Union[bool, Dict]] = Body(
-        None,
-        description="Highlight document. 'true' highlights whole document, see elastic docs for dict format"
-        "https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html",
+    highlight: Optional[bool] = Body(
+        False,
+        description="If true, highlight fields"
     ),
     user=Depends(authenticated_user),
 ):
@@ -240,12 +262,20 @@ def query_documents_post(
     # Standardize fields, queries and filters to their most versatile format
     indices = index.split(",")
     if fields:
-        # to array format: fields: [field1, field2]
         if isinstance(fields, str):
             fields = [fields]
     else:
         fields = ["date", "title", "url"]
-    _check_query_role(indices, user, fields, highlight is not None)
+        
+    if snippets:
+        if isinstance(snippets, str):
+            snippets = [snippets]
+        for field in fields:
+            if field in snippets:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Field {field} cannot be in both fields and snippets")
+        
+    #field_meta = elastic.get_fields(index)    
+    _check_query_role(indices, user, fields, snippets)
 
     queries = _process_queries(queries)
     filters = dict(_process_filters(filters))
@@ -254,12 +284,12 @@ def query_documents_post(
         queries=queries,
         filters=filters,
         fields=fields,
+        snippets=snippets,
         sort=sort,
         per_page=per_page,
         page=page,
         scroll_id=scroll_id,
         scroll=scroll,
-        annotations=annotations,
         highlight=highlight,
     )
     if r is None:
