@@ -320,15 +320,16 @@ def get_guest_role(index: str) -> Optional[Role]:
         return Role[role]
 
 
-def get_global_role(email: str) -> Optional[Role]:
+def get_global_role(email: str, only_es: bool = False) -> Optional[Role]:
     """
     Retrieve the global role of this user
 
     :returns: a Role object, or None if the user has no role
     """
     # The 'admin' user is given to everyone in the no_auth scenario
-    if email == get_settings().admin_email or email == "admin":
-        return Role.ADMIN
+    if only_es is False:
+        if email == get_settings().admin_email or email == "admin":
+            return Role.ADMIN
     return get_role(index=GLOBAL_ROLES, email=email)
 
 

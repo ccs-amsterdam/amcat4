@@ -36,10 +36,10 @@ class ChangeUserForm(BaseModel):
     role: Optional[ROLE] = None
 
 
-@app_users.post("/users/", status_code=status.HTTP_201_CREATED)
+@app_users.post("/users", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: UserForm, _=Depends(authenticated_admin)):
     """Create a new user."""
-    if get_global_role(new_user.email) is not None:
+    if get_global_role(new_user.email, only_es=True) is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"User {new_user.email} already exists",
