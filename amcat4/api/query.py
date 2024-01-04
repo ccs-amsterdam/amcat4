@@ -8,9 +8,10 @@ from pydantic.main import BaseModel
 
 from amcat4 import elastic, query, aggregate
 from amcat4.aggregate import Axis, Aggregation
-from amcat4.api.auth import authenticated_user, check_role
+from amcat4.api.auth import authenticated_user, check_query_allowed
 from amcat4.index import Role
 from amcat4.query import update_tag_query
+from amcat4.util import parse_snippet
 
 app_query = APIRouter(prefix="/index", tags=["query"])
 
@@ -30,33 +31,6 @@ class QueryResult(BaseModel):
 
     results: List[Dict[str, Any]]
     meta: QueryMeta
-
-
-def _check_query_role(
-    indices: List[str], index_fields: dict, user: str, fields: List[str], snippets: Optional[List[str]] = None
-):
-    """
-    Check whether the user needs to have metareader or reader role.
-    The index_fields (from elastic.get_fields) contains meta information about 
-    field access in the index. For multiple indices, the most restritive setting is used.
-    """
-    metareader_visible = index_fields.get("meta", {}).get("metareader_visible", [])
-    metareader_snippet = index_fields.get("meta", {}).get("metareader_snippet", [])
-
-    def visible_to_metareader(fields, metareader_fields):
-        if (not fields):
-            return True
-        return all([x in metareader_fields for x in fields])
-
-    meta_visible = visible_to_metareader(fields, metareader_visible)
-    meta_visible_snippet = visible_to_metareader(snippets, metareader_snippet)
-    if meta_visible and meta_visible_snippet:
-        required_role = Role.METAREADER
-    else:
-        required_role = Role.READER
-
-    for ix in indices:
-        check_role(user, required_role, ix)
 
 
 @app_query.get("/{index}/documents", response_model=QueryResult)
@@ -81,13 +55,17 @@ def get_documents(
     ),
     snippets: str = Query(
         None,
-        description="Comma separated list of fields to return as snippets",
-        pattern=r"\w+(,\w+)*",
+        description="Comma separated list of fields to return as snippets. If only field names are given, the default "
+        "snippet parameters are used. The parameters are 'nomatch_chars' (default: 150), 'max_matches' (default: 3) "
+        "and 'match_chars' (default: 50). If there is no query, the snippet is the first [nomatch_chars] characters. "
+        "If there is a query, snippets are returned for up to [max_matches] matches, with each match having [match_chars] "
+        "characters. match snippets are concatenated with ' ... ' and  have <em> tags around the matched text. "
+        "If you want to use custom snippet parameters, you can add a suffix to the field name with the parameters between "
+        "brackets, in the format: fieldname[nomatch_chars;max_matches;match_chars] (e.g, text[150;3;50]). "
+        "(always provide all 3 parameters, even if you only want to change one)",
+        pattern=r"[\w\[;\]]+(,[\w\[;\]]+)*",
     ),
-    highlight: bool = Query(
-        False,
-        description="If true, highlight fields"
-    ),
+    highlight: bool = Query(False, description="If true, highlight fields"),
     per_page: int = Query(None, description="Number of results per page"),
     page: int = Query(None, description="Page to fetch"),
     scroll: str = Query(
@@ -113,16 +91,10 @@ def get_documents(
     fields = fields and fields.split(",")
     if not fields:
         fields = ["date", "title", "url"]
-        
-    snippets = snippets and snippets.split(",")
-    if snippets:
-        for field in fields:
-            if field in snippets:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Field {field} cannot be in both fields and snippets")
-    
-    index_fields = elastic.get_fields(indices)    
-    _check_query_role(indices, index_fields, user, fields, snippets)
-    
+
+    for index in indices:
+        check_query_allowed(indices, user, fields, snippets)
+
     args = {}
     sort = sort and [
         {x.replace(":desc", ""): "desc"} if x.endswith(":desc") else x
@@ -215,7 +187,15 @@ def query_documents_post(
         None, description="List of fields to retrieve for each document"
     ),
     snippets: Optional[List[str]] = Body(
-        None, description="Fields to retrieve as snippets"
+        None,
+        description="Fields to retrieve as snippets. If only field names are given, the default "
+        "snippet parameters are used. The parameters are [nomatch_chars] (default: 200), [max_matches] (default: 3) "
+        "and [match_chars] (default: 50). If there is no query, the snippet is the first [nomatch_chars] characters. "
+        "If there is a query, snippets are returned for up to [max_matches] matches, with each match having [match_chars] "
+        "characters. match snippets also have <em> tags around the matched text. "
+        "If you want to use custom snippet parameters, you can add a suffix to the field name with the parameters between "
+        "brackets, in the format: fieldname[nomatch_chars;max_matches;match_chars] (e.g, text[150;3;50]). "
+        "(always provide all 3 parameters, even if you only want to change one)",
     ),
     filters: Optional[
         Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]
@@ -252,10 +232,7 @@ def query_documents_post(
     scroll_id: Optional[str] = Body(
         None, description="Scroll id from previous response to continue scrolling"
     ),
-    highlight: Optional[bool] = Body(
-        False,
-        description="If true, highlight fields"
-    ),
+    highlight: Optional[bool] = Body(False, description="If true, highlight fields"),
     user=Depends(authenticated_user),
 ):
     """
@@ -271,16 +248,9 @@ def query_documents_post(
             fields = [fields]
     else:
         fields = ["date", "title", "url"]
-        
-    if snippets:
-        if isinstance(snippets, str):
-            snippets = [snippets]
-        for field in fields:
-            if field in snippets:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Field {field} cannot be in both fields and snippets")
-        
-    index_fields = elastic.get_fields(indices)    
-    _check_query_role(indices, index_fields, user, fields, snippets)
+
+    for index in indices:
+        check_query_allowed(index, user, fields, snippets)
 
     queries = _process_queries(queries)
     filters = dict(_process_filters(filters))

@@ -19,6 +19,7 @@ from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch.helpers import bulk
 
 from amcat4.config import get_settings
+from amcat4.util import parse_snippet
 
 SYSTEM_INDEX_VERSION = 1
 
@@ -42,6 +43,7 @@ DEFAULT_MAPPING = {
     "date": ES_MAPPINGS["date"],
     "url": ES_MAPPINGS["url"],
 }
+
 
 SYSTEM_MAPPING = {
     "name": {"type": "text"},
@@ -276,7 +278,7 @@ def _get_fields(index: str) -> Iterable[Tuple[str, dict]]:
         t = dict(name=k, type=_get_type_from_property(v))
         if meta := v.get("meta"):
             t["meta"] = meta
-        yield k, t        
+        yield k, t
 
 
 def get_index_fields(index: str) -> Mapping[str, dict]:
@@ -288,7 +290,7 @@ def get_index_fields(index: str) -> Mapping[str, dict]:
     return dict(_get_fields(index))
 
 
-def get_fields(index: Union[str, Sequence[str]]):
+def get_fields(index: Union[str, Sequence[str]]) -> Mapping[str, dict]:
     """
     Get the field types in use in this index or indices
     :param index: name(s) of index(es) to query
@@ -296,44 +298,54 @@ def get_fields(index: Union[str, Sequence[str]]):
     """
     if isinstance(index, str):
         return get_index_fields(index)
-    
-    def get_meta_value(field, meta_key, default):
-        return field.get("meta", {}).get(meta_key) or default
-    
+
+    # def get_meta_value(field, meta_key, default):
+    #     return field.get("meta", {}).get(meta_key) or default
+
+    # def get_least_metareader_access(access1, access2):
+    #     if (access1 == None) or (access2 == None):
+    #         return None
+
+    #     if "snippet" in access1 and access2 == "read":
+    #         return access1
+
+    #     if "snippet" in access2 and access1 == "read":
+    #         return access2
+
+    #     if "snippet" in access1 and "snippet" in access2:
+    #         _, nomatch_chars1, max_matches1, match_chars1 = parse_snippet(access1)
+    #         _, nomatch_chars2, max_matches2, match_chars2 = parse_snippet(access2)
+    #         nomatch_chars = min(nomatch_chars1, nomatch_chars2)
+    #         max_matches = min(max_matches1, max_matches2)
+    #         match_chars = match_chars1 + match_chars2
+    #         return f"snippet[{nomatch_chars},{max_matches},{match_chars}]"
+
+    #     if access1 == "read" and access2 == "read":
+    #         return "read"
+
     result = {}
     for ix in index:
         for f, ftype in get_index_fields(ix).items():
             if f in result:
                 if result[f] != ftype:
-                    # for merged fields, use the most restrictive meta settings
-                    metareader_visible_1: bool = get_meta_value(result[f], "metareader_visible", False)
-                    metareader_visible_2: bool = get_meta_value(ftype, "metareader_visible", False)
-                    metareader_visible: bool = metareader_visible_1 and metareader_visible_2
+                    # note that for merged fields metareader access is always None
+                    # metareader_access_1: bool = get_meta_value(
+                    #     result[f], "metareader_visible", None
+                    # )
+                    # metareader_access_2: bool = get_meta_value(
+                    #     ftype, "metareader_visible", None
+                    # )
+                    # metareader_access = get_least_metareader_access(
+                    #     metareader_access_1, metareader_access_2
+                    # )
 
-                    metareader_visible_snippet_1: bool = get_meta_value(result[f], "metareader_visible_snippet", False)
-                    metareader_visible_snippet_2: bool = get_meta_value(ftype, "metareader_visible_snippet", False)
-                    metareader_visible_snippet: bool = metareader_visible_snippet_1 and metareader_visible_snippet_2
-
-                    match_snippets_1: int = get_meta_value(result[f], "query_snippets", 0)
-                    match_snippets_2: int = get_meta_value(ftype, "query_snippets", 0)
-                    match_snippets: int = min(match_snippets_1, match_snippets_2)
-
-                    match_snippets_size_1: int = get_meta_value(result[f], "query_snippets_size", 0)
-                    match_snippets_size_2: int = get_meta_value(ftype, "query_snippets_size", 0)
-                    match_snippets_size: int = min(match_snippets_size_1, match_snippets_size_2)
-
-                    nomatch_snippet_size_1: int = get_meta_value(result[f], "nomatch_snippet_size", 0)
-                    nomatch_snippet_size_2: int = get_meta_value(ftype, "nomatch_snippet_size", 0)
-                    nomatch_snippet_size: int = min(nomatch_snippet_size_1, nomatch_snippet_size_2)
-
-                    result[f] = {"name": f, "type": "keyword", "meta": {
-                        "merged": True, 
-                        "metareader_visible": metareader_visible,
-                        "metareader_visible_snippet": metareader_visible_snippet,
-                        "query_snippets": match_snippets,
-                        "query_snippets_size": match_snippets_size,
-                        "nomatch_snippet_size": nomatch_snippet_size,
-                    }}
+                    result[f] = {
+                        "name": f,
+                        "type": "keyword",
+                        "meta": {
+                            "merged": True,
+                        },
+                    }
             else:
                 result[f] = ftype
     return result
@@ -342,23 +354,21 @@ def get_fields(index: Union[str, Sequence[str]]):
 def get_field_values(index: str, field: str, size: int) -> List[str]:
     """
     Get the values for a given field (e.g. to populate list of filter values on keyword field)
-    Results are sorted descending by document frequency 
+    Results are sorted descending by document frequency
     see: https://www.elastic.co/guide/en/elasticsearch/reference/7.4/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-order
-    
+
     :param index: The index
     :param field: The field name
     :return: A list of values
     """
-    aggs = {"unique_values": {
-        "terms": {"field": field, "size": size}
-        }}
+    aggs = {"unique_values": {"terms": {"field": field, "size": size}}}
     r = es().search(index=index, size=0, aggs=aggs)
     return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]
 
 
 def get_field_stats(index: str, field: str) -> List[str]:
     """
-    Get field statistics, such as min, max, avg, etc. 
+    Get field statistics, such as min, max, avg, etc.
     :param index: The index
     :param field: The field name
     :return: A list of values
