@@ -24,17 +24,30 @@ from amcat4.util import parse_snippet
 SYSTEM_INDEX_VERSION = 1
 
 ES_MAPPINGS = {
-    "long": {"type": "long"},
-    "date": {"type": "date", "format": "strict_date_optional_time"},
-    "double": {"type": "double"},
-    "keyword": {"type": "keyword"},
-    "url": {"type": "keyword", "meta": {"amcat4_type": "url"}},
-    "tag": {"type": "keyword", "meta": {"amcat4_type": "tag"}},
-    "id": {"type": "keyword", "meta": {"amcat4_type": "id"}},
-    "text": {"type": "text"},
-    "object": {"type": "object"},
-    "geo_point": {"type": "geo_point"},
-    "dense_vector": {"type": "dense_vector"},
+    "long": {"type": "long", "meta": {"metareader_access": "read"}},
+    "date": {
+        "type": "date",
+        "format": "strict_date_optional_time",
+        "meta": {"metareader_access": "read"},
+    },
+    "double": {"type": "double", "meta": {"metareader_access": "read"}},
+    "keyword": {"type": "keyword", "meta": {"metareader_access": "read"}},
+    "url": {
+        "type": "keyword",
+        "meta": {"amcat4_type": "url", "metareader_access": "read"},
+    },
+    "tag": {
+        "type": "keyword",
+        "meta": {"amcat4_type": "tag", "metareader_access": "read"},
+    },
+    "id": {
+        "type": "keyword",
+        "meta": {"amcat4_type": "id", "metareader_access": "read"},
+    },
+    "text": {"type": "text", "meta": {"metareader_access": "none"}},
+    "object": {"type": "object", "meta": {"metareader_access": "none"}},
+    "geo_point": {"type": "geo_point", "metareader_access": "read"},
+    "dense_vector": {"type": "dense_vector", "metareader_access": "none"},
 }
 
 DEFAULT_MAPPING = {
