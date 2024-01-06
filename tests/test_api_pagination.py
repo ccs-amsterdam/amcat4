@@ -5,7 +5,7 @@ from tests.tools import get_json, post_json
 
 def test_pagination(client, index, user):
     """Does basic pagination work?"""
-    set_role(index, user, Role.METAREADER)
+    set_role(index, user, Role.READER)
 
     upload(index, docs=[{"i": i} for i in range(66)])
     url = f"/index/{index}/documents"
@@ -42,7 +42,7 @@ def test_pagination(client, index, user):
 
 
 def test_scroll(client, index, user):
-    set_role(index, user, Role.METAREADER)
+    set_role(index, user, Role.READER)
     upload(index, docs=[{"i": i} for i in range(66)])
     url = f"/index/{index}/documents"
     r = get_json(

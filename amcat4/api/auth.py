@@ -129,7 +129,7 @@ def check_query_allowed(
     :param user: The email address of the authenticated user
     :param fields: The fields to check
     :param snippets: The snippets to check
-    :return: True if the user is allowed to query the given fields and snippets, False otherwise
+    :return: Nothing. Throws HTTPException if the user is not allowed to query the given fields and snippets.
     """
     role = get_role(index, user)
     if role is None:
@@ -147,7 +147,7 @@ def check_query_allowed(
             return None
 
         for field in fields:
-            if field not in index_fields:
+            if field not in index_fields.keys():
                 continue
             field_meta = index_fields[field].get("meta", {})
             metareader_access = field_meta.get("metareader_access", None)
@@ -163,16 +163,15 @@ def check_query_allowed(
 
         for snippet in snippets:
             field, nomatch_chars, max_matches, match_chars = parse_snippet(snippet)
-            if field not in index_fields:
+            if field not in index_fields.keys():
                 continue
+
             field_meta = index_fields[field].get("meta", {})
-            metareader_access = field_meta.get("metareader_access", None)
-            if metareader_access is None:
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"METAREADER cannot read snippet of {field} on index {index}",
-                )
-            if "snippet" in metareader_access:
+            metareader_access = field_meta.get("metareader_access", "none")
+
+            if metareader_access == "read":
+                continue
+            elif "snippet" in metareader_access:
                 (
                     _,
                     meta_nomatch_chars,
@@ -190,6 +189,11 @@ def check_query_allowed(
                         detail=f"The requested snippet of {field} on index {index} is too long. "
                         f"max parameters are: {max_params}",
                     )
+            else:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"METAREADER cannot read snippet of {field} on index {index}",
+                )
 
     index_fields = elastic.get_fields(index)
     check_fields_access(fields, index_fields)

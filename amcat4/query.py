@@ -177,8 +177,12 @@ def query_documents(
     :param kwargs: Additional elements passed to Elasticsearch.search()
     :return: a QueryResult, or None if there is not scroll result anymore
     """
+    if fields is not None and not isinstance(fields, list):
+        raise ValueError("fields should be a list")
+    if snippets is not None and not isinstance(snippets, list):
+        raise ValueError("snippets should be a list")
     if overlap_fields_snippets(fields, snippets):
-        raise ValueError("Cannot request both a field AND snippets for this field")
+        raise ValueError("Cannot request a field AND it's snippet at the same time")
 
     if scroll or scroll_id:
         # set scroll to default also if scroll_id is given but no scroll time is known
@@ -232,10 +236,15 @@ def query_highlight(fields: Iterable[str], highlight: bool, snippets: Iterable[s
     The elastic "highlight" parameters works for both highlighting text fields and adding snippets.
     This function will return the highlight parameter to be added to the query body.
     """
-    if (fields is None or highlight is False) and (snippets is None):
+    if highlight is False and snippets is None:
         return None
 
-    highlight = {"require_field_match": False, "fields": {}}
+    highlight = {
+        "pre_tags": ["<em>"] if highlight is True else [""],
+        "post_tags": ["</em>"] if highlight is True else [""],
+        "require_field_match": True,
+        "fields": {},
+    }
 
     if fields is not None:
         for field in fields:

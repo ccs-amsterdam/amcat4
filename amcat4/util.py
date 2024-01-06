@@ -10,7 +10,7 @@ def parse_snippet(snippet: str) -> Tuple[str, int, int, int]:
     we assume the snippet is just the field name and use default values.
     """
     pattern = r"\[([0-9]+);([0-9]+);([0-9]+)]$"
-    match = re.match(pattern, snippet)
+    match = re.search(pattern, snippet)
 
     if match:
         field = snippet[: match.start()]

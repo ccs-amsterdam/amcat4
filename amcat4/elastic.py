@@ -13,6 +13,7 @@ import functools
 import hashlib
 import json
 import logging
+import re
 from typing import Mapping, List, Iterable, Optional, Tuple, Union, Sequence, Literal
 
 from elasticsearch import Elasticsearch, NotFoundError
@@ -226,8 +227,42 @@ def get_field_mapping(type_: Union[str, dict]):
         meta = mapping.get("meta", {})
         if m := type_.get("meta"):
             meta.update(m)
-        mapping["meta"] = meta
+        mapping["meta"] = validate_field_meta(meta)
         return mapping
+
+
+def validate_field_meta(meta: dict):
+    """
+    Elastic has limited available field meta. Here we validate the allowed keys (and values)
+    """
+    valid_fields = ["amcat4_type", "metareader_access", "client_display"]
+
+    for meta_field in meta.keys():
+        # Validate keys
+        if meta_field not in valid_fields:
+            raise ValueError(f"Invalid meta field: {meta_field}")
+
+        # Validate values
+        if not isinstance(meta[meta_field], str):
+            raise ValueError("Meta field value has to be a string")
+
+        if meta_field == "amcat4_type":
+            if meta[meta_field] not in ES_MAPPINGS.keys():
+                raise ValueError(f"Invalid amcat4_type value: {meta[meta_field]}")
+
+        if meta_field == "client_display":
+            # client_display only concerns the client
+            continue
+
+        if meta_field == "metareader_access":
+            # metareader_access can be "none", "read", or "snippet"
+            # if snippet, can also include the maximum snippet parameters (nomatch_chars, max_matches, match_chars)
+            # in the format: snippet[nomatch_chars;max_matches;match_chars]
+            reg = r"^(read|none|snippet(\[\d+;\d+;\d+\])?)$"
+            if not re.match(reg, meta[meta_field]):
+                raise ValueError(f"Invalid metareader_access value: {meta[meta_field]}")
+
+    return meta
 
 
 def set_fields(index: str, fields: Mapping[str, str]):

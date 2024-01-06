@@ -48,7 +48,8 @@ def test_query_get(client, index_docs, user):
     def qi(**query_string):
         return {int(doc["_id"]) for doc in q(**query_string)}
 
-    # TODO: check auth
+    # TODO make sure all auth is checked in test_api_query_auth
+
     # Query strings
     assert qi(q="text") == {0, 1}
     assert qi(q="test*") == {1, 2, 3}

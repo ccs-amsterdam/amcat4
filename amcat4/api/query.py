@@ -89,11 +89,12 @@ def get_documents(
     """
     indices = index.split(",")
     fields = fields and fields.split(",")
-    if not fields:
+    snippets = snippets and snippets.split(",")
+    if not fields and not snippets:
         fields = ["date", "title", "url"]
 
     for index in indices:
-        check_query_allowed(indices, user, fields, snippets)
+        check_query_allowed(index, user, fields, snippets)
 
     args = {}
     sort = sort and [
@@ -246,7 +247,10 @@ def query_documents_post(
     if fields:
         if isinstance(fields, str):
             fields = [fields]
-    else:
+    if snippets:
+        if isinstance(snippets, str):
+            snippets = [snippets]
+    if not fields and not snippets:
         fields = ["date", "title", "url"]
 
     for index in indices:
