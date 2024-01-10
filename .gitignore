@@ -50,7 +50,10 @@ nosetests.xml
 .idea
 
 # vscode meuk
-.vscode
+#.vscode
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 
 # static files
 navigator/media/static

@@ -18,7 +18,9 @@ from typing import (
 
 from .date_mappings import mappings
 from .elastic import es, update_tag_by_query
-from amcat4.util import parse_snippet
+from amcat4 import elastic
+from amcat4.util import parse_field
+from amcat4.index import Role, get_role
 
 
 def build_body(
@@ -164,7 +166,6 @@ def query_documents(
                    specify the time the context should be kept alive, or True to get the default of 2m.
     :param scroll_id: if not None, should be a previously returned context_id to retrieve a new page of results
     :param fields: if not None, specify a list of fields to retrieve for each hit
-    :param snippets: if not None, specify a list of fields to retrieve snippets for
     :param filters: if not None, a dict of filters with either value, values, or gte/gt/lte/lt ranges:
                        {field: {'values': [value1,value2],
                                 'value': value,
@@ -179,10 +180,6 @@ def query_documents(
     """
     if fields is not None and not isinstance(fields, list):
         raise ValueError("fields should be a list")
-    if snippets is not None and not isinstance(snippets, list):
-        raise ValueError("snippets should be a list")
-    if overlap_fields_snippets(fields, snippets):
-        raise ValueError("Cannot request a field AND it's snippet at the same time")
 
     if scroll or scroll_id:
         # set scroll to default also if scroll_id is given but no scroll time is known
@@ -195,7 +192,7 @@ def query_documents(
         if not result["hits"]["hits"]:
             return None
     else:
-        h = query_highlight(fields, highlight, snippets)
+        h = query_highlight(fields, highlight)
         body = build_body(queries.values(), filters, h)
 
         if fields:
@@ -231,35 +228,44 @@ def query_documents(
         )
 
 
-def query_highlight(fields: Iterable[str], highlight: bool, snippets: Iterable[str]):
+def query_highlight(fields: Iterable[str] = None, highlight_queries: bool = False):
     """
     The elastic "highlight" parameters works for both highlighting text fields and adding snippets.
     This function will return the highlight parameter to be added to the query body.
     """
-    if highlight is False and snippets is None:
-        return None
 
     highlight = {
-        "pre_tags": ["<em>"] if highlight is True else [""],
-        "post_tags": ["</em>"] if highlight is True else [""],
+        # "pre_tags": ["<em>"] if highlight is True else [""],
+        # "post_tags": ["</em>"] if highlight is True else [""],
         "require_field_match": True,
-        "fields": {},
     }
 
-    if fields is not None:
+    if fields is None:
+        if highlight_queries is True:
+            highlight["fields"]["*"] = {"number_of_fragments": 0}
+    else:
+        highlight["fields"] = {}
         for field in fields:
-            highlight["fields"][field] = {"number_of_fragments": 0}
-
-    if snippets is not None:
-        # TODO: get index meta data to see which snippets are allowed and what
-        # the nr and size should be
-        for snippet in snippets:
-            field, nomatch_chars, max_matches, match_chars = parse_snippet(snippet)
-            highlight["fields"][field] = {
-                "no_match_size": nomatch_chars,
-                "number_of_fragments": max_matches,
-                "fragment_size": match_chars,
-            }
+            fieldname, nomatch_chars, max_matches, match_chars = parse_field(field)
+            if nomatch_chars is None:
+                if highlight_queries is True:
+                    # This will overwrite the field with the highlighted version, so
+                    # only needed if highlight is True
+                    highlight["fields"][fieldname] = {"number_of_fragments": 0}
+            else:
+                # the elastic highlight feature is also used to get snippets. note that
+                # above in the
+                highlight["fields"][fieldname] = {
+                    "no_match_size": nomatch_chars,
+                    "number_of_fragments": max_matches,
+                    "fragment_size": match_chars,
+                }
+                if highlight_queries is False or max_matches == 0:
+                    # This overwrites the actual query, so that the highlights are not returned.
+                    # Also used to get the nomatch snippet if max_matches = 0
+                    highlight["fields"][fieldname]["highlight_query"] = {
+                        "match_all": {}
+                    }
 
     return highlight
 
@@ -289,20 +295,3 @@ def update_tag_query(
     """Add or remove tags using a query"""
     body = build_body(queries and queries.values(), filters, ids=ids)
     update_tag_by_query(index, action, body, field, tag)
-
-
-def overlap_fields_snippets(
-    fields: Iterable[str] = None, snippets: Iterable[str] = None
-) -> bool:
-    """
-    If both fields and snippets are requested as output, check if there are any overlaps
-    """
-    if fields is None or snippets is None:
-        return False
-
-    for snippet in snippets:
-        field, _, _, _ = parse_snippet(snippet)
-        if field in fields:
-            return True
-
-    return False

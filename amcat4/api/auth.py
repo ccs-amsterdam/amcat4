@@ -13,7 +13,7 @@ from fastapi.security import OAuth2PasswordBearer
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 from amcat4 import elastic
-from amcat4.util import parse_snippet
+from amcat4.util import parse_field
 from amcat4.config import get_settings, AuthOptions
 from amcat4.index import Role, get_role, get_global_role
 
@@ -120,9 +120,7 @@ def check_role(
         )
 
 
-def check_query_allowed(
-    index: str, user: str, fields: Iterable[str] = None, snippets: Iterable[str] = None
-) -> None:
+def check_fields_access(index: str, user: str, fields: Iterable[str]) -> None:
     """Check if the given user is allowed to query the given fields and snippets on the given index.
 
     :param index: The index to check the role on
@@ -131,6 +129,7 @@ def check_query_allowed(
     :param snippets: The snippets to check
     :return: Nothing. Throws HTTPException if the user is not allowed to query the given fields and snippets.
     """
+
     role = get_role(index, user)
     if role is None:
         raise HTTPException(
@@ -138,66 +137,52 @@ def check_query_allowed(
             detail=f"User {user} does not have a role on index {index}",
         )
     if role >= Role.READER:
-        return True
+        return None
+    if fields is None:
+        return None
 
     # after this, we know the user is a metareader, so we need to check metareader_access
-
-    def check_fields_access(fields, index_fields) -> None:
-        if fields is None:
-            return None
-
-        for field in fields:
-            if field not in index_fields.keys():
-                continue
-            field_meta = index_fields[field].get("meta", {})
-            metareader_access = field_meta.get("metareader_access", None)
-            if metareader_access != "read":
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"METAREADER cannot read {field} on index {index}",
-                )
-
-    def check_snippets_access(snippets, index_fields) -> None:
-        if snippets is None:
-            return None
-
-        for snippet in snippets:
-            field, nomatch_chars, max_matches, match_chars = parse_snippet(snippet)
-            if field not in index_fields.keys():
-                continue
-
-            field_meta = index_fields[field].get("meta", {})
-            metareader_access = field_meta.get("metareader_access", "none")
-
-            if metareader_access == "read":
-                continue
-            elif "snippet" in metareader_access:
-                (
-                    _,
-                    meta_nomatch_chars,
-                    meta_max_matches,
-                    meta_match_chars,
-                ) = parse_snippet(metareader_access)
-                valid_nomatch_chars = nomatch_chars <= meta_nomatch_chars
-                valid_max_matches = max_matches <= meta_max_matches
-                valid_match_chars = match_chars <= meta_match_chars
-                valid = valid_nomatch_chars and valid_max_matches and valid_match_chars
-                if not valid:
-                    max_params = f"{field}[{meta_nomatch_chars};{meta_max_matches};{meta_match_chars}]"
-                    raise HTTPException(
-                        status_code=401,
-                        detail=f"The requested snippet of {field} on index {index} is too long. "
-                        f"max parameters are: {max_params}",
-                    )
-            else:
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"METAREADER cannot read snippet of {field} on index {index}",
-                )
-
     index_fields = elastic.get_fields(index)
-    check_fields_access(fields, index_fields)
-    check_snippets_access(snippets, index_fields)
+    for field in fields:
+        fieldname, nomatch_chars, max_matches, match_chars = parse_field(field)
+        if fieldname not in index_fields.keys():
+            continue
+        meta = index_fields[fieldname].get("meta", {})
+        metareader_access = meta.get("metareader_access", None)
+        if not metareader_access or metareader_access == "none":
+            raise HTTPException(
+                status_code=401,
+                detail=f"METAREADER cannot read {field} on index {index}",
+            )
+        if metareader_access == "read":
+            continue
+        if metareader_access.startswith("snippet"):
+            (
+                _,
+                allowed_nomatch_chars,
+                allowed_max_matches,
+                allowed_match_chars,
+            ) = parse_field(metareader_access)
+            max_params = f"{fieldname}[{allowed_nomatch_chars};{allowed_max_matches};{allowed_match_chars}]"
+
+            if nomatch_chars is None:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"METAREADER cannot read {field} on index {index}. "
+                    f"Can only read snippets with parameters: {max_params}",
+                )
+
+            valid_nomatch_chars = nomatch_chars <= allowed_nomatch_chars
+            valid_max_matches = max_matches <= allowed_max_matches
+            valid_match_chars = match_chars <= allowed_match_chars
+
+            valid = valid_nomatch_chars and valid_max_matches and valid_match_chars
+            if not valid:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"The requested snippet of {fieldname} on index {index} is too long. "
+                    f"max parameters are: {max_params}",
+                )
 
 
 async def authenticated_user(token: str = Depends(oauth2_scheme)) -> str:

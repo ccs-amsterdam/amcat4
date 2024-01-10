@@ -8,10 +8,10 @@ from pydantic.main import BaseModel
 
 from amcat4 import elastic, query, aggregate
 from amcat4.aggregate import Axis, Aggregation
-from amcat4.api.auth import authenticated_user, check_query_allowed
-from amcat4.index import Role
+from amcat4.api.auth import authenticated_user, check_fields_access
+from amcat4.index import Role, get_role
 from amcat4.query import update_tag_query
-from amcat4.util import parse_snippet
+from amcat4.util import parse_field
 
 app_query = APIRouter(prefix="/index", tags=["query"])
 
@@ -33,6 +33,59 @@ class QueryResult(BaseModel):
     meta: QueryMeta
 
 
+def get_or_validate_allowed_fields(
+    user: str, indices: Iterable[str], fields: Iterable[str] = None
+):
+    """
+    For any endpoint that returns field values, make sure the user only gets fields that
+    they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
+    check whether the user can access the fields (If not, raise an error).
+    """
+
+    if not isinstance(user, str):
+        raise ValueError("User should be a string")
+    if not isinstance(indices, list):
+        raise ValueError("Indices should be a list")
+    if fields is not None and not isinstance(fields, list):
+        raise ValueError("Fields should be a list or None")
+
+    if fields is None:
+        if len(indices) > 1:
+            # this restrictions is needed, because otherwise we need to return all allowed fields taking
+            # into account the user's role for each index, and take the lowest possible access.
+            # this is error prone and complex, so best to just disallow it. Also, requesting all fields
+            # for multiple indices is probably not something we should support anyway
+            raise ValueError("Fields should be specified if multiple indices are given")
+        index_fields = elastic.get_fields(indices[0])
+        role = get_role(indices[0], user)
+        all_fields = []
+        for field in index_fields.keys():
+            if role >= Role.READER:
+                all_fields.append(field)
+            elif role == Role.METAREADER:
+                field_meta: dict = index_fields[field].get("meta", {})
+                metareader_access = field_meta.get("metareader_access", None)
+                if metareader_access == "read":
+                    all_fields.append(field)
+                elif "snippet" in metareader_access:
+                    _, nomatch_chars, max_matches, match_chars = parse_field(
+                        metareader_access
+                    )
+                    all_fields.append(
+                        f"{field}[{nomatch_chars};{max_matches};{match_chars}]"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"User {user} does not have a role on index {indices[0]}",
+                )
+
+    else:
+        for index in indices:
+            check_fields_access(index, user, fields)
+        return fields
+
+
 @app_query.get("/{index}/documents", response_model=QueryResult)
 def get_documents(
     index: str,
@@ -50,20 +103,12 @@ def get_documents(
     ),
     fields: str = Query(
         None,
-        description="Comma separated list of fields to return",
-        pattern=r"\w+(,\w+)*",
-    ),
-    snippets: str = Query(
-        None,
-        description="Comma separated list of fields to return as snippets. If only field names are given, the default "
-        "snippet parameters are used. The parameters are 'nomatch_chars' (default: 150), 'max_matches' (default: 3) "
-        "and 'match_chars' (default: 50). If there is no query, the snippet is the first [nomatch_chars] characters. "
+        description="Comma separated list of fields to return. "
+        "You can also request a snippet of a field by appending the suffix [nomatch_chars;max_matches;match_chars]. "
+        "'matches' here refers to words from text queries. If there is no query, the snippet is the first [nomatch_chars] characters. "
         "If there is a query, snippets are returned for up to [max_matches] matches, with each match having [match_chars] "
-        "characters. match snippets are concatenated with ' ... ' and  have <em> tags around the matched text. "
-        "If you want to use custom snippet parameters, you can add a suffix to the field name with the parameters between "
-        "brackets, in the format: fieldname[nomatch_chars;max_matches;match_chars] (e.g, text[150;3;50]). "
-        "(always provide all 3 parameters, even if you only want to change one)",
-        pattern=r"[\w\[;\]]+(,[\w\[;\]]+)*",
+        "characters. If there are multiple matches, they are concatenated with ' ... '.",
+        pattern=r"\w+(,\w+)*",
     ),
     highlight: bool = Query(False, description="If true, highlight fields"),
     per_page: int = Query(None, description="Number of results per page"),
@@ -89,12 +134,9 @@ def get_documents(
     """
     indices = index.split(",")
     fields = fields and fields.split(",")
-    snippets = snippets and snippets.split(",")
-    if not fields and not snippets:
-        fields = ["date", "title", "url"]
-
+    fields = get_or_validate_allowed_fields(user, indices, fields)
     for index in indices:
-        check_query_allowed(index, user, fields, snippets)
+        check_fields_access(index, user, fields)
 
     args = {}
     sort = sort and [
@@ -185,18 +227,13 @@ def query_documents_post(
         "or a dict of {'label': 'query'}",
     ),
     fields: Optional[List[str]] = Body(
-        None, description="List of fields to retrieve for each document"
-    ),
-    snippets: Optional[List[str]] = Body(
         None,
-        description="Fields to retrieve as snippets. If only field names are given, the default "
-        "snippet parameters are used. The parameters are [nomatch_chars] (default: 200), [max_matches] (default: 3) "
-        "and [match_chars] (default: 50). If there is no query, the snippet is the first [nomatch_chars] characters. "
+        description="List of fields to retrieve for each document"
+        "You can also request a snippet of a field by adding snippet parameters between brackets: "
+        "fieldname[nomatch_chars;max_matches;match_chars]. 'matches' here refers to words from text queries. "
+        "If there is no query, the snippet is the first [nomatch_chars] characters. "
         "If there is a query, snippets are returned for up to [max_matches] matches, with each match having [match_chars] "
-        "characters. match snippets also have <em> tags around the matched text. "
-        "If you want to use custom snippet parameters, you can add a suffix to the field name with the parameters between "
-        "brackets, in the format: fieldname[nomatch_chars;max_matches;match_chars] (e.g, text[150;3;50]). "
-        "(always provide all 3 parameters, even if you only want to change one)",
+        "characters. If there are multiple matches, they are concatenated with ' ... '.",
     ),
     filters: Optional[
         Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]
@@ -244,17 +281,8 @@ def query_documents_post(
     # TODO check user rights on index
     # Standardize fields, queries and filters to their most versatile format
     indices = index.split(",")
-    if fields:
-        if isinstance(fields, str):
-            fields = [fields]
-    if snippets:
-        if isinstance(snippets, str):
-            snippets = [snippets]
-    if not fields and not snippets:
-        fields = ["date", "title", "url"]
-
-    for index in indices:
-        check_query_allowed(index, user, fields, snippets)
+    fields = [fields] if isinstance(fields, str) else fields
+    fields = get_or_validate_allowed_fields(user, indices, fields)
 
     queries = _process_queries(queries)
     filters = dict(_process_filters(filters))
@@ -263,7 +291,6 @@ def query_documents_post(
         queries=queries,
         filters=filters,
         fields=fields,
-        snippets=snippets,
         sort=sort,
         per_page=per_page,
         page=page,

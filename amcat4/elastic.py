@@ -18,9 +18,9 @@ from typing import Mapping, List, Iterable, Optional, Tuple, Union, Sequence, Li
 
 from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch.helpers import bulk
+from amcat4.util import parse_field
 
 from amcat4.config import get_settings
-from amcat4.util import parse_snippet
 
 SYSTEM_INDEX_VERSION = 1
 
@@ -219,16 +219,28 @@ def upload_documents(index: str, documents, fields: Mapping[str, str] = None) ->
     bulk(es(), actions)
 
 
-def get_field_mapping(type_: Union[str, dict]):
-    if isinstance(type_, str):
-        return ES_MAPPINGS[type_]
+def get_field_mapping(current: dict, update: Union[str, dict]):
+    if isinstance(update, str):
+        type = update
+        newmeta = None
     else:
-        mapping = ES_MAPPINGS[type_["type"]]
-        meta = mapping.get("meta", {})
-        if m := type_.get("meta"):
-            meta.update(m)
-        mapping["meta"] = validate_field_meta(meta)
-        return mapping
+        if "type" not in update:
+            type = current.get("type")
+            if type is None:
+                raise ValueError("Field type is not specified")
+        type = update.get("type")
+        if type not in ES_MAPPINGS:
+            raise ValueError(f"Invalid field type: {type}")
+        newmeta = update.get("meta", None)
+
+    if "meta" in current:
+        meta = current["meta"]
+    else:
+        meta = ES_MAPPINGS[type].get("meta", {})
+    if newmeta:
+        meta.update(newmeta)
+
+    return dict(type=type, meta=meta)
 
 
 def validate_field_meta(meta: dict):
@@ -258,21 +270,25 @@ def validate_field_meta(meta: dict):
             # metareader_access can be "none", "read", or "snippet"
             # if snippet, can also include the maximum snippet parameters (nomatch_chars, max_matches, match_chars)
             # in the format: snippet[nomatch_chars;max_matches;match_chars]
-            reg = r"^(read|none|snippet(\[\d+;\d+;\d+\])?)$"
+            reg = r"^(read|none|snippet\[\d+;\d+;\d+\])$"
             if not re.match(reg, meta[meta_field]):
                 raise ValueError(f"Invalid metareader_access value: {meta[meta_field]}")
 
     return meta
 
 
-def set_fields(index: str, fields: Mapping[str, str]):
+def set_fields(index: str, fields: Mapping[str, Union[str, dict]]):
     """
     Update the column types for this index
 
     :param index: The name of the index (without prefix)
     :param fields: A mapping of field:type for column types
     """
-    properties = {field: get_field_mapping(type_) for (field, type_) in fields.items()}
+    index_fields = get_index_fields(index)
+    properties = {
+        field: get_field_mapping(index_fields.get(field, {}), update)
+        for (field, update) in fields.items()
+    }
     es().indices.put_mapping(index=index, properties=properties)
 
 
@@ -322,6 +338,7 @@ def _get_type_from_property(properties: dict) -> str:
 
 def _get_fields(index: str) -> Iterable[Tuple[str, dict]]:
     r = es().indices.get_mapping(index=index)
+
     for k, v in r[index]["mappings"]["properties"].items():
         t = dict(name=k, type=_get_type_from_property(v))
         if meta := v.get("meta"):
@@ -338,65 +355,16 @@ def get_index_fields(index: str) -> Mapping[str, dict]:
     return dict(_get_fields(index))
 
 
-def get_fields(index: Union[str, Sequence[str]]) -> Mapping[str, dict]:
+def get_fields(index: str) -> Mapping[str, dict]:
     """
     Get the field types in use in this index or indices
     :param index: name(s) of index(es) to query
     :return: a dict of fieldname: field objects {fieldname: {name, type, ...}]
     """
-    if isinstance(index, str):
-        return get_index_fields(index)
+    if not isinstance(index, str):
+        raise ValueError("get_fields only supports a single index")
 
-    # def get_meta_value(field, meta_key, default):
-    #     return field.get("meta", {}).get(meta_key) or default
-
-    # def get_least_metareader_access(access1, access2):
-    #     if (access1 == None) or (access2 == None):
-    #         return None
-
-    #     if "snippet" in access1 and access2 == "read":
-    #         return access1
-
-    #     if "snippet" in access2 and access1 == "read":
-    #         return access2
-
-    #     if "snippet" in access1 and "snippet" in access2:
-    #         _, nomatch_chars1, max_matches1, match_chars1 = parse_snippet(access1)
-    #         _, nomatch_chars2, max_matches2, match_chars2 = parse_snippet(access2)
-    #         nomatch_chars = min(nomatch_chars1, nomatch_chars2)
-    #         max_matches = min(max_matches1, max_matches2)
-    #         match_chars = match_chars1 + match_chars2
-    #         return f"snippet[{nomatch_chars},{max_matches},{match_chars}]"
-
-    #     if access1 == "read" and access2 == "read":
-    #         return "read"
-
-    result = {}
-    for ix in index:
-        for f, ftype in get_index_fields(ix).items():
-            if f in result:
-                if result[f] != ftype:
-                    # note that for merged fields metareader access is always None
-                    # metareader_access_1: bool = get_meta_value(
-                    #     result[f], "metareader_visible", None
-                    # )
-                    # metareader_access_2: bool = get_meta_value(
-                    #     ftype, "metareader_visible", None
-                    # )
-                    # metareader_access = get_least_metareader_access(
-                    #     metareader_access_1, metareader_access_2
-                    # )
-
-                    result[f] = {
-                        "name": f,
-                        "type": "keyword",
-                        "meta": {
-                            "merged": True,
-                        },
-                    }
-            else:
-                result[f] = ftype
-    return result
+    return get_index_fields(index)
 
 
 def get_field_values(index: str, field: str, size: int) -> List[str]:

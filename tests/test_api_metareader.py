@@ -25,16 +25,13 @@ def set_metareader_access(client, index, admin, access):
     )
 
 
-def check_allowed(client, index, field=None, snippet=None, allowed=True):
+def check_allowed(client, index, field=None, allowed=True):
     params = {}
     body = {}
 
     if field:
         params["fields"] = field
         body["fields"] = [field]
-    if snippet:
-        params["snippets"] = snippet
-        body["snippets"] = [snippet]
 
     get_json(
         client,
@@ -60,7 +57,7 @@ def test_metareader_none(client: TestClient, admin, index_docs):
     create_index_metareader(client, index_docs, admin)
     set_metareader_access(client, index_docs, admin, "none")
     check_allowed(client, index_docs, field="text", allowed=False)
-    check_allowed(client, index_docs, snippet="text", allowed=False)
+    check_allowed(client, index_docs, field="text[150;3;50]", allowed=False)
 
 
 def test_metareader_read(client: TestClient, admin, index_docs):
@@ -71,22 +68,10 @@ def test_metareader_read(client: TestClient, admin, index_docs):
     create_index_metareader(client, index_docs, admin)
     set_metareader_access(client, index_docs, admin, "read")
     check_allowed(client, index_docs, field="text", allowed=True)
-    check_allowed(client, index_docs, snippet="text", allowed=True)
+    check_allowed(client, index_docs, field="text[150;3;50]", allowed=True)
 
 
 def test_metareader_snippet(client: TestClient, admin, index_docs):
-    """
-    Set text field to metareader_access=snippet
-    Meta reader should be able to get field as snippet, but not full
-    """
-    create_index_metareader(client, index_docs, admin)
-
-    set_metareader_access(client, index_docs, admin, "snippet")
-    check_allowed(client, index_docs, field="text", allowed=False)
-    check_allowed(client, index_docs, snippet="text", allowed=True)
-
-
-def test_metareader_snippet_params(client: TestClient, admin, index_docs):
     """
     Set text field to metareader_access=snippet[50;1;20]
     Metareader should only be able to get field as snippet
@@ -96,7 +81,6 @@ def test_metareader_snippet_params(client: TestClient, admin, index_docs):
 
     set_metareader_access(client, index_docs, admin, "snippet[50;1;20]")
     check_allowed(client, index_docs, field="text", allowed=False)
-    check_allowed(client, index_docs, snippet="text", allowed=False)
-    check_allowed(client, index_docs, snippet="text[51;1;20]", allowed=False)
-    check_allowed(client, index_docs, snippet="text[50,1,20]", allowed=True)
-    check_allowed(client, index_docs, snippet="text[49;1;20]", allowed=True)
+    check_allowed(client, index_docs, field="text[51;1;20]", allowed=False)
+    check_allowed(client, index_docs, field="text[50,1,20]", allowed=True)
+    check_allowed(client, index_docs, field="text[49;1;20]", allowed=True)

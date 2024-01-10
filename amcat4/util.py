@@ -2,25 +2,24 @@ import re
 from typing import Tuple
 
 
-def parse_snippet(snippet: str) -> Tuple[str, int, int, int]:
+def parse_field(field: str) -> Tuple[str, int, int, int]:
     """
-    Parse a snippet string into a field and the snippet parameters.
+    Parse a field into a field and the snippet parameters.
     The format is fieldname[nomatch_chars;max_matches;match_chars].
-    If the snippet does not contain parameters (or the specification is wrong),
-    we assume the snippet is just the field name and use default values.
+    If no snippet parameters are given, the values are None
     """
     pattern = r"\[([0-9]+);([0-9]+);([0-9]+)]$"
-    match = re.search(pattern, snippet)
+    match = re.search(pattern, field)
 
     if match:
-        field = snippet[: match.start()]
+        fieldname = field[: match.start()]
         nomatch_chars = int(match.group(1))
         max_matches = int(match.group(2))
         match_chars = int(match.group(3))
     else:
-        field = snippet
-        nomatch_chars = 200
-        max_matches = 3
-        match_chars = 50
+        fieldname = field
+        nomatch_chars = None
+        max_matches = None
+        match_chars = None
 
-    return field, nomatch_chars, max_matches, match_chars
+    return fieldname, nomatch_chars, max_matches, match_chars
