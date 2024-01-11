@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal
 
 
 class SnippetParams(BaseModel):
@@ -17,17 +17,25 @@ class SnippetParams(BaseModel):
 class FieldMetareaderAccess(BaseModel):
     """Metareader access for a specific field."""
 
-    access: bool
-    max_snippet: Optional[SnippetParams]
+    access: Literal["none", "read", "snippet"]
+    max_snippet: SnippetParams | None = None
 
 
-class FieldSettings(BaseModel):
+class Field(BaseModel):
     """Settings for a field."""
 
-    metareader_access: Optional[FieldMetareaderAccess] = None
+    type: str
+    metareader_access: FieldMetareaderAccess
 
 
-def updateFieldSettings(field: FieldSettings, update: FieldSettings):
+class UpdateField(BaseModel):
+    """Model for updating a field"""
+
+    type: str | None = None
+    metareader_access: FieldMetareaderAccess | None = None
+
+
+def updateField(field: Field, update: UpdateField | Field):
     for key in field.model_fields_set:
         setattr(field, key, getattr(update, key))
     return field
