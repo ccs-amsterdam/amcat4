@@ -6,10 +6,7 @@ class DateMapping:
     interval = None
 
     def mapping(self, field: str) -> dict:
-        return {self.fieldname(field): {
-            "type": self.mapping_type(),
-            "script": self.mapping_script(field)
-        }}
+        return {self.fieldname(field): {"type": self.mapping_type(), "script": self.mapping_script(field)}}
 
     def mapping_script(self, field: str) -> str:
         raise NotImplementedError()
@@ -96,10 +93,12 @@ class Weeknr(DateMapping):
         return int(value)
 
 
-def interval_mapping(interval: str) -> Optional[DateMapping]:
-    for m in mappings():
-        if m.interval == interval:
-            return m
+def interval_mapping(interval: str | None) -> Optional[DateMapping]:
+    if interval is not None:
+        for m in mappings():
+            if m.interval == interval:
+                return m
+    return None
 
 
 def mappings() -> Iterable[DateMapping]:

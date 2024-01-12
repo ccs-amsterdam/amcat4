@@ -28,6 +28,8 @@ Elasticsearch implementation
 - This system index contains a 'document' for each index:
     {name: "...", description:"...", guest_role: "...", roles: [{email, role}...]}
 - A special _global document defines the global properties for this instance (name, roles)
+- We define the mappings (field types) based on existing elasticsearch mappings,
+    but use field metadata to define specific fields.
 """
 import collections
 from enum import IntEnum
@@ -75,14 +77,15 @@ DEFAULT_METAREADER = {
 }
 
 DEFAULT_INDEX_FIELDS = {
-    "text": Field(type="text", metareader_access=DEFAULT_METAREADER["text"]),
-    "title": Field(type="text", metareader_access=DEFAULT_METAREADER["text"]),
-    "date": Field(type="date", metareader_access=DEFAULT_METAREADER["date"]),
-    "url": Field(type="url", metareader_access=DEFAULT_METAREADER["url"]),
+    "text": Field(type="text", metareader=DEFAULT_METAREADER["text"]),
+    "title": Field(type="text", metareader=DEFAULT_METAREADER["text"]),
+    "date": Field(type="date", metareader=DEFAULT_METAREADER["date"]),
+    "url": Field(type="url", metareader=DEFAULT_METAREADER["url"]),
 }
 
 
 class Role(IntEnum):
+    NONE = 0
     METAREADER = 10
     READER = 20
     WRITER = 30
@@ -294,7 +297,10 @@ def set_fields(index: str, new_fields: dict[str, Field] | dict[str, UpdateField]
     """
     Set the fields settings for this index.
 
-    Note that if UpdateField also updates the field type, we need to update the mapping as well.
+    Note that we're storing fields in two places. We keep all field settings in the system index.
+    But the index that contains the documents also needs to know what fields there are and
+    what their (elastic) types are. So whenever fields are added or the type is updated, we
+    also udpate the index mapping.
     """
     system_index = get_settings().system_index
     try:
@@ -306,19 +312,24 @@ def set_fields(index: str, new_fields: dict[str, Field] | dict[str, UpdateField]
     fields = _fields_from_elastic(d["_source"].get("fields", {}))
 
     for field, new_settings in new_fields.items():
-        if new_settings.type is not None:
-            # if new type is specified, we need to update the index mapping properties
-            type_mappings[field] = ES_MAPPINGS[new_settings.type]
-
         current = fields.get(field)
         if current is None:
             # Create field
             if new_settings.type is None:
                 raise ValueError(f"Field {field} does not yet exist, and to create a new field you need to specify a type")
 
+            type_mappings[field] = ES_MAPPINGS[new_settings.type]
             fields[field] = Field(**new_settings.model_dump())
         else:
             # Update field
+            # it is not possible to update elastic field types, but we can change amcat types (see ES_MAPPINGS)
+            if new_settings.type is not None:
+                if ES_MAPPINGS[current.type] != ES_MAPPINGS[new_settings.type]:
+                    raise ValueError(
+                        f"Field {field} already exists with type {current.type}, cannot change to {new_settings.type}"
+                    )
+
+            # set new field settings (amcat type, metareader, etc.)
             fields[field] = updateField(current, new_settings)
 
     es().indices.put_mapping(index=index, properties=type_mappings)
@@ -370,7 +381,7 @@ def remove_global_role(email: str):
     remove_role(index=GLOBAL_ROLES, email=email)
 
 
-def get_role(index: str, email: str) -> Optional[Role]:
+def get_role(index: str, email: str) -> Role:
     """
     Retrieve the role of this user on this index, or the guest role if user has no role
     Raises a ValueError if the index does not exist
@@ -388,7 +399,7 @@ def get_role(index: str, email: str) -> Optional[Role]:
     if role := roles_dict.get(email):
         return role
     if index == GLOBAL_ROLES:
-        return None
+        return Role.NONE
 
     guest_role: str | None = doc["_source"].get("guest_role", None)
     if guest_role and guest_role.lower() != "none":
@@ -580,7 +591,6 @@ def get_field_values(index: str, field: str, size: int) -> List[str]:
 
 def get_field_stats(index: str, field: str) -> List[str]:
     """
-    Get field statistics, such as min, max, avg, etc.
     :param index: The index
     :param field: The field name
     :return: A list of values
@@ -590,9 +600,9 @@ def get_field_stats(index: str, field: str) -> List[str]:
     return r["aggregations"]["facets"]
 
 
-def update_by_query(index: str, script: str, query: dict, params: dict = None):
-    script = dict(source=script, lang="painless", params=params or {})
-    es().update_by_query(index=index, script=script, **query)
+def update_by_query(index: str, script: str, query: dict, params: dict | None = None):
+    script_dict = dict(source=script, lang="painless", params=params or {})
+    es().update_by_query(index=index, script=script_dict, **query)
 
 
 TAG_SCRIPTS = dict(

@@ -4,7 +4,7 @@ import pytest
 import responses
 from fastapi.testclient import TestClient
 
-from amcat4 import elastic, api  # noqa: E402
+from amcat4 import api  # noqa: E402
 from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import es
 from amcat4.index import (
@@ -15,6 +15,7 @@ from amcat4.index import (
     delete_user,
     remove_global_role,
     set_global_role,
+    upload_documents,
 )
 from tests.middlecat_keypair import PUBLIC_KEY
 
@@ -33,9 +34,7 @@ def mock_middlecat():
     get_settings().middlecat_url = "http://localhost:5000"
     get_settings().host = "http://localhost:3000"
     with responses.RequestsMock(assert_all_requests_are_fired=False) as resp:
-        resp.get(
-            "http://localhost:5000/api/configuration", json={"public_key": PUBLIC_KEY}
-        )
+        resp.get("http://localhost:5000/api/configuration", json={"public_key": PUBLIC_KEY})
         yield None
 
 
@@ -149,7 +148,7 @@ def upload(index: str, docs: Iterable[dict], **kwargs):
         for k, v in defaults.items():
             if k not in doc:
                 doc[k] = v
-    elastic.upload_documents(index, docs, **kwargs)
+    upload_documents(index, docs, **kwargs)
     refresh_index(index)
     return ids
 
@@ -214,10 +213,7 @@ def index_many():
     create_index(index, guest_role=Role.READER)
     upload(
         index,
-        [
-            dict(id=i, pagenr=abs(10 - i), text=text)
-            for (i, text) in enumerate(["odd", "even"] * 10)
-        ],
+        [dict(id=i, pagenr=abs(10 - i), text=text) for (i, text) in enumerate(["odd", "even"] * 10)],
     )
     yield index
     delete_index(index, ignore_missing=True)

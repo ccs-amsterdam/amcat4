@@ -5,5 +5,7 @@
   },
   "black-formatter.args": ["--line-length", "127"],
   "mypy.enabled": true,
-  "mypy.runUsingActiveInterpreter": true
+  "mypy.runUsingActiveInterpreter": true,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.autoImportCompletions": true
 }

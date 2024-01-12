@@ -4,25 +4,23 @@ from typing import List, Literal, Mapping, Optional
 
 import elasticsearch
 from elastic_transport import ApiError
-from fastapi import APIRouter, HTTPException, Response, status
-from fastapi.params import Body, Depends
+from fastapi import APIRouter, HTTPException, Response, status, Depends, Body
 from pydantic import BaseModel, ConfigDict
 
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 from amcat4.api.common import py2dict
 
-from amcat4.index import refresh_index as es_refresh_index
 from amcat4.index import refresh_system_index, remove_role, set_role
 from amcat4.models import Field
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 
-RoleType = Literal["ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader"]
+RoleType = Literal["ADMIN", "WRITER", "READER", "METAREADER"]
 
 
 @app_index.get("/")
-def index_list(current_user=Depends(authenticated_user)):
+def index_list(current_user: str = Depends(authenticated_user)):
     """
     List index from this server.
 
@@ -48,7 +46,7 @@ class NewIndex(BaseModel):
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
-def create_index(new_index: NewIndex, current_user=Depends(authenticated_writer)):
+def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_writer)):
     """
     Create a new index, setting the current user to admin (owner).
 
@@ -74,18 +72,7 @@ def create_index(new_index: NewIndex, current_user=Depends(authenticated_writer)
 class ChangeIndex(BaseModel):
     """Form to update an existing index."""
 
-    guest_role: Literal[
-        "ADMIN",
-        "WRITER",
-        "READER",
-        "METAREADER",
-        "admin",
-        "writer",
-        "reader",
-        "metareader",
-        "NONE",
-        "none",
-    ] | None = "None"
+    guest_role: Literal["ADMIN", "WRITER", "READER", "METAREADER", "NONE"] | None = "NONE"
     name: Optional[str] = None
     description: Optional[str] = None
     summary_field: Optional[str] = None
@@ -243,7 +230,7 @@ def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)
 
 
 @app_index.get("/{ix}/fields")
-def get_fields(ix: str, user=Depends(authenticated_user)):
+def get_fields(ix: str, user: str = Depends(authenticated_user)):
     """
     Get the fields (columns) used in this index.
 
@@ -259,7 +246,7 @@ def get_fields(ix: str, user=Depends(authenticated_user)):
 
 
 @app_index.post("/{ix}/fields")
-def set_fields(ix: str, fields=dict[str, Field], user=Depends(authenticated_user)):
+def set_fields(ix: str, fields=dict[str, Field], user: str = Depends(authenticated_user)):
     """
     Set the field types used in this index.
 
@@ -271,7 +258,7 @@ def set_fields(ix: str, fields=dict[str, Field], user=Depends(authenticated_user
 
 
 @app_index.get("/{ix}/fields/{field}/values")
-def get_field_values(ix: str, field: str, user=Depends(authenticated_user)):
+def get_field_values(ix: str, field: str, user: str = Depends(authenticated_user)):
     """
     Get unique values for a specific field. Should mainly/only be used for tag fields.
     Main purpose is to provide a list of values for a dropdown menu.
@@ -292,14 +279,14 @@ def get_field_values(ix: str, field: str, user=Depends(authenticated_user)):
 
 
 @app_index.get("/{ix}/fields/{field}/stats")
-def get_field_stats(ix: str, field: str, user=Depends(authenticated_user)):
+def get_field_stats(ix: str, field: str, user: str = Depends(authenticated_user)):
     """Get statistics for a specific value. Only works for numeric (incl date) fields."""
     check_role(user, index.Role.READER, ix)
     return index.get_field_stats(ix, field)
 
 
 @app_index.get("/{ix}/users")
-def list_index_users(ix: str, user=Depends(authenticated_user)):
+def list_index_users(ix: str, user: str = Depends(authenticated_user)):
     """
     List the users in this index.
 
@@ -373,4 +360,4 @@ def remove_index_user(ix: str, email: str, user: str = Depends(authenticated_use
 
 @app_index.get("/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def refresh_index(ix: str):
-    es_refresh_index(ix)
+    index.refresh_index(ix)

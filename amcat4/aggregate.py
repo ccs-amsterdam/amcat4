@@ -2,13 +2,13 @@
 Aggregate queries
 """
 from datetime import datetime
-from typing import Mapping, Iterable, Union, Tuple, Sequence, List, Dict, Optional
+from typing import Mapping, Iterable, Union, Tuple, Sequence, List, Dict
 
 from amcat4.date_mappings import interval_mapping
 from amcat4.elastic import es
 from amcat4.index import get_fields
-from amcat4.query import build_body, _normalize_queries
-from amcat4.models import Field
+from amcat4.query import build_body
+from amcat4.models import Field, FilterSpec
 
 
 def _combine_mappings(mappings):
@@ -169,8 +169,8 @@ def _elastic_aggregate(
 def _aggregate_results(
     index: Union[str, List[str]],
     axes: List[Axis],
-    queries: Mapping[str, str],
-    filters: Optional[Mapping[str, Mapping]],
+    queries: dict[str, str] | None,
+    filters: dict[str, FilterSpec] | None,
     aggregations: List[Aggregation],
 ) -> Iterable[tuple]:
     if not axes:
@@ -184,6 +184,8 @@ def _aggregate_results(
             )
             yield result["count"],
     elif any(ax.field == "_query" for ax in axes):
+        if queries is None:
+            raise ValueError("Queries must be specified when aggregating by query")
         # Strip off _query axis and run separate aggregation for each query
         i = [ax.field for ax in axes].index("_query")
         _axes = axes[:i] + axes[(i + 1) :]
@@ -208,8 +210,8 @@ def query_aggregate(
     axes: list[Axis] | None = None,
     aggregations: list[Aggregation] | None = None,
     *,
-    queries: Mapping[str, str] | Sequence[str] | None = None,
-    filters: Mapping[str, Mapping] | None = None,
+    queries: dict[str, str] | None = None,
+    filters: dict[str, FilterSpec] | None = None,
 ) -> AggregateResult:
     """
     Conduct an aggregate query.
@@ -247,7 +249,6 @@ def query_aggregate(
         aggregations = []
     for aggregation in aggregations:
         aggregation.ftype = all_fields[aggregation.field].type
-    queries = _normalize_queries(queries)
     data = list(_aggregate_results(index, axes, queries, filters, aggregations))
     return AggregateResult(
         axes,

@@ -6,8 +6,7 @@ Some things to note:
 - The elasticsearch backend should contain a system index, which will be created if needed
 - The system index contains a 'document' for each used index containing:
   {auth: [{email: role}], guest_role: role}
-- We define the mappings (field types) based on existing elasticsearch mappings,
-  but use field metadata to define specific fields.
+
 """
 import functools
 

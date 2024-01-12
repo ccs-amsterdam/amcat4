@@ -2,20 +2,17 @@
 import functools
 import logging
 from datetime import datetime
-from typing import Iterable
 
 import requests
 from authlib.common.errors import AuthlibBaseError
 from authlib.jose import jwt
-from fastapi import HTTPException
-from fastapi.params import Depends
+from fastapi import HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 from starlette.status import HTTP_401_UNAUTHORIZED
 
-from amcat4 import elastic
-from amcat4.util import parse_field
+from amcat4.models import FieldSpec
 from amcat4.config import get_settings, AuthOptions
-from amcat4.index import Role, get_role, get_global_role
+from amcat4.index import Role, get_role, get_global_role, get_fields
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
@@ -44,9 +41,7 @@ def verify_token(token: str) -> dict:
     if payload["exp"] < now:
         raise InvalidToken("Token expired")
     if payload["resource"] != get_settings().host:
-        raise InvalidToken(
-            f"Wrong host! {payload['resource']} != {get_settings().host}"
-        )
+        raise InvalidToken(f"Wrong host! {payload['resource']} != {get_settings().host}")
     return payload
 
 
@@ -77,24 +72,19 @@ def check_global_role(user: str, required_role: Role, raise_error=True):
     try:
         global_role = get_global_role(user)
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error on retrieving user {user}: {e}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error on retrieving user {user}: {e}")
     if global_role and global_role >= required_role:
         return global_role
     if raise_error:
         raise HTTPException(
             status_code=401,
-            detail=f"User {user} does not have global "
-            f"{required_role.name.title()} permissions on this instance",
+            detail=f"User {user} does not have global " f"{required_role.name.title()} permissions on this instance",
         )
     else:
         return False
 
 
-def check_role(
-    user: str, required_role: Role, index: str, required_global_role: Role = Role.ADMIN
-):
+def check_role(user: str, required_role: Role, index: str, required_global_role: Role = Role.ADMIN):
     """Check if the given user have at least the given role (in the index, if given), raise Exception otherwise.
 
     :param user: The email address of the authenticated user
@@ -115,12 +105,11 @@ def check_role(
     else:
         raise HTTPException(
             status_code=401,
-            detail=f"User {user} does not have "
-            f"{required_role.name.title()} permissions on index {index}",
+            detail=f"User {user} does not have " f"{required_role.name.title()} permissions on index {index}",
         )
 
 
-def check_fields_access(index: str, user: str, fields: Iterable[str]) -> None:
+def check_fields_access(index: str, user: str, fields: list[FieldSpec]) -> None:
     """Check if the given user is allowed to query the given fields and snippets on the given index.
 
     :param index: The index to check the role on
@@ -142,47 +131,45 @@ def check_fields_access(index: str, user: str, fields: Iterable[str]) -> None:
         return None
 
     # after this, we know the user is a metareader, so we need to check metareader_access
-    index_fields = elastic.get_fields(index)
+    index_fields = get_fields(index)
     for field in fields:
-        fieldname, nomatch_chars, max_matches, match_chars = parse_field(field)
-        if fieldname not in index_fields.keys():
+        if field.name not in index_fields:
+            # might be better to raise an error here, but since we want to support querying multiple
+            # indices at once, this allows the user to query fields that do not exist on all indices
             continue
-        meta = index_fields[fieldname].get("meta", {})
-        metareader_access = meta.get("metareader_access", None)
-        if not metareader_access or metareader_access == "none":
-            raise HTTPException(
-                status_code=401,
-                detail=f"METAREADER cannot read {field} on index {index}",
-            )
-        if metareader_access == "read":
-            continue
-        if metareader_access.startswith("snippet"):
-            (
-                _,
-                allowed_nomatch_chars,
-                allowed_max_matches,
-                allowed_match_chars,
-            ) = parse_field(metareader_access)
-            max_params = f"{fieldname}[{allowed_nomatch_chars};{allowed_max_matches};{allowed_match_chars}]"
+        metareader = index_fields[field.name].metareader
 
-            if nomatch_chars is None:
+        if metareader.access == "read":
+            continue
+        elif metareader.access == "snippet" and metareader.max_snippet is not None:
+            if metareader.max_snippet is None:
+                max_params_msg = ""
+            else:
+                max_params_msg = "Can only read snippet with max parameters:"
+                f"\n- nomatch_chars = {metareader.max_snippet.nomatch_chars}"
+                f"\n- max_matches = {metareader.max_snippet.max_matches}"
+                f"\n- match_chars = {metareader.max_snippet.match_chars}"
+
+            if field.snippet is None:
+                # if snippet is not specified, the whole field is requested
                 raise HTTPException(
-                    status_code=401,
-                    detail=f"METAREADER cannot read {field} on index {index}. "
-                    f"Can only read snippets with parameters: {max_params}",
+                    status_code=401, detail=f"METAREADER cannot read {field} on index {index}. {max_params_msg}"
                 )
 
-            valid_nomatch_chars = nomatch_chars <= allowed_nomatch_chars
-            valid_max_matches = max_matches <= allowed_max_matches
-            valid_match_chars = match_chars <= allowed_match_chars
-
+            valid_nomatch_chars = field.snippet.nomatch_chars <= metareader.max_snippet.nomatch_chars
+            valid_max_matches = field.snippet.max_matches <= metareader.max_snippet.max_matches
+            valid_match_chars = field.snippet.match_chars <= metareader.max_snippet.match_chars
             valid = valid_nomatch_chars and valid_max_matches and valid_match_chars
             if not valid:
                 raise HTTPException(
                     status_code=401,
-                    detail=f"The requested snippet of {fieldname} on index {index} is too long. "
-                    f"max parameters are: {max_params}",
+                    detail=f"The requested snippet of {field.name} on index {index} is too long. {max_params_msg}",
                 )
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail=f"METAREADER cannot read {field} on index {index}",
+            )
 
 
 async def authenticated_user(token: str = Depends(oauth2_scheme)) -> str:

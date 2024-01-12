@@ -16,20 +16,20 @@ from typing import (
     Literal,
 )
 
+from amcat4.models import FieldSpec, FilterSpec, SortSpec
+
 from .date_mappings import mappings
-from .elastic import es, update_tag_by_query
-from amcat4 import elastic
-from amcat4.util import parse_field
-from amcat4.index import Role, get_role
+from .elastic import es
+from amcat4.index import update_tag_by_query
 
 
 def build_body(
-    queries: Iterable[str] = None,
-    filters: Mapping = None,
-    highlight: dict = None,
-    ids: Iterable[str] = None,
+    queries: dict[str, str] | None = None,
+    filters: dict[str, FilterSpec] | None = None,
+    highlight: dict | None = None,
+    ids: list[str] | None = None,
 ):
-    def parse_filter(field, filter) -> Tuple[Mapping, Mapping]:
+    def parse_filter(field, filter) -> Tuple[dict, dict]:
         filter = filter.copy()
         extra_runtime_mappings = {}
         field_filters = []
@@ -41,9 +41,7 @@ def build_body(
             if filter.pop("exists"):
                 field_filters.append({"exists": {"field": field}})
             else:
-                field_filters.append(
-                    {"bool": {"must_not": {"exists": {"field": field}}}}
-                )
+                field_filters.append({"bool": {"must_not": {"exists": {"field": field}}}})
         for mapping in mappings():
             if mapping.interval in filter:
                 value = filter.pop(mapping.interval)
@@ -62,7 +60,8 @@ def build_body(
     def parse_query(q: str) -> dict:
         return {"query_string": {"query": q}}
 
-    def parse_queries(qs: Sequence[str]) -> dict:
+    def parse_queries(queries: dict[str, str]) -> dict:
+        qs = queries.values()
         if len(qs) == 1:
             return parse_query(list(qs)[0])
         else:
@@ -78,10 +77,8 @@ def build_body(
             fs.append(filter_term)
             if extra_runtime_mappings:
                 runtime_mappings.update(extra_runtime_mappings)
-    if queries:
-        if isinstance(queries, dict):
-            queries = queries.values()
-        fs.append(parse_queries(list(queries)))
+    if queries is not None:
+        fs.append(parse_queries(queries))
     if ids:
         fs.append({"ids": {"values": list(ids)}})
     body: Dict[str, Any] = {"query": {"bool": {"filter": fs}}}
@@ -97,12 +94,12 @@ def build_body(
 class QueryResult:
     def __init__(
         self,
-        data: List[dict],
-        n: int = None,
-        per_page: int = None,
-        page: int = None,
-        page_count: int = None,
-        scroll_id: str = None,
+        data: list[dict],
+        n: int | None = None,
+        per_page: int | None = None,
+        page: int | None = None,
+        page_count: int | None = None,
+        scroll_id: str | None = None,
     ):
         if n and (page_count is None) and (per_page is not None):
             page_count = ceil(n / per_page)
@@ -113,8 +110,8 @@ class QueryResult:
         self.per_page = per_page
         self.scroll_id = scroll_id
 
-    def as_dict(self):
-        meta = {
+    def as_dict(self) -> dict:
+        meta: dict[str, int | str | None] = {
             "total_count": self.total_count,
             "per_page": self.per_page,
             "page_count": self.page_count,
@@ -126,31 +123,20 @@ class QueryResult:
         return dict(meta=meta, results=self.data)
 
 
-def _normalize_queries(
-    queries: Optional[Union[Dict[str, str], Iterable[str]]]
-) -> Mapping[str, str]:
-    if queries is None:
-        return {}
-    if isinstance(queries, dict):
-        return queries
-    return {q: q for q in queries}
-
-
 def query_documents(
     index: Union[str, Sequence[str]],
-    queries: Union[Mapping[str, str], Iterable[str]] = None,
+    fields: list[FieldSpec],
+    queries: dict[str, str] | None = None,
+    filters: dict[str, FilterSpec] | None = None,
+    sort: list[dict[str, SortSpec]] | None = None,
     *,
     page: int = 0,
     per_page: int = 10,
     scroll=None,
-    scroll_id: str = None,
-    fields: Iterable[str] = None,
-    snippets: Iterable[str] = None,
-    filters: Mapping[str, Mapping] = None,
-    highlight: Literal["none", "text", "snippets"] = "none",
-    sort: List[Union[str, Mapping]] = None,
+    scroll_id: str | None = None,
+    highlight: bool = False,
     **kwargs,
-) -> Optional[QueryResult]:
+) -> QueryResult | None:
     """
     Conduct a query_string query, returning the found documents.
 
@@ -159,18 +145,16 @@ def query_documents(
     If the scroll parameter is given, the result will contain a scroll_id which can be used to get the next batch.
     In case there are no more documents to scroll, it will return None
     :param index: The name of the index or indexes
-    :param queries: a list of queries OR a dict {label1: query1, ...}
+    :param fields: List of fields using the FieldSpec syntax. We enforce specific field selection here. Any logic
+                   for determining whether a user can see the field should be done in the API layer.
+    :param queries: if not None, a dict with labels and queries {label1: query1, ...}
+    :param filters: if not None, a dict where the key is the field and the value is a FilterSpec
+
     :param page: The number of the page to request (starting from zero)
     :param per_page: The number of hits per page
     :param scroll: if not None, will create a scroll request rather than a paginated request. Parmeter should
                    specify the time the context should be kept alive, or True to get the default of 2m.
     :param scroll_id: if not None, should be a previously returned context_id to retrieve a new page of results
-    :param fields: if not None, specify a list of fields to retrieve for each hit
-    :param filters: if not None, a dict of filters with either value, values, or gte/gt/lte/lt ranges:
-                       {field: {'values': [value1,value2],
-                                'value': value,
-                                'gte/gt/lte/lt': value,
-                                ...}}
     :param highlight: if True, add <em> tags to query matches in fields
     :param sort: Sort order of results, can be either a single field or a list of fields.
                  In the list, each field is a string or a dict with options, e.g. ["id", {"date": {"order": "desc"}}]
@@ -184,7 +168,7 @@ def query_documents(
     if scroll or scroll_id:
         # set scroll to default also if scroll_id is given but no scroll time is known
         kwargs["scroll"] = "2m" if (not scroll or scroll is True) else scroll
-    queries = _normalize_queries(queries)
+
     if sort is not None:
         kwargs["sort"] = sort
     if scroll_id:
@@ -193,7 +177,7 @@ def query_documents(
             return None
     else:
         h = query_highlight(fields, highlight)
-        body = build_body(queries.values(), filters, h)
+        body = build_body(queries, filters, h)
 
         if fields:
             fields = fields if isinstance(fields, list) else list(fields)
@@ -212,9 +196,7 @@ def query_documents(
                     hitdict[key] = " ... ".join(hit["highlight"][key])
         data.append(hitdict)
     if scroll_id:
-        return QueryResult(
-            data, n=result["hits"]["total"]["value"], scroll_id=result["_scroll_id"]
-        )
+        return QueryResult(data, n=result["hits"]["total"]["value"], scroll_id=result["_scroll_id"])
     elif scroll:
         return QueryResult(
             data,
@@ -223,49 +205,41 @@ def query_documents(
             scroll_id=result["_scroll_id"],
         )
     else:
-        return QueryResult(
-            data, n=result["hits"]["total"]["value"], per_page=per_page, page=page
-        )
+        return QueryResult(data, n=result["hits"]["total"]["value"], per_page=per_page, page=page)
 
 
-def query_highlight(fields: Iterable[str] = None, highlight_queries: bool = False):
+def query_highlight(fields: list[FieldSpec], highlight_queries: bool = False) -> dict[str, Any]:
     """
     The elastic "highlight" parameters works for both highlighting text fields and adding snippets.
     This function will return the highlight parameter to be added to the query body.
     """
 
-    highlight = {
+    highlight: dict[str, Any] = {
         # "pre_tags": ["<em>"] if highlight is True else [""],
         # "post_tags": ["</em>"] if highlight is True else [""],
         "require_field_match": True,
+        "fields": {},
     }
 
-    if fields is None:
-        if highlight_queries is True:
-            highlight["fields"]["*"] = {"number_of_fragments": 0}
-    else:
-        highlight["fields"] = {}
-        for field in fields:
-            fieldname, nomatch_chars, max_matches, match_chars = parse_field(field)
-            if nomatch_chars is None:
-                if highlight_queries is True:
-                    # This will overwrite the field with the highlighted version, so
-                    # only needed if highlight is True
-                    highlight["fields"][fieldname] = {"number_of_fragments": 0}
-            else:
-                # the elastic highlight feature is also used to get snippets. note that
-                # above in the
-                highlight["fields"][fieldname] = {
-                    "no_match_size": nomatch_chars,
-                    "number_of_fragments": max_matches,
-                    "fragment_size": match_chars,
-                }
-                if highlight_queries is False or max_matches == 0:
-                    # This overwrites the actual query, so that the highlights are not returned.
-                    # Also used to get the nomatch snippet if max_matches = 0
-                    highlight["fields"][fieldname]["highlight_query"] = {
-                        "match_all": {}
-                    }
+    for field in fields:
+        if field.snippet is None:
+            if highlight_queries is True:
+                # This will overwrite the field with the highlighted version, so
+                # only needed if highlight is True
+                highlight["fields"][field.name] = {"number_of_fragments": 0}
+        else:
+            # the elastic highlight feature is also used to get snippets. note that
+            # above in the
+            highlight["fields"][field.name] = {
+                "no_match_size": field.snippet.nomatch_chars,
+                "number_of_fragments": field.snippet.max_matches,
+                "fragment_size": field.snippet.match_chars,
+            }
+            if highlight_queries is False or field.snippet.max_matches == 0:
+                # This overwrites the actual query, so that the highlights are not returned.
+                # Also, if max_matches is zero, we drop the query for highlighting so that
+                # the nomatch_chars are returned
+                highlight["fields"][field.name]["highlight_query"] = {"match_all": {}}
 
     return highlight
 
@@ -284,13 +258,13 @@ def overwrite_highlight_results(hit: dict, hitdict: dict):
 
 
 def update_tag_query(
-    index: Union[str, Sequence[str]],
+    index: str | list[str],
     action: Literal["add", "remove"],
     field: str,
     tag: str,
-    queries: Union[Mapping[str, str], Iterable[str]] = None,
-    filters: Mapping[str, Mapping] = None,
-    ids: Sequence[str] = None,
+    queries: dict[str, str] | list[str] | None = None,
+    filters: dict[str, dict] | None = None,
+    ids: list[str] | None = None,
 ):
     """Add or remove tags using a query"""
     body = build_body(queries and queries.values(), filters, ids=ids)

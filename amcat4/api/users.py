@@ -83,15 +83,10 @@ def _get_user(email, current_user):
 @app_users.get("/users", dependencies=[Depends(authenticated_admin)])
 def list_global_users():
     """List all global users"""
-    return [
-        {"email": email, "role": role.name}
-        for (email, role) in index.list_global_users().items()
-    ]
+    return [{"email": email, "role": role.name} for (email, role) in index.list_global_users().items()]
 
 
-@app_users.delete(
-    "/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response
-)
+@app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_user(email: EmailStr, current_user: str = Depends(authenticated_user)):
     """
     Delete the given user.
@@ -104,9 +99,7 @@ def delete_user(email: EmailStr, current_user: str = Depends(authenticated_user)
 
 
 @app_users.put("/users/{email}")
-def modify_user(
-    email: EmailStr, data: ChangeUserForm, _user=Depends(authenticated_admin)
-):
+def modify_user(email: EmailStr, data: ChangeUserForm, _user: str = Depends(authenticated_admin)):
     """
     Modify the given user.
     Only admin can change users.
