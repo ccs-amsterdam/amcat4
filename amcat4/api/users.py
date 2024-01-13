@@ -7,8 +7,7 @@ A client can request a token with basic authentication and store that token for 
 from typing import Literal, Optional
 from importlib.metadata import version
 
-from fastapi import APIRouter, HTTPException, status, Response
-from fastapi.params import Depends
+from fastapi import APIRouter, HTTPException, status, Response, Depends
 from pydantic import BaseModel
 from pydantic.networks import EmailStr
 
@@ -20,7 +19,7 @@ from amcat4.index import Role, set_global_role, get_global_role
 app_users = APIRouter(tags=["users"])
 
 
-ROLE = Literal["ADMIN", "WRITER", "READER", "admin", "writer", "reader"]
+ROLE = Literal["ADMIN", "WRITER", "READER", "NONE"]
 
 
 class UserForm(BaseModel):
@@ -104,9 +103,13 @@ def modify_user(email: EmailStr, data: ChangeUserForm, _user: str = Depends(auth
     Modify the given user.
     Only admin can change users.
     """
-    role = Role[data.role.upper()]
-    set_global_role(email, role)
-    return {"email": email, "role": role.name}
+    if data.role is None or data.role == "NONE":
+        set_global_role(email, None)
+        return {"email": email, "role": None}
+    else:
+        role = Role[data.role.upper()]
+        set_global_role(email, role)
+        return {"email": email, "role": role.name}
 
 
 @app_users.get("/config")

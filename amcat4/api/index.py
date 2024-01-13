@@ -1,22 +1,35 @@
 """API Endpoints for document and index management."""
 from http import HTTPStatus
-from typing import List, Literal, Mapping, Optional
+from typing import Annotated, Literal
 
 import elasticsearch
 from elastic_transport import ApiError
 from fastapi import APIRouter, HTTPException, Response, status, Depends, Body
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
-from amcat4.api.common import py2dict
 
 from amcat4.index import refresh_system_index, remove_role, set_role
-from amcat4.models import Field
+from amcat4.models import Document, UpdateField
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 
 RoleType = Literal["ADMIN", "WRITER", "READER", "METAREADER"]
+
+
+def _standardize_updatefields(fields: dict[str, str | UpdateField]) -> dict[str, UpdateField]:
+    standardized_fields: dict[str, UpdateField] = {}
+
+    for name, field in fields.items():
+        if isinstance(field, UpdateField):
+            standardized_fields[name] = field
+        elif isinstance(field, str):
+            standardized_fields[name] = UpdateField(type=field)
+        else:
+            raise ValueError(f"Cannot parse field: {field}")
+
+    return standardized_fields
 
 
 @app_index.get("/")
@@ -40,9 +53,9 @@ class NewIndex(BaseModel):
     """Form to create a new index."""
 
     id: str
-    guest_role: Optional[RoleType] = None
-    name: Optional[str] = None
-    description: Optional[str] = None
+    guest_role: RoleType | None = None
+    name: str | None = None
+    description: str | None = None
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
@@ -73,9 +86,9 @@ class ChangeIndex(BaseModel):
     """Form to update an existing index."""
 
     guest_role: Literal["ADMIN", "WRITER", "READER", "METAREADER", "NONE"] | None = "NONE"
-    name: Optional[str] = None
-    description: Optional[str] = None
-    summary_field: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    summary_field: str | None = None
 
 
 @app_index.put("/{ix}")
@@ -128,21 +141,13 @@ def delete_index(ix: str, user: str = Depends(authenticated_user)):
     index.delete_index(ix)
 
 
-class Document(BaseModel):
-    """Form to create (upload) a new document."""
-
-    title: str
-    date: str
-    text: str
-    url: Optional[str] = None
-    model_config = ConfigDict(extra="allow")
-
-
 @app_index.post("/{ix}/documents", status_code=status.HTTP_201_CREATED)
 def upload_documents(
     ix: str,
-    documents: List[Document] = Body(None, description="The documents to upload"),
-    columns: Optional[Mapping[str, str]] = Body(None, description="Optional Specification of field (column) types"),
+    documents: Annotated[list[Document], Body(description="The documents to upload")],
+    fields: Annotated[
+        dict[str, str | UpdateField] | None, Body(description="Optional Specification of field (column) types")
+    ] = None,
     user: str = Depends(authenticated_user),
 ):
     """
@@ -156,15 +161,18 @@ def upload_documents(
     Returns a list of ids for the uploaded documents
     """
     check_role(user, index.Role.WRITER, ix)
-    documents = [py2dict(doc) for doc in documents]
-    return index.upload_documents(ix, documents, columns)
+
+    if fields is None:
+        return index.upload_documents(ix, documents)
+    else:
+        return index.upload_documents(ix, documents, _standardize_updatefields(fields))
 
 
 @app_index.get("/{ix}/documents/{docid}")
 def get_document(
     ix: str,
     docid: str,
-    fields: Optional[str] = None,
+    fields: str | None = None,
     user: str = Depends(authenticated_user),
 ):
     """
@@ -237,23 +245,24 @@ def get_fields(ix: str, user: str = Depends(authenticated_user)):
     Returns a json array of {name, type} objects
     """
     check_role(user, index.Role.METAREADER, ix)
+
     if "," in ix:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"/[index]/fields does not support multiple indices",
-        )
-    return index.get_fields(ix)
+        return index.get_fields(ix.split(","))
+    else:
+        return index.get_fields(ix)
 
 
 @app_index.post("/{ix}/fields")
-def set_fields(ix: str, fields=dict[str, Field], user: str = Depends(authenticated_user)):
+def set_fields(
+    ix: str, fields: Annotated[dict[str, str | UpdateField], Body(description="")], user: str = Depends(authenticated_user)
+):
     """
     Set the field types used in this index.
 
-    POST body should be a dict of {field: type} or {field: {type: type, meta: meta}}
     """
     check_role(user, index.Role.WRITER, ix)
-    index.set_fields(ix, fields)
+
+    index.set_fields(ix, _standardize_updatefields(fields))
     return "", HTTPStatus.NO_CONTENT
 
 

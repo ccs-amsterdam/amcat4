@@ -40,10 +40,11 @@ import json
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
+from amcat4.api.common import py2dict
 
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import Field, UpdateField, updateField, FieldMetareaderAccess
+from amcat4.models import Document, Field, SnippetParams, UpdateField, updateField, FieldMetareaderAccess
 
 
 # The Field model has a type field as we use it in amcat, but we need to
@@ -362,7 +363,7 @@ def modify_index(
             raise ValueError(f"Summary field {summary_field} should be date, keyword or tag, not {f[summary_field].type}!")
     doc = {x: v for (x, v) in doc.items() if v}
     if remove_guest_role:
-        doc["guest_role"] = None
+        doc["guest_role"] = Role.NONE
     if doc:
         es().update(index=get_settings().system_index, id=index, doc=doc)
 
@@ -404,7 +405,7 @@ def get_role(index: str, email: str) -> Role:
     guest_role: str | None = doc["_source"].get("guest_role", None)
     if guest_role and guest_role.lower() != "none":
         return Role[guest_role]
-    return None
+    return Role.NONE
 
 
 def get_guest_role(index: str) -> Optional[Role]:
@@ -439,19 +440,71 @@ def get_global_role(email: str, only_es: bool = False) -> Optional[Role]:
     return get_role(index=GLOBAL_ROLES, email=email)
 
 
-def get_fields(index: str) -> Dict[str, Field]:
+def merge_overlapping_fields(index1: str, index2: str, name: str, field1: Field, field2: Field) -> Field:
+    """
+    Merge two fields, and take most restrictive metareader settings. Also add in_index list.
+    """
+
+    in_index1 = field1.in_index if field1.in_index is not None else [index1]
+    in_index2 = field2.in_index if field2.in_index is not None else [index2]
+    in_index = list(set(in_index1 + in_index2))
+
+    if field1.type != field2.type:
+        raise ValueError(f"Field {name} has different types in index {index1} ({field1.type}) and {index2} ({field2.type})")
+
+    if field1.metareader.access == "none" or field2.metareader.access == "none":
+        return Field(type=field1.type, in_index=in_index, metareader=FieldMetareaderAccess(access="none"))
+
+    if field1.metareader.access == "snippet" and field2.metareader.access == "snippet":
+        if field1.metareader.max_snippet is None:
+            return field1
+        if field2.metareader.max_snippet is None:
+            return field2
+
+        nomatch_chars = min(field1.metareader.max_snippet.nomatch_chars, field2.metareader.max_snippet.nomatch_chars)
+        max_matches = min(field1.metareader.max_snippet.max_matches, field2.metareader.max_snippet.max_matches)
+        match_chars = min(field1.metareader.max_snippet.match_chars, field2.metareader.max_snippet.match_chars)
+        return Field(
+            type=field1.type,
+            in_index=in_index,
+            metareader=FieldMetareaderAccess(
+                access="snippet",
+                max_snippet=SnippetParams(
+                    nomatch_chars=nomatch_chars,
+                    max_matches=max_matches,
+                    match_chars=match_chars,
+                ),
+            ),
+        )
+
+    if field1.metareader.access == "snippet" or field2.metareader.access == "snippet":
+        return Field(type=field1.type, in_index=in_index, metareader=FieldMetareaderAccess(access="snippet"))
+    return Field(type=field1.type, in_index=in_index, metareader=FieldMetareaderAccess(access="read"))
+
+
+def get_fields(index: str | list[str]) -> dict[str, Field]:
     """
     Retrieve the fields settings for this index
     """
-    try:
-        d = es().get(
-            index=get_settings().system_index,
-            id=index,
-            source_includes="fields",
-        )
-    except NotFoundError:
-        raise IndexDoesNotExist(index)
-    return _fields_from_elastic(d["_source"].get("fields", {}))
+    fields: dict[str, Field] = {}
+    indices = [index] if isinstance(index, str) else index
+    for index in indices:
+        try:
+            d = es().get(
+                index=get_settings().system_index,
+                id=index,
+                source_includes="fields",
+            )
+        except NotFoundError:
+            raise IndexDoesNotExist(index)
+
+        index_fields = _fields_from_elastic(d["_source"].get("fields", {}))
+        for field, settings in index_fields.items():
+            if field not in fields:
+                fields[field] = settings
+            else:
+                fields[field] = merge_overlapping_fields(index, index, field, fields[field], settings)
+    return fields
 
 
 def list_users(index: str) -> Dict[str, Role]:
@@ -514,7 +567,7 @@ def _get_hash(document: dict) -> str:
     return m.hexdigest()
 
 
-def upload_documents(index: str, documents, fields: dict[str, Field] | None) -> None:
+def upload_documents(index: str, documents: list[Document], fields: dict[str, UpdateField] | None = None) -> None:
     """
     Upload documents to this index
 
@@ -525,7 +578,8 @@ def upload_documents(index: str, documents, fields: dict[str, Field] | None) -> 
 
     def es_actions(index, documents):
         field_types = get_fields(index)
-        for document in documents:
+        for document_pydantic in documents:
+            document = py2dict(document_pydantic)
             for key in document.keys():
                 if key not in field_types:
                     raise ValueError(f"The type for field {key} is not yet specified")
@@ -600,7 +654,7 @@ def get_field_stats(index: str, field: str) -> List[str]:
     return r["aggregations"]["facets"]
 
 
-def update_by_query(index: str, script: str, query: dict, params: dict | None = None):
+def update_by_query(index: str | list[str], script: str, query: dict, params: dict | None = None):
     script_dict = dict(source=script, lang="painless", params=params or {})
     es().update_by_query(index=index, script=script_dict, **query)
 
@@ -623,7 +677,7 @@ TAG_SCRIPTS = dict(
 )
 
 
-def update_tag_by_query(index: str, action: Literal["add", "remove"], query: dict, field: str, tag: str):
+def update_tag_by_query(index: str | list[str], action: Literal["add", "remove"], query: dict, field: str, tag: str):
     script = TAG_SCRIPTS[action]
     params = dict(field=field, tag=tag)
     update_by_query(index, script, query, params)

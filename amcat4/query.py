@@ -262,10 +262,11 @@ def update_tag_query(
     action: Literal["add", "remove"],
     field: str,
     tag: str,
-    queries: dict[str, str] | list[str] | None = None,
-    filters: dict[str, dict] | None = None,
+    queries: dict[str, str] | None = None,
+    filters: dict[str, FilterSpec] | None = None,
     ids: list[str] | None = None,
 ):
     """Add or remove tags using a query"""
-    body = build_body(queries and queries.values(), filters, ids=ids)
+    body = build_body(queries, filters, ids=ids)
+
     update_tag_by_query(index, action, body, field, tag)

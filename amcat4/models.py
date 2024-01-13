@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Literal, NewType, Union
 
 
@@ -26,6 +26,7 @@ class Field(BaseModel):
 
     type: str
     metareader: FieldMetareaderAccess
+    in_index: list[str] | None = None
 
 
 class UpdateField(BaseModel):
@@ -66,3 +67,13 @@ class SortSpec(BaseModel):
     """Form for sort specification."""
 
     order: Literal["asc", "desc"] = "asc"
+
+
+class Document(BaseModel):
+    """Form to create (upload) a new document."""
+
+    title: str
+    date: str
+    text: str
+    url: str | None = None
+    model_config = ConfigDict(extra="allow")

@@ -74,7 +74,7 @@ class Aggregation:
     Specification of a single aggregation, that is, field and aggregation function
     """
 
-    def __init__(self, field: str, function: str, name: str = None, ftype: str = None):
+    def __init__(self, field: str, function: str, name: str | None = None, ftype: str | None = None):
         self.field = field
         self.function = function
         self.name = name or f"{function}_{field}"
@@ -132,7 +132,7 @@ def _elastic_aggregate(
     queries,
     filters,
     aggregations: list[Aggregation],
-    runtime_mappings: dict[str, Mapping] = None,
+    runtime_mappings: dict[str, Mapping] | None = None,
     after_key=None,
 ) -> Iterable[dict]:
     """

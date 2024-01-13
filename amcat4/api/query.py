@@ -57,16 +57,16 @@ def get_or_validate_allowed_fields(
             raise ValueError("Fields should be specified if multiple indices are given")
         index_fields = get_fields(indices[0])
         role = get_role(indices[0], user)
-        allowed_fields = []
+        allowed_fields: list[FieldSpec] = []
         for field in index_fields.keys():
             if role >= Role.READER:
-                allowed_fields.append(field)
+                allowed_fields.append(FieldSpec(name=field))
             elif role == Role.METAREADER:
                 metareader = index_fields[field].metareader
                 if metareader.access == "read":
-                    allowed_fields.append(field)
+                    allowed_fields.append(FieldSpec(name=field))
                 if metareader.access == "snippet":
-                    allowed_fields.append({"field": field, "snippet": metareader.max_snippet})
+                    allowed_fields.append(FieldSpec(name=field, snippet=metareader.max_snippet))
             else:
                 raise HTTPException(
                     status_code=401,
@@ -74,11 +74,9 @@ def get_or_validate_allowed_fields(
                 )
         return allowed_fields
 
-    else:
-        fieldspecs = [field if isinstance(field, FieldSpec) else FieldSpec(name=field) for field in fields]
-        for index in indices:
-            check_fields_access(index, user, fieldspecs)
-        return fieldspecs
+    for index in indices:
+        check_fields_access(index, user, fields)
+    return fields
 
 
 def _standardize_queries(queries: str | list[str] | dict[str, str] | None = None) -> dict[str, str] | None:
@@ -115,7 +113,7 @@ def _standardize_filters(
     return f
 
 
-def _standardize_fields(fields: list[str | FieldSpec] | None = None) -> list[FieldSpec] | None:
+def _standardize_fieldspecs(fields: list[str | FieldSpec] | None = None) -> list[FieldSpec] | None:
     """Convert fields to list of FieldSpecs."""
     if not fields:
         return None
@@ -134,7 +132,7 @@ def _standardize_fields(fields: list[str | FieldSpec] | None = None) -> list[Fie
 def _standardize_sort(sort: str | list[str] | list[dict[str, SortSpec]] | None = None) -> list[dict[str, SortSpec]] | None:
     """Convert sort to list of dicts."""
 
-    ## TODO: sort cannot be right. that array around dict is useless
+    # TODO: sort cannot be right. that array around dict is useless
 
     if not sort:
         return None
@@ -234,7 +232,7 @@ def query_documents_post(
     """
 
     indices = index if isinstance(index, list) else [index]
-    fieldspecs = get_or_validate_allowed_fields(user, indices, _standardize_fields(fields))
+    fieldspecs = get_or_validate_allowed_fields(user, indices, _standardize_fieldspecs(fields))
 
     r = query.query_documents(
         indices,
@@ -275,11 +273,13 @@ def query_aggregate_post(
     index: str,
     axes: Optional[List[AxisSpec]] = Body(None, description="Axes to aggregate on (i.e. group by)"),
     aggregations: Optional[List[AggregationSpec]] = Body(None, description="Aggregate functions to compute"),
-    queries: Optional[Union[str, List[str], Dict[str, str]]] = Body(
-        None,
-        description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-        "or a dict of queries {'label': 'query'}",
-    ),
+    queries: Annotated[
+        str | list[str] | dict[str, str] | None,
+        Body(
+            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
+            "or a dict of {'label': 'query'}",
+        ),
+    ] = None,
     filters: Annotated[
         dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
         Body(
@@ -287,7 +287,7 @@ def query_aggregate_post(
             "which can be either a value, a list of values, or a FilterSpec dict",
         ),
     ] = None,
-    _user: str = Depends(authenticated_user),
+    user: str = Depends(authenticated_user),
 ):
     """
     Construct an aggregate query.
@@ -332,26 +332,29 @@ def query_update_tags(
     action: Literal["add", "remove"] = Body(None, description="Action (add or remove) on tags"),
     field: str = Body(None, description="Tag field to update"),
     tag: str = Body(None, description="Tag to add or remove"),
-    queries: Optional[Union[str, List[str], Dict[str, str]]] = Body(
-        None,
-        description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-        "or a dict of {'label': 'query'}",
-    ),
-    filters: Optional[Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]] = Body(
-        None,
-        description="Field filters, should be a dict of field names to filter specifications,"
-        "which can be either a value, a list of values, or a FilterSpec dict",
-    ),
+    queries: Annotated[
+        str | list[str] | dict[str, str] | None,
+        Body(
+            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
+            "or a dict of {'label': 'query'}",
+        ),
+    ] = None,
+    filters: Annotated[
+        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
+        Body(
+            description="Field filters, should be a dict of field names to filter specifications,"
+            "which can be either a value, a list of values, or a FilterSpec dict",
+        ),
+    ] = None,
     ids: Optional[Union[str, List[str]]] = Body(None, description="Document IDs of documents to update"),
-    _user: str = Depends(authenticated_user),
+    user: str = Depends(authenticated_user),
 ):
     """
     Add or remove tags by query or by id
     """
     indices = index.split(",")
-    queries = _standardize_queries(queries)
-    filters = _standardize_filters(filters)
+
     if isinstance(ids, (str, int)):
         ids = [ids]
-    update_tag_query(indices, action, field, tag, queries, filters, ids)
+    update_tag_query(indices, action, field, tag, _standardize_queries(queries), _standardize_filters(filters), ids)
     return
