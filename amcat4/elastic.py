@@ -45,10 +45,16 @@ def connect_elastic() -> Elasticsearch:
     """
     settings = get_settings()
     if settings.elastic_password:
+        host = settings.elastic_host
+        if settings.elastic_verify_ssl is None:
+            verify_certs = "localhost" in (host or "")
+        else:
+            verify_certs = settings.elastic_verify_ssl
+
         return Elasticsearch(
-            settings.elastic_host or None,
+            host,
             basic_auth=("elastic", settings.elastic_password),
-            verify_certs=settings.elastic_verify_ssl,
+            verify_certs=verify_certs,
         )
     else:
         return Elasticsearch(settings.elastic_host or None)

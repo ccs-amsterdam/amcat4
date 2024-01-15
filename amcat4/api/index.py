@@ -11,7 +11,7 @@ from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 
 from amcat4.index import refresh_system_index, remove_role, set_role
-from amcat4.models import Document, UpdateField
+from amcat4.models import UpdateField
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 
@@ -144,7 +144,7 @@ def delete_index(ix: str, user: str = Depends(authenticated_user)):
 @app_index.post("/{ix}/documents", status_code=status.HTTP_201_CREATED)
 def upload_documents(
     ix: str,
-    documents: Annotated[list[Document], Body(description="The documents to upload")],
+    documents: Annotated[list[dict[str, str]], Body(description="The documents to upload")],
     fields: Annotated[
         dict[str, str | UpdateField] | None, Body(description="Optional Specification of field (column) types")
     ] = None,
@@ -154,10 +154,6 @@ def upload_documents(
     Upload documents to this server.
 
     JSON payload should contain a `documents` key, and may contain a `columns` key:
-    {
-      "documents": [{"title": .., "date": .., "text": .., ...}, ...],
-      "columns": {<field>: <type>, ...}
-    }
     Returns a list of ids for the uploaded documents
     """
     check_role(user, index.Role.WRITER, ix)

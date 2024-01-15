@@ -9,7 +9,7 @@ We read configuration from 2 sources, in order of precedence (higher is more pri
 import functools
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Annotated
 from class_doc import extract_docs_from_cls_obj
 from dotenv import load_dotenv
 from pydantic import model_validator, Field
@@ -43,64 +43,76 @@ for field, doc in extract_docs_from_cls_obj(AuthOptions).items():
 
 
 class Settings(BaseSettings):
-    env_file: Path = Field(
-        ".env",
-        description="Location of a .env file (if used) relative to working directory",
-    )
-    host: str = Field(
-        "http://localhost:5000",
-        description="Host this instance is served at (needed for checking tokens)",
-    )
-
-    elastic_password: Optional[str] = Field(
-        None,
-        description=(
-            "Elasticsearch password. "
-            "This the password for the 'elastic' user when Elastic xpack security is enabled"
+    env_file: Annotated[
+        Path,
+        Field(
+            description="Location of a .env file (if used) relative to working directory",
         ),
-    )
-
-    elastic_host: Optional[str] = Field(
-        None,
-        description=(
-            "Elasticsearch host. "
-            "Default: https://localhost:9200 if elastic_password is set, http://localhost:9200 otherwise"
+    ] = Path(".env")
+    host: Annotated[
+        str,
+        Field(
+            description="Host this instance is served at (needed for checking tokens)",
         ),
-    )
+    ] = "http://localhost:5000"
 
-    elastic_verify_ssl: Optional[bool] = Field(
-        None,
-        description=(
-            "Elasticsearch verify SSL (only used if elastic_password is set). "
-            "Default: True unless host is localhost)"
+    elastic_password: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Elasticsearch password. " "This the password for the 'elastic' user when Elastic xpack security is enabled"
+            )
         ),
-    )
+    ] = None
 
-    system_index: str = Field(
-        "amcat4_system",
-        description="Elasticsearch index to store authorization information in",
-    )
+    elastic_host: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Elasticsearch host. "
+                "Default: https://localhost:9200 if elastic_password is set, http://localhost:9200 otherwise"
+            )
+        ),
+    ] = None
 
-    auth: AuthOptions = Field(
-        AuthOptions.no_auth, description="Do we require authorization?"
-    )
+    elastic_verify_ssl: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "Elasticsearch verify SSL (only used if elastic_password is set). " "Default: True unless host is localhost)"
+            ),
+        ),
+    ] = None
 
-    middlecat_url: str = Field(
-        "https://middlecat.up.railway.app",
-        description="Middlecat server to trust as ID provider",
-    )
+    system_index: Annotated[
+        str,
+        Field(
+            description="Elasticsearch index to store authorization information in",
+        ),
+    ] = "amcat4_system"
 
-    admin_email: Optional[str] = Field(
-        None,
-        description="Email address for a hardcoded admin email (useful for setup and recovery)",
-    )
+    auth: Annotated[AuthOptions, Field(description="Do we require authorization?")] = AuthOptions.no_auth
+
+    middlecat_url: Annotated[
+        str,
+        Field(
+            description="Middlecat server to trust as ID provider",
+        ),
+    ] = "https://middlecat.up.railway.app"
+
+    admin_email: Annotated[
+        str | None,
+        Field(
+            description="Email address for a hardcoded admin email (useful for setup and recovery)",
+        ),
+    ] = None
+
+    admin_password: Annotated[str | None, Field()] = None
 
     @model_validator(mode="after")
     def set_ssl(self) -> "Settings":
         if not self.elastic_host:
-            self.elastic_host = (
-                "https" if self.elastic_password else "http"
-            ) + "://localhost:9200"
+            self.elastic_host = ("https" if self.elastic_password else "http") + "://localhost:9200"
         if not self.elastic_verify_ssl:
             self.elastic_verify_ssl = self.elastic_host not in {
                 "http://localhost:9200",
@@ -123,9 +135,7 @@ def get_settings() -> Settings:
 
 def validate_settings():
     if get_settings().auth != "no_auth":
-        if get_settings().host.startswith(
-            "http://"
-        ) and not get_settings().host.startswith("http://localhost"):
+        if get_settings().host.startswith("http://") and not get_settings().host.startswith("http://localhost"):
             return (
                 "You have set the host at an http address and enabled authentication."
                 "Authentication through middlecat will not work in your browser"

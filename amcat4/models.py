@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Extra
 from typing import Literal, NewType, Union
 
 
@@ -67,13 +67,3 @@ class SortSpec(BaseModel):
     """Form for sort specification."""
 
     order: Literal["asc", "desc"] = "asc"
-
-
-class Document(BaseModel):
-    """Form to create (upload) a new document."""
-
-    title: str
-    date: str
-    text: str
-    url: str | None = None
-    model_config = ConfigDict(extra="allow")

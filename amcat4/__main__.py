@@ -2,7 +2,6 @@
 AmCAT4 REST API
 """
 import argparse
-import collections
 import csv
 import io
 import json
@@ -10,9 +9,11 @@ import logging
 import os
 import secrets
 import sys
+from typing import Any
 import urllib.request
 from enum import Enum
-import elasticsearch
+from collections import defaultdict
+import elasticsearch.helpers
 
 import uvicorn
 from pydantic.fields import FieldInfo
@@ -21,6 +22,7 @@ from amcat4 import index
 from amcat4.config import get_settings, AuthOptions, validate_settings
 from amcat4.elastic import connect_elastic, get_system_version, ping
 from amcat4.index import GLOBAL_ROLES, create_index, set_global_role, Role, list_global_users, upload_documents
+from amcat4.models import UpdateField
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -45,7 +47,7 @@ def upload_test_data() -> str:
         )
         for row in csvfile
     ]
-    columns = {"president": "keyword", "party": "keyword", "year": "double"}
+    columns = dict(president=UpdateField(type="keyword"), party=UpdateField(type="keyword"), year=UpdateField(type="double"))
     upload_documents(SOTU_INDEX, docs, columns)
     return SOTU_INDEX
 
@@ -77,7 +79,7 @@ def val(val_or_list):
     return val_or_list
 
 
-def migrate_index(_args):
+def migrate_index(_args) -> None:
     settings = get_settings()
     elastic = connect_elastic()
     if not elastic.ping():
@@ -94,7 +96,8 @@ def migrate_index(_args):
     else:
         logging.info("Migrating to version 1")
         fields = ["index", "email", "role"]
-        indices = collections.defaultdict(dict)
+        indices: defaultdict[str, dict[str, str]] = defaultdict(dict)
+
         for entry in elasticsearch.helpers.scan(elastic, index=settings.system_index, fields=fields, _source=False):
             index, email, role = [val(entry["fields"][field]) for field in fields]
             indices[index][email] = role
@@ -106,10 +109,9 @@ def migrate_index(_args):
                 guest_role = roles_dict.pop("_guest", None)
                 roles_dict.pop("admin", None)
                 roles = [{"email": email, "role": role} for (email, role) in roles_dict.items()]
-                doc = dict(name=index, guest_role=guest_role, roles=roles)
+                doc: dict[str, Any] = dict(name=index, guest_role=guest_role, roles=roles)
                 if index == GLOBAL_ROLES:
                     doc["version"] = 1
-                print(doc)
                 elastic.index(index=settings.system_index, id=index, document=doc)
         except Exception:
             try:
@@ -166,9 +168,12 @@ def list_users(_args):
     admin_password = get_settings().admin_password
     if admin_password:
         print("ADMIN     : admin (password set via environment AMCAT4_ADMIN_PASSWORD)")
-    users = sorted(list_global_users(), key=lambda ur: (ur[1], ur[0]))
+    users = list_global_users()
+
+    # sorted changes the output type of list_global_users?
+    # users = sorted(list_global_users(), key=lambda ur: (ur[1], ur[0]))
     if users:
-        for user, role in users:
+        for user, role in users.items():
             print(f"{role.name:10}: {user}")
     if not (users or admin_password):
         print("(No users defined yet, set AMCAT4_ADMIN_PASSWORD in environment use add-admin to add users by email)")

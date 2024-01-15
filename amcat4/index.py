@@ -44,7 +44,7 @@ from amcat4.api.common import py2dict
 
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import Document, Field, SnippetParams, UpdateField, updateField, FieldMetareaderAccess
+from amcat4.models import Field, SnippetParams, UpdateField, updateField, FieldMetareaderAccess
 
 
 # The Field model has a type field as we use it in amcat, but we need to
@@ -567,7 +567,7 @@ def _get_hash(document: dict) -> str:
     return m.hexdigest()
 
 
-def upload_documents(index: str, documents: list[Document], fields: dict[str, UpdateField] | None = None) -> None:
+def upload_documents(index: str, documents: list[dict[str, str]], fields: dict[str, UpdateField] | None = None) -> None:
     """
     Upload documents to this index
 
