@@ -33,18 +33,18 @@ Elasticsearch implementation
 """
 import collections
 from enum import IntEnum
-from typing import Dict, Iterable, List, Optional, Literal
+from typing import Iterable, Iterator, Optional, Literal
 
 import hashlib
 import json
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
-from amcat4.api.common import py2dict
 
+# from amcat4.api.common import py2dict
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import Field, SnippetParams, UpdateField, updateField, FieldMetareaderAccess
+from amcat4.models import Field, FieldClientDisplay, SnippetParams, UpdateField, updateField, FieldMetareaderAccess
 
 
 # The Field model has a type field as we use it in amcat, but we need to
@@ -78,10 +78,10 @@ DEFAULT_METAREADER = {
 }
 
 DEFAULT_INDEX_FIELDS = {
-    "text": Field(type="text", metareader=DEFAULT_METAREADER["text"]),
-    "title": Field(type="text", metareader=DEFAULT_METAREADER["text"]),
-    "date": Field(type="date", metareader=DEFAULT_METAREADER["date"]),
-    "url": Field(type="url", metareader=DEFAULT_METAREADER["url"]),
+    "text": Field(type="text", metareader=DEFAULT_METAREADER["text"], client_display=FieldClientDisplay(in_list=True)),
+    "title": Field(type="text", metareader=DEFAULT_METAREADER["text"], client_display=FieldClientDisplay(in_list=True)),
+    "date": Field(type="date", metareader=DEFAULT_METAREADER["date"], client_display=FieldClientDisplay(in_list=True)),
+    "url": Field(type="url", metareader=DEFAULT_METAREADER["url"], client_display=FieldClientDisplay(in_list=True)),
 }
 
 
@@ -237,11 +237,11 @@ def deregister_index(index: str, ignore_missing=False) -> None:
         refresh_index(system_index)
 
 
-def _roles_from_elastic(roles: List[Dict]) -> Dict[str, Role]:
+def _roles_from_elastic(roles: list[dict]) -> dict[str, Role]:
     return {role["email"]: Role[role["role"].upper()] for role in roles}
 
 
-def _roles_to_elastic(roles: dict) -> List[Dict]:
+def _roles_to_elastic(roles: dict) -> list[dict]:
     return [{"email": email, "role": role.name} for (email, role) in roles.items()]
 
 
@@ -284,14 +284,14 @@ def set_guest_role(index: str, guest_role: Optional[Role]):
     modify_index(index, guest_role=guest_role, remove_guest_role=(guest_role is None))
 
 
-def _fields_to_elastic(fields: Dict[str, Field]) -> List[Dict]:
+def _fields_to_elastic(fields: dict[str, Field]) -> list[dict]:
     return [{"field": field, "settings": settings} for field, settings in fields.items()]
 
 
 def _fields_from_elastic(
-    fields: List[Dict],
-) -> Dict[str, Field]:
-    return {fs["field"]: fs["settings"] for fs in fields}
+    fields: list[dict],
+) -> dict[str, Field]:
+    return {fs["field"]: Field.model_validate(fs["settings"]) for fs in fields}
 
 
 def set_fields(index: str, new_fields: dict[str, Field] | dict[str, UpdateField]):
@@ -482,9 +482,17 @@ def merge_overlapping_fields(index1: str, index2: str, name: str, field1: Field,
     return Field(type=field1.type, in_index=in_index, metareader=FieldMetareaderAccess(access="read"))
 
 
+def _get_index_fields(index: str) -> Iterator[tuple[str, str]]:
+    r = es().indices.get_mapping(index=index)
+    for k, v in r[index]["mappings"]["properties"].items():
+        yield k, v.get("type", "object")
+
+
 def get_fields(index: str | list[str]) -> dict[str, Field]:
     """
-    Retrieve the fields settings for this index
+    Retrieve the fields settings for this index. Look for both the field settings in the system index,
+    and the field mappings in the index itself. If a field is not defined in the system index, return the
+    default settings for that field type.
     """
     fields: dict[str, Field] = {}
     indices = [index] if isinstance(index, str) else index
@@ -499,15 +507,22 @@ def get_fields(index: str | list[str]) -> dict[str, Field]:
             raise IndexDoesNotExist(index)
 
         index_fields = _fields_from_elastic(d["_source"].get("fields", {}))
-        for field, settings in index_fields.items():
+
+        for field, fieldtype in _get_index_fields(index):
+            if field not in index_fields:
+                settings = Field(type=fieldtype, metareader=DEFAULT_METAREADER[fieldtype])
+            else:
+                settings = index_fields[field]
+
             if field not in fields:
+                settings.in_index = [index]
                 fields[field] = settings
             else:
                 fields[field] = merge_overlapping_fields(index, index, field, fields[field], settings)
     return fields
 
 
-def list_users(index: str) -> Dict[str, Role]:
+def list_users(index: str) -> dict[str, Role]:
     """ "
     List all users and their roles on the given index
     :param index: The index to list roles for.
@@ -517,7 +532,7 @@ def list_users(index: str) -> Dict[str, Role]:
     return _roles_from_elastic(r["_source"].get("roles", []))
 
 
-def list_global_users() -> Dict[str, Role]:
+def list_global_users() -> dict[str, Role]:
     """ "
     List all global users and their roles
     :returns: an iterable of (user, Role) pairs
@@ -579,7 +594,7 @@ def upload_documents(index: str, documents: list[dict[str, str]], fields: dict[s
     def es_actions(index, documents):
         field_types = get_fields(index)
         for document_pydantic in documents:
-            document = py2dict(document_pydantic)
+            document = document_pydantic.model_dump()
             for key in document.keys():
                 if key not in field_types:
                     raise ValueError(f"The type for field {key} is not yet specified")
@@ -628,7 +643,7 @@ def delete_document(index: str, doc_id: str):
     es().delete(index=index, id=doc_id)
 
 
-def get_field_values(index: str, field: str, size: int) -> List[str]:
+def get_field_values(index: str, field: str, size: int) -> list[str]:
     """
     Get the values for a given field (e.g. to populate list of filter values on keyword field)
     Results are sorted descending by document frequency
@@ -643,7 +658,7 @@ def get_field_values(index: str, field: str, size: int) -> List[str]:
     return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]
 
 
-def get_field_stats(index: str, field: str) -> List[str]:
+def get_field_stats(index: str, field: str) -> list[str]:
     """
     :param index: The index
     :param field: The field name

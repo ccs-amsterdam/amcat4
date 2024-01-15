@@ -180,8 +180,8 @@ def query_documents(
         body = build_body(queries, filters, h)
 
         if fields:
-            fields = fields if isinstance(fields, list) else list(fields)
-            kwargs["_source"] = fields
+            fieldnames = [field.name for field in fields]
+            kwargs["_source"] = fieldnames
         if not scroll:
             kwargs["from_"] = page * per_page
         result = es().search(index=index, size=per_page, **body, **kwargs)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Extra
+from pydantic import BaseModel
 from typing import Literal, NewType, Union
 
 
@@ -14,10 +14,17 @@ class SnippetParams(BaseModel):
     match_chars: int = 0
 
 
+class FieldClientDisplay(BaseModel):
+    """Client display settings for a specific field."""
+
+    in_list: bool = False
+    in_document: bool = True
+
+
 class FieldMetareaderAccess(BaseModel):
     """Metareader access for a specific field."""
 
-    access: Literal["none", "read", "snippet"]
+    access: Literal["none", "read", "snippet"] = "none"
     max_snippet: SnippetParams | None = None
 
 
@@ -25,7 +32,8 @@ class Field(BaseModel):
     """Settings for a field."""
 
     type: str
-    metareader: FieldMetareaderAccess
+    metareader: FieldMetareaderAccess = FieldMetareaderAccess()
+    client_display: FieldClientDisplay = FieldClientDisplay()
     in_index: list[str] | None = None
 
 

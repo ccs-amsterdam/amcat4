@@ -154,7 +154,7 @@ def _standardize_sort(sort: str | list[str] | list[dict[str, SortSpec]] | None =
 
 @app_query.post("/{index}/query", response_model=QueryResult)
 def query_documents_post(
-    index: str | list[str],
+    index: str,
     queries: Annotated[
         str | list[str] | dict[str, str] | None,
         Body(
@@ -194,7 +194,6 @@ def query_documents_post(
     sort: Annotated[
         str | list[str] | list[dict[str, SortSpec]] | None,
         Body(
-            None,
             description="Sort by field name(s) or dict (see "
             "https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html for dict format)",
             openapi_examples={
@@ -231,7 +230,7 @@ def query_documents_post(
     Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     """
 
-    indices = index if isinstance(index, list) else [index]
+    indices = index.split(",")
     fieldspecs = get_or_validate_allowed_fields(user, indices, _standardize_fieldspecs(fields))
 
     r = query.query_documents(
