@@ -147,7 +147,7 @@ def _elastic_aggregate(
         aggr["aggs"]["aggregations"] = aggregation_dsl(aggregations)
     kargs = {}
     if filters or queries:
-        q = build_body(queries=queries.values(), filters=filters)
+        q = build_body(queries=queries, filters=filters)
         kargs["query"] = q["query"]
     result = es().search(
         index=index if isinstance(index, str) else ",".join(index),

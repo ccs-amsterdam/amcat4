@@ -45,24 +45,26 @@ def test_get_user(client: TestClient, writer, user):
     assert get_json(client, f"/users/{user}", user=user) == {"email": user, "role": "READER"}
     # writer can see everyone
     assert get_json(client, f"/users/{user}", user=writer) == {"email": user, "role": "READER"}
-    assert get_json(client, f"/users/{writer}", user=writer) == {"email": writer, "role": 'WRITER'}
+    assert get_json(client, f"/users/{writer}", user=writer) == {"email": writer, "role": "WRITER"}
     # Retrieving a non-existing user as admin should give 404
     delete_user(user)
-    assert client.get(f'/users/{user}', headers=build_headers(writer)).status_code == 404
+    assert client.get(f"/users/{user}", headers=build_headers(writer)).status_code == 404
 
 
 def test_create_user(client: TestClient, user, writer, admin, username):
     # anonymous or unprivileged users cannot create new users
-    assert client.post('/users/').status_code == 401, "Creating user should require auth"
+    assert client.post("/users/").status_code == 401, "Creating user should require auth"
     assert client.post("/users/", headers=build_headers(writer)).status_code == 401, "Creating user should require admin"
     # users need global role
-    assert client.post("/users/", headers=build_headers(admin), json=dict(email=username)).status_code == 400, \
-        "Duplicate create should return 400"
+    assert (
+        client.post("/users/", headers=build_headers(admin), json=dict(email=username)).status_code == 400
+    ), "Duplicate create should return 400"
     # admin can add new users
-    u = dict(email=username, role="writer")
+    u = dict(email=username, role="WRITER")
     assert "email" in set(post_json(client, "/users/", user=admin, json=u).keys())
-    assert client.post("/users/", headers=build_headers(admin), json=u).status_code == 400, \
-        "Duplicate create should return 400"
+    assert (
+        client.post("/users/", headers=build_headers(admin), json=u).status_code == 400
+    ), "Duplicate create should return 400"
 
     # users can delete themselves, others cannot delete them
     assert client.delete(f"/users/{username}", headers=build_headers(writer)).status_code == 401
@@ -75,8 +77,8 @@ def test_create_user(client: TestClient, user, writer, admin, username):
 def test_modify_user(client: TestClient, user, writer, admin):
     """Are the API endpoints and auth for modifying users correct?"""
     # Only admin can change users
-    check(client.put(f"/users/{user}", headers=build_headers(user), json={'role': 'metareader'}), 401)
-    check(client.put(f"/users/{user}", headers=build_headers(admin), json={'role': 'admin'}), 200)
+    check(client.put(f"/users/{user}", headers=build_headers(user), json={"role": "METAREADER"}), 401)
+    check(client.put(f"/users/{user}", headers=build_headers(admin), json={"role": "ADMIN"}), 200)
     assert get_global_role(user).name == "ADMIN"
 
 
@@ -85,5 +87,5 @@ def test_list_users(client: TestClient, index, admin, user):
     check(client.get("/users"), 401)
     check(client.get("/users", headers=build_headers(user)), 401)
     result = get_json(client, "/users", user=admin)
-    assert {'email': admin, 'role': 'ADMIN'} in result
-    assert {'email': user, 'role': 'READER'} in result
+    assert {"email": admin, "role": "ADMIN"} in result
+    assert {"email": user, "role": "READER"} in result

@@ -3,7 +3,7 @@ from typing import List
 import pytest
 
 from amcat4.config import get_settings
-from amcat4.elastic import es, set_fields
+from amcat4.elastic import es
 from amcat4.index import (
     Role,
     create_index,
@@ -24,7 +24,9 @@ from amcat4.index import (
     set_global_role,
     set_guest_role,
     set_role,
+    set_fields,
 )
+from amcat4.models import Field
 from tests.tools import refresh
 
 
@@ -93,7 +95,7 @@ def test_list_indices(index, guest_index, admin):
 
 def test_global_roles():
     user = "user@example.com"
-    assert get_global_role(user) is None
+    assert get_global_role(user) == Role.NONE
     set_global_role(user, Role.ADMIN)
     refresh_index(get_settings().system_index)
     assert get_global_role(user) == Role.ADMIN
@@ -102,12 +104,12 @@ def test_global_roles():
     assert get_global_role(user) == Role.WRITER
     remove_global_role(user)
     refresh_index(get_settings().system_index)
-    assert get_global_role(user) is None
+    assert get_global_role(user) == Role.NONE
 
 
 def test_index_roles(index):
     user = "user@example.com"
-    assert get_role(index, user) is None
+    assert get_role(index, user) == Role.NONE
     set_role(index, user, Role.METAREADER)
     refresh_index(get_settings().system_index)
     assert get_role(index, user) == Role.METAREADER
@@ -116,11 +118,11 @@ def test_index_roles(index):
     assert get_role(index, user) == Role.ADMIN
     remove_role(index, user)
     refresh_index(get_settings().system_index)
-    assert get_role(index, user) is None
+    assert get_role(index, user) == Role.NONE
 
 
 def test_guest_role(index):
-    assert get_guest_role(index) is None
+    assert get_guest_role(index) == Role.NONE
     set_guest_role(index, Role.READER)
     refresh()
     assert get_guest_role(index) == Role.READER
@@ -163,7 +165,7 @@ def test_summary_field(index):
         modify_index(index, summary_field="doesnotexist")
     with pytest.raises(Exception):
         modify_index(index, summary_field="title")
-    set_fields(index, {"party": "keyword"})
+    set_fields(index, {"party": Field(type="keyword")})
     modify_index(index, summary_field="party")
     assert get_index(index).summary_field == "party"
     modify_index(index, summary_field="date")

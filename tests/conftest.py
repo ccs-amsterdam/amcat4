@@ -1,5 +1,3 @@
-from typing import Iterable
-
 import pytest
 import responses
 from fastapi.testclient import TestClient
@@ -17,6 +15,7 @@ from amcat4.index import (
     set_global_role,
     upload_documents,
 )
+from amcat4.models import UpdateField
 from tests.middlecat_keypair import PUBLIC_KEY
 
 UNITS = [
@@ -136,7 +135,7 @@ def guest_index():
     delete_index(index, ignore_missing=True)
 
 
-def upload(index: str, docs: Iterable[dict], **kwargs):
+def upload(index: str, docs: list[dict[str, str]], fields: dict[str, UpdateField] | None = None):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
@@ -148,7 +147,7 @@ def upload(index: str, docs: Iterable[dict], **kwargs):
         for k, v in defaults.items():
             if k not in doc:
                 doc[k] = v
-    upload_documents(index, docs, **kwargs)
+    upload_documents(index, docs, fields)
     refresh_index(index)
     return ids
 
@@ -191,7 +190,7 @@ def populate_index(index):
     upload(
         index,
         TEST_DOCUMENTS,
-        fields={"cat": "keyword", "subcat": "keyword", "i": "long"},
+        fields={"cat": UpdateField(type="keyword"), "subcat": UpdateField(type="keyword"), "i": UpdateField(type="long")},
     )
     return TEST_DOCUMENTS
 

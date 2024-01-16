@@ -22,7 +22,7 @@ from amcat4 import index
 from amcat4.config import get_settings, AuthOptions, validate_settings
 from amcat4.elastic import connect_elastic, get_system_version, ping
 from amcat4.index import GLOBAL_ROLES, create_index, set_global_role, Role, list_global_users, upload_documents
-from amcat4.models import UpdateField
+from amcat4.models import Field
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -47,7 +47,7 @@ def upload_test_data() -> str:
         )
         for row in csvfile
     ]
-    columns = dict(president=UpdateField(type="keyword"), party=UpdateField(type="keyword"), year=UpdateField(type="double"))
+    columns = dict(president=Field(type="keyword"), party=Field(type="keyword"), year=Field(type="double"))
     upload_documents(SOTU_INDEX, docs, columns)
     return SOTU_INDEX
 
@@ -107,7 +107,7 @@ def migrate_index(_args) -> None:
             elastic.indices.delete(index=settings.system_index)
             for index, roles_dict in indices.items():
                 guest_role = roles_dict.pop("_guest", None)
-                roles_dict.pop("admin", None)
+                roles_dict.pop("ADMIN", None)
                 roles = [{"email": email, "role": role} for (email, role) in roles_dict.items()]
                 doc: dict[str, Any] = dict(name=index, guest_role=guest_role, roles=roles)
                 if index == GLOBAL_ROLES:

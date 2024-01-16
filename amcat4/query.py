@@ -235,9 +235,7 @@ def query_highlight(fields: list[FieldSpec], highlight_queries: bool = False) ->
                 "number_of_fragments": field.snippet.max_matches,
                 "fragment_size": field.snippet.match_chars or 1,  # 0 would return the whole field
             }
-            print(field.snippet)
             if field.snippet.max_matches == 0:
-                print("heey")
                 # If max_matches is zero, we drop the query for highlighting so that
                 # the nomatch_chars are returned
                 highlight["fields"][field.name]["highlight_query"] = {"match_all": {}}

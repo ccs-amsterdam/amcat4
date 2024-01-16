@@ -171,7 +171,11 @@ def create_index(
     """
     Create a new index in elasticsearch and register it with this AmCAT instance
     """
-    set_fields(index, DEFAULT_INDEX_FIELDS)
+    default_mapping = {}
+    for field, settings in DEFAULT_INDEX_FIELDS.items():
+        default_mapping[field] = ES_MAPPINGS[settings.type]
+
+    es().indices.create(index=index, mappings={"properties": default_mapping})
     register_index(
         index,
         guest_role=guest_role,
@@ -179,6 +183,7 @@ def create_index(
         description=description,
         admin=admin,
     )
+    set_fields(index, DEFAULT_INDEX_FIELDS)
 
 
 def register_index(
@@ -303,14 +308,15 @@ def set_fields(index: str, new_fields: dict[str, Field] | dict[str, UpdateField]
     what their (elastic) types are. So whenever fields are added or the type is updated, we
     also update the index mapping.
     """
+
     system_index = get_settings().system_index
     try:
         es().get(index=system_index, id=index, source_includes="fields")
+        fields = get_fields(index)
     except NotFoundError:
-        raise ValueError(f"Index {index} is not registered")
+        fields = {}
 
     type_mappings = {}
-    fields = get_fields(index)
 
     # Field type specific validation
     for field, settings in new_fields.items():
@@ -329,7 +335,7 @@ def set_fields(index: str, new_fields: dict[str, Field] | dict[str, UpdateField]
 
             type_mappings[field] = ES_MAPPINGS[new_settings.type]
             new_settings.metareader = new_settings.metareader or DEFAULT_METAREADER[new_settings.type]
-            fields[field] = Field(**new_settings.model_dump())
+            fields[field] = Field(**new_settings.model_dump(exclude_none=True))
         else:
             # Update field
             # it is not possible to update elastic field types, but we can change amcat types (see ES_MAPPINGS)
@@ -410,13 +416,10 @@ def get_role(index: str, email: str) -> Role:
     if index == GLOBAL_ROLES:
         return Role.NONE
 
-    guest_role: str | None = doc["_source"].get("guest_role", None)
-    if guest_role and guest_role.lower() != "none":
-        return Role[guest_role]
-    return Role.NONE
+    return get_guest_role(index)
 
 
-def get_guest_role(index: str) -> Optional[Role]:
+def get_guest_role(index: str) -> Role:
     """
     Return the guest role for this index, raising a IndexDoesNotExist if the index does not exist
     :returns: a Role object, or None if global role was NONE
@@ -432,7 +435,7 @@ def get_guest_role(index: str) -> Optional[Role]:
     role = d["_source"].get("guest_role")
     if role and role.lower() != "none":
         return Role[role]
-    return None
+    return Role.NONE
 
 
 def get_global_role(email: str, only_es: bool = False) -> Optional[Role]:
@@ -448,79 +451,36 @@ def get_global_role(email: str, only_es: bool = False) -> Optional[Role]:
     return get_role(index=GLOBAL_ROLES, email=email)
 
 
-def merge_overlapping_fields(index1: str, index2: str, name: str, field1: Field, field2: Field) -> Field:
-    """
-    Merge two fields, and take most restrictive metareader settings.
-    """
-
-    if field1.type != field2.type:
-        raise ValueError(f"Field {name} has different types in index {index1} ({field1.type}) and {index2} ({field2.type})")
-
-    if field1.metareader.access == "none" or field2.metareader.access == "none":
-        return Field(type=field1.type, metareader=FieldMetareaderAccess(access="none"))
-
-    if field1.metareader.access == "snippet" and field2.metareader.access == "snippet":
-        if field1.metareader.max_snippet is None:
-            return field1
-        if field2.metareader.max_snippet is None:
-            return field2
-
-        nomatch_chars = min(field1.metareader.max_snippet.nomatch_chars, field2.metareader.max_snippet.nomatch_chars)
-        max_matches = min(field1.metareader.max_snippet.max_matches, field2.metareader.max_snippet.max_matches)
-        match_chars = min(field1.metareader.max_snippet.match_chars, field2.metareader.max_snippet.match_chars)
-        return Field(
-            type=field1.type,
-            metareader=FieldMetareaderAccess(
-                access="snippet",
-                max_snippet=SnippetParams(
-                    nomatch_chars=nomatch_chars,
-                    max_matches=max_matches,
-                    match_chars=match_chars,
-                ),
-            ),
-        )
-
-    if field1.metareader.access == "snippet" or field2.metareader.access == "snippet":
-        return Field(type=field1.type, metareader=FieldMetareaderAccess(access="snippet"))
-    return Field(type=field1.type, metareader=FieldMetareaderAccess(access="read"))
-
-
 def _get_index_fields(index: str) -> Iterator[tuple[str, str]]:
     r = es().indices.get_mapping(index=index)
     for k, v in r[index]["mappings"]["properties"].items():
         yield k, v.get("type", "object")
 
 
-def get_fields(index: str | list[str]) -> dict[str, Field]:
+def get_fields(index: str) -> dict[str, Field]:
     """
     Retrieve the fields settings for this index. Look for both the field settings in the system index,
     and the field mappings in the index itself. If a field is not defined in the system index, return the
     default settings for that field type.
     """
     fields: dict[str, Field] = {}
-    indices = [index] if isinstance(index, str) else index
-    for index in indices:
-        try:
-            d = es().get(
-                index=get_settings().system_index,
-                id=index,
-                source_includes="fields",
-            )
-        except NotFoundError:
-            raise IndexDoesNotExist(index)
 
+    try:
+        d = es().get(
+            index=get_settings().system_index,
+            id=index,
+            source_includes="fields",
+        )
         index_fields = _fields_from_elastic(d["_source"].get("fields", {}))
+    except NotFoundError:
+        index_fields = {}
 
-        for field, fieldtype in _get_index_fields(index):
-            if field not in index_fields:
-                settings = Field(type=fieldtype, metareader=DEFAULT_METAREADER[fieldtype])
-            else:
-                settings = index_fields[field]
+    for field, fieldtype in _get_index_fields(index):
+        if field not in index_fields:
+            fields[field] = Field(type=fieldtype, metareader=DEFAULT_METAREADER[fieldtype])
+        else:
+            fields[field] = index_fields[field]
 
-            if field not in fields:
-                fields[field] = settings
-            else:
-                fields[field] = merge_overlapping_fields(index, index, field, fields[field], settings)
     return fields
 
 
@@ -595,9 +555,10 @@ def upload_documents(index: str, documents: list[dict[str, str]], fields: dict[s
 
     def es_actions(index, documents):
         field_types = get_fields(index)
-        for document_pydantic in documents:
-            document = document_pydantic.model_dump()
+        for document in documents:
             for key in document.keys():
+                if key == "_id":
+                    continue
                 if key not in field_types:
                     raise ValueError(f"The type for field {key} is not yet specified")
                 document[key] = coerce_type_to_elastic(document[key], field_types[key].type)

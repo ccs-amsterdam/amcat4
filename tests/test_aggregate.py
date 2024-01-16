@@ -2,6 +2,7 @@ import functools
 from datetime import datetime, date
 
 from amcat4.aggregate import query_aggregate, Axis, Aggregation
+from amcat4.api.query import _standardize_queries
 from tests.conftest import upload
 from tests.tools import dictset
 
@@ -34,9 +35,9 @@ def test_aggregate(index_docs):
 
 def test_aggregate_querystring(index_docs):
     q = functools.partial(do_query, index_docs)
-    assert q("cat", queries=["toto"]) == {"a": 1, "b": 1}
-    assert q("cat", queries=["test*"]) == {"a": 2, "b": 1}
-    assert q("cat", queries=['"a text"', "another"]) == {"a": 2}
+    assert q("cat", queries=_standardize_queries(["toto"])) == {"a": 1, "b": 1}
+    assert q("cat", queries=_standardize_queries(["test*"])) == {"a": 2, "b": 1}
+    assert q("cat", queries=_standardize_queries(['"a text"', "another"])) == {"a": 2}
 
 
 def test_interval(index_docs):
@@ -55,18 +56,18 @@ def test_second_axis(index_docs):
 def test_count(index_docs):
     """Does aggregation without axes work"""
     assert do_query(index_docs) == {(): 4}
-    assert do_query(index_docs, queries=["text"]) == {(): 2}
+    assert do_query(index_docs, queries={"text": "text"}) == {(): 2}
 
 
 def test_byquery(index_docs):
     """Get number of documents per query"""
-    assert do_query(index_docs, Axis("_query"), queries=["text", "test*"]) == {"text": 2, "test*": 3}
-    assert do_query(index_docs, Axis("_query"), Axis("subcat"), queries=["text", "test*"]) == {
+    assert do_query(index_docs, Axis("_query"), queries={"text": "text", "test*": "test*"}) == {"text": 2, "test*": 3}
+    assert do_query(index_docs, Axis("_query"), Axis("subcat"), queries={"text": "text", "test*": "test*"}) == {
         ("text", "x"): 2,
         ("test*", "x"): 1,
         ("test*", "y"): 2,
     }
-    assert do_query(index_docs, Axis("subcat"), Axis("_query"), queries=["text", "test*"]) == {
+    assert do_query(index_docs, Axis("subcat"), Axis("_query"), queries={"text": "text", "test*": "test*"}) == {
         ("x", "text"): 2,
         ("x", "test*"): 1,
         ("y", "test*"): 2,
