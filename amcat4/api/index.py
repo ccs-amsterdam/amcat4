@@ -127,8 +127,8 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
     try:
         role = check_role(user, index.Role.METAREADER, ix, required_global_role=index.Role.WRITER)
         d = index.get_index(ix)._asdict()
-        d["user_role"] = role and role.name
-        d["guest_role"] = d["guest_role"].name if d.get("guest_role") else None
+        d["user_role"] = role.name
+        d["guest_role"] = d.get("guest_role", index.Role.NONE.name)
         return d
     except index.IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")

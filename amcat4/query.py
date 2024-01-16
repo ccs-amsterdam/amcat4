@@ -215,8 +215,8 @@ def query_highlight(fields: list[FieldSpec], highlight_queries: bool = False) ->
     """
 
     highlight: dict[str, Any] = {
-        # "pre_tags": ["<em>"] if highlight is True else [""],
-        # "post_tags": ["</em>"] if highlight is True else [""],
+        "pre_tags": ["<em>"] if highlight_queries is True else [""],
+        "post_tags": ["</em>"] if highlight_queries is True else [""],
         "require_field_match": True,
         "fields": {},
     }
@@ -233,11 +233,12 @@ def query_highlight(fields: list[FieldSpec], highlight_queries: bool = False) ->
             highlight["fields"][field.name] = {
                 "no_match_size": field.snippet.nomatch_chars,
                 "number_of_fragments": field.snippet.max_matches,
-                "fragment_size": field.snippet.match_chars,
+                "fragment_size": field.snippet.match_chars or 1,  # 0 would return the whole field
             }
-            if highlight_queries is False or field.snippet.max_matches == 0:
-                # This overwrites the actual query, so that the highlights are not returned.
-                # Also, if max_matches is zero, we drop the query for highlighting so that
+            print(field.snippet)
+            if field.snippet.max_matches == 0:
+                print("heey")
+                # If max_matches is zero, we drop the query for highlighting so that
                 # the nomatch_chars are returned
                 highlight["fields"][field.name]["highlight_query"] = {"match_all": {}}
 

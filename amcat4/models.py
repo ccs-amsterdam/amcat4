@@ -1,5 +1,6 @@
+import pydantic
 from pydantic import BaseModel
-from typing import Literal, NewType, Union
+from typing import Annotated, Literal
 
 
 class SnippetParams(BaseModel):
@@ -9,9 +10,9 @@ class SnippetParams(BaseModel):
     the first [nomatch_chars] of the field.
     """
 
-    nomatch_chars: int = 0
-    max_matches: int = 0
-    match_chars: int = 0
+    nomatch_chars: Annotated[int, pydantic.Field(ge=1)] = 1
+    max_matches: Annotated[int, pydantic.Field(ge=0)] = 0
+    match_chars: Annotated[int, pydantic.Field(ge=1)] = 1
 
 
 class FieldClientDisplay(BaseModel):
@@ -34,7 +35,6 @@ class Field(BaseModel):
     type: str
     metareader: FieldMetareaderAccess = FieldMetareaderAccess()
     client_display: FieldClientDisplay = FieldClientDisplay()
-    in_index: list[str] | None = None
 
 
 class UpdateField(BaseModel):
@@ -42,10 +42,11 @@ class UpdateField(BaseModel):
 
     type: str | None = None
     metareader: FieldMetareaderAccess | None = None
+    client_display: FieldClientDisplay | None = None
 
 
 def updateField(field: Field, update: UpdateField | Field):
-    for key in field.model_fields_set:
+    for key in update.model_fields_set:
         setattr(field, key, getattr(update, key))
     return field
 

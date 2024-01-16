@@ -285,7 +285,7 @@ def set_guest_role(index: str, guest_role: Optional[Role]):
 
 
 def _fields_to_elastic(fields: dict[str, Field]) -> list[dict]:
-    return [{"field": field, "settings": settings} for field, settings in fields.items()]
+    return [{"field": field, "settings": settings.model_dump()} for field, settings in fields.items()]
 
 
 def _fields_from_elastic(
@@ -301,25 +301,34 @@ def set_fields(index: str, new_fields: dict[str, Field] | dict[str, UpdateField]
     Note that we're storing fields in two places. We keep all field settings in the system index.
     But the index that contains the documents also needs to know what fields there are and
     what their (elastic) types are. So whenever fields are added or the type is updated, we
-    also udpate the index mapping.
+    also update the index mapping.
     """
     system_index = get_settings().system_index
     try:
-        d = es().get(index=system_index, id=index, source_includes="fields")
+        es().get(index=system_index, id=index, source_includes="fields")
     except NotFoundError:
         raise ValueError(f"Index {index} is not registered")
 
     type_mappings = {}
-    fields = _fields_from_elastic(d["_source"].get("fields", {}))
+    fields = get_fields(index)
+
+    # Field type specific validation
+    for field, settings in new_fields.items():
+        type = fields.get(field, settings).type
+        if type != "text":
+            if settings.metareader and settings.metareader.access == "snippet":
+                raise ValueError(f"Field {field} is not of type text, cannot set metareader access to snippet")
 
     for field, new_settings in new_fields.items():
         current = fields.get(field)
+
         if current is None:
             # Create field
             if new_settings.type is None:
                 raise ValueError(f"Field {field} does not yet exist, and to create a new field you need to specify a type")
 
             type_mappings[field] = ES_MAPPINGS[new_settings.type]
+            new_settings.metareader = new_settings.metareader or DEFAULT_METAREADER[new_settings.type]
             fields[field] = Field(**new_settings.model_dump())
         else:
             # Update field
@@ -329,7 +338,6 @@ def set_fields(index: str, new_fields: dict[str, Field] | dict[str, UpdateField]
                     raise ValueError(
                         f"Field {field} already exists with type {current.type}, cannot change to {new_settings.type}"
                     )
-
             # set new field settings (amcat type, metareader, etc.)
             fields[field] = updateField(current, new_settings)
 
@@ -337,7 +345,7 @@ def set_fields(index: str, new_fields: dict[str, Field] | dict[str, UpdateField]
     es().update(
         index=system_index,
         id=index,
-        doc=dict(roles=_fields_to_elastic(fields)),
+        doc=dict(fields=_fields_to_elastic(fields)),
     )
 
 
@@ -442,18 +450,14 @@ def get_global_role(email: str, only_es: bool = False) -> Optional[Role]:
 
 def merge_overlapping_fields(index1: str, index2: str, name: str, field1: Field, field2: Field) -> Field:
     """
-    Merge two fields, and take most restrictive metareader settings. Also add in_index list.
+    Merge two fields, and take most restrictive metareader settings.
     """
-
-    in_index1 = field1.in_index if field1.in_index is not None else [index1]
-    in_index2 = field2.in_index if field2.in_index is not None else [index2]
-    in_index = list(set(in_index1 + in_index2))
 
     if field1.type != field2.type:
         raise ValueError(f"Field {name} has different types in index {index1} ({field1.type}) and {index2} ({field2.type})")
 
     if field1.metareader.access == "none" or field2.metareader.access == "none":
-        return Field(type=field1.type, in_index=in_index, metareader=FieldMetareaderAccess(access="none"))
+        return Field(type=field1.type, metareader=FieldMetareaderAccess(access="none"))
 
     if field1.metareader.access == "snippet" and field2.metareader.access == "snippet":
         if field1.metareader.max_snippet is None:
@@ -466,7 +470,6 @@ def merge_overlapping_fields(index1: str, index2: str, name: str, field1: Field,
         match_chars = min(field1.metareader.max_snippet.match_chars, field2.metareader.max_snippet.match_chars)
         return Field(
             type=field1.type,
-            in_index=in_index,
             metareader=FieldMetareaderAccess(
                 access="snippet",
                 max_snippet=SnippetParams(
@@ -478,8 +481,8 @@ def merge_overlapping_fields(index1: str, index2: str, name: str, field1: Field,
         )
 
     if field1.metareader.access == "snippet" or field2.metareader.access == "snippet":
-        return Field(type=field1.type, in_index=in_index, metareader=FieldMetareaderAccess(access="snippet"))
-    return Field(type=field1.type, in_index=in_index, metareader=FieldMetareaderAccess(access="read"))
+        return Field(type=field1.type, metareader=FieldMetareaderAccess(access="snippet"))
+    return Field(type=field1.type, metareader=FieldMetareaderAccess(access="read"))
 
 
 def _get_index_fields(index: str) -> Iterator[tuple[str, str]]:
@@ -515,7 +518,6 @@ def get_fields(index: str | list[str]) -> dict[str, Field]:
                 settings = index_fields[field]
 
             if field not in fields:
-                settings.in_index = [index]
                 fields[field] = settings
             else:
                 fields[field] = merge_overlapping_fields(index, index, field, fields[field], settings)

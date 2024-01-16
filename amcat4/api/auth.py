@@ -146,11 +146,12 @@ def check_fields_access(index: str, user: str, fields: list[FieldSpec]) -> None:
             if metareader.max_snippet is None:
                 max_params_msg = ""
             else:
-                max_params_msg = "Can only read snippet with max parameters:"
-                f"\n- nomatch_chars = {metareader.max_snippet.nomatch_chars}"
-                f"\n- max_matches = {metareader.max_snippet.max_matches}"
-                f"\n- match_chars = {metareader.max_snippet.match_chars}"
-
+                max_params_msg = (
+                    "Can only read snippet with max parameters:"
+                    f" nomatch_chars={metareader.max_snippet.nomatch_chars}"
+                    f", max_matches={metareader.max_snippet.max_matches}"
+                    f", match_chars={metareader.max_snippet.match_chars}"
+                )
             if field.snippet is None:
                 # if snippet is not specified, the whole field is requested
                 raise HTTPException(
@@ -169,7 +170,7 @@ def check_fields_access(index: str, user: str, fields: list[FieldSpec]) -> None:
         else:
             raise HTTPException(
                 status_code=401,
-                detail=f"METAREADER cannot read {field} on index {index}",
+                detail=f"METAREADER cannot read {field.name} on index {index}",
             )
 
 
