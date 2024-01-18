@@ -1,3 +1,4 @@
+from typing import Any
 import pytest
 import responses
 from fastapi.testclient import TestClient
@@ -135,7 +136,7 @@ def guest_index():
     delete_index(index, ignore_missing=True)
 
 
-def upload(index: str, docs: list[dict[str, str]], fields: dict[str, UpdateField] | None = None):
+def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, UpdateField] | None = None):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
@@ -213,6 +214,7 @@ def index_many():
     upload(
         index,
         [dict(id=i, pagenr=abs(10 - i), text=text) for (i, text) in enumerate(["odd", "even"] * 10)],
+        fields={"id": UpdateField(type="long"), "pagenr": UpdateField(type="long")},
     )
     yield index
     delete_index(index, ignore_missing=True)

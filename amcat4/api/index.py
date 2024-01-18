@@ -1,6 +1,6 @@
 """API Endpoints for document and index management."""
 from http import HTTPStatus
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import elasticsearch
 from elastic_transport import ApiError
@@ -144,7 +144,7 @@ def delete_index(ix: str, user: str = Depends(authenticated_user)):
 @app_index.post("/{ix}/documents", status_code=status.HTTP_201_CREATED)
 def upload_documents(
     ix: str,
-    documents: Annotated[list[dict[str, str]], Body(description="The documents to upload")],
+    documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
     fields: Annotated[
         dict[str, str | UpdateField] | None, Body(description="Optional Specification of field (column) types")
     ] = None,
@@ -241,11 +241,7 @@ def get_fields(ix: str, user: str = Depends(authenticated_user)):
     Returns a json array of {name, type} objects
     """
     check_role(user, index.Role.METAREADER, ix)
-
-    if "," in ix:
-        return index.get_fields(ix.split(","))
-    else:
-        return index.get_fields(ix)
+    return index.get_fields(ix)
 
 
 @app_index.post("/{ix}/fields")

@@ -37,7 +37,7 @@ def list_es_indices() -> List[str]:
     return list(es().indices.get(index="*").keys())
 
 
-def list_index_names(email: str = None) -> List[str]:
+def list_index_names(email: str | None = None) -> List[str]:
     return [ix.name for ix in list_known_indices(email)]
 
 
@@ -54,9 +54,9 @@ def test_create_delete_index():
     assert index in list_index_names()
     # Cannot create or register duplicate index
     with pytest.raises(Exception):
-        create_index(index.name)
+        create_index(index)
     with pytest.raises(Exception):
-        register_index(index.name)
+        register_index(index)
     delete_index(index)
     refresh_index(get_settings().system_index)
     assert index not in list_es_indices()

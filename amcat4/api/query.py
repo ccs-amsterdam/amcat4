@@ -99,7 +99,7 @@ def _standardize_filters(
     """Convert filters to dict format: {field: {values: []}}."""
     if not filters:
         return None
-
+    print(filters)
     f = dict()
     for field, filter_ in filters.items():
         if isinstance(filter_, str):
@@ -110,6 +110,7 @@ def _standardize_filters(
             f[field] = filter_
         else:
             raise ValueError(f"Cannot parse filter: {filter_}")
+    print(f)
     return f
 
 

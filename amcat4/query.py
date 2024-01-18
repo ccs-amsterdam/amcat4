@@ -4,14 +4,10 @@ All things query
 from math import ceil
 
 from typing import (
-    Mapping,
-    Iterable,
-    Optional,
     Union,
     Sequence,
     Any,
     Dict,
-    List,
     Tuple,
     Literal,
 )
@@ -73,7 +69,7 @@ def build_body(
     fs, runtime_mappings = [], {}
     if filters:
         for field, filter in filters.items():
-            extra_runtime_mappings, filter_term = parse_filter(field, filter)
+            extra_runtime_mappings, filter_term = parse_filter(field, filter.model_dump())
             fs.append(filter_term)
             if extra_runtime_mappings:
                 runtime_mappings.update(extra_runtime_mappings)
@@ -125,7 +121,7 @@ class QueryResult:
 
 def query_documents(
     index: Union[str, Sequence[str]],
-    fields: list[FieldSpec],
+    fields: list[FieldSpec] | None = None,
     queries: dict[str, str] | None = None,
     filters: dict[str, FilterSpec] | None = None,
     sort: list[dict[str, SortSpec]] | None = None,
@@ -136,7 +132,7 @@ def query_documents(
     scroll_id: str | None = None,
     highlight: bool = False,
     **kwargs,
-) -> QueryResult | None:
+) -> QueryResult:
     """
     Conduct a query_string query, returning the found documents.
 
@@ -145,8 +141,8 @@ def query_documents(
     If the scroll parameter is given, the result will contain a scroll_id which can be used to get the next batch.
     In case there are no more documents to scroll, it will return None
     :param index: The name of the index or indexes
-    :param fields: List of fields using the FieldSpec syntax. We enforce specific field selection here. Any logic
-                   for determining whether a user can see the field should be done in the API layer.
+    :param fields: List of fields using the FieldSpec syntax. If not specified, only return _id.
+                   !Any logic for determining whether a user can see the field should be done in the API layer.
     :param queries: if not None, a dict with labels and queries {label1: query1, ...}
     :param filters: if not None, a dict where the key is the field and the value is a FilterSpec
 
@@ -174,14 +170,14 @@ def query_documents(
     if scroll_id:
         result = es().scroll(scroll_id=scroll_id, **kwargs)
         if not result["hits"]["hits"]:
-            return None
+            return QueryResult(data=[])
     else:
-        h = query_highlight(fields, highlight)
+        h = query_highlight(fields, highlight) if fields is not None else None
         body = build_body(queries, filters, h)
 
-        if fields:
-            fieldnames = [field.name for field in fields]
-            kwargs["_source"] = fieldnames
+        fieldnames = [field.name for field in fields] if fields is not None else ["_id"]
+        kwargs["_source"] = fieldnames
+
         if not scroll:
             kwargs["from_"] = page * per_page
         result = es().search(index=index, size=per_page, **body, **kwargs)

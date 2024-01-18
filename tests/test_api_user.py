@@ -61,7 +61,7 @@ def test_create_user(client: TestClient, user, writer, admin, username):
     ), "Duplicate create should return 400"
     # admin can add new users
     u = dict(email=username, role="WRITER")
-    assert "email" in set(post_json(client, "/users/", user=admin, json=u).keys())
+    assert "email" in set((post_json(client, "/users/", user=admin, json=u) or {}).keys())
     assert (
         client.post("/users/", headers=build_headers(admin), json=u).status_code == 400
     ), "Duplicate create should return 400"
@@ -86,6 +86,6 @@ def test_list_users(client: TestClient, index, admin, user):
     # You need global WRITER rights to list users
     check(client.get("/users"), 401)
     check(client.get("/users", headers=build_headers(user)), 401)
-    result = get_json(client, "/users", user=admin)
+    result = get_json(client, "/users", user=admin) or {}
     assert {"email": admin, "role": "ADMIN"} in result
     assert {"email": user, "role": "READER"} in result

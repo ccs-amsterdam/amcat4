@@ -1,8 +1,8 @@
 import functools
-import re
 from typing import Set, Optional
 
 from amcat4 import query
+from amcat4.models import FieldSpec
 from tests.conftest import upload
 
 
@@ -37,7 +37,7 @@ def test_range_query(index_docs):
 
 
 def test_fields(index_docs):
-    res = query.query_documents(index_docs, queries=["test"], fields=["cat", "title"])
+    res = query.query_documents(index_docs, queries={"1": "test"}, fields=[FieldSpec(name="cat"), FieldSpec(name="title")])
     assert res is not None
     assert set(res.data[0].keys()) == {"cat", "title", "_id"}
 
@@ -46,14 +46,18 @@ def test_highlight(index):
     words = "The error of regarding functional notions is not quite equivalent to"
     text = f"{words} a test document. {words} other text documents. {words} you!"
     upload(index, [dict(title="Een test titel", text=text)])
-    res = query.query_documents(index, fields=["title", "text"], queries=["te*"], highlight=True)
+    res = query.query_documents(
+        index, fields=[FieldSpec(name="title"), FieldSpec(name="text")], queries={"1": "te*"}, highlight=True
+    )
     assert res is not None
     doc = res.data[0]
     assert doc["title"] == "Een <em>test</em> titel"
     assert doc["text"] == f"{words} a <em>test</em> document. {words} other <em>text</em> documents. {words} you!"
 
     # snippets can also have highlights
-    doc = query.query_documents(index, queries=["te*"], fields=["title"], snippets=["text"], highlight=True).data[0]
+    doc = query.query_documents(
+        index, queries={"1": "te*"}, fields=[FieldSpec(name="title")], snippets=["text"], highlight=True
+    ).data[0]
     assert doc["title"] == "Een <em>test</em> titel"
     assert " a <em>test</em>" in doc["text"]
     assert " ... " in doc["text"]

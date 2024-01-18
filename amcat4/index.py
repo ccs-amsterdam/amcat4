@@ -33,7 +33,7 @@ Elasticsearch implementation
 """
 import collections
 from enum import IntEnum
-from typing import Iterable, Iterator, Optional, Literal
+from typing import Any, Iterable, Iterator, Optional, Literal
 
 import hashlib
 import json
@@ -438,7 +438,7 @@ def get_guest_role(index: str) -> Role:
     return Role.NONE
 
 
-def get_global_role(email: str, only_es: bool = False) -> Optional[Role]:
+def get_global_role(email: str, only_es: bool = False) -> Role:
     """
     Retrieve the global role of this user
 
@@ -514,6 +514,8 @@ def coerce_type_to_elastic(value, ftype):
     Coerces values into the respective type in elastic
     based on ES_MAPPINGS and elastic field types
     """
+    # TODO: aks Wouter what this is based on, and why it doesn't
+    # actually seem to be based on ES_MAPPINGS
     if ftype in ["keyword", "constant_keyword", "wildcard", "url", "tag", "text"]:
         value = str(value)
     elif ftype in [
@@ -522,7 +524,6 @@ def coerce_type_to_elastic(value, ftype):
         "byte",
         "double",
         "float",
-        "half_float",
         "half_float",
         "unsigned_long",
     ]:
@@ -544,7 +545,7 @@ def _get_hash(document: dict) -> str:
     return m.hexdigest()
 
 
-def upload_documents(index: str, documents: list[dict[str, str]], fields: dict[str, UpdateField] | None = None) -> None:
+def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[str, UpdateField] | None = None) -> None:
     """
     Upload documents to this index
 
@@ -557,6 +558,7 @@ def upload_documents(index: str, documents: list[dict[str, str]], fields: dict[s
         field_types = get_fields(index)
         for document in documents:
             for key in document.keys():
+                print(key)
                 if key == "_id":
                     continue
                 if key not in field_types:
