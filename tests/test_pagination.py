@@ -1,4 +1,5 @@
 from typing import List
+from amcat4.models import FieldSpec
 from amcat4.query import query_documents
 
 
@@ -27,24 +28,21 @@ def test_sort(index_many):
 
 
 def test_scroll(index_many):
-    r = query_documents(index_many, queries={"odd": "odd"}, scroll="5m", per_page=4)
+    r = query_documents(index_many, queries={"odd": "odd"}, scroll="5m", per_page=4, fields=[FieldSpec(name="id")])
     assert len(r.data) == 4
     assert r.total_count, 10
     assert r.page_count == 3
     allids = list(r.data)
 
-    r = query_documents(index_many, scroll_id=r.scroll_id)
+    r = query_documents(index_many, scroll_id=r.scroll_id, fields=[FieldSpec(name="id")])
     assert len(r.data) == 4
     allids += r.data
 
-    r = query_documents(index_many, scroll_id=r.scroll_id)
+    r = query_documents(index_many, scroll_id=r.scroll_id, fields=[FieldSpec(name="id")])
     assert len(r.data) == 2
     allids += r.data
 
-    print(allids)
-    # TODO: wth happens when people upload an id field? does it
-    # overwrite _id, or is _id in this case coincidentally also
-    # serial int?
-    r = query_documents(index_many, scroll_id=r.scroll_id)
+    r = query_documents(index_many, scroll_id=r.scroll_id, fields=[FieldSpec(name="id")])
+
     assert len(r.data) == 0
     assert {int(h["id"]) for h in allids} == {0, 2, 4, 6, 8, 10, 12, 14, 16, 18}

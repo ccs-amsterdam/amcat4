@@ -25,8 +25,8 @@ def build_body(
     highlight: dict | None = None,
     ids: list[str] | None = None,
 ):
-    def parse_filter(field, filter) -> Tuple[dict, dict]:
-        filter = filter.copy()
+    def parse_filter(field: str, filterSpec: FilterSpec) -> Tuple[dict, dict]:
+        filter = filterSpec.model_dump(exclude_none=True)
         extra_runtime_mappings = {}
         field_filters = []
         for value in filter.pop("values", []):
@@ -69,7 +69,7 @@ def build_body(
     fs, runtime_mappings = [], {}
     if filters:
         for field, filter in filters.items():
-            extra_runtime_mappings, filter_term = parse_filter(field, filter.model_dump())
+            extra_runtime_mappings, filter_term = parse_filter(field, filter)
             fs.append(filter_term)
             if extra_runtime_mappings:
                 runtime_mappings.update(extra_runtime_mappings)

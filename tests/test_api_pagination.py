@@ -7,11 +7,12 @@ def test_pagination(client, index, user):
     """Does basic pagination work?"""
     set_role(index, user, Role.READER)
 
+    # TODO. Tests are not independent. test_pagination fails if run directly after other tests.
+    # Probably delete_index doesn't fully delete
+
     upload(index, docs=[{"i": i} for i in range(66)])
     url = f"/index/{index}/documents"
-    r = get_json(
-        client, url, user=user, params={"sort": "i", "per_page": 20, "fields": ["i"]}
-    )
+    r = get_json(client, url, user=user, params={"sort": "i", "per_page": 20, "fields": ["i"]})
     assert r["meta"]["per_page"] == 20
     assert r["meta"]["page"] == 0
     assert r["meta"]["page_count"] == 4
@@ -24,9 +25,7 @@ def test_pagination(client, index, user):
     )
     assert r["meta"]["page"] == 3
     assert {h["i"] for h in r["results"]} == {60, 61, 62, 63, 64, 65}
-    r = get_json(
-        client, url, user=user, params={"sort": "i", "per_page": 20, "page": 4}
-    )
+    r = get_json(client, url, user=user, params={"sort": "i", "per_page": 20, "page": 4})
     assert len(r["results"]) == 0
     # Test POST query
 

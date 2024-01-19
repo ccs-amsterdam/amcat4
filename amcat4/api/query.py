@@ -3,6 +3,7 @@
 from typing import Annotated, Dict, List, Optional, Any, Union, Iterable, Literal
 
 from fastapi import APIRouter, HTTPException, status, Depends, Response, Body
+from pydantic import InstanceOf
 from pydantic.main import BaseModel
 
 from amcat4 import query, aggregate
@@ -99,8 +100,8 @@ def _standardize_filters(
     """Convert filters to dict format: {field: {values: []}}."""
     if not filters:
         return None
-    print(filters)
-    f = dict()
+
+    f: dict[str, FilterSpec] = {}
     for field, filter_ in filters.items():
         if isinstance(filter_, str):
             f[field] = FilterSpec(values=[filter_])
@@ -110,7 +111,6 @@ def _standardize_filters(
             f[field] = filter_
         else:
             raise ValueError(f"Cannot parse filter: {filter_}")
-    print(f)
     return f
 
 
