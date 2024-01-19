@@ -15,6 +15,8 @@ from dotenv import load_dotenv
 from pydantic import model_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ENV_PREFIX = "amcat4_"
+
 
 class AuthOptions(str, Enum):
     #: everyone (that can reach the server) can do anything they want
@@ -120,7 +122,7 @@ class Settings(BaseSettings):
             }
         return self
 
-    model_config = SettingsConfigDict(env_prefix="amcat4_")
+    model_config = SettingsConfigDict(env_prefix=ENV_PREFIX)
 
 
 @functools.lru_cache()
@@ -145,5 +147,5 @@ def validate_settings():
 
 if __name__ == "__main__":
     # Echo the settings
-    for k, v in get_settings().dict().items():
-        print(f"{Settings.Config.env_prefix.upper()}{k.upper()}={v}")
+    for k, v in get_settings().model_dump().items():
+        print(f"{ENV_PREFIX.upper()}{k.upper()}={v}")

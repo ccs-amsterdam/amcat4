@@ -3,7 +3,7 @@ from typing import Optional, Iterable
 
 
 class DateMapping:
-    interval = None
+    interval: str | None = None
 
     def mapping(self, field: str) -> dict:
         return {self.fieldname(field): {"type": self.mapping_type(), "script": self.mapping_script(field)}}

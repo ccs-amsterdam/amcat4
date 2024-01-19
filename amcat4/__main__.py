@@ -22,7 +22,7 @@ from amcat4 import index
 from amcat4.config import get_settings, AuthOptions, validate_settings
 from amcat4.elastic import connect_elastic, get_system_version, ping
 from amcat4.index import GLOBAL_ROLES, create_index, set_global_role, Role, list_global_users, upload_documents
-from amcat4.models import Field
+from amcat4.models import UpdateField
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -47,7 +47,7 @@ def upload_test_data() -> str:
         )
         for row in csvfile
     ]
-    columns = dict(president=Field(type="keyword"), party=Field(type="keyword"), year=Field(type="double"))
+    columns = dict(president=UpdateField(type="keyword"), party=UpdateField(type="keyword"), year=UpdateField(type="double"))
     upload_documents(SOTU_INDEX, docs, columns)
     return SOTU_INDEX
 
@@ -188,7 +188,7 @@ def config_amcat(args):
     for fieldname in settings.model_fields_set:
         if fieldname not in settings_dict:
             continue
-        fieldinfo = settings.model_fields[fieldname]
+        fieldinfo = settings_dict[fieldname]
         validation_function = AuthOptions.validate if fieldname == "auth" else None
         value = getattr(settings, fieldname)
         value = menu(fieldname, fieldinfo, value, validation_function=validation_function)
@@ -199,7 +199,7 @@ def config_amcat(args):
 
     with env_file_location.open("w") as f:
         for fieldname, value in settings_dict.items():
-            fieldinfo = settings.model_fields[fieldname]
+            fieldinfo = settings_dict[fieldname]
             if doc := fieldinfo.description:
                 f.write(f"# {doc}\n")
             if _isenum(fieldinfo):
@@ -225,16 +225,17 @@ UNCHANGED = object()
 
 def _isenum(fieldinfo: FieldInfo) -> bool:
     try:
-        return issubclass(fieldinfo.annotation, Enum)
+        return issubclass(fieldinfo.annotation, Enum) if fieldinfo.annotation is not None else False
     except TypeError:
         return False
 
 
 def menu(fieldname: str, fieldinfo: FieldInfo, value, validation_function=None):
     print(f"\n{bold(fieldname)}: {fieldinfo.description}")
-    if _isenum(fieldinfo):
+    if _isenum(fieldinfo) and fieldinfo.annotation:
         print("  Possible choices:")
-        for option in fieldinfo.annotation:
+        options: Any = fieldinfo.annotation
+        for option in options:
             print(f"  - {option.name}: {option.__doc__}")
         print()
     print(f"The current value for {bold(fieldname)} is {bold(value)}.")

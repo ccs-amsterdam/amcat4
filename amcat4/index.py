@@ -345,7 +345,7 @@ def set_fields(index: str, new_fields: dict[str, Field] | dict[str, UpdateField]
                         f"Field {field} already exists with type {current.type}, cannot change to {new_settings.type}"
                     )
             # set new field settings (amcat type, metareader, etc.)
-            fields[field] = updateField(current, new_settings)
+            fields[field] = updateField(field=current, update=new_settings)
 
     es().indices.put_mapping(index=index, properties=type_mappings)
     es().update(
@@ -551,14 +551,13 @@ def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[s
 
     :param index: The name of the index (without prefix)
     :param documents: A sequence of article dictionaries
-    :param fields: A mapping of field:type for field types
+    :param fields: A mapping of fieldname:UpdateField for field types
     """
 
     def es_actions(index, documents):
         field_types = get_fields(index)
         for document in documents:
             for key in document.keys():
-                print(key)
                 if key == "_id":
                     continue
                 if key not in field_types:
