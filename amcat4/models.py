@@ -1,6 +1,34 @@
 import pydantic
 from pydantic import BaseModel
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NewType
+
+
+AmcatType = Literal["text", "date", "boolean", "keyword", "number", "object", "vector", "geo"]
+ElasticType = Literal[
+    "text",
+    "annotated_text",
+    "binary",
+    "match_only_text",
+    "date",
+    "boolean",
+    "keyword",
+    "constant_keyword",
+    "wildcard",
+    "integer",
+    "byte",
+    "short",
+    "long",
+    "unsigned_long",
+    "float",
+    "half_float",
+    "double",
+    "scaled_float",
+    "object",
+    "flattened",
+    "nested",
+    "dense_vector",
+    "geo_point",
+]
 
 
 class SnippetParams(BaseModel):
@@ -10,9 +38,9 @@ class SnippetParams(BaseModel):
     the first [nomatch_chars] of the field.
     """
 
-    nomatch_chars: Annotated[int, pydantic.Field(ge=1)] = 1
+    nomatch_chars: Annotated[int, pydantic.Field(ge=1)] = 100
     max_matches: Annotated[int, pydantic.Field(ge=0)] = 0
-    match_chars: Annotated[int, pydantic.Field(ge=1)] = 1
+    match_chars: Annotated[int, pydantic.Field(ge=1)] = 50
 
 
 class FieldClientDisplay(BaseModel):
@@ -32,15 +60,23 @@ class FieldMetareaderAccess(BaseModel):
 class Field(BaseModel):
     """Settings for a field."""
 
-    type: str
+    type: AmcatType
+    elastic_type: ElasticType
     metareader: FieldMetareaderAccess = FieldMetareaderAccess()
     client_display: FieldClientDisplay = FieldClientDisplay()
+
+
+class CreateField(BaseModel):
+    """Model for creating a field"""
+
+    elastic_type: ElasticType
+    metareader: FieldMetareaderAccess | None = None
+    client_display: FieldClientDisplay | None = None
 
 
 class UpdateField(BaseModel):
     """Model for updating a field"""
 
-    type: str | None = None
     metareader: FieldMetareaderAccess | None = None
     client_display: FieldClientDisplay | None = None
 

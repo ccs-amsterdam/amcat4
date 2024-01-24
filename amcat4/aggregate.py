@@ -6,7 +6,7 @@ from typing import Mapping, Iterable, Union, Tuple, Sequence, List, Dict
 
 from amcat4.date_mappings import interval_mapping
 from amcat4.elastic import es
-from amcat4.index import get_fields
+from amcat4.fields import get_fields
 from amcat4.query import build_body
 from amcat4.models import Field, FilterSpec
 

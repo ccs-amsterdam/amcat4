@@ -33,7 +33,7 @@ Elasticsearch implementation
 """
 import collections
 from enum import IntEnum
-from typing import Any, Iterable, Iterator, Optional, Literal
+from typing import Any, Iterable, Optional, Literal
 
 import hashlib
 import json
@@ -44,45 +44,14 @@ from elasticsearch import NotFoundError
 # from amcat4.api.common import py2dict
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import Field, FieldClientDisplay, SnippetParams, UpdateField, updateField, FieldMetareaderAccess
-
-
-# The Field model has a type field as we use it in amcat, but we need to
-# convert this to an elastic type. This is the mapping
-ES_MAPPINGS = {
-    "long": {"type": "long"},
-    "date": {"type": "date", "format": "strict_date_optional_time"},
-    "double": {"type": "double"},
-    "keyword": {"type": "keyword"},
-    "url": {"type": "keyword"},
-    "tag": {"type": "keyword"},
-    "id": {"type": "keyword"},
-    "text": {"type": "text"},
-    "object": {"type": "object"},
-    "geo_point": {"type": "geo_point"},
-    "dense_vector": {"type": "dense_vector"},
-}
-
-DEFAULT_METAREADER = {
-    "long": FieldMetareaderAccess(access="read"),
-    "date": FieldMetareaderAccess(access="read"),
-    "double": FieldMetareaderAccess(access="read"),
-    "keyword": FieldMetareaderAccess(access="read"),
-    "url": FieldMetareaderAccess(access="read"),
-    "tag": FieldMetareaderAccess(access="read"),
-    "id": FieldMetareaderAccess(access="read"),
-    "text": FieldMetareaderAccess(access="none"),
-    "object": FieldMetareaderAccess(access="none"),
-    "geo_point": FieldMetareaderAccess(access="none"),
-    "dense_vector": FieldMetareaderAccess(access="none"),
-}
-
-DEFAULT_INDEX_FIELDS = {
-    "text": Field(type="text", metareader=DEFAULT_METAREADER["text"], client_display=FieldClientDisplay(in_list=True)),
-    "title": Field(type="text", metareader=DEFAULT_METAREADER["text"], client_display=FieldClientDisplay(in_list=True)),
-    "date": Field(type="date", metareader=DEFAULT_METAREADER["date"], client_display=FieldClientDisplay(in_list=True)),
-    "url": Field(type="url", metareader=DEFAULT_METAREADER["url"], client_display=FieldClientDisplay(in_list=True)),
-}
+from amcat4.fields import (
+    DEFAULT_FIELDS,
+    coerce_type,
+    create_elastic_fields,
+    get_fields,
+    set_fields,
+)
+from amcat4.models import ElasticType, Field
 
 
 class Role(IntEnum):
@@ -171,9 +140,10 @@ def create_index(
     """
     Create a new index in elasticsearch and register it with this AmCAT instance
     """
+
     default_mapping = {}
-    for field, settings in DEFAULT_INDEX_FIELDS.items():
-        default_mapping[field] = ES_MAPPINGS[settings.type]
+    for field, settings in DEFAULT_FIELDS.items():
+        default_mapping[field] = get_elastic_field_mapping(settings.type)
 
     es().indices.create(index=index, mappings={"properties": default_mapping})
     register_index(
@@ -183,7 +153,8 @@ def create_index(
         description=description,
         admin=admin,
     )
-    set_fields(index, DEFAULT_INDEX_FIELDS)
+
+    set_fields(index, DEFAULT_FIELDS)
 
 
 def register_index(
@@ -289,72 +260,6 @@ def set_guest_role(index: str, guest_role: Optional[Role]):
     modify_index(index, guest_role=guest_role, remove_guest_role=(guest_role is None))
 
 
-def _fields_to_elastic(fields: dict[str, Field]) -> list[dict]:
-    return [{"field": field, "settings": settings.model_dump()} for field, settings in fields.items()]
-
-
-def _fields_from_elastic(
-    fields: list[dict],
-) -> dict[str, Field]:
-    return {fs["field"]: Field.model_validate(fs["settings"]) for fs in fields}
-
-
-def set_fields(index: str, new_fields: dict[str, Field] | dict[str, UpdateField]):
-    """
-    Set the fields settings for this index.
-
-    Note that we're storing fields in two places. We keep all field settings in the system index.
-    But the index that contains the documents also needs to know what fields there are and
-    what their (elastic) types are. So whenever fields are added or the type is updated, we
-    also update the index mapping.
-    """
-
-    system_index = get_settings().system_index
-    try:
-        es().get(index=system_index, id=index, source_includes="fields")
-        fields = get_fields(index)
-    except NotFoundError:
-        fields = {}
-
-    type_mappings = {}
-
-    # Field type specific validation
-    for field, settings in new_fields.items():
-        type = fields.get(field, settings).type
-        if type != "text":
-            if settings.metareader and settings.metareader.access == "snippet":
-                raise ValueError(f"Field {field} is not of type text, cannot set metareader access to snippet")
-
-    for field, new_settings in new_fields.items():
-        current = fields.get(field)
-
-        if current is None:
-            # Create field
-            if new_settings.type is None:
-                raise ValueError(f"Field {field} does not yet exist, and to create a new field you need to specify a type")
-
-            type_mappings[field] = ES_MAPPINGS[new_settings.type]
-            new_settings.metareader = new_settings.metareader or DEFAULT_METAREADER[new_settings.type]
-            fields[field] = Field(**new_settings.model_dump(exclude_none=True))
-        else:
-            # Update field
-            # it is not possible to update elastic field types, but we can change amcat types (see ES_MAPPINGS)
-            if new_settings.type is not None:
-                if ES_MAPPINGS[current.type] != ES_MAPPINGS[new_settings.type]:
-                    raise ValueError(
-                        f"Field {field} already exists with type {current.type}, cannot change to {new_settings.type}"
-                    )
-            # set new field settings (amcat type, metareader, etc.)
-            fields[field] = updateField(field=current, update=new_settings)
-
-    es().indices.put_mapping(index=index, properties=type_mappings)
-    es().update(
-        index=system_index,
-        id=index,
-        doc=dict(fields=_fields_to_elastic(fields)),
-    )
-
-
 def modify_index(
     index: str,
     name: Optional[str] = None,
@@ -369,6 +274,7 @@ def modify_index(
         guest_role=guest_role and guest_role.name,
         summary_field=summary_field,
     )
+
     if summary_field is not None:
         f = get_fields(index)
         if summary_field not in f:
@@ -451,39 +357,6 @@ def get_global_role(email: str, only_es: bool = False) -> Role:
     return get_role(index=GLOBAL_ROLES, email=email)
 
 
-def _get_index_fields(index: str) -> Iterator[tuple[str, str]]:
-    r = es().indices.get_mapping(index=index)
-    for k, v in r[index]["mappings"]["properties"].items():
-        yield k, v.get("type", "object")
-
-
-def get_fields(index: str) -> dict[str, Field]:
-    """
-    Retrieve the fields settings for this index. Look for both the field settings in the system index,
-    and the field mappings in the index itself. If a field is not defined in the system index, return the
-    default settings for that field type.
-    """
-    fields: dict[str, Field] = {}
-
-    try:
-        d = es().get(
-            index=get_settings().system_index,
-            id=index,
-            source_includes="fields",
-        )
-        index_fields = _fields_from_elastic(d["_source"].get("fields", {}))
-    except NotFoundError:
-        index_fields = {}
-
-    for field, fieldtype in _get_index_fields(index):
-        if field not in index_fields:
-            fields[field] = Field(type=fieldtype, metareader=DEFAULT_METAREADER[fieldtype])
-        else:
-            fields[field] = index_fields[field]
-
-    return fields
-
-
 def list_users(index: str) -> dict[str, Role]:
     """ "
     List all users and their roles on the given index
@@ -509,32 +382,6 @@ def delete_user(email: str) -> None:
         set_role(ix.id, email, None)
 
 
-def coerce_type_to_elastic(value, ftype):
-    """
-    Coerces values into the respective type in elastic
-    based on ES_MAPPINGS and elastic field types
-    """
-    # TODO: aks Wouter what this is based on, and why it doesn't
-    # actually seem to be based on ES_MAPPINGS
-    if ftype in ["keyword", "constant_keyword", "wildcard", "url", "tag", "text"]:
-        value = str(value)
-    elif ftype in [
-        "long",
-        "short",
-        "byte",
-        "double",
-        "float",
-        "half_float",
-        "unsigned_long",
-    ]:
-        value = float(value)
-    elif ftype in ["integer"]:
-        value = int(value)
-    elif ftype == "boolean":
-        value = bool(value)
-    return value
-
-
 def _get_hash(document: dict) -> str:
     """
     Get the hash for a document
@@ -545,7 +392,7 @@ def _get_hash(document: dict) -> str:
     return m.hexdigest()
 
 
-def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[str, UpdateField] | None = None) -> None:
+def upload_documents(index: str, documents: list[dict[str, Any]], types: dict[str, ElasticType] | None = None) -> None:
     """
     Upload documents to this index
 
@@ -553,6 +400,9 @@ def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[s
     :param documents: A sequence of article dictionaries
     :param fields: A mapping of fieldname:UpdateField for field types
     """
+
+    if types:
+        create_elastic_fields(index, types)
 
     def es_actions(index, documents):
         field_types = get_fields(index)
@@ -562,13 +412,10 @@ def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[s
                     continue
                 if key not in field_types:
                     raise ValueError(f"The type for field {key} is not yet specified")
-                document[key] = coerce_type_to_elastic(document[key], field_types[key].type)
+                document[key] = coerce_type(document[key], field_types[key].elastic_type)
             if "_id" not in document:
                 document["_id"] = _get_hash(document)
             yield {"_index": index, **document}
-
-    if fields:
-        set_fields(index, fields)
 
     actions = list(es_actions(index, documents))
     elasticsearch.helpers.bulk(es(), actions)
@@ -605,32 +452,6 @@ def delete_document(index: str, doc_id: str):
     :param doc_id: The document id (hash)
     """
     es().delete(index=index, id=doc_id)
-
-
-def get_field_values(index: str, field: str, size: int) -> list[str]:
-    """
-    Get the values for a given field (e.g. to populate list of filter values on keyword field)
-    Results are sorted descending by document frequency
-    see: https://www.elastic.co/guide/en/elasticsearch/reference/7.4/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-order
-
-    :param index: The index
-    :param field: The field name
-    :return: A list of values
-    """
-    aggs = {"unique_values": {"terms": {"field": field, "size": size}}}
-    r = es().search(index=index, size=0, aggs=aggs)
-    return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]
-
-
-def get_field_stats(index: str, field: str) -> list[str]:
-    """
-    :param index: The index
-    :param field: The field name
-    :return: A list of values
-    """
-    aggs = {"facets": {"stats": {"field": field}}}
-    r = es().search(index=index, size=0, aggs=aggs)
-    return r["aggregations"]["facets"]
 
 
 def update_by_query(index: str | list[str], script: str, query: dict, params: dict | None = None):

@@ -22,7 +22,7 @@ from amcat4 import index
 from amcat4.config import get_settings, AuthOptions, validate_settings
 from amcat4.elastic import connect_elastic, get_system_version, ping
 from amcat4.index import GLOBAL_ROLES, create_index, set_global_role, Role, list_global_users, upload_documents
-from amcat4.models import UpdateField
+from amcat4.models import ElasticType
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -47,8 +47,8 @@ def upload_test_data() -> str:
         )
         for row in csvfile
     ]
-    columns = dict(president=UpdateField(type="keyword"), party=UpdateField(type="keyword"), year=UpdateField(type="double"))
-    upload_documents(SOTU_INDEX, docs, columns)
+    fields: dict[str, ElasticType] = {"president": "keyword", "party": "keyword", "year": "short"}
+    upload_documents(SOTU_INDEX, docs, fields)
     return SOTU_INDEX
 
 

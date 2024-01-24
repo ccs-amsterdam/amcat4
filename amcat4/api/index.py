@@ -11,25 +11,12 @@ from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 
 from amcat4.index import refresh_system_index, remove_role, set_role
-from amcat4.models import UpdateField
+from amcat4.fields import field_values, field_stats
+from amcat4.models import CreateField, ElasticType, Field, UpdateField
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 
 RoleType = Literal["ADMIN", "WRITER", "READER", "METAREADER"]
-
-
-def _standardize_updatefields(fields: dict[str, str | UpdateField]) -> dict[str, UpdateField]:
-    standardized_fields: dict[str, UpdateField] = {}
-
-    for name, field in fields.items():
-        if isinstance(field, UpdateField):
-            standardized_fields[name] = field
-        elif isinstance(field, str):
-            standardized_fields[name] = UpdateField(type=field)
-        else:
-            raise ValueError(f"Cannot parse field: {field}")
-
-    return standardized_fields
 
 
 @app_index.get("/")
@@ -145,23 +132,18 @@ def delete_index(ix: str, user: str = Depends(authenticated_user)):
 def upload_documents(
     ix: str,
     documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
-    fields: Annotated[
-        dict[str, str | UpdateField] | None, Body(description="Optional Specification of field (column) types")
+    types: Annotated[
+        dict[str, ElasticType] | None,
+        Body(description="If a field in documents does not yet exist, you need to specify an elastic type"),
     ] = None,
     user: str = Depends(authenticated_user),
 ):
     """
-    Upload documents to this server.
-
-    JSON payload should contain a `documents` key, and may contain a `columns` key:
-    Returns a list of ids for the uploaded documents
+    Upload documents to this server. Returns a list of ids for the uploaded documents
     """
     check_role(user, index.Role.WRITER, ix)
 
-    if fields is None:
-        return index.upload_documents(ix, documents)
-    else:
-        return index.upload_documents(ix, documents, _standardize_updatefields(fields))
+    return index.upload_documents(ix, documents, types)
 
 
 @app_index.get("/{ix}/documents/{docid}")
@@ -233,6 +215,31 @@ def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)
         )
 
 
+@app_index.post("/{ix}/fields")
+def create_fields(
+    ix: str,
+    fields: Annotated[dict[str, ElasticType | CreateField], Body(description="")],
+    user: str = Depends(authenticated_user),
+):
+    """
+    Create fields
+    """
+    check_role(user, index.Role.WRITER, ix)
+
+    types = {}
+    update_fields = {}
+    for field, value in fields.items():
+        if isinstance(value, CreateField):
+            types[field] = value.elastic_type
+            update_fields[field] = UpdateField(**value.model_dump(exclude_none=True))
+        else:
+            types[field] = value
+
+    if len(update_fields) > 0:
+        index.set_fields(ix, update_fields)
+    return "", HTTPStatus.NO_CONTENT
+
+
 @app_index.get("/{ix}/fields")
 def get_fields(ix: str, user: str = Depends(authenticated_user)):
     """
@@ -244,17 +251,16 @@ def get_fields(ix: str, user: str = Depends(authenticated_user)):
     return index.get_fields(ix)
 
 
-@app_index.post("/{ix}/fields")
-def set_fields(
-    ix: str, fields: Annotated[dict[str, str | UpdateField], Body(description="")], user: str = Depends(authenticated_user)
+@app_index.put("/{ix}/fields")
+def update_fields(
+    ix: str, fields: Annotated[dict[str, UpdateField], Body(description="")], user: str = Depends(authenticated_user)
 ):
     """
-    Set the field types used in this index.
-
+    Update the field settings
     """
     check_role(user, index.Role.WRITER, ix)
 
-    index.set_fields(ix, _standardize_updatefields(fields))
+    index.set_fields(ix, fields)
     return "", HTTPStatus.NO_CONTENT
 
 
@@ -270,7 +276,7 @@ def get_field_values(ix: str, field: str, user: str = Depends(authenticated_user
     efficient, since elastic has to aggregate all values first.
     """
     check_role(user, index.Role.READER, ix)
-    values = index.get_field_values(ix, field, size=2001)
+    values = field_values(ix, field, size=2001)
     if len(values) > 2000:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -283,7 +289,7 @@ def get_field_values(ix: str, field: str, user: str = Depends(authenticated_user
 def get_field_stats(ix: str, field: str, user: str = Depends(authenticated_user)):
     """Get statistics for a specific value. Only works for numeric (incl date) fields."""
     check_role(user, index.Role.READER, ix)
-    return index.get_field_stats(ix, field)
+    return field_stats(ix, field)
 
 
 @app_index.get("/{ix}/users")

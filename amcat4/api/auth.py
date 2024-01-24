@@ -12,8 +12,8 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 
 from amcat4.models import FieldSpec
 from amcat4.config import get_settings, AuthOptions
-from amcat4.index import Role, get_role, get_global_role, get_fields
-
+from amcat4.index import Role, get_role, get_global_role
+from amcat4.fields import get_fields
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 

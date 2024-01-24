@@ -4,12 +4,10 @@ from amcat4.index import (
     refresh_index,
     upload_documents,
     get_document,
-    set_fields,
-    get_fields,
     update_document,
     update_tag_by_query,
-    get_field_values,
 )
+from amcat4.fields import set_fields, get_fields, get_field_values
 from amcat4.query import query_documents
 from tests.conftest import upload
 
