@@ -33,7 +33,7 @@ ES_MAPPINGS = {
     "text": {"type": "text"},
     "object": {"type": "object"},
     "geo_point": {"type": "geo_point"},
-    "dense_vector": {"type": "dense_vector"},
+    "dense_vector_192": {"type": "dense_vector", "dims": 192},
 }
 
 DEFAULT_MAPPING = {
@@ -61,9 +61,7 @@ def es() -> Elasticsearch:
     try:
         return _setup_elastic()
     except ValueError as e:
-        raise ValueError(
-            f"Cannot connect to elastic {get_settings().elastic_host!r}: {e}"
-        )
+        raise ValueError(f"Cannot connect to elastic {get_settings().elastic_host!r}: {e}")
 
 
 def connect_elastic() -> Elasticsearch:
@@ -92,9 +90,7 @@ def get_system_version(elastic=None) -> Optional[int]:
     if elastic is None:
         elastic = es()
     try:
-        r = elastic.get(
-            index=settings.system_index, id=GLOBAL_ROLES, source_includes="version"
-        )
+        r = elastic.get(index=settings.system_index, id=GLOBAL_ROLES, source_includes="version")
     except NotFoundError:
         return None
     return r["_source"]["version"]
@@ -114,9 +110,7 @@ def _setup_elastic():
     )
     elastic = connect_elastic()
     if not elastic.ping():
-        raise CannotConnectElastic(
-            f"Cannot connect to elasticsearch server {settings.elastic_host}"
-        )
+        raise CannotConnectElastic(f"Cannot connect to elasticsearch server {settings.elastic_host}")
     if elastic.indices.exists(index=settings.system_index):
         # Check index format version
         if get_system_version(elastic) is None:
@@ -127,9 +121,7 @@ def _setup_elastic():
 
     else:
         logging.info(f"Creating amcat4 system index: {settings.system_index}")
-        elastic.indices.create(
-            index=settings.system_index, mappings={"properties": SYSTEM_MAPPING}
-        )
+        elastic.indices.create(index=settings.system_index, mappings={"properties": SYSTEM_MAPPING})
         elastic.index(
             index=settings.system_index,
             id=GLOBAL_ROLES,
@@ -167,9 +159,7 @@ def _get_hash(document: dict) -> bytes:
     """
     Get the hash for a document
     """
-    hash_str = json.dumps(
-        document, sort_keys=True, ensure_ascii=True, default=str
-    ).encode("ascii")
+    hash_str = json.dumps(document, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
     m = hashlib.sha224()
     m.update(hash_str)
     return m.hexdigest()
@@ -189,9 +179,7 @@ def upload_documents(index: str, documents, fields: Mapping[str, str] = None) ->
         for document in documents:
             for key in document.keys():
                 if key in field_types:
-                    document[key] = coerce_type_to_elastic(
-                        document[key], field_types[key].get("type")
-                    )
+                    document[key] = coerce_type_to_elastic(document[key], field_types[key].get("type"))
             if "_id" not in document:
                 document["_id"] = _get_hash(document)
             yield {"_index": index, **document}
@@ -342,9 +330,7 @@ TAG_SCRIPTS = dict(
 )
 
 
-def update_tag_by_query(
-    index: str, action: Literal["add", "remove"], query: dict, field: str, tag: str
-):
+def update_tag_by_query(index: str, action: Literal["add", "remove"], query: dict, field: str, tag: str):
     script = TAG_SCRIPTS[action]
     params = dict(field=field, tag=tag)
     update_by_query(index, script, query, params)
