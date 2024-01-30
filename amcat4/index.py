@@ -51,7 +51,7 @@ from amcat4.fields import (
     get_fields,
     set_fields,
 )
-from amcat4.models import ElasticType, Field
+from amcat4.models import ElasticType
 
 
 class Role(IntEnum):
@@ -140,12 +140,14 @@ def create_index(
     """
     Create a new index in elasticsearch and register it with this AmCAT instance
     """
+    delete_index(index, ignore_missing=True)
 
     default_mapping = {}
     for field, settings in DEFAULT_FIELDS.items():
-        default_mapping[field] = get_elastic_field_mapping(settings.type)
+        default_mapping[field] = {"type": settings.elastic_type}
 
     es().indices.create(index=index, mappings={"properties": default_mapping})
+
     register_index(
         index,
         guest_role=guest_role,
@@ -173,6 +175,7 @@ def register_index(
     if es().exists(index=system_index, id=index):
         raise ValueError(f"Index {index} is already registered")
     roles = [dict(email=admin, role="ADMIN")] if admin else []
+
     es().index(
         index=system_index,
         id=index,
@@ -192,9 +195,10 @@ def delete_index(index: str, ignore_missing=False) -> None:
     :param index: The name of the index
     :param ignore_missing: If True, do not throw exception if index does not exist
     """
-    deregister_index(index, ignore_missing=ignore_missing)
     _es = es().options(ignore_status=404) if ignore_missing else es()
     _es.indices.delete(index=index)
+    print(_es.indices.get_alias(index="*"))
+    deregister_index(index, ignore_missing=ignore_missing)
 
 
 def deregister_index(index: str, ignore_missing=False) -> None:

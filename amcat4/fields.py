@@ -146,7 +146,7 @@ def create_elastic_fields(index: str, fields: dict[str, ElasticType]):
         if elastic_type in ["date"]:
             mapping[field]["format"] = "strict_date_optional_time"
 
-    es().indices.create(index=index, mappings={"properties": mapping})
+    es().indices.put_mapping(index=index, properties=mapping)
 
 
 def _fields_to_elastic(fields: dict[str, Field]) -> list[dict]:
