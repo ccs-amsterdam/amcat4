@@ -96,7 +96,7 @@ DEFAULT_FIELDS = {
         type="date",
         elastic_type="date",
         metareader=FieldMetareaderAccess(access="read"),
-        client_display=FieldClientDisplay(in_list=True),
+        client_display=FieldClientDisplay(in_list=True, in_list_summary=True),
     ),
     "url": Field(
         type="keyword",

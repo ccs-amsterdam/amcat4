@@ -47,6 +47,7 @@ class FieldClientDisplay(BaseModel):
     """Client display settings for a specific field."""
 
     in_list: bool = False
+    in_list_summary: bool = False
     in_document: bool = True
 
 

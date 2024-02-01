@@ -45,6 +45,21 @@ class Axis:
             if self.ftype == "date":
                 if m := interval_mapping(self.interval):
                     return {self.name: {"terms": {"field": m.fieldname(self.field)}}}
+                # KW: auto_date_histogram is not supported within composite.
+                # Either we let client handle auto determining interval, or we drop composite
+                # (dropping composite matter relates to comment by WvA below)
+                # if self.interval == "auto":
+                #     return {
+                #         self.name: {
+                #             "auto_date_histogram": {
+                #                 "field": self.field,
+                #                 "buckets": 30,
+                #                 "minimum_interval": "day",
+                #                 "format": "yyyy-MM-dd",
+                #             }
+                #         }
+                #     }
+
                 return {self.name: {"date_histogram": {"field": self.field, "calendar_interval": self.interval}}}
             else:
                 return {self.name: {"histogram": {"field": self.field, "interval": self.interval}}}
@@ -146,6 +161,7 @@ def _elastic_aggregate(
     if aggregations:
         aggr["aggs"]["aggregations"] = aggregation_dsl(aggregations)
     kargs = {}
+    print(aggr)
     if filters or queries:
         q = build_body(queries=queries, filters=filters)
         kargs["query"] = q["query"]
@@ -197,6 +213,7 @@ def _aggregate_results(
         # Run an aggregation with one or more axes
         sources = [axis.query() for axis in axes]
         runtime_mappings = _combine_mappings(axis.runtime_mappings() for axis in axes)
+
         for bucket in _elastic_aggregate(index, sources, queries, filters, aggregations, runtime_mappings):
             row = tuple(axis.get_value(bucket["key"]) for axis in axes)
             row += (bucket["doc_count"],)
