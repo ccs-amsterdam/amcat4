@@ -2,7 +2,8 @@
 Aggregate queries
 """
 from datetime import datetime
-from typing import Mapping, Iterable, Union, Tuple, Sequence, List, Dict
+from itertools import islice
+from typing import Any, Mapping, Iterable, Union, Tuple, Sequence, List, Dict
 
 from amcat4.date_mappings import interval_mapping
 from amcat4.elastic import es
@@ -114,11 +115,19 @@ def aggregation_dsl(aggregations: Iterable[Aggregation]) -> dict:
 
 
 class AggregateResult:
-    def __init__(self, axes: Sequence[Axis], aggregations: List[Aggregation], data: List[tuple], count_column: str = "n"):
+    def __init__(
+        self,
+        axes: Sequence[Axis],
+        aggregations: List[Aggregation],
+        data: List[tuple],
+        count_column: str = "n",
+        after: dict | None = None,
+    ):
         self.axes = axes
         self.data = data
         self.aggregations = aggregations
         self.count_column = count_column
+        self.after = after
 
     def as_dicts(self) -> Iterable[dict]:
         """Return the results as a sequence of {axis1, ..., n} dicts"""
@@ -144,27 +153,29 @@ def _bare_aggregate(index: str | list[str], queries, filters, aggregations: Sequ
 def _elastic_aggregate(
     index: str | list[str],
     sources,
+    axes,
     queries,
     filters,
     aggregations: list[Aggregation],
     runtime_mappings: dict[str, Mapping] | None = None,
     after_key=None,
-) -> Iterable[dict]:
+) -> Tuple[list, dict | None]:
     """
     Recursively get all buckets from a composite query.
     Yields 'buckets' consisting of {key: {axis: value}, doc_count: <number>}
     """
     # [WvA] Not sure if we should get all results ourselves or expose the 'after' pagination.
     #       This might get us in trouble if someone e.g. aggregates on url or day for a large corpus
-    after = {"after": after_key} if after_key else {}
+    after = {"after": after_key} if after_key is not None and len(after_key) > 0 else {}
     aggr: Dict[str, Dict[str, dict]] = {"aggs": {"composite": dict(sources=sources, **after)}}
     if aggregations:
         aggr["aggs"]["aggregations"] = aggregation_dsl(aggregations)
     kargs = {}
-    print(aggr)
+
     if filters or queries:
         q = build_body(queries=queries, filters=filters)
         kargs["query"] = q["query"]
+
     result = es().search(
         index=index if isinstance(index, str) else ",".join(index),
         size=0,
@@ -174,12 +185,19 @@ def _elastic_aggregate(
     )
     if failure := result.get("_shards", {}).get("failures"):
         raise Exception(f"Error on running aggregate search: {failure}")
-    yield from result["aggregations"]["aggs"]["buckets"]
+
+    buckets = result["aggregations"]["aggs"]["buckets"]
     after_key = result["aggregations"]["aggs"].get("after_key")
-    if after_key:
-        yield from _elastic_aggregate(
-            index, sources, queries, filters, aggregations, runtime_mappings=runtime_mappings, after_key=after_key
-        )
+
+    rows = []
+    for bucket in buckets:
+        row = tuple(axis.get_value(bucket["key"]) for axis in axes)
+        row += (bucket["doc_count"],)
+        if aggregations:
+            row += tuple(a.get_value(bucket) for a in aggregations)
+        rows.append(row)
+
+    return rows, after_key
 
 
 def _aggregate_results(
@@ -188,38 +206,68 @@ def _aggregate_results(
     queries: dict[str, str] | None,
     filters: dict[str, FilterSpec] | None,
     aggregations: List[Aggregation],
-) -> Iterable[tuple]:
+    after: dict[str, Any] | None = None,
+):
     if not axes:
+        # Pagh 1
         # No axes, so return aggregations (or total count) only
         if aggregations:
             count, results = _bare_aggregate(index, queries, filters, aggregations)
-            yield (count,) + tuple(a.get_value(results) for a in aggregations)
+            rows = [(count,) + tuple(a.get_value(results) for a in aggregations)]
         else:
             result = es().count(
                 index=index if isinstance(index, str) else ",".join(index), **build_body(queries=queries, filters=filters)
             )
-            yield result["count"],
+            rows = [(result["count"],)]
+        yield rows, None
+
     elif any(ax.field == "_query" for ax in axes):
+        # Path 2
+        # We cannot run the aggregation for multiple queries at once, so we loop over queries
+        # and recursively call _aggregate_results with one query at a time (which then uses path 3).
         if queries is None:
             raise ValueError("Queries must be specified when aggregating by query")
         # Strip off _query axis and run separate aggregation for each query
         i = [ax.field for ax in axes].index("_query")
         _axes = axes[:i] + axes[(i + 1) :]
-        for label, query in queries.items():
-            for result_tuple in _aggregate_results(index, _axes, {label: query}, filters, aggregations):
+        query_items = list(queries.items())
+        for label, query in query_items:
+            last_query = label == query_items[-1][0]
+            if after is not None and "_query" in after:
+                # after is a dict with the aggregation values from which to continue
+                # pagination. Since we loop over queries, we add the _query value.
+                # Then after continuing from the right query, we remove this _query
+                # key so that the after dict is as elastic expects it
+                after_query = after.pop("_query", None)
+                if after_query != label:
+                    continue
+
+            for rows, after in _aggregate_results(index, _axes, {label: query}, filters, aggregations, after=after):
                 # insert label into the right position on the result tuple
-                yield result_tuple[:i] + (label,) + result_tuple[i:]
+                rows = [result_tuple[:i] + (label,) + result_tuple[i:] for result_tuple in rows]
+
+                if after is None:
+                    # if there are no buckets left for this query, we check if this is the last query.
+                    # If not, we need to return the _query value to ensure pagination continues from this query
+                    if not last_query:
+                        after = {"_query": label}
+                else:
+                    # if there are buckets left, we add the _query value to ensure pagination continues from this query
+                    after["_query"] = label
+                yield rows, after
+
     else:
-        # Run an aggregation with one or more axes
+        # Path 3
+        # Run an aggregation with one or more axes. If after is not None, we continue from there.
         sources = [axis.query() for axis in axes]
         runtime_mappings = _combine_mappings(axis.runtime_mappings() for axis in axes)
 
-        for bucket in _elastic_aggregate(index, sources, queries, filters, aggregations, runtime_mappings):
-            row = tuple(axis.get_value(bucket["key"]) for axis in axes)
-            row += (bucket["doc_count"],)
-            if aggregations:
-                row += tuple(a.get_value(bucket) for a in aggregations)
-            yield row
+        rows, after = _elastic_aggregate(index, sources, axes, queries, filters, aggregations, runtime_mappings, after)
+        yield rows, after
+
+        if after is not None:
+            for rows, after in _aggregate_results(index, axes, queries, filters, aggregations, after):
+                yield rows, after
 
 
 def query_aggregate(
@@ -229,6 +277,7 @@ def query_aggregate(
     *,
     queries: dict[str, str] | None = None,
     filters: dict[str, FilterSpec] | None = None,
+    after: dict[str, Any] | None = None,
 ) -> AggregateResult:
     """
     Conduct an aggregate query.
@@ -266,10 +315,19 @@ def query_aggregate(
         aggregations = []
     for aggregation in aggregations:
         aggregation.ftype = all_fields[aggregation.field].type
-    data = list(_aggregate_results(index, axes, queries, filters, aggregations))
-    return AggregateResult(
-        axes,
-        aggregations,
-        data,
-        count_column="n",
-    )
+
+    # We get the rows in sets of queries * buckets, and if there are queries or buckets left,
+    # the last_after value serves as a pagination cursor. Once we have > [stop_after] rows,
+    # we return the data and the last_after cursor. If the user needs to collect the rest,
+    # they need to paginate
+    stop_after = 1000
+    gen = _aggregate_results(index, axes, queries, filters, aggregations, after)
+    data = list()
+    last_after = None
+    for rows, after in gen:
+        data += rows
+        last_after = after
+        if len(data) > stop_after:
+            gen.close()
+
+    return AggregateResult(axes, aggregations, data, count_column="n", after=last_after)

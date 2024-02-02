@@ -1,5 +1,6 @@
 """API Endpoints for querying."""
 
+from re import search
 from typing import Annotated, Dict, List, Optional, Any, Union, Iterable, Literal
 
 from fastapi import APIRouter, HTTPException, status, Depends, Response, Body
@@ -287,6 +288,7 @@ def query_aggregate_post(
             "which can be either a value, a list of values, or a FilterSpec dict",
         ),
     ] = None,
+    after: Annotated[dict[str, Any] | None, Body(description="After cursor for pagination")] = None,
     user: str = Depends(authenticated_user),
 ):
     """
@@ -313,10 +315,12 @@ def query_aggregate_post(
     results = aggregate.query_aggregate(
         indices, _axes, _aggregations, queries=_standardize_queries(queries), filters=_standardize_filters(filters)
     )
+
     return {
         "meta": {
             "axes": [axis.asdict() for axis in results.axes],
             "aggregations": [a.asdict() for a in results.aggregations],
+            "after": results.after,
         },
         "data": list(results.as_dicts()),
     }
