@@ -6,6 +6,7 @@ We read configuration from 2 sources, in order of precedence (higher is more pri
 - A .env file, either in the current working directory or in a location specified
   by the AMCAT4_CONFIG_FILE environment variable
 """
+
 import functools
 from enum import Enum
 from pathlib import Path
@@ -100,7 +101,7 @@ class Settings(BaseSettings):
         Field(
             description="Middlecat server to trust as ID provider",
         ),
-    ] = "https://middlecat.up.railway.app"
+    ] = "https://middlecat.net"
 
     admin_email: Annotated[
         str | None,

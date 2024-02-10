@@ -1,6 +1,7 @@
 """
 AmCAT4 REST API
 """
+
 import argparse
 import csv
 import io
@@ -130,7 +131,7 @@ def migrate_index(_args) -> None:
 def base_env():
     return dict(
         amcat4_secret_key=secrets.token_hex(nbytes=32),
-        amcat4_middlecat_url="https://middlecat.up.netlify.app",
+        amcat4_middlecat_url="https://middlecat.net",
     )
 
 
@@ -181,28 +182,27 @@ def list_users(_args):
 
 def config_amcat(args):
     settings = get_settings()
-    settings_dict = settings.model_dump()
+    settings_fields = settings.model_fields
     # Not a useful entry in an actual env_file
-    env_file_location = settings_dict.pop("env_file")
-    print(f"Reading/writing settings from {env_file_location}")
-    for fieldname in settings.model_fields_set:
-        if fieldname not in settings_dict:
+    print(f"Reading/writing settings from {settings.env_file}")
+    for fieldname, fieldinfo in settings.model_fields.items():
+        if fieldname == "env_file":
             continue
-        fieldinfo = settings_dict[fieldname]
+
         validation_function = AuthOptions.validate if fieldname == "auth" else None
         value = getattr(settings, fieldname)
         value = menu(fieldname, fieldinfo, value, validation_function=validation_function)
         if value is ABORTED:
             return
         if value is not UNCHANGED:
-            settings_dict[fieldname] = value
+            setattr(settings, fieldname, value)
 
-    with env_file_location.open("w") as f:
-        for fieldname, value in settings_dict.items():
-            fieldinfo = settings_dict[fieldname]
+    with settings.env_file.open("w") as f:
+        for fieldname, fieldinfo in settings.model_fields.items():
+            value = getattr(settings, fieldname)
             if doc := fieldinfo.description:
                 f.write(f"# {doc}\n")
-            if _isenum(fieldinfo):
+            if _isenum(fieldinfo) and fieldinfo.annotation:
                 f.write("# Valid options:\n")
                 for option in fieldinfo.annotation:
                     doc = option.__doc__.replace("\n", " ")
@@ -212,7 +212,7 @@ def config_amcat(args):
             else:
                 f.write(f"amcat4_{fieldname}={value}\n\n")
     os.chmod(".env", 0o600)
-    print(f"*** Written {bold('.env')} file to {env_file_location} ***")
+    print(f"*** Written {bold('.env')} file to {settings.env_file} ***")
 
 
 def bold(x):
