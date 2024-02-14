@@ -31,6 +31,7 @@ Elasticsearch implementation
 - We define the mappings (field types) based on existing elasticsearch mappings,
     but use field metadata to define specific fields.
 """
+
 import collections
 from enum import IntEnum
 from typing import Any, Iterable, Optional, Literal
@@ -150,9 +151,9 @@ def create_index(
 
     register_index(
         index,
-        guest_role=guest_role,
-        name=name,
-        description=description,
+        guest_role=guest_role or Role.NONE,
+        name=name or index,
+        description=description or "",
         admin=admin,
     )
 
@@ -176,6 +177,11 @@ def register_index(
         raise ValueError(f"Index {index} is already registered")
     roles = [dict(email=admin, role="ADMIN")] if admin else []
 
+    if guest_role is not None:
+        guest_role_int = guest_role.value
+    else:
+        guest_role_int = Role.NONE.value
+
     es().index(
         index=system_index,
         id=index,
@@ -183,7 +189,7 @@ def register_index(
             name=(name or index),
             roles=roles,
             description=description,
-            guest_role=guest_role and guest_role.name,
+            guest_role=guest_role_int,
         ),
     )
     refresh_index(system_index)
@@ -272,22 +278,17 @@ def modify_index(
     remove_guest_role=False,
     summary_field=None,
 ):
+
     doc = dict(
         name=name,
         description=description,
-        guest_role=guest_role and guest_role.name,
+        guest_role=guest_role and guest_role.value,
         summary_field=summary_field,
     )
 
-    if summary_field is not None:
-        f = get_fields(index)
-        if summary_field not in f:
-            raise ValueError(f"Summary field {summary_field} does not exist!")
-        if f[summary_field].type not in ["date", "keyword", "tag"]:
-            raise ValueError(f"Summary field {summary_field} should be date, keyword or tag, not {f[summary_field].type}!")
     doc = {x: v for (x, v) in doc.items() if v}
     if remove_guest_role:
-        doc["guest_role"] = Role.NONE
+        doc["guest_role"] = Role.NONE.value
     if doc:
         es().update(index=get_settings().system_index, id=index, doc=doc)
 

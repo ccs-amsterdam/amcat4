@@ -1,4 +1,5 @@
 """API Endpoints for document and index management."""
+
 from http import HTTPStatus
 from typing import Annotated, Any, Literal
 
@@ -29,8 +30,9 @@ def index_list(current_user: str = Depends(authenticated_user)):
 
     def index_to_dict(ix: index.Index) -> dict:
         ix_dict = ix._asdict()
-        ix_dict["guest_role"] = ix_dict["guest_role"] and ix_dict["guest_role"].name
-        del ix_dict["roles"]
+        guest_role_int = ix_dict.get("guest_role", 0)
+
+        ix_dict = dict(id=ix_dict["id"], name=ix_dict["name"], guest_role=index.Role(guest_role_int).name)
         return ix_dict
 
     return [index_to_dict(ix) for ix in index.list_known_indices(current_user)]
@@ -40,8 +42,8 @@ class NewIndex(BaseModel):
     """Form to create a new index."""
 
     id: str
-    guest_role: RoleType | None = None
     name: str | None = None
+    guest_role: RoleType | None = None
     description: str | None = None
 
 
@@ -75,7 +77,6 @@ class ChangeIndex(BaseModel):
     guest_role: Literal["ADMIN", "WRITER", "READER", "METAREADER", "NONE"] | None = "NONE"
     name: str | None = None
     description: str | None = None
-    summary_field: str | None = None
 
 
 @app_index.put("/{ix}")
@@ -88,20 +89,20 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
     User needs admin rights on the index
     """
     check_role(user, index.Role.ADMIN, ix)
-    guest_role, remove_guest_role = None, False
+    guest_role, remove_guest_role = index.Role.NONE, False
     if data.guest_role:
-        role = data.guest_role.upper()
+        role = data.guest_role
         if role == "NONE":
             remove_guest_role = True
         else:
             guest_role = index.Role[role]
+
     index.modify_index(
         ix,
         name=data.name,
         description=data.description,
         guest_role=guest_role,
         remove_guest_role=remove_guest_role,
-        summary_field=data.summary_field,
     )
     refresh_system_index()
 
@@ -115,7 +116,9 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
         role = check_role(user, index.Role.METAREADER, ix, required_global_role=index.Role.WRITER)
         d = index.get_index(ix)._asdict()
         d["user_role"] = role.name
-        d["guest_role"] = d.get("guest_role", index.Role.NONE.name)
+        d["guest_role"] = index.Role(d.get("guest_role", 0)).name
+        d["description"] = d.get("description", "") or ""
+        d["name"] = d.get("name", "") or ""
         return d
     except index.IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
