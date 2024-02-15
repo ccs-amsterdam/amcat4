@@ -141,11 +141,15 @@ def create_index(
     """
     Create a new index in elasticsearch and register it with this AmCAT instance
     """
-    delete_index(index, ignore_missing=True)
-
     default_mapping = {}
     for field, settings in DEFAULT_FIELDS.items():
         default_mapping[field] = {"type": settings.elastic_type}
+
+    try:
+        get_index(index)
+        raise ValueError(f'Index "{index}" already exists')
+    except IndexDoesNotExist:
+        pass
 
     es().indices.create(index=index, mappings={"properties": default_mapping})
 
@@ -203,7 +207,6 @@ def delete_index(index: str, ignore_missing=False) -> None:
     """
     _es = es().options(ignore_status=404) if ignore_missing else es()
     _es.indices.delete(index=index)
-    print(_es.indices.get_alias(index="*"))
     deregister_index(index, ignore_missing=ignore_missing)
 
 
@@ -305,6 +308,22 @@ def remove_global_role(email: str):
     Remove the global role of this user
     """
     remove_role(index=GLOBAL_ROLES, email=email)
+
+
+def user_exists(email: str, index: str = GLOBAL_ROLES) -> bool:
+    """
+    Check if a user exists on server (GLOBAL_ROLES) or in a specific index
+    """
+    try:
+        doc = es().get(
+            index=get_settings().system_index,
+            id=index,
+            source_includes=["roles", "guest_role"],
+        )
+    except NotFoundError:
+        raise IndexDoesNotExist(f"Index {index} does not exist or is not registered")
+    roles_dict = _roles_from_elastic(doc["_source"].get("roles", []))
+    return email in roles_dict
 
 
 def get_role(index: str, email: str) -> Role:

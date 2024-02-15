@@ -4,6 +4,7 @@ User/Account and authentication endpoints.
 AmCAT4 can use either Basic or Token-based authentication.
 A client can request a token with basic authentication and store that token for future requests.
 """
+
 from typing import Literal, Optional
 from importlib.metadata import version
 
@@ -14,7 +15,7 @@ from pydantic.networks import EmailStr
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_admin, check_global_role
 from amcat4.config import get_settings, validate_settings
-from amcat4.index import Role, set_global_role, get_global_role
+from amcat4.index import Role, set_global_role, get_global_role, user_exists
 
 app_users = APIRouter(tags=["users"])
 
@@ -38,7 +39,7 @@ class ChangeUserForm(BaseModel):
 @app_users.post("/users", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: UserForm, _=Depends(authenticated_admin)):
     """Create a new user."""
-    if get_global_role(new_user.email, only_es=True) is not None:
+    if user_exists(new_user.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"User {new_user.email} already exists",

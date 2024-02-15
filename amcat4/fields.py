@@ -12,7 +12,6 @@ We need to make sure that:
   system index
 """
 
-
 from typing import Any, Iterator
 
 
@@ -100,7 +99,7 @@ DEFAULT_FIELDS = {
     ),
     "url": Field(
         type="keyword",
-        elastic_type="keyword",
+        elastic_type="wildcard",
         metareader=FieldMetareaderAccess(access="read"),
         client_display=FieldClientDisplay(in_list=True),
     ),
