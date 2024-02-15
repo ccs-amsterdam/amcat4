@@ -1,6 +1,7 @@
 """
 Aggregate queries
 """
+
 from datetime import datetime
 from itertools import islice
 from typing import Any, Mapping, Iterable, Union, Tuple, Sequence, List, Dict
@@ -208,8 +209,9 @@ def _aggregate_results(
     aggregations: List[Aggregation],
     after: dict[str, Any] | None = None,
 ):
-    if not axes:
-        # Pagh 1
+
+    if not axes or len(axes) == 0:
+        # Path 1
         # No axes, so return aggregations (or total count) only
         if aggregations:
             count, results = _bare_aggregate(index, queries, filters, aggregations)
@@ -233,6 +235,7 @@ def _aggregate_results(
         query_items = list(queries.items())
         for label, query in query_items:
             last_query = label == query_items[-1][0]
+
             if after is not None and "_query" in after:
                 # after is a dict with the aggregation values from which to continue
                 # pagination. Since we loop over queries, we add the _query value.
@@ -242,19 +245,19 @@ def _aggregate_results(
                 if after_query != label:
                     continue
 
-            for rows, after in _aggregate_results(index, _axes, {label: query}, filters, aggregations, after=after):
+            for rows, after_buckets in _aggregate_results(index, _axes, {label: query}, filters, aggregations, after=after):
                 # insert label into the right position on the result tuple
                 rows = [result_tuple[:i] + (label,) + result_tuple[i:] for result_tuple in rows]
 
-                if after is None:
+                if after_buckets is None:
                     # if there are no buckets left for this query, we check if this is the last query.
                     # If not, we need to return the _query value to ensure pagination continues from this query
                     if not last_query:
-                        after = {"_query": label}
+                        after_buckets = {"_query": label}
                 else:
                     # if there are buckets left, we add the _query value to ensure pagination continues from this query
-                    after["_query"] = label
-                yield rows, after
+                    after_buckets["_query"] = label
+                yield rows, after_buckets
 
     else:
         # Path 3
