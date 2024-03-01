@@ -313,7 +313,12 @@ def query_aggregate_post(
         )
 
     results = aggregate.query_aggregate(
-        indices, _axes, _aggregations, queries=_standardize_queries(queries), filters=_standardize_filters(filters)
+        indices,
+        _axes,
+        _aggregations,
+        queries=_standardize_queries(queries),
+        filters=_standardize_filters(filters),
+        after=after,
     )
 
     return {

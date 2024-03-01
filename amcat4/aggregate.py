@@ -49,26 +49,11 @@ class Axis:
             if self.ftype == "date":
                 if m := interval_mapping(self.interval):
                     return {self.name: {"terms": {"field": m.fieldname(self.field)}}}
-                # KW: auto_date_histogram is not supported within composite.
-                # Either we let client handle auto determining interval, or we drop composite
-                # (dropping composite matter relates to comment by WvA below)
-                # if self.interval == "auto":
-                #     return {
-                #         self.name: {
-                #             "auto_date_histogram": {
-                #                 "field": self.field,
-                #                 "buckets": 30,
-                #                 "minimum_interval": "day",
-                #                 "format": "yyyy-MM-dd",
-                #             }
-                #         }
-                #     }
-
                 return {self.name: {"date_histogram": {"field": self.field, "calendar_interval": self.interval}}}
             else:
                 return {self.name: {"histogram": {"field": self.field, "interval": self.interval}}}
         else:
-            return {self.name: {"terms": {"field": self.field}}}
+            return {self.name: {"terms": {"field": self.field, "order": "desc"}}}
 
     def get_value(self, values):
         value = values[self.name]
@@ -329,7 +314,7 @@ def query_aggregate(
     # the last_after value serves as a pagination cursor. Once we have > [stop_after] rows,
     # we return the data and the last_after cursor. If the user needs to collect the rest,
     # they need to paginate
-    stop_after = 500
+    stop_after = 249
     gen = _aggregate_results(index, axes, queries, filters, aggregations, after)
     data = list()
     last_after = None
