@@ -1,6 +1,7 @@
 """
 All things query
 """
+
 from math import ceil
 
 from typing import (
@@ -158,7 +159,7 @@ def query_documents(
     :param kwargs: Additional elements passed to Elasticsearch.search()
     :return: a QueryResult, or None if there is not scroll result anymore
     """
-    print(index, fields, queries)
+    print(page)
     if fields is not None and not isinstance(fields, list):
         raise ValueError("fields should be a list")
 

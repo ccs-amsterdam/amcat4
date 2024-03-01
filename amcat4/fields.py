@@ -20,7 +20,7 @@ from elasticsearch import NotFoundError
 # from amcat4.api.common import py2dict
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import AmcatType, ElasticType, Field, FieldClientDisplay, UpdateField, updateField, FieldMetareaderAccess
+from amcat4.models import AmcatType, ElasticType, Field, UpdateField, updateField, FieldMetareaderAccess
 
 
 # given an elastic field type, infer
@@ -79,30 +79,10 @@ def get_default_field(elastic_type: ElasticType):
 
 # default fields when a new index is created
 DEFAULT_FIELDS = {
-    "text": Field(
-        type="text",
-        elastic_type="text",
-        metareader=FieldMetareaderAccess(access="none"),
-        client_display=FieldClientDisplay(in_list=True),
-    ),
-    "title": Field(
-        type="text",
-        elastic_type="text",
-        metareader=FieldMetareaderAccess(access="read"),
-        client_display=FieldClientDisplay(in_list=True),
-    ),
-    "date": Field(
-        type="date",
-        elastic_type="date",
-        metareader=FieldMetareaderAccess(access="read"),
-        client_display=FieldClientDisplay(in_list=True, in_list_summary=True),
-    ),
-    "url": Field(
-        type="keyword",
-        elastic_type="wildcard",
-        metareader=FieldMetareaderAccess(access="read"),
-        client_display=FieldClientDisplay(in_list=True),
-    ),
+    "text": Field(type="text", elastic_type="text", metareader=FieldMetareaderAccess(access="none"), client_settings={}),
+    "title": Field(type="text", elastic_type="text", metareader=FieldMetareaderAccess(access="read"), client_settings={}),
+    "date": Field(type="date", elastic_type="date", metareader=FieldMetareaderAccess(access="read"), client_settings={}),
+    "url": Field(type="keyword", elastic_type="wildcard", metareader=FieldMetareaderAccess(access="read"), client_settings={}),
 }
 
 

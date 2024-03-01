@@ -1,6 +1,6 @@
 import pydantic
 from pydantic import BaseModel
-from typing import Annotated, Literal, NewType
+from typing import Annotated, Any, Literal, NewType
 
 
 AmcatType = Literal["text", "date", "boolean", "keyword", "number", "object", "vector", "geo"]
@@ -43,14 +43,6 @@ class SnippetParams(BaseModel):
     match_chars: Annotated[int, pydantic.Field(ge=1)] = 50
 
 
-class FieldClientDisplay(BaseModel):
-    """Client display settings for a specific field."""
-
-    in_list: bool = False
-    in_list_summary: bool = False
-    in_document: bool = True
-
-
 class FieldMetareaderAccess(BaseModel):
     """Metareader access for a specific field."""
 
@@ -59,12 +51,13 @@ class FieldMetareaderAccess(BaseModel):
 
 
 class Field(BaseModel):
-    """Settings for a field."""
+    """Settings for a field. Some settings, such as metareader, have a strict model because they are used
+    server side. Others, such as client_settings, are free-form and can be used by the client to store settings."""
 
     type: AmcatType
     elastic_type: ElasticType
     metareader: FieldMetareaderAccess = FieldMetareaderAccess()
-    client_display: FieldClientDisplay = FieldClientDisplay()
+    client_settings: dict[str, Any] = {}
 
 
 class CreateField(BaseModel):
@@ -72,14 +65,14 @@ class CreateField(BaseModel):
 
     elastic_type: ElasticType
     metareader: FieldMetareaderAccess | None = None
-    client_display: FieldClientDisplay | None = None
+    client_settings: dict[str, Any] | None = None
 
 
 class UpdateField(BaseModel):
     """Model for updating a field"""
 
     metareader: FieldMetareaderAccess | None = None
-    client_display: FieldClientDisplay | None = None
+    client_settings: dict[str, Any] | None = None
 
 
 def updateField(field: Field, update: UpdateField | Field):
