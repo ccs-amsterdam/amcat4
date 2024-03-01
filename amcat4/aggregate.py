@@ -2,8 +2,10 @@
 Aggregate queries
 """
 
+import copy
 from datetime import datetime
 from itertools import islice
+import json
 from typing import Any, Mapping, Iterable, Union, Tuple, Sequence, List, Dict
 
 from amcat4.date_mappings import interval_mapping
@@ -38,7 +40,7 @@ class Axis:
             self.name = field
 
     def __repr__(self):
-        return f"<Axis field={self.field} fytpe={self.ftype}>"
+        return f"<Axis field={self.field} ftype={self.ftype}>"
 
     def query(self):
         if not self.ftype:
@@ -224,6 +226,7 @@ def _aggregate_results(
         yield rows, None
 
     elif any(ax.field == "_query" for ax in axes):
+
         # Path 2
         # We cannot run the aggregation for multiple queries at once, so we loop over queries
         # and recursively call _aggregate_results with one query at a time (which then uses path 3).
@@ -232,6 +235,7 @@ def _aggregate_results(
         # Strip off _query axis and run separate aggregation for each query
         i = [ax.field for ax in axes].index("_query")
         _axes = axes[:i] + axes[(i + 1) :]
+
         query_items = list(queries.items())
         for label, query in query_items:
             last_query = label == query_items[-1][0]
@@ -246,6 +250,8 @@ def _aggregate_results(
                     continue
 
             for rows, after_buckets in _aggregate_results(index, _axes, {label: query}, filters, aggregations, after=after):
+                after_buckets = copy.deepcopy(after_buckets)
+
                 # insert label into the right position on the result tuple
                 rows = [result_tuple[:i] + (label,) + result_tuple[i:] for result_tuple in rows]
 
@@ -323,7 +329,7 @@ def query_aggregate(
     # the last_after value serves as a pagination cursor. Once we have > [stop_after] rows,
     # we return the data and the last_after cursor. If the user needs to collect the rest,
     # they need to paginate
-    stop_after = 1000
+    stop_after = 500
     gen = _aggregate_results(index, axes, queries, filters, aggregations, after)
     data = list()
     last_after = None
