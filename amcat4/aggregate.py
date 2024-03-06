@@ -230,9 +230,9 @@ def _aggregate_results(
                 # pagination. Since we loop over queries, we add the _query value.
                 # Then after continuing from the right query, we remove this _query
                 # key so that the after dict is as elastic expects it
-                after_query = after.pop("_query", None)
-                if after_query != label:
+                if after.get("_query") != label:
                     continue
+                after.pop("_query", None)
 
             for rows, after_buckets in _aggregate_results(index, _axes, {label: query}, filters, aggregations, after=after):
                 after_buckets = copy.deepcopy(after_buckets)
@@ -249,6 +249,9 @@ def _aggregate_results(
                     # if there are buckets left, we add the _query value to ensure pagination continues from this query
                     after_buckets["_query"] = label
                 yield rows, after_buckets
+
+            # after only applies to the first query
+            after = None
 
     else:
         # Path 3
@@ -314,7 +317,7 @@ def query_aggregate(
     # the last_after value serves as a pagination cursor. Once we have > [stop_after] rows,
     # we return the data and the last_after cursor. If the user needs to collect the rest,
     # they need to paginate
-    stop_after = 249
+    stop_after = 1000
     gen = _aggregate_results(index, axes, queries, filters, aggregations, after)
     data = list()
     last_after = None
@@ -323,5 +326,4 @@ def query_aggregate(
         last_after = after
         if len(data) > stop_after:
             gen.close()
-
     return AggregateResult(axes, aggregations, data, count_column="n", after=last_after)

@@ -8,6 +8,7 @@ Some things to note:
   {auth: [{email: role}], guest_role: role}
 
 """
+
 import functools
 
 import logging

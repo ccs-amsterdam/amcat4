@@ -8,6 +8,7 @@
   "mypy.enabled": true,
   "mypy.runUsingActiveInterpreter": true,
   "python.analysis.typeCheckingMode": "basic",
+
   "python.analysis.autoImportCompletions": true,
   "flake8.args": ["--max-line-length=127", "--ignore=E203"]
 }
