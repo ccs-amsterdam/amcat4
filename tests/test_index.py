@@ -24,7 +24,7 @@ from amcat4.index import (
     set_global_role,
     set_guest_role,
     set_role,
-    set_fields,
+    update_fields,
 )
 from amcat4.models import Field
 from tests.tools import refresh
@@ -165,7 +165,7 @@ def test_summary_field(index):
         modify_index(index, summary_field="doesnotexist")
     with pytest.raises(Exception):
         modify_index(index, summary_field="title")
-    set_fields(index, {"party": Field(type="keyword")})
+    update_fields(index, {"party": Field(type="keyword", elastic_type="keyword")})
     modify_index(index, summary_field="party")
     assert get_index(index).summary_field == "party"
     modify_index(index, summary_field="date")

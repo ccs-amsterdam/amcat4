@@ -7,7 +7,7 @@ from amcat4.index import (
     update_document,
     update_tag_by_query,
 )
-from amcat4.fields import set_fields, get_fields, get_field_values
+from amcat4.fields import update_fields, get_fields, get_field_values
 from amcat4.query import query_documents
 from tests.conftest import upload
 
@@ -30,7 +30,7 @@ def test_upload_retrieve_document(index):
 
 def test_data_coerced(index):
     """Are field values coerced to the correct field type"""
-    set_fields(index, {"i": "long"})
+    update_fields(index, {"i": "long"})
     a = dict(_id="DoccyMcDocface", text="text", title="test-numeric", date="2022-12-13", i="1")
     upload_documents(index, [a])
     d = get_document(index, "DoccyMcDocface")

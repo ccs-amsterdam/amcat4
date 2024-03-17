@@ -56,6 +56,7 @@ class Field(BaseModel):
 
     type: AmcatType
     elastic_type: ElasticType
+    identifier: bool = False
     metareader: FieldMetareaderAccess = FieldMetareaderAccess()
     client_settings: dict[str, Any] = {}
 
@@ -64,6 +65,7 @@ class CreateField(BaseModel):
     """Model for creating a field"""
 
     elastic_type: ElasticType
+    identifier: bool = False
     metareader: FieldMetareaderAccess | None = None
     client_settings: dict[str, Any] | None = None
 
@@ -75,7 +77,7 @@ class UpdateField(BaseModel):
     client_settings: dict[str, Any] | None = None
 
 
-def updateField(field: Field, update: UpdateField | Field):
+def updateField(field: Field, update: UpdateField | Field | CreateField):
     for key in update.model_fields_set:
         setattr(field, key, getattr(update, key))
     return field

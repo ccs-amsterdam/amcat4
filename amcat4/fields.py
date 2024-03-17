@@ -20,7 +20,7 @@ from elasticsearch import NotFoundError
 # from amcat4.api.common import py2dict
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import AmcatType, ElasticType, Field, UpdateField, updateField, FieldMetareaderAccess
+from amcat4.models import AmcatType, CreateField, ElasticType, Field, UpdateField, updateField, FieldMetareaderAccess
 
 
 # given an elastic field type, infer
@@ -77,15 +77,6 @@ def get_default_field(elastic_type: ElasticType):
     return Field(type=amcat_type, elastic_type=elastic_type, metareader=get_default_metareader(amcat_type))
 
 
-# default fields when a new index is created
-DEFAULT_FIELDS = {
-    "text": Field(type="text", elastic_type="text", metareader=FieldMetareaderAccess(access="none"), client_settings={}),
-    "title": Field(type="text", elastic_type="text", metareader=FieldMetareaderAccess(access="read"), client_settings={}),
-    "date": Field(type="date", elastic_type="date", metareader=FieldMetareaderAccess(access="read"), client_settings={}),
-    "url": Field(type="keyword", elastic_type="wildcard", metareader=FieldMetareaderAccess(access="read"), client_settings={}),
-}
-
-
 def coerce_type(value: Any, elastic_type: ElasticType):
     """
     Coerces values into the respective type in elastic
@@ -104,28 +95,29 @@ def coerce_type(value: Any, elastic_type: ElasticType):
     return value
 
 
-def create_elastic_fields(index: str, fields: dict[str, ElasticType]):
+def create_fields(index: str, fields: dict[str, CreateField]):
     mapping: dict[str, Any] = {}
     current_fields = {k: v for k, v in _get_index_fields(index)}
 
-    for field, elastic_type in fields.items():
-        if TYPEMAP_ES_TO_AMCAT.get(elastic_type) is None:
-            raise ValueError(f"Field type {elastic_type} not supported by AmCAT")
+    for field, settings in fields.items():
+        if TYPEMAP_ES_TO_AMCAT.get(settings.elastic_type) is None:
+            raise ValueError(f"Field type {settings.elastic_type} not supported by AmCAT")
 
         current_type = current_fields.get(field)
         if current_type is not None:
-            if current_type != elastic_type:
+            if current_type != settings.elastic_type:
                 raise ValueError(
-                    f"Field '{field}' already exists with type '{current_type}'. Cannot change type to '{elastic_type}'"
+                    f"Field '{field}' already exists with type '{current_type}'. Cannot change type to '{settings.elastic_type}'"
                 )
             continue
 
-        mapping[field] = {"type": elastic_type}
+        mapping[field] = {"type": settings.elastic_type}
 
-        if elastic_type in ["date"]:
+        if settings.elastic_type in ["date"]:
             mapping[field]["format"] = "strict_date_optional_time"
 
     es().indices.put_mapping(index=index, properties=mapping)
+    update_fields(index, fields)
 
 
 def _fields_to_elastic(fields: dict[str, Field]) -> list[dict]:
@@ -138,7 +130,7 @@ def _fields_from_elastic(
     return {fs["field"]: Field.model_validate(fs["settings"]) for fs in fields}
 
 
-def set_fields(index: str, new_fields: dict[str, UpdateField] | dict[str, Field]):
+def update_fields(index: str, new_fields: dict[str, UpdateField] | dict[str, Field] | dict[str, CreateField]):
     """
     Set the fields settings for this index. Only updates fields that
     already exist. type and elastic_type cannot be changed.
@@ -167,8 +159,10 @@ def set_fields(index: str, new_fields: dict[str, UpdateField] | dict[str, Field]
 
 def _get_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:
     r = es().indices.get_mapping(index=index)
-    for k, v in r[index]["mappings"]["properties"].items():
-        yield k, v.get("type", "object")
+
+    if len(r[index]["mappings"]) > 0:
+        for k, v in r[index]["mappings"]["properties"].items():
+            yield k, v.get("type", "object")
 
 
 def get_fields(index: str) -> dict[str, Field]:

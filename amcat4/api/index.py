@@ -239,7 +239,7 @@ def create_fields(
             types[field] = value
 
     if len(update_fields) > 0:
-        index.set_fields(ix, update_fields)
+        index.update_fields(ix, update_fields)
     return "", HTTPStatus.NO_CONTENT
 
 
@@ -263,7 +263,7 @@ def update_fields(
     """
     check_role(user, index.Role.WRITER, ix)
 
-    index.set_fields(ix, fields)
+    index.update_fields(ix, fields)
     return "", HTTPStatus.NO_CONTENT
 
 

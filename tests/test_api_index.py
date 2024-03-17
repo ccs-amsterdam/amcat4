@@ -2,7 +2,7 @@ from starlette.testclient import TestClient
 
 from amcat4 import elastic
 
-from amcat4.index import get_guest_role, Role, set_guest_role, set_role, remove_role, set_fields
+from amcat4.index import get_guest_role, Role, set_guest_role, set_role, remove_role, update_fields
 from amcat4.models import Field
 from tests.tools import build_headers, post_json, get_json, check, refresh
 
@@ -249,7 +249,7 @@ def test_name_description(client, index, index_name, user, admin):
     assert indices[index_name]["description"] == "test2"
 
     # can set and get summary field
-    set_fields(index_name, {"party": Field(type="keyword")})
+    update_fields(index_name, {"party": Field(type="keyword")})
     refresh()
     check(
         client.put(

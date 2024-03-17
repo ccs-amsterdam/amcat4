@@ -46,13 +46,12 @@ from elasticsearch import NotFoundError
 from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.fields import (
-    DEFAULT_FIELDS,
     coerce_type,
-    create_elastic_fields,
+    create_fields,
     get_fields,
-    set_fields,
+    update_fields,
 )
-from amcat4.models import ElasticType
+from amcat4.models import CreateField, ElasticType, Field
 
 
 class Role(IntEnum):
@@ -141,17 +140,13 @@ def create_index(
     """
     Create a new index in elasticsearch and register it with this AmCAT instance
     """
-    default_mapping = {}
-    for field, settings in DEFAULT_FIELDS.items():
-        default_mapping[field] = {"type": settings.elastic_type}
-
     try:
         get_index(index)
         raise ValueError(f'Index "{index}" already exists')
     except IndexDoesNotExist:
         pass
 
-    es().indices.create(index=index, mappings={"properties": default_mapping})
+    es().indices.create(index=index, mappings={"properties": {}})
 
     register_index(
         index,
@@ -161,7 +156,7 @@ def create_index(
         admin=admin,
     )
 
-    set_fields(index, DEFAULT_FIELDS)
+    # update_fields(index, DEFAULT_FIELDS)
 
 
 def register_index(
@@ -406,17 +401,26 @@ def delete_user(email: str) -> None:
         set_role(ix.id, email, None)
 
 
-def _get_hash(document: dict) -> str:
+def _get_hash(document: dict, field_settings: dict[str, Field]) -> str:
     """
     Get the hash for a document
     """
-    hash_str = json.dumps(document, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
+
+    identifiers = [k for k, v in field_settings.items() if v.identifier]
+    if len(identifiers) == 0:
+        # if no identifiers specified, id is hash of entire document
+        hash_values = document
+    else:
+        # if identifiers specified, id is hash of those fields
+        hash_values = {k: document.get(k) for k in identifiers if k in document}
+
+    hash_str = json.dumps(hash_values, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
     m = hashlib.sha224()
     m.update(hash_str)
     return m.hexdigest()
 
 
-def upload_documents(index: str, documents: list[dict[str, Any]], types: dict[str, ElasticType] | None = None) -> None:
+def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[str, CreateField] | None = None) -> None:
     """
     Upload documents to this index
 
@@ -425,20 +429,21 @@ def upload_documents(index: str, documents: list[dict[str, Any]], types: dict[st
     :param fields: A mapping of fieldname:UpdateField for field types
     """
 
-    if types:
-        create_elastic_fields(index, types)
+    if fields:
+        create_fields(index, fields)
 
     def es_actions(index, documents):
-        field_types = get_fields(index)
+        field_settings = get_fields(index)
         for document in documents:
+
             for key in document.keys():
                 if key == "_id":
                     continue
-                if key not in field_types:
+                if key not in field_settings:
                     raise ValueError(f"The type for field {key} is not yet specified")
-                document[key] = coerce_type(document[key], field_types[key].elastic_type)
+                document[key] = coerce_type(document[key], field_settings[key].elastic_type)
             if "_id" not in document:
-                document["_id"] = _get_hash(document)
+                document["_id"] = _get_hash(document, field_settings)
             yield {"_index": index, **document}
 
     actions = list(es_actions(index, documents))
