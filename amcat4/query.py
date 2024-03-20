@@ -121,7 +121,7 @@ class QueryResult:
 
 
 def query_documents(
-    index: Union[str, Sequence[str]],
+    index: Union[str, list[str]],
     fields: list[FieldSpec] | None = None,
     queries: dict[str, str] | None = None,
     filters: dict[str, FilterSpec] | None = None,

@@ -33,6 +33,7 @@ Elasticsearch implementation
 """
 
 import collections
+from datetime import datetime
 from enum import IntEnum
 from typing import Any, Iterable, Optional, Literal
 
@@ -66,7 +67,7 @@ GLOBAL_ROLES = "_global"
 
 Index = collections.namedtuple(
     "Index",
-    ["id", "name", "description", "guest_role", "roles", "summary_field"],
+    ["id", "name", "description", "guest_role", "archived", "roles", "summary_field"],
 )
 
 
@@ -111,11 +112,13 @@ def list_known_indices(email: str | None = None) -> Iterable[Index]:
 def _index_from_elastic(index):
     src = index["_source"]
     guest_role = src.get("guest_role")
+
     return Index(
         id=index["_id"],
         name=src.get("name", index["_id"]),
         description=src.get("description"),
-        guest_role=guest_role and guest_role != "NONE" and Role[guest_role.upper()],
+        guest_role=guest_role,
+        archived=src.get("archived"),
         roles=_roles_from_elastic(src.get("roles", [])),
         summary_field=src.get("summary_field"),
     )
@@ -264,7 +267,7 @@ def set_guest_role(index: str, guest_role: Optional[Role]):
     """
     Set the guest role for this index. Set to None to disallow guest access
     """
-    modify_index(index, guest_role=guest_role, remove_guest_role=(guest_role is None))
+    modify_index(index, guest_role=Role.NONE if guest_role is None else guest_role)
 
 
 def modify_index(
@@ -272,20 +275,18 @@ def modify_index(
     name: Optional[str] = None,
     description: Optional[str] = None,
     guest_role: Optional[Role] = None,
-    remove_guest_role=False,
+    archived: Optional[str] = None,
     summary_field=None,
 ):
-
     doc = dict(
         name=name,
         description=description,
         guest_role=guest_role and guest_role.value,
         summary_field=summary_field,
+        archived=archived,
     )
 
-    doc = {x: v for (x, v) in doc.items() if v}
-    if remove_guest_role:
-        doc["guest_role"] = Role.NONE.value
+    doc = {x: v for (x, v) in doc.items() if v is not None}
     if doc:
         es().update(index=get_settings().system_index, id=index, doc=doc)
 

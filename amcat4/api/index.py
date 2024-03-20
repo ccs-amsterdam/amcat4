@@ -1,12 +1,14 @@
 """API Endpoints for document and index management."""
 
 from http import HTTPStatus
+from operator import is_
 from typing import Annotated, Any, Literal
 
 import elasticsearch
 from elastic_transport import ApiError
 from fastapi import APIRouter, HTTPException, Response, status, Depends, Body
 from pydantic import BaseModel
+from datetime import datetime
 
 from amcat4 import index, fields as index_fields
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
@@ -74,9 +76,10 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
 class ChangeIndex(BaseModel):
     """Form to update an existing index."""
 
-    guest_role: Literal["ADMIN", "WRITER", "READER", "METAREADER", "NONE"] | None = "NONE"
     name: str | None = None
     description: str | None = None
+    guest_role: Literal["ADMIN", "WRITER", "READER", "METAREADER", "NONE"] | None = None
+    archive: bool | None = None
 
 
 @app_index.put("/{ix}")
@@ -89,20 +92,22 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
     User needs admin rights on the index
     """
     check_role(user, index.Role.ADMIN, ix)
-    guest_role, remove_guest_role = index.Role.NONE, False
-    if data.guest_role:
-        role = data.guest_role
-        if role == "NONE":
-            remove_guest_role = True
-        else:
-            guest_role = index.Role[role]
+    guest_role = index.Role[data.guest_role] if data.guest_role is not None else None
+    archived = None
+    if data.archive is not None:
+        d = index.get_index(ix)
+        is_archived = d.archived is not None and d.archived != ""
+        if is_archived != data.archive:
+            archived = str(datetime.now()) if data.archive else ""
 
     index.modify_index(
         ix,
         name=data.name,
         description=data.description,
         guest_role=guest_role,
-        remove_guest_role=remove_guest_role,
+        archived=archived,
+        # remove_guest_role=remove_guest_role,
+        # unarchive=unarchive,
     )
     refresh_system_index()
 
@@ -124,11 +129,44 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
 
+@app_index.post("/{ix}/archive", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def archive_index(
+    ix: str,
+    archived: Annotated[bool, Body(description="Boolean for setting archived to true or false")],
+    user: str = Depends(authenticated_user),
+):
+    """Archive or unarchive the index. When an index is archived, it restricts usage, and adds a timestamp for when
+    it was archived. An index can only be deleted if it has been archived for a specific amount of time."""
+    check_role(user, index.Role.ADMIN, ix)
+    try:
+        d = index.get_index(ix)
+        is_archived = d.archived is not None
+        if is_archived == archived:
+            return
+        archived_date = datetime.now() if archived else None
+        index.modify_index(ix, archived=archived_date)
+
+    except index.IndexDoesNotExist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
+
+
 @app_index.delete("/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_index(ix: str, user: str = Depends(authenticated_user)):
     """Delete the index."""
     check_role(user, index.Role.ADMIN, ix)
-    index.delete_index(ix)
+    min_archived_before_delete = 7  # days
+
+    try:
+        d = index.get_index(ix)
+        if d.archived is None or (datetime.now() - d.archived).days < min_archived_before_delete:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Can only delete an index after it has been archived for at least {min_archived_before_delete} days",
+            )
+        index.delete_index(ix)
+
+    except index.IndexDoesNotExist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
 
 @app_index.post("/{ix}/documents", status_code=status.HTTP_201_CREATED)
