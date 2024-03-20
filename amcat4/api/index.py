@@ -8,7 +8,7 @@ from elastic_transport import ApiError
 from fastapi import APIRouter, HTTPException, Response, status, Depends, Body
 from pydantic import BaseModel
 
-from amcat4 import index
+from amcat4 import index, fields as index_fields
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 
 from amcat4.index import refresh_system_index, remove_role, set_role
@@ -135,9 +135,9 @@ def delete_index(ix: str, user: str = Depends(authenticated_user)):
 def upload_documents(
     ix: str,
     documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
-    types: Annotated[
-        dict[str, ElasticType] | None,
-        Body(description="If a field in documents does not yet exist, you need to specify an elastic type"),
+    new_fields: Annotated[
+        dict[str, CreateField] | None,
+        Body(description="If a field in documents does not yet exist, you can create it on the spot"),
     ] = None,
     user: str = Depends(authenticated_user),
 ):
@@ -145,8 +145,7 @@ def upload_documents(
     Upload documents to this server. Returns a list of ids for the uploaded documents
     """
     check_role(user, index.Role.WRITER, ix)
-
-    return index.upload_documents(ix, documents, types)
+    return index.upload_documents(ix, documents, new_fields)
 
 
 @app_index.get("/{ix}/documents/{docid}")
@@ -221,25 +220,14 @@ def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)
 @app_index.post("/{ix}/fields")
 def create_fields(
     ix: str,
-    fields: Annotated[dict[str, ElasticType | CreateField], Body(description="")],
+    fields: Annotated[dict[str, CreateField], Body(description="")],
     user: str = Depends(authenticated_user),
 ):
     """
     Create fields
     """
     check_role(user, index.Role.WRITER, ix)
-
-    types = {}
-    update_fields = {}
-    for field, value in fields.items():
-        if isinstance(value, CreateField):
-            types[field] = value.elastic_type
-            update_fields[field] = UpdateField(**value.model_dump(exclude_none=True))
-        else:
-            types[field] = value
-
-    if len(update_fields) > 0:
-        index.update_fields(ix, update_fields)
+    index_fields.create_fields(ix, fields)
     return "", HTTPStatus.NO_CONTENT
 
 
@@ -263,7 +251,7 @@ def update_fields(
     """
     check_role(user, index.Role.WRITER, ix)
 
-    index.update_fields(ix, fields)
+    index_fields.update_fields(ix, fields)
     return "", HTTPStatus.NO_CONTENT
 
 

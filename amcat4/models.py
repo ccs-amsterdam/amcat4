@@ -78,6 +78,7 @@ class UpdateField(BaseModel):
 
 
 def updateField(field: Field, update: UpdateField | Field | CreateField):
+
     for key in update.model_fields_set:
         setattr(field, key, getattr(update, key))
     return field

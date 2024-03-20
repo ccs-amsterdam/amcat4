@@ -49,7 +49,6 @@ from amcat4.fields import (
     coerce_type,
     create_fields,
     get_fields,
-    update_fields,
 )
 from amcat4.models import CreateField, ElasticType, Field
 
@@ -420,7 +419,7 @@ def _get_hash(document: dict, field_settings: dict[str, Field]) -> str:
     return m.hexdigest()
 
 
-def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[str, CreateField] | None = None) -> None:
+def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[str, CreateField] | None = None):
     """
     Upload documents to this index
 
@@ -447,7 +446,8 @@ def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[s
             yield {"_index": index, **document}
 
     actions = list(es_actions(index, documents))
-    elasticsearch.helpers.bulk(es(), actions)
+    n_submitted, created = elasticsearch.helpers.bulk(es(), actions)
+    return dict(n_submitted=n_submitted, created=created)
 
 
 def get_document(index: str, doc_id: str, **kargs) -> dict:

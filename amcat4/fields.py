@@ -195,7 +195,7 @@ def get_fields(index: str) -> dict[str, Field]:
 
         if field not in system_index_fields:
             update_system_index = True
-            fields[field] = Field(type=amcat_type, elastic_type=elastic_type, metareader=get_default_metareader(amcat_type))
+            fields[field] = get_default_field(elastic_type)
         else:
             fields[field] = system_index_fields[field]
 
