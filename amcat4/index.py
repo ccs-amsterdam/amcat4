@@ -420,7 +420,9 @@ def _get_hash(document: dict, field_settings: dict[str, Field]) -> str:
     return m.hexdigest()
 
 
-def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[str, CreateField] | None = None):
+def upload_documents(
+    index: str, documents: list[dict[str, Any]], fields: dict[str, CreateField] | None = None, op_type="index"
+):
     """
     Upload documents to this index
 
@@ -432,7 +434,7 @@ def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[s
     if fields:
         create_fields(index, fields)
 
-    def es_actions(index, documents):
+    def es_actions(index, documents, op_type):
         field_settings = get_fields(index)
         for document in documents:
 
@@ -444,11 +446,12 @@ def upload_documents(index: str, documents: list[dict[str, Any]], fields: dict[s
                 document[key] = coerce_type(document[key], field_settings[key].elastic_type)
             if "_id" not in document:
                 document["_id"] = _get_hash(document, field_settings)
-            yield {"_index": index, **document}
+            yield {"_op_type": op_type, "_index": index, **document}
 
-    actions = list(es_actions(index, documents))
-    n_submitted, created = elasticsearch.helpers.bulk(es(), actions)
-    return dict(n_submitted=n_submitted, created=created)
+    actions = list(es_actions(index, documents, op_type))
+    successes, failures = elasticsearch.helpers.bulk(es(), actions, stats_only=True, raise_on_error=False)
+    print(successes, failures)
+    return dict(successes=successes, failures=failures)
 
 
 def get_document(index: str, doc_id: str, **kargs) -> dict:
