@@ -436,6 +436,7 @@ def upload_documents(
 
     def es_actions(index, documents, op_type):
         field_settings = get_fields(index)
+
         for document in documents:
 
             for key in document.keys():

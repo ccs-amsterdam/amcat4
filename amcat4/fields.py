@@ -99,7 +99,12 @@ def create_fields(index: str, fields: dict[str, CreateField]):
     mapping: dict[str, Any] = {}
     current_fields = {k: v for k, v in _get_index_fields(index)}
 
+    new_fields: dict[str, CreateField] = {}
+
     for field, settings in fields.items():
+        if field not in current_fields:
+            new_fields[field] = settings
+
         if TYPEMAP_ES_TO_AMCAT.get(settings.elastic_type) is None:
             raise ValueError(f"Field type {settings.elastic_type} not supported by AmCAT")
 
@@ -117,7 +122,7 @@ def create_fields(index: str, fields: dict[str, CreateField]):
             mapping[field]["format"] = "strict_date_optional_time"
 
     es().indices.put_mapping(index=index, properties=mapping)
-    update_fields(index, fields)
+    update_fields(index, new_fields)
 
 
 def _fields_to_elastic(fields: dict[str, Field]) -> list[dict]:
