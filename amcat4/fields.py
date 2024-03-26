@@ -12,7 +12,7 @@ We need to make sure that:
   system index
 """
 
-from typing import Any, Iterator
+from typing import Any, Iterator, get_args, cast
 
 
 from elasticsearch import NotFoundError
@@ -77,6 +77,17 @@ def get_default_field(elastic_type: ElasticType):
     return Field(type=amcat_type, elastic_type=elastic_type, metareader=get_default_metareader(amcat_type))
 
 
+def _standardize_createfields(fields: dict[str, str | CreateField]) -> dict[str, CreateField]:
+    sfields = {}
+    for k, v in fields.items():
+        if isinstance(v, str):
+            assert v in get_args(ElasticType), f"Unknown elastic type {v}"
+            sfields[k] = CreateField(elastic_type=cast(ElasticType, v))
+        else:
+            sfields[k] = v
+    return sfields
+
+
 def coerce_type(value: Any, elastic_type: ElasticType):
     """
     Coerces values into the respective type in elastic
@@ -92,16 +103,24 @@ def coerce_type(value: Any, elastic_type: ElasticType):
         return float(value)
 
     # TODO: check coercion / validation for object, vector and geo types
+    if elastic_type in ["object", "flattened", "nested"]:
+        return value
+    if elastic_type in ["dense_vector"]:
+        return value
+    if elastic_type in ["geo_point"]:
+        return value
+
     return value
 
 
-def create_fields(index: str, fields: dict[str, CreateField]):
+def create_fields(index: str, fields: dict[str, str | CreateField]):
     mapping: dict[str, Any] = {}
     current_fields = {k: v for k, v in _get_index_fields(index)}
 
     new_fields: dict[str, CreateField] = {}
+    sfields = _standardize_createfields(fields)
 
-    for field, settings in fields.items():
+    for field, settings in sfields.items():
         if field not in current_fields:
             new_fields[field] = settings
 

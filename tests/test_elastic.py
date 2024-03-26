@@ -7,7 +7,8 @@ from amcat4.index import (
     update_document,
     update_tag_by_query,
 )
-from amcat4.fields import update_fields, get_fields, field_values
+from amcat4.fields import create_fields, update_fields, get_fields, field_values
+from amcat4.models import CreateField, FieldSpec
 from amcat4.query import query_documents
 from tests.conftest import upload
 
@@ -21,7 +22,7 @@ def test_upload_retrieve_document(index):
         _id="test",
         term_tfidf=[{"term": "test", "value": 0.2}, {"term": "value", "value": 0.3}],
     )
-    upload_documents(index, [a])
+    upload_documents(index, [a], fields={"text": "text", "title": "text", "date": "date", "term_tfidf": "nested"})
     d = get_document(index, "test")
     assert d["title"] == a["title"]
     assert d["term_tfidf"] == a["term_tfidf"]
@@ -30,11 +31,11 @@ def test_upload_retrieve_document(index):
 
 def test_data_coerced(index):
     """Are field values coerced to the correct field type"""
-    update_fields(index, {"i": "long"})
-    a = dict(_id="DoccyMcDocface", text="text", title="test-numeric", date="2022-12-13", i="1")
+    create_fields(index, {"i": "long", "x": "double", "title": "text", "date": "date", "text": "text"})
+    a = dict(_id="DoccyMcDocface", text="text", title="test-numeric", date="2022-12-13", i="1", x="1.1")
     upload_documents(index, [a])
     d = get_document(index, "DoccyMcDocface")
-    assert isinstance(d["i"], float)
+    assert isinstance(d["i"], int)
     a = dict(text="text", title=1, date="2022-12-13")
     upload_documents(index, [a])
     d = get_document(index, "DoccyMcDocface")
@@ -43,9 +44,19 @@ def test_data_coerced(index):
 
 def test_fields(index):
     """Can we get the fields from an index"""
+    create_fields(index, {"title": "text", "date": "date", "text": "text", "url": "keyword"})
     fields = get_fields(index)
     assert set(fields.keys()) == {"title", "date", "text", "url"}
-    assert fields["date"]["type"] == "date"
+    assert fields["title"].type == "text"
+    assert fields["date"].type == "date"
+
+    # default settings
+    assert fields["date"].identifier == False
+    assert fields["date"].client_settings is not None
+
+    # default settings depend on the type
+    assert fields["date"].metareader.access == "read"
+    assert fields["text"].metareader.access == "none"
 
 
 def test_values(index):
@@ -68,7 +79,7 @@ def test_add_tag(index_docs):
     def tags():
         return {
             doc["_id"]: doc["tag"]
-            for doc in query_documents(index_docs, fields=["tag"]).data
+            for doc in query_documents(index_docs, fields=[FieldSpec(name="tag")]).data
             if "tag" in doc and doc["tag"] is not None
         }
 
@@ -89,9 +100,26 @@ def test_add_tag(index_docs):
 
 def test_deduplication(index):
     doc = {"title": "titel", "text": "text", "date": datetime(2020, 1, 1)}
-    upload_documents(index, [doc])
+    upload_documents(index, [doc], fields={"title": "text", "text": "text", "date": "date"})
     refresh_index(index)
     assert query_documents(index).total_count == 1
     upload_documents(index, [doc])
     refresh_index(index)
     assert query_documents(index).total_count == 1
+
+
+def test_identifier_deduplication(index):
+    doc = {"url": "http://", "text": "text"}
+    upload_documents(index, [doc], fields={"url": CreateField(elastic_type="wildcard", identifier=True), "text": "text"})
+    refresh_index(index)
+    assert query_documents(index).total_count == 1
+
+    doc2 = {"url": "http://", "text": "text2"}
+    upload_documents(index, [doc2])
+    refresh_index(index)
+    assert query_documents(index).total_count == 1
+
+    doc3 = {"url": "http://2", "text": "text"}
+    upload_documents(index, [doc3])
+    refresh_index(index)
+    assert query_documents(index).total_count == 2

@@ -35,7 +35,7 @@ Elasticsearch implementation
 import collections
 from datetime import datetime
 from enum import IntEnum
-from typing import Any, Iterable, Optional, Literal
+from typing import Any, Iterable, Optional, Literal, cast, get_args
 
 import hashlib
 import json
@@ -48,6 +48,7 @@ from httpx import get
 from amcat4.config import AuthOptions, get_settings
 from amcat4.elastic import es
 from amcat4.fields import (
+    _standardize_createfields,
     coerce_type,
     create_fields,
     get_fields,
@@ -423,7 +424,7 @@ def _get_hash(document: dict, field_settings: dict[str, Field]) -> str:
 
 
 def upload_documents(
-    index: str, documents: list[dict[str, Any]], fields: dict[str, CreateField] | None = None, op_type="index"
+    index: str, documents: list[dict[str, Any]], fields: dict[str, str | CreateField] | None = None, op_type="index"
 ):
     """
     Upload documents to this index

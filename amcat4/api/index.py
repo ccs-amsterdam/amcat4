@@ -180,8 +180,10 @@ def upload_documents(
     ix: str,
     documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
     fields: Annotated[
-        dict[str, CreateField] | None,
-        Body(description="If a field in documents does not yet exist, you can create it on the spot"),
+        dict[str, str | CreateField] | None,
+        Body(
+            description="If a field in documents does not yet exist, you can create it on the spot. If you only need to specify the type, and use the default settings, you can use the short form: {field: type}"
+        ),
     ] = None,
     operation: Annotated[
         Literal["index", "update", "create"],
@@ -268,7 +270,12 @@ def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)
 @app_index.post("/{ix}/fields")
 def create_fields(
     ix: str,
-    fields: Annotated[dict[str, CreateField], Body(description="")],
+    fields: Annotated[
+        dict[str, str | CreateField],
+        Body(
+            description="Either a dictionary that maps field names to field specifications ({field: {elastic_type: text, identifier:True}}), or a simplified version that only specifies the type ({field: type})"
+        ),
+    ],
     user: str = Depends(authenticated_user),
 ):
     """

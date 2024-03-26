@@ -136,7 +136,7 @@ def guest_index():
     delete_index(index, ignore_missing=True)
 
 
-def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, CreateField] | None = None):
+def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, str | CreateField] | None = None):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
@@ -146,24 +146,10 @@ def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, CreateField
 
 
 TEST_DOCUMENTS = [
+    {"_id": 0, "cat": "a", "subcat": "x", "i": 1, "date": "2018-01-01", "text": "this is a text", "title": "title"},
+    {"_id": 1, "cat": "a", "subcat": "x", "i": 2, "date": "2018-02-01", "text": "a test text", "title": "title"},
     {
-        "which": 0,
-        "cat": "a",
-        "subcat": "x",
-        "i": 1,
-        "date": "2018-01-01",
-        "text": "this is a text",
-    },
-    {
-        "which": 1,
-        "cat": "a",
-        "subcat": "x",
-        "i": 2,
-        "date": "2018-02-01",
-        "text": "a test text",
-    },
-    {
-        "which": 2,
+        "_id": 2,
         "cat": "a",
         "subcat": "y",
         "i": 11,
@@ -172,7 +158,7 @@ TEST_DOCUMENTS = [
         "title": "bla",
     },
     {
-        "which": 3,
+        "_id": 3,
         "cat": "b",
         "subcat": "y",
         "i": 31,
@@ -189,12 +175,11 @@ def populate_index(index):
         TEST_DOCUMENTS,
         fields={
             "text": CreateField(elastic_type="text"),
-            "title": CreateField(elastic_type="keyword"),
+            "title": CreateField(elastic_type="text"),
             "date": CreateField(elastic_type="date"),
             "cat": CreateField(elastic_type="keyword"),
             "subcat": CreateField(elastic_type="keyword"),
             "i": CreateField(elastic_type="long"),
-            "which": CreateField(elastic_type="short"),
         },
     )
     return TEST_DOCUMENTS

@@ -10,7 +10,7 @@ def test_query_post(client, index_docs, user):
         return post_json(client, f"/index/{index_docs}/query", user=user, expected=200, json=body)["results"]
 
     def qi(**query_string):
-        return {doc["which"] for doc in q(**query_string)}
+        return {int(doc["_id"]) for doc in q(**query_string)}
 
     # Query strings
     assert qi(queries="text") == {0, 1}
@@ -28,10 +28,10 @@ def test_query_post(client, index_docs, user):
     assert qi(filters={"cat": {"values": ["a"]}}) == {0, 1, 2}
 
     # Can we request specific fields?
-    all_fields = {"_id", "cat", "subcat", "i", "date", "text", "which"}
+    all_fields = {"_id", "cat", "subcat", "i", "date", "text", "title"}
     assert set(q()[0].keys()) == all_fields
     assert set(q(fields=["cat"])[0].keys()) == {"_id", "cat"}
-    assert set(q(fields=["date", "title"])[0].keys()) == {"_id", "date"}
+    assert set(q(fields=["date", "title"])[0].keys()) == {"_id", "date", "title"}
 
 
 def test_aggregate(client, index_docs, user):
@@ -152,8 +152,8 @@ def test_aggregate_datemappings(client, index_docs, user):
 def test_query_tags(client, index_docs, user):
     def tags():
         return {
-            doc["which"]: doc["tag"]
-            for doc in query_documents(index_docs, fields=[FieldSpec(name="tag"), FieldSpec(name="which")]).data
+            doc["_id"]: doc["tag"]
+            for doc in query_documents(index_docs, fields=[FieldSpec(name="tag")]).data
             if doc.get("tag")
         }
 
@@ -166,7 +166,7 @@ def test_query_tags(client, index_docs, user):
         json=dict(action="add", field="tag", tag="x", filters={"cat": "a"}),
     )
     refresh_index(index_docs)
-    assert tags() == {0: ["x"], 1: ["x"], 2: ["x"]}
+    assert tags() == {"0": ["x"], "1": ["x"], "2": ["x"]}
     post_json(
         client,
         f"/index/{index_docs}/tags_update",
@@ -175,13 +175,13 @@ def test_query_tags(client, index_docs, user):
         json=dict(action="remove", field="tag", tag="x", queries=["text"]),
     )
     refresh_index(index_docs)
-    assert tags() == {2: ["x"]}
+    assert tags() == {"2": ["x"]}
     post_json(
         client,
         f"/index/{index_docs}/tags_update",
         user=user,
         expected=204,
-        json=dict(action="add", field="tag", tag="y", filters={"which": {"gte": 1, "lte": 2}}),
+        json=dict(action="add", field="tag", tag="y", ids=["1", "2"]),
     )
     refresh_index(index_docs)
-    assert tags() == {1: ["y"], 2: ["x", "y"]}
+    assert tags() == {"1": ["y"], "2": ["x", "y"]}

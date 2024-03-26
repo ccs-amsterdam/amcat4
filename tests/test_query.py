@@ -65,7 +65,7 @@ def test_fields(index_docs):
 def test_highlight(index):
     words = "The error of regarding functional notions is not quite equivalent to"
     text = f"{words} a test document. {words} other text documents. {words} you!"
-    upload(index, [dict(title="Een test titel", text=text)])
+    upload(index, [dict(title="Een test titel", text=text)], fields={"title": "text", "text": "text"})
     res = query.query_documents(
         index, fields=[FieldSpec(name="title"), FieldSpec(name="text")], queries={"1": "te*"}, highlight=True
     )
@@ -89,7 +89,7 @@ def test_highlight(index):
 
 
 def test_query_multiple_index(index_docs, index):
-    upload(index, [{"text": "also a text", "i": -1}], fields={"i": UpdateField(type="long")})
+    upload(index, [{"text": "also a text", "i": -1}], fields={"i": "long", "text": "text"})
     docs = query.query_documents([index_docs, index])
     assert docs is not None
     assert len(docs.data) == 5
