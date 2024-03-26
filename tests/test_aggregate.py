@@ -3,6 +3,7 @@ from datetime import datetime, date
 
 from amcat4.aggregate import query_aggregate, Axis, Aggregation
 from amcat4.api.query import _standardize_queries
+from amcat4.models import CreateField, Field
 from tests.conftest import upload
 from tests.tools import dictset
 
@@ -114,7 +115,7 @@ def test_aggregate_datefunctions(index: str):
             "2018-03-07T23:59:00",  # wednesday evening
         ]
     ]
-    upload(index, docs)
+    upload(index, docs, fields=dict(date=CreateField(elastic_type="date")))
     assert q(Axis("date", interval="day")) == {
         date(2018, 1, 1): 2,
         date(2018, 1, 11): 1,

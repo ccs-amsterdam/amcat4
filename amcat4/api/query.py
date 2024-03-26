@@ -211,7 +211,7 @@ def query_documents_post(
             },
         ),
     ] = None,
-    per_page: Annotated[int, Body(description="Number of documents per page")] = 10,
+    per_page: Annotated[int, Body(le=200, description="Number of documents per page")] = 10,
     page: Annotated[int, Body(description="Which page to retrieve")] = 0,
     scroll: Annotated[
         str | None,
@@ -231,7 +231,6 @@ def query_documents_post(
 
     Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     """
-
     indices = index.split(",")
     fieldspecs = get_or_validate_allowed_fields(user, indices, _standardize_fieldspecs(fields))
 

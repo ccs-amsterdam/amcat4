@@ -38,6 +38,7 @@ def index_list(current_user: str = Depends(authenticated_user)):
             id=ix_dict["id"],
             name=ix_dict["name"],
             guest_role=index.Role(guest_role_int).name,
+            description=ix_dict.get("description", ""),
             archived=ix_dict.get("archived", ""),
         )
         return ix_dict
@@ -178,7 +179,7 @@ def delete_index(ix: str, user: str = Depends(authenticated_user)):
 def upload_documents(
     ix: str,
     documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
-    new_fields: Annotated[
+    fields: Annotated[
         dict[str, CreateField] | None,
         Body(description="If a field in documents does not yet exist, you can create it on the spot"),
     ] = None,
@@ -192,7 +193,7 @@ def upload_documents(
     Upload documents to this server. Returns a list of ids for the uploaded documents
     """
     check_role(user, index.Role.WRITER, ix)
-    return index.upload_documents(ix, documents, new_fields, operation)
+    return index.upload_documents(ix, documents, fields, operation)
 
 
 @app_index.get("/{ix}/documents/{docid}")

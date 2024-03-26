@@ -11,10 +11,10 @@ def create_index_metareader(client, index, admin):
 
 
 def set_metareader_access(client, index, admin, metareader):
-    client.post(
+    client.put(
         f"/index/{index}/fields",
         headers=build_headers(admin),
-        json={"text": {"type": "text", "metareader": metareader}},
+        json={"text": {"metareader": metareader}},
     )
 
 

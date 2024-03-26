@@ -318,7 +318,7 @@ def query_aggregate(
     # we return the data and the last_after cursor. If the user needs to collect the rest,
     # they need to paginate
     stop_after = 1000
-    gen = _aggregate_results(index, axes, queries, filters, aggregations, after)
+    gen = _aggregate_results(indices, axes, queries, filters, aggregations, after)
     data = list()
     last_after = None
     for rows, after in gen:

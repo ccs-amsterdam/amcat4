@@ -24,8 +24,8 @@ from amcat4.index import (
     set_global_role,
     set_guest_role,
     set_role,
-    update_fields,
 )
+from amcat4.fields import update_fields
 from amcat4.models import Field
 from tests.tools import refresh
 

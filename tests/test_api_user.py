@@ -29,6 +29,10 @@ def test_auth(client: TestClient, user, admin, index):
         assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
     with set_auth(AuthOptions.authorized_users_only):
         # Only users with a index-level role can access other indices (even as guest)
+        # KW: I don't understand what this means. Do we need to check every index?
+        # Now changed it so that only users with a server level role can access other indices as guest.
+        # In other words, in this auth mode you either need index level authorization or server level
+        # authorization with guest access. (this did pass the test)
         set_guest_role(index, Role.READER)
         refresh()
         assert client.get(f"/index/{index}").status_code == 401

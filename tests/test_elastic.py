@@ -7,7 +7,7 @@ from amcat4.index import (
     update_document,
     update_tag_by_query,
 )
-from amcat4.fields import update_fields, get_fields, get_field_values
+from amcat4.fields import update_fields, get_fields, field_values
 from amcat4.query import query_documents
 from tests.conftest import upload
 
@@ -51,7 +51,7 @@ def test_fields(index):
 def test_values(index):
     """Can we get values for a specific field"""
     upload(index, [dict(bla=x) for x in ["odd", "even", "even"] * 10], fields={"bla": "keyword"})
-    assert set(get_field_values(index, "bla", 10)) == {"odd", "even"}
+    assert set(field_values(index, "bla", 10)) == {"odd", "even"}
 
 
 def test_update(index_docs):

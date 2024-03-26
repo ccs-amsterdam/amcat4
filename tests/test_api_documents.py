@@ -7,22 +7,16 @@ def test_documents_unauthorized(client, index, user):
     docs = {"documents": []}
     check(client.post(f"index/{index}/documents", json=docs), 401)
     check(
-        client.post(
-            f"index/{index}/documents", json=docs, headers=build_headers(user=user)
-        ),
+        client.post(f"index/{index}/documents", json=docs, headers=build_headers(user=user)),
         401,
     )
     check(client.put(f"index/{index}/documents/1", json={}), 401)
     check(
-        client.put(
-            f"index/{index}/documents/1", json={}, headers=build_headers(user=user)
-        ),
+        client.put(f"index/{index}/documents/1", json={}, headers=build_headers(user=user)),
         401,
     )
     check(client.get(f"index/{index}/documents/1"), 401)
-    check(
-        client.get(f"index/{index}/documents/1", headers=build_headers(user=user)), 401
-    )
+    check(client.get(f"index/{index}/documents/1", headers=build_headers(user=user)), 401)
 
 
 def test_documents(client, index, user):
@@ -33,9 +27,12 @@ def test_documents(client, index, user):
         f"index/{index}/documents",
         user=user,
         json={
-            "documents": [
-                {"_id": "id", "title": "a title", "text": "text", "date": "2020-01-01"}
-            ]
+            "documents": [{"_id": "id", "title": "a title", "text": "text", "date": "2020-01-01"}],
+            "fields": {
+                "title": {"elastic_type": "text"},
+                "text": {"elastic_type": "text"},
+                "date": {"elastic_type": "date"},
+            },
         },
     )
     url = f"index/{index}/documents/id"

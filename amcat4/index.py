@@ -42,9 +42,10 @@ import json
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
+from httpx import get
 
 # from amcat4.api.common import py2dict
-from amcat4.config import get_settings
+from amcat4.config import AuthOptions, get_settings
 from amcat4.elastic import es
 from amcat4.fields import (
     coerce_type,
@@ -62,6 +63,7 @@ class Role(IntEnum):
     ADMIN = 40
 
 
+ADMIN_USER = "_admin"
 GUEST_USER = "_guest"
 GLOBAL_ROLES = "_global"
 
@@ -111,13 +113,13 @@ def list_known_indices(email: str | None = None) -> Iterable[Index]:
 
 def _index_from_elastic(index):
     src = index["_source"]
-    guest_role = src.get("guest_role")
+    guest_role = src.get("guest_role", "NONE")
 
     return Index(
         id=index["_id"],
         name=src.get("name", index["_id"]),
         description=src.get("description"),
-        guest_role=guest_role,
+        guest_role=Role[guest_role],
         archived=src.get("archived"),
         roles=_roles_from_elastic(src.get("roles", [])),
         summary_field=src.get("summary_field"),
@@ -149,7 +151,6 @@ def create_index(
         pass
 
     es().indices.create(index=index, mappings={"properties": {}})
-
     register_index(
         index,
         guest_role=guest_role or Role.NONE,
@@ -157,8 +158,6 @@ def create_index(
         description=description or "",
         admin=admin,
     )
-
-    # update_fields(index, DEFAULT_FIELDS)
 
 
 def register_index(
@@ -178,11 +177,6 @@ def register_index(
         raise ValueError(f"Index {index} is already registered")
     roles = [dict(email=admin, role="ADMIN")] if admin else []
 
-    if guest_role is not None:
-        guest_role_int = guest_role.value
-    else:
-        guest_role_int = Role.NONE.value
-
     es().index(
         index=system_index,
         id=index,
@@ -190,7 +184,7 @@ def register_index(
             name=(name or index),
             roles=roles,
             description=description,
-            guest_role=guest_role_int,
+            guest_role=guest_role.name if guest_role is not None else "NONE",
         ),
     )
     refresh_index(system_index)
@@ -249,6 +243,7 @@ def set_role(index: str, email: str, role: Optional[Role]):
         if email not in roles_dict:
             return  # Nothing to change
         del roles_dict[email]
+
     es().update(
         index=system_index,
         id=index,
@@ -281,7 +276,7 @@ def modify_index(
     doc = dict(
         name=name,
         description=description,
-        guest_role=guest_role and guest_role.value,
+        guest_role=guest_role.name if guest_role is not None else "NONE",
         summary_field=summary_field,
         archived=archived,
     )
@@ -341,6 +336,13 @@ def get_role(index: str, email: str) -> Role:
     if index == GLOBAL_ROLES:
         return Role.NONE
 
+    # are guests allowed?
+    if get_settings().auth == AuthOptions.authorized_users_only:
+        # only allow guests if authorized at server level
+        global_role = get_global_role(email, only_es=True)
+        if global_role == Role.NONE:
+            return Role.NONE
+
     return get_guest_role(index)
 
 
@@ -358,7 +360,7 @@ def get_guest_role(index: str) -> Role:
     except NotFoundError:
         raise IndexDoesNotExist(index)
     role = d["_source"].get("guest_role")
-    if role and role.lower() != "none":
+    if role and role in Role.__members__:
         return Role[role]
     return Role.NONE
 
@@ -371,7 +373,7 @@ def get_global_role(email: str, only_es: bool = False) -> Role:
     """
     # The 'admin' user is given to everyone in the no_auth scenario
     if only_es is False:
-        if email == get_settings().admin_email or email == "admin":
+        if email == get_settings().admin_email or email == ADMIN_USER:
             return Role.ADMIN
     return get_role(index=GLOBAL_ROLES, email=email)
 
@@ -436,23 +438,22 @@ def upload_documents(
 
     def es_actions(index, documents, op_type):
         field_settings = get_fields(index)
-
         for document in documents:
 
             for key in document.keys():
                 if key == "_id":
                     continue
                 if key not in field_settings:
-                    raise ValueError(f"The type for field {key} is not yet specified")
+                    raise ValueError(f"The type for field '{key}' is not yet specified")
                 document[key] = coerce_type(document[key], field_settings[key].elastic_type)
             if "_id" not in document:
                 document["_id"] = _get_hash(document, field_settings)
             yield {"_op_type": op_type, "_index": index, **document}
 
     actions = list(es_actions(index, documents, op_type))
+    ids = [doc["_id"] for doc in actions]
     successes, failures = elasticsearch.helpers.bulk(es(), actions, stats_only=True, raise_on_error=False)
-    print(successes, failures)
-    return dict(successes=successes, failures=failures)
+    return dict(ids=ids, successes=successes, failures=failures)
 
 
 def get_document(index: str, doc_id: str, **kargs) -> dict:

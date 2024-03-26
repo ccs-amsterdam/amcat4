@@ -133,7 +133,7 @@ def query_documents(
     scroll_id: str | None = None,
     highlight: bool = False,
     **kwargs,
-) -> QueryResult:
+) -> QueryResult | None:
     """
     Conduct a query_string query, returning the found documents.
 
@@ -167,11 +167,14 @@ def query_documents(
         kwargs["scroll"] = "2m" if (not scroll or scroll is True) else scroll
 
     if sort is not None:
-        kwargs["sort"] = sort
+        kwargs["sort"] = []
+        for s in sort:
+            for k, v in s.items():
+                kwargs["sort"].append({k: dict(v)})
     if scroll_id:
         result = es().scroll(scroll_id=scroll_id, **kwargs)
         if not result["hits"]["hits"]:
-            return QueryResult(data=[])
+            return None
     else:
         h = query_highlight(fields, highlight) if fields is not None else None
         body = build_body(queries, filters, h)

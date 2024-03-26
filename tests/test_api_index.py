@@ -2,8 +2,9 @@ from starlette.testclient import TestClient
 
 from amcat4 import elastic
 
-from amcat4.index import get_guest_role, Role, set_guest_role, set_role, remove_role, update_fields
-from amcat4.models import Field
+from amcat4.index import get_guest_role, Role, set_guest_role, set_role, remove_role
+from amcat4.fields import update_fields
+from amcat4.models import CreateField, Field, UpdateField
 from tests.tools import build_headers, post_json, get_json, check, refresh
 
 
@@ -79,7 +80,12 @@ def test_fields_upload(client: TestClient, user: str, index: str):
             }
             for i, x in enumerate(["a", "a", "b"])
         ],
-        "fields": {"x": "keyword"},
+        "fields": {
+            "title": dict(elastic_type="text"),
+            "text": dict(elastic_type="text"),
+            "date": dict(elastic_type="date"),
+            "x": dict(elastic_type="keyword"),
+        },
     }
 
     # You need METAREADER permissions to read fields, and WRITER to upload docs
@@ -90,9 +96,11 @@ def test_fields_upload(client: TestClient, user: str, index: str):
     )
 
     set_role(index, user, Role.METAREADER)
+
+    ## can get fields
     fields = get_json(client, f"/index/{index}/fields", user=user) or {}
-    assert set(fields.keys()) == {"title", "date", "text", "url"}
-    assert fields["date"]["type"] == "date"
+    ## but should still be empty, since no fields were created
+    assert len(set(fields.keys())) == 0
     check(
         client.post(f"/index/{index}/documents", headers=build_headers(user), json=body),
         401,
@@ -234,7 +242,6 @@ def test_name_description(client, index, index_name, user, admin):
                 id=index_name,
                 description="test2",
                 guest_role="METAREADER",
-                summary_field="party",
             ),
             headers=build_headers(admin),
         ),
@@ -247,16 +254,3 @@ def test_name_description(client, index, index_name, user, admin):
     indices = {ix["id"]: ix for ix in get_json(client, "/index") or []}
     assert indices[index]["description"] == "ooktest"
     assert indices[index_name]["description"] == "test2"
-
-    # can set and get summary field
-    update_fields(index_name, {"party": Field(type="keyword")})
-    refresh()
-    check(
-        client.put(
-            f"/index/{index_name}",
-            json=dict(summary_field="party"),
-            headers=build_headers(admin),
-        ),
-        200,
-    )
-    assert (get_json(client, f"/index/{index_name}", user=admin) or {})["summary_field"] == "party"

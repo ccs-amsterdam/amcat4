@@ -1,4 +1,6 @@
 """Helper methods for authentication and authorization."""
+
+from argparse import ONE_OR_MORE
 import functools
 import logging
 from datetime import datetime
@@ -12,7 +14,7 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 
 from amcat4.models import FieldSpec
 from amcat4.config import get_settings, AuthOptions
-from amcat4.index import Role, get_role, get_global_role
+from amcat4.index import ADMIN_USER, GUEST_USER, Role, get_role, get_global_role
 from amcat4.fields import get_fields
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
@@ -99,6 +101,7 @@ def check_role(user: str, required_role: Role, index: str, required_global_role:
         return get_role(index, user)
     # Global role check was false, so now check local role
     actual_role = get_role(index, user)
+
     if get_settings().auth == AuthOptions.no_auth:
         return actual_role
     elif actual_role and actual_role >= required_role:
@@ -179,9 +182,9 @@ async def authenticated_user(token: str = Depends(oauth2_scheme)) -> str:
     auth = get_settings().auth
     if token is None:
         if auth == AuthOptions.no_auth:
-            return "admin"
+            return ADMIN_USER
         elif auth == AuthOptions.allow_guests:
-            return "guest"
+            return GUEST_USER
         else:
             raise HTTPException(
                 status_code=HTTP_401_UNAUTHORIZED,
