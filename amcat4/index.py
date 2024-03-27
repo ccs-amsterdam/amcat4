@@ -120,7 +120,7 @@ def _index_from_elastic(index):
         id=index["_id"],
         name=src.get("name", index["_id"]),
         description=src.get("description"),
-        guest_role=Role[guest_role],
+        guest_role=Role[guest_role] if guest_role in Role.__members__ else Role.NONE,
         archived=src.get("archived"),
         roles=_roles_from_elastic(src.get("roles", [])),
         summary_field=src.get("summary_field"),
@@ -277,7 +277,7 @@ def modify_index(
     doc = dict(
         name=name,
         description=description,
-        guest_role=guest_role.name if guest_role is not None else "NONE",
+        guest_role=guest_role.name if guest_role is not None else None,
         summary_field=summary_field,
         archived=archived,
     )
