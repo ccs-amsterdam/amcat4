@@ -4,8 +4,6 @@ Aggregate queries
 
 import copy
 from datetime import datetime
-from itertools import islice
-import json
 from typing import Any, Mapping, Iterable, Union, Tuple, Sequence, List, Dict
 
 from amcat4.date_mappings import interval_mapping

@@ -115,7 +115,7 @@ def test_aggregate_datefunctions(index: str):
             "2018-03-07T23:59:00",  # wednesday evening
         ]
     ]
-    upload(index, docs, fields=dict(date=CreateField(elastic_type="date")))
+    upload(index, docs, fields=dict(date=CreateField(type="date")))
     assert q(Axis("date", interval="day")) == {
         date(2018, 1, 1): 2,
         date(2018, 1, 11): 1,

@@ -182,7 +182,6 @@ def list_users(_args):
 
 def config_amcat(args):
     settings = get_settings()
-    settings_fields = settings.model_fields
     # Not a useful entry in an actual env_file
     print(f"Reading/writing settings from {settings.env_file}")
     for fieldname, fieldinfo in settings.model_fields.items():

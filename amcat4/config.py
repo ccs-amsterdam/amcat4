@@ -10,7 +10,7 @@ We read configuration from 2 sources, in order of precedence (higher is more pri
 import functools
 from enum import Enum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from class_doc import extract_docs_from_cls_obj
 from dotenv import load_dotenv
 from pydantic import model_validator, Field
@@ -40,7 +40,7 @@ class AuthOptions(str, Enum):
             return f"{value} is not a valid authorization option. Choose one of {{{options}}}"
 
 
-# As far as I know, there is no elegant built-in way to set to __doc__ of an enum?
+# Set the __doc__ attribute of each AuthOptions enum member using extract_docs_from_cls_obj
 for field, doc in extract_docs_from_cls_obj(AuthOptions).items():
     AuthOptions[field].__doc__ = "\n".join(doc)
 
@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     admin_password: Annotated[str | None, Field()] = None
 
     @model_validator(mode="after")
-    def set_ssl(self) -> "Settings":
+    def set_ssl(self: Any) -> "Settings":
         if not self.elastic_host:
             self.elastic_host = ("https" if self.elastic_password else "http") + "://localhost:9200"
         if not self.elastic_verify_ssl:

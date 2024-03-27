@@ -110,7 +110,7 @@ def test_deduplication(index):
 
 def test_identifier_deduplication(index):
     doc = {"url": "http://", "text": "text"}
-    upload_documents(index, [doc], fields={"url": CreateField(elastic_type="wildcard", identifier=True), "text": "text"})
+    upload_documents(index, [doc], fields={"url": CreateField(type="wildcard", identifier=True), "text": "text"})
     refresh_index(index)
     assert query_documents(index).total_count == 1
 

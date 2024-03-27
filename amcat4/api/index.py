@@ -1,7 +1,6 @@
 """API Endpoints for document and index management."""
 
 from http import HTTPStatus
-from operator import is_
 from typing import Annotated, Any, Literal
 
 import elasticsearch
@@ -15,7 +14,7 @@ from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 
 from amcat4.index import refresh_system_index, remove_role, set_role
 from amcat4.fields import field_values, field_stats
-from amcat4.models import CreateField, ElasticType, Field, UpdateField
+from amcat4.models import CreateField, ElasticType, UpdateField
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 
@@ -149,7 +148,7 @@ def archive_index(
         is_archived = d.archived is not None
         if is_archived == archived:
             return
-        archived_date = datetime.now() if archived else None
+        archived_date = str(datetime.now()) if archived else None
         index.modify_index(ix, archived=archived_date)
 
     except index.IndexDoesNotExist:
@@ -180,9 +179,11 @@ def upload_documents(
     ix: str,
     documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
     fields: Annotated[
-        dict[str, str | CreateField] | None,
+        dict[str, ElasticType | CreateField] | None,
         Body(
-            description="If a field in documents does not yet exist, you can create it on the spot. If you only need to specify the type, and use the default settings, you can use the short form: {field: type}"
+            description="If a field in documents does not yet exist, you can create it on the spot. "
+            "If you only need to specify the type, and use the default settings, "
+            "you can use the short form: {field: type}"
         ),
     ] = None,
     operation: Annotated[
@@ -271,9 +272,11 @@ def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)
 def create_fields(
     ix: str,
     fields: Annotated[
-        dict[str, str | CreateField],
+        dict[str, ElasticType | CreateField],
         Body(
-            description="Either a dictionary that maps field names to field specifications ({field: {elastic_type: text, identifier:True}}), or a simplified version that only specifies the type ({field: type})"
+            description="Either a dictionary that maps field names to field specifications"
+            "({field: {type: text, identifier:True}}), "
+            "or a simplified version that only specifies the type ({field: type})"
         ),
     ],
     user: str = Depends(authenticated_user),

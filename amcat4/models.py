@@ -1,9 +1,9 @@
 import pydantic
 from pydantic import BaseModel
-from typing import Annotated, Any, Literal, NewType
+from typing import Annotated, Any, Literal
 
 
-AmcatType = Literal["text", "date", "boolean", "keyword", "number", "object", "vector", "geo"]
+TypeGroup = Literal["text", "date", "boolean", "keyword", "number", "object", "vector", "geo"]
 ElasticType = Literal[
     "text",
     "annotated_text",
@@ -54,8 +54,8 @@ class Field(BaseModel):
     """Settings for a field. Some settings, such as metareader, have a strict model because they are used
     server side. Others, such as client_settings, are free-form and can be used by the client to store settings."""
 
-    type: AmcatType
-    elastic_type: ElasticType
+    type: ElasticType
+    type_group: TypeGroup
     identifier: bool = False
     metareader: FieldMetareaderAccess = FieldMetareaderAccess()
     client_settings: dict[str, Any] = {}
@@ -64,7 +64,7 @@ class Field(BaseModel):
 class CreateField(BaseModel):
     """Model for creating a field"""
 
-    elastic_type: ElasticType
+    type: ElasticType
     identifier: bool = False
     metareader: FieldMetareaderAccess | None = None
     client_settings: dict[str, Any] | None = None
@@ -75,13 +75,6 @@ class UpdateField(BaseModel):
 
     metareader: FieldMetareaderAccess | None = None
     client_settings: dict[str, Any] | None = None
-
-
-def updateField(field: Field, update: UpdateField | Field | CreateField):
-
-    for key in update.model_fields_set:
-        setattr(field, key, getattr(update, key))
-    return field
 
 
 FilterValue = str | int

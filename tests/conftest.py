@@ -16,7 +16,7 @@ from amcat4.index import (
     set_global_role,
     upload_documents,
 )
-from amcat4.models import CreateField
+from amcat4.models import CreateField, ElasticType
 from tests.middlecat_keypair import PUBLIC_KEY
 
 UNITS = [
@@ -136,7 +136,7 @@ def guest_index():
     delete_index(index, ignore_missing=True)
 
 
-def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, str | CreateField] | None = None):
+def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, ElasticType | CreateField] | None = None):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
@@ -174,12 +174,12 @@ def populate_index(index):
         index,
         TEST_DOCUMENTS,
         fields={
-            "text": CreateField(elastic_type="text"),
-            "title": CreateField(elastic_type="text"),
-            "date": CreateField(elastic_type="date"),
-            "cat": CreateField(elastic_type="keyword"),
-            "subcat": CreateField(elastic_type="keyword"),
-            "i": CreateField(elastic_type="long"),
+            "text": CreateField(type="text"),
+            "title": CreateField(type="text"),
+            "date": CreateField(type="date"),
+            "cat": CreateField(type="keyword"),
+            "subcat": CreateField(type="keyword"),
+            "i": CreateField(type="long"),
         },
     )
     return TEST_DOCUMENTS
@@ -203,7 +203,7 @@ def index_many():
     upload(
         index,
         [dict(id=i, pagenr=abs(10 - i), text=text) for (i, text) in enumerate(["odd", "even"] * 10)],
-        fields={"id": CreateField(elastic_type="long"), "pagenr": CreateField(elastic_type="long")},
+        fields={"id": CreateField(type="long"), "pagenr": CreateField(type="long")},
     )
     yield index
     delete_index(index, ignore_missing=True)

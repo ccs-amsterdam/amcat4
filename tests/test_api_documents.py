@@ -29,9 +29,9 @@ def test_documents(client, index, user):
         json={
             "documents": [{"_id": "id", "title": "a title", "text": "text", "date": "2020-01-01"}],
             "fields": {
-                "title": {"elastic_type": "text"},
-                "text": {"elastic_type": "text"},
-                "date": {"elastic_type": "date"},
+                "title": {"type": "text"},
+                "text": {"type": "text"},
+                "date": {"type": "date"},
             },
         },
     )

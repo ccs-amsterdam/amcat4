@@ -33,22 +33,19 @@ Elasticsearch implementation
 """
 
 import collections
-from datetime import datetime
 from enum import IntEnum
-from typing import Any, Iterable, Optional, Literal, cast, get_args
+from typing import Any, Iterable, Mapping, Optional, Literal
 
 import hashlib
 import json
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
-from httpx import get
 
 # from amcat4.api.common import py2dict
 from amcat4.config import AuthOptions, get_settings
 from amcat4.elastic import es
 from amcat4.fields import (
-    _standardize_createfields,
     coerce_type,
     create_fields,
     get_fields,
@@ -272,13 +269,11 @@ def modify_index(
     description: Optional[str] = None,
     guest_role: Optional[Role] = None,
     archived: Optional[str] = None,
-    summary_field=None,
 ):
     doc = dict(
         name=name,
         description=description,
         guest_role=guest_role.name if guest_role is not None else None,
-        summary_field=summary_field,
         archived=archived,
     )
 
@@ -424,7 +419,7 @@ def _get_hash(document: dict, field_settings: dict[str, Field]) -> str:
 
 
 def upload_documents(
-    index: str, documents: list[dict[str, Any]], fields: dict[str, str | CreateField] | None = None, op_type="index"
+    index: str, documents: list[dict[str, Any]], fields: Mapping[str, ElasticType | CreateField] | None = None, op_type="index"
 ):
     """
     Upload documents to this index
@@ -433,7 +428,6 @@ def upload_documents(
     :param documents: A sequence of article dictionaries
     :param fields: A mapping of fieldname:UpdateField for field types
     """
-
     if fields:
         create_fields(index, fields)
 
@@ -446,7 +440,7 @@ def upload_documents(
                     continue
                 if key not in field_settings:
                     raise ValueError(f"The type for field '{key}' is not yet specified")
-                document[key] = coerce_type(document[key], field_settings[key].elastic_type)
+                document[key] = coerce_type(document[key], field_settings[key].type)
             if "_id" not in document:
                 document["_id"] = _get_hash(document, field_settings)
             yield {"_op_type": op_type, "_index": index, **document}

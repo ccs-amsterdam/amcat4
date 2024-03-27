@@ -11,7 +11,7 @@ def test_pagination(client, index, user):
     # TODO. Tests are not independent. test_pagination fails if run directly after other tests.
     # Probably delete_index doesn't fully delete
 
-    upload(index, docs=[{"i": i} for i in range(66)], fields={"i": CreateField(elastic_type="long")})
+    upload(index, docs=[{"i": i} for i in range(66)], fields={"i": CreateField(type="long")})
     url = f"/index/{index}/query"
     r = post_json(client, url, user=user, json={"sort": "i", "per_page": 20, "fields": ["i"]}, expected=200)
 
@@ -28,7 +28,7 @@ def test_pagination(client, index, user):
 
 def test_scroll(client, index, user):
     set_role(index, user, Role.READER)
-    upload(index, docs=[{"i": i} for i in range(66)], fields={"i": CreateField(elastic_type="long")})
+    upload(index, docs=[{"i": i} for i in range(66)], fields={"i": CreateField(type="long")})
     url = f"/index/{index}/query"
     r = post_json(
         client,

@@ -4,7 +4,6 @@ from amcat4 import elastic
 
 from amcat4.index import get_guest_role, Role, set_guest_role, set_role, remove_role
 from amcat4.fields import update_fields
-from amcat4.models import CreateField, Field, UpdateField
 from tests.tools import build_headers, post_json, get_json, check, refresh
 
 
@@ -81,10 +80,10 @@ def test_fields_upload(client: TestClient, user: str, index: str):
             for i, x in enumerate(["a", "a", "b"])
         ],
         "fields": {
-            "title": dict(elastic_type="text"),
-            "text": dict(elastic_type="text"),
-            "date": dict(elastic_type="date"),
-            "x": dict(elastic_type="keyword"),
+            "title": "text",
+            "text": "text",
+            "date": "date",
+            "x": "keyword",
         },
     }
 
