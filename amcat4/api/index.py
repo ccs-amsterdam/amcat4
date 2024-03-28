@@ -1,6 +1,7 @@
 """API Endpoints for document and index management."""
 
 from http import HTTPStatus
+from re import U
 from typing import Annotated, Any, Literal
 
 import elasticsearch
@@ -188,15 +189,24 @@ def upload_documents(
     ] = None,
     operation: Annotated[
         Literal["index", "update", "create"],
-        Body(description="The operation to perform. (the default, index, is like upsert)"),
-    ] = "index",
+        Body(
+            description="The operation to perform. Default is create, which ignores any documents that already exist. "
+            "the 'index' operation basically means 'create or replace', and will completely overwite any existing documents. "
+            "The 'update' operation behaves as an upsert (create or update). This is less destructive than 'index', "
+            "because it will only update the fields that are specified in the document. Since index and update are destructive "
+            "they require admin rights."
+        ),
+    ] = "create",
     user: str = Depends(authenticated_user),
 ):
     """
     Upload documents to this server. Returns a list of ids for the uploaded documents
     """
-    check_role(user, index.Role.WRITER, ix)
-    return index.upload_documents(ix, documents, fields, operation)
+    if operation == "create":
+        check_role(user, index.Role.WRITER, ix)
+    else:
+        check_role(user, index.Role.ADMIN, ix)
+    return index.upload_documents(ix, documents, fields, operation, return_ids=False)
 
 
 @app_index.get("/{ix}/documents/{docid}")

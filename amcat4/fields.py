@@ -120,8 +120,6 @@ def create_fields(index: str, fields: Mapping[str, ElasticType | CreateField]):
     mapping: dict[str, Any] = {}
     current_fields = get_fields(index)
 
-    new_fields: dict[str, Field] = {}
-
     sfields = _standardize_createfields(fields)
 
     for field, settings in sfields.items():
@@ -132,7 +130,7 @@ def create_fields(index: str, fields: Mapping[str, ElasticType | CreateField]):
         if current is not None:
             # fields can already exist. For example, a scraper might include the field types in every
             # upload request. If a field already exists, we'll ignore it, but we will throw an error
-            # if static settings (field type, identifier) do not match
+            # if static settings (field type, identifier) do not match.
             if current.type != settings.type:
                 raise ValueError(
                     f"Field '{field}' already exists with type '{current.type}'. " f"Cannot change type to '{settings.type}'"
@@ -141,27 +139,28 @@ def create_fields(index: str, fields: Mapping[str, ElasticType | CreateField]):
                 raise ValueError(f"Field '{field}' is an identifier, cannot change to non-identifier")
             if not current.identifier and settings.identifier:
                 raise ValueError(f"Field '{field}' is not an identifier, cannot change to identifier")
-            new_fields[field] = current
-        else:
-            # if field does not exist, we add it to both the mapping and the system index
-            mapping[field] = {"type": settings.type}
-            if settings.type in ["date"]:
-                mapping[field]["format"] = "strict_date_optional_time"
 
-            new_fields[field] = Field(
-                type=settings.type,
-                type_group=TYPEMAP_ES_TO_AMCAT[settings.type],
-                identifier=settings.identifier,
-                metareader=settings.metareader or get_default_metareader(TYPEMAP_ES_TO_AMCAT[settings.type]),
-                client_settings=settings.client_settings or {},
-            )
-    print(mapping)
+            continue
+
+        # if field does not exist, we add it to both the mapping and the system index
+        mapping[field] = {"type": settings.type}
+        if settings.type in ["date"]:
+            mapping[field]["format"] = "strict_date_optional_time"
+
+        current_fields[field] = Field(
+            type=settings.type,
+            type_group=TYPEMAP_ES_TO_AMCAT[settings.type],
+            identifier=settings.identifier,
+            metareader=settings.metareader or get_default_metareader(TYPEMAP_ES_TO_AMCAT[settings.type]),
+            client_settings=settings.client_settings or {},
+        )
+
     if len(mapping) > 0:
         es().indices.put_mapping(index=index, properties=mapping)
         es().update(
             index=get_settings().system_index,
             id=index,
-            doc=dict(fields=_fields_to_elastic(new_fields)),
+            doc=dict(fields=_fields_to_elastic(current_fields)),
         )
 
 

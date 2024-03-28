@@ -419,7 +419,11 @@ def _get_hash(document: dict, field_settings: dict[str, Field]) -> str:
 
 
 def upload_documents(
-    index: str, documents: list[dict[str, Any]], fields: Mapping[str, ElasticType | CreateField] | None = None, op_type="index"
+    index: str,
+    documents: list[dict[str, Any]],
+    fields: Mapping[str, ElasticType | CreateField] | None = None,
+    op_type="index",
+    return_ids=True,
 ):
     """
     Upload documents to this index
@@ -443,12 +447,21 @@ def upload_documents(
                 document[key] = coerce_type(document[key], field_settings[key].type)
             if "_id" not in document:
                 document["_id"] = _get_hash(document, field_settings)
-            yield {"_op_type": op_type, "_index": index, **document}
+
+            # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
+            if op_type == "update":
+                id = document.pop("_id")
+                yield {"_op_type": op_type, "_index": index, "_id": id, "doc": document, "doc_as_upsert": True}
+            else:
+                yield {"_op_type": op_type, "_index": index, **document}
 
     actions = list(es_actions(index, documents, op_type))
-    ids = [doc["_id"] for doc in actions]
     successes, failures = elasticsearch.helpers.bulk(es(), actions, stats_only=True, raise_on_error=False)
-    return dict(ids=ids, successes=successes, failures=failures)
+
+    if return_ids:
+        ids = [doc["_id"] for doc in actions]
+        return dict(ids=ids, successes=successes, failures=failures)
+    return dict(successes=successes, failures=failures)
 
 
 def get_document(index: str, doc_id: str, **kargs) -> dict:
