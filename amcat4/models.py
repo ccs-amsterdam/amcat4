@@ -57,6 +57,7 @@ class Field(BaseModel):
     type: ElasticType
     type_group: TypeGroup
     identifier: bool = False
+    tag: bool = False
     metareader: FieldMetareaderAccess = FieldMetareaderAccess()
     client_settings: dict[str, Any] = {}
 

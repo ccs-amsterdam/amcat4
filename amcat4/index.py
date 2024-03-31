@@ -48,6 +48,7 @@ from amcat4.elastic import es
 from amcat4.fields import (
     coerce_type,
     create_fields,
+    create_or_verify_tag_field,
     get_fields,
 )
 from amcat4.models import CreateField, ElasticType, Field
@@ -499,7 +500,7 @@ def delete_document(index: str, doc_id: str):
 
 def update_by_query(index: str | list[str], script: str, query: dict, params: dict | None = None):
     script_dict = dict(source=script, lang="painless", params=params or {})
-    es().update_by_query(index=index, script=script_dict, **query)
+    test = es().update_by_query(index=index, script=script_dict, **query)
 
 
 TAG_SCRIPTS = dict(
@@ -521,6 +522,7 @@ TAG_SCRIPTS = dict(
 
 
 def update_tag_by_query(index: str | list[str], action: Literal["add", "remove"], query: dict, field: str, tag: str):
+    create_or_verify_tag_field(index, field)
     script = TAG_SCRIPTS[action]
     params = dict(field=field, tag=tag)
     update_by_query(index, script, query, params)

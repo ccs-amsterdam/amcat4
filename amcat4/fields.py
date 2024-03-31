@@ -255,6 +255,30 @@ def get_fields(index: str) -> dict[str, Field]:
     return fields
 
 
+def create_or_verify_tag_field(index: str | list[str], field: str):
+    """Create a special type of field that can be used to tag documents.
+    Since adding/removing tags supports multiple indices, we first check whether the field name is valid for all indices"""
+    indices = [index] if isinstance(index, str) else index
+    add_to_indices = []
+    for i in indices:
+        current_fields = get_fields(i)
+        if field in current_fields:
+            if current_fields[field].tag is False:
+                raise ValueError(f"Field '{field}' already exists in index '{i}' and is not a tag field")
+
+    else:
+        add_to_indices.append(i)
+
+    for i in add_to_indices:
+        current_fields[field] = Field(type="keyword", type_group=TYPEMAP_ES_TO_AMCAT["keyword"], tag=True)
+        es().indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
+        es().update(
+            index=get_settings().system_index,
+            id=i,
+            doc=dict(fields=_fields_to_elastic(current_fields)),
+        )
+
+
 def field_values(index: str, field: str, size: int) -> list[str]:
     """
     Get the values for a given field (e.g. to populate list of filter values on keyword field)

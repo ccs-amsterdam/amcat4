@@ -10,6 +10,7 @@ from pydantic.main import BaseModel
 from amcat4 import query, aggregate
 from amcat4.aggregate import Axis, Aggregation
 from amcat4.api.auth import authenticated_user, check_fields_access
+from amcat4.fields import create_fields
 from amcat4.index import Role, get_role, get_fields
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec
 from amcat4.query import update_tag_query
@@ -361,6 +362,13 @@ def query_update_tags(
     Add or remove tags by query or by id
     """
     indices = index.split(",")
+
+    for i in indices:
+        if get_role(i, user) < Role.WRITER:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"User {user} does not have permission to update tags on index {i}",
+            )
 
     if isinstance(ids, (str, int)):
         ids = [ids]

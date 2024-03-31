@@ -188,13 +188,13 @@ def upload_documents(
         ),
     ] = None,
     operation: Annotated[
-        Literal["index", "update", "create"],
+        Literal["update", "create"],
         Body(
             description="The operation to perform. Default is create, which ignores any documents that already exist. "
-            "the 'index' operation basically means 'create or replace', and will completely overwite any existing documents. "
-            "The 'update' operation behaves as an upsert (create or update). This is less destructive than 'index', "
-            "because it will only update the fields that are specified in the document. Since index and update are destructive "
-            "they require admin rights."
+            "The 'update' operation behaves as an upsert (create or update). If an identical document (or document with "
+            "identical identifiers) already exists, the uploaded fields will be created or overwritten. If there are fields "
+            "in the original document that are not in the uploaded document, they will NOT be removed. since update is destructive "
+            "it requires admin rights."
         ),
     ] = "create",
     user: str = Depends(authenticated_user),
