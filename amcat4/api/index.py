@@ -285,7 +285,7 @@ def create_fields(
         dict[str, ElasticType | CreateField],
         Body(
             description="Either a dictionary that maps field names to field specifications"
-            "({field: {type: text, identifier:True}}), "
+            "({field: {type: 'text', identifier: True }}), "
             "or a simplified version that only specifies the type ({field: type})"
         ),
     ],

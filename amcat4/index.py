@@ -405,7 +405,7 @@ def _get_hash(document: dict, field_settings: dict[str, Field]) -> str:
     Get the hash for a document
     """
 
-    identifiers = [k for k, v in field_settings.items() if v.identifier]
+    identifiers = [k for k, v in field_settings.items() if v.identifier == True]
     if len(identifiers) == 0:
         # if no identifiers specified, id is hash of entire document
         hash_values = document

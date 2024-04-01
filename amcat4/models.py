@@ -1,9 +1,12 @@
+from xml.dom.domreg import registered
 import pydantic
 from pydantic import BaseModel
 from typing import Annotated, Any, Literal
 
 
-TypeGroup = Literal["text", "date", "boolean", "keyword", "number", "object", "vector", "geo"]
+FieldType = Literal[
+    "text", "date", "boolean", "keyword", "number", "integer", "object", "vector", "geo_point", "image_url", "tag"
+]
 ElasticType = Literal[
     "text",
     "annotated_text",
@@ -51,13 +54,12 @@ class FieldMetareaderAccess(BaseModel):
 
 
 class Field(BaseModel):
-    """Settings for a field. Some settings, such as metareader, have a strict model because they are used
+    """Settings for a field. Some settings, such as metareader, have a strict type because they are used
     server side. Others, such as client_settings, are free-form and can be used by the client to store settings."""
 
-    type: ElasticType
-    type_group: TypeGroup
+    type: FieldType
+    elastic_type: ElasticType
     identifier: bool = False
-    tag: bool = False
     metareader: FieldMetareaderAccess = FieldMetareaderAccess()
     client_settings: dict[str, Any] = {}
 
@@ -65,7 +67,8 @@ class Field(BaseModel):
 class CreateField(BaseModel):
     """Model for creating a field"""
 
-    type: ElasticType
+    type: FieldType
+    elastic_type: ElasticType | None = None
     identifier: bool = False
     metareader: FieldMetareaderAccess | None = None
     client_settings: dict[str, Any] | None = None
@@ -74,6 +77,7 @@ class CreateField(BaseModel):
 class UpdateField(BaseModel):
     """Model for updating a field"""
 
+    type: FieldType | None = None
     metareader: FieldMetareaderAccess | None = None
     client_settings: dict[str, Any] | None = None
 

@@ -19,16 +19,20 @@ from typing import Any, Iterator, Mapping, get_args, cast
 
 
 from elasticsearch import NotFoundError
+from httpx import get
 
 # from amcat4.api.common import py2dict
+from amcat4 import elastic
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import TypeGroup, CreateField, ElasticType, Field, UpdateField, FieldMetareaderAccess
+from amcat4.models import FieldType, CreateField, ElasticType, Field, UpdateField, FieldMetareaderAccess
 
 
-# given an elastic field type, infer
-# (this is relevant if we are importing an index that does not yet have )
-TYPEMAP_ES_TO_AMCAT: dict[ElasticType, TypeGroup] = {
+# given an elastic field type, Check if it is supported by AmCAT.
+# this is not just the inverse of TYPEMAP_AMCAT_TO_ES because some AmCAT types map to multiple elastic
+# types (e.g., tag and keyword, image_url and wildcard)
+# (this is relevant if we are importing an index)
+TYPEMAP_ES_TO_AMCAT: dict[ElasticType, FieldType] = {
     # TEXT fields
     "text": "text",
     "annotated_text": "text",
@@ -42,14 +46,13 @@ TYPEMAP_ES_TO_AMCAT: dict[ElasticType, TypeGroup] = {
     "keyword": "keyword",
     "constant_keyword": "keyword",
     "wildcard": "keyword",
-    # NUMBER fields
-    # - integer
+    # INTEGER fields
     "integer": "number",
     "byte": "number",
     "short": "number",
     "long": "number",
     "unsigned_long": "number",
-    # - float
+    # NUMBER fields
     "float": "number",
     "half_float": "number",
     "double": "number",
@@ -61,31 +64,52 @@ TYPEMAP_ES_TO_AMCAT: dict[ElasticType, TypeGroup] = {
     # VECTOR fields (exclude sparse vectors)
     "dense_vector": "vector",
     # GEO fields
-    "geo_point": "geo",
+    "geo_point": "geo_point",
+}
+
+# maps amcat field types to elastic field types.
+# The first elastic type in the array is the default.
+TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
+    "text": ["text", "annotated_text", "binary", "match_only_text"],
+    "date": ["date"],
+    "boolean": ["boolean"],
+    "keyword": ["keyword", "constant_keyword", "wildcard"],
+    "number": ["double", "float", "half_float", "scaled_float"],
+    "integer": ["long", "integer", "byte", "short", "unsigned_long"],
+    "object": ["object", "flattened", "nested"],
+    "vector": ["dense_vector"],
+    "geo_point": ["geo_point"],
+    "tag": ["keyword"],
+    "image_url": ["wildcard"],
 }
 
 
-def get_default_metareader(type_group: TypeGroup):
-    if type_group in ["boolean", "number", "date"]:
+def get_default_metareader(type: FieldType):
+    if type in ["boolean", "number", "date"]:
         return FieldMetareaderAccess(access="read")
 
     return FieldMetareaderAccess(access="none")
 
 
-def get_default_field(elastic_type: ElasticType):
-    type_group = TYPEMAP_ES_TO_AMCAT.get(elastic_type)
-    if type_group is None:
-        raise ValueError(f"Invalid elastic type: {elastic_type}")
+def get_default_field(type: FieldType):
+    """
+    Generate a field on the spot with default settings.
+    Primary use case is importing existing indices with fields that are not registered in the system index.
+    """
+    elastic_type = TYPEMAP_AMCAT_TO_ES.get(type)
+    if elastic_type is None:
+        raise ValueError(
+            f"The default elastic type mapping for field type {type} is not defined (if this happens, blame and inform Kasper)"
+        )
+    return Field(elastic_type=elastic_type[0], type=type, metareader=get_default_metareader(type))
 
-    return Field(type_group=type_group, type=elastic_type, metareader=get_default_metareader(type_group))
 
-
-def _standardize_createfields(fields: Mapping[str, ElasticType | CreateField]) -> dict[str, CreateField]:
+def _standardize_createfields(fields: Mapping[str, FieldType | CreateField]) -> dict[str, CreateField]:
     sfields = {}
     for k, v in fields.items():
         if isinstance(v, str):
             assert v in get_args(ElasticType), f"Unknown elastic type {v}"
-            sfields[k] = CreateField(type=cast(ElasticType, v))
+            sfields[k] = CreateField(type=cast(FieldType, v))
         else:
             sfields[k] = v
     return sfields
@@ -116,30 +140,33 @@ def coerce_type(value: Any, elastic_type: ElasticType):
     return value
 
 
-def create_fields(index: str, fields: Mapping[str, ElasticType | CreateField]):
+def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
     mapping: dict[str, Any] = {}
     current_fields = get_fields(index)
 
     sfields = _standardize_createfields(fields)
 
     for field, settings in sfields.items():
-        if TYPEMAP_ES_TO_AMCAT.get(settings.type) is None:
-            raise ValueError(f"Field type {settings.type} not supported by AmCAT")
+        if settings.elastic_type is not None:
+            allowed_types = TYPEMAP_AMCAT_TO_ES.get(settings.type, [])
+            if settings.elastic_type not in allowed_types:
+                raise ValueError(
+                    f"Field type {settings.type} does not support elastic type {settings.elastic_type}. "
+                    f"Allowed types are: {allowed_types}"
+                )
+            elastic_type = settings.elastic_type
+        else:
+            elastic_type = get_default_field(settings.type).elastic_type
 
         current = current_fields.get(field)
         if current is not None:
             # fields can already exist. For example, a scraper might include the field types in every
             # upload request. If a field already exists, we'll ignore it, but we will throw an error
-            # if static settings (field type, identifier) do not match.
-            if current.type != settings.type:
-                raise ValueError(
-                    f"Field '{field}' already exists with type '{current.type}'. " f"Cannot change type to '{settings.type}'"
-                )
-            if current.identifier and not settings.identifier:
-                raise ValueError(f"Field '{field}' is an identifier, cannot change to non-identifier")
-            if not current.identifier and settings.identifier:
-                raise ValueError(f"Field '{field}' is not an identifier, cannot change to identifier")
-
+            # if static settings (elastic type, identifier) do not match.
+            if current.elastic_type != elastic_type:
+                raise ValueError(f"Field '{field}' already exists with elastic type '{current.elastic_type}'. ")
+            if current.identifier != settings.identifier:
+                raise ValueError(f"Field '{field}' already exists with identifier '{current.identifier}'. ")
             continue
 
         # if field does not exist, we add it to both the mapping and the system index
@@ -149,9 +176,9 @@ def create_fields(index: str, fields: Mapping[str, ElasticType | CreateField]):
 
         current_fields[field] = Field(
             type=settings.type,
-            type_group=TYPEMAP_ES_TO_AMCAT[settings.type],
+            elastic_type=elastic_type,
             identifier=settings.identifier,
-            metareader=settings.metareader or get_default_metareader(TYPEMAP_ES_TO_AMCAT[settings.type]),
+            metareader=settings.metareader or get_default_metareader(settings.type),
             client_settings=settings.client_settings or {},
         )
 
@@ -187,6 +214,16 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
         current = current_fields.get(field)
         if current is None:
             raise ValueError(f"Field {field} does not exist")
+
+        if new_settings.type is not None:
+            valid_es_types = TYPEMAP_AMCAT_TO_ES.get(new_settings.type)
+            if valid_es_types is None:
+                raise ValueError(f"Invalid field type: {new_settings.type}")
+            if current.elastic_type not in valid_es_types:
+                raise ValueError(
+                    f"Field {field} has the elastic type {current.elastic_type}. A {new_settings.type} field can only have the following elastic types: {valid_es_types}."
+                )
+            current_fields[field].type = new_settings.type
 
         if new_settings.metareader is not None:
             if current.type != "text" and new_settings.metareader.access == "snippet":
@@ -232,16 +269,16 @@ def get_fields(index: str) -> dict[str, Field]:
 
     update_system_index = False
     for field, elastic_type in _get_index_fields(index):
-        type_group = TYPEMAP_ES_TO_AMCAT.get(elastic_type)
+        type = TYPEMAP_ES_TO_AMCAT.get(elastic_type)
 
-        if type_group is None:
+        if type is None:
             # skip over unsupported elastic fields.
             # (TODO: also return warning to client?)
             continue
 
         if field not in system_index_fields:
             update_system_index = True
-            fields[field] = get_default_field(elastic_type)
+            fields[field] = get_default_field(type)
         else:
             fields[field] = system_index_fields[field]
 
@@ -263,14 +300,14 @@ def create_or_verify_tag_field(index: str | list[str], field: str):
     for i in indices:
         current_fields = get_fields(i)
         if field in current_fields:
-            if current_fields[field].tag is False:
+            if current_fields[field].type != "tag":
                 raise ValueError(f"Field '{field}' already exists in index '{i}' and is not a tag field")
 
     else:
         add_to_indices.append(i)
 
     for i in add_to_indices:
-        current_fields[field] = Field(type="keyword", type_group=TYPEMAP_ES_TO_AMCAT["keyword"], tag=True)
+        current_fields[field] = get_default_field("tag")
         es().indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
         es().update(
             index=get_settings().system_index,

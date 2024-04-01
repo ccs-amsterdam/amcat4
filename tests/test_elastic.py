@@ -1,4 +1,5 @@
 from datetime import datetime
+from re import I
 
 from amcat4.index import (
     refresh_index,
