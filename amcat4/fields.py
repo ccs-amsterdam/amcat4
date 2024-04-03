@@ -15,6 +15,8 @@ We need to make sure that:
 """
 
 from hmac import new
+import json
+from tabnanny import check
 from typing import Any, Iterator, Mapping, get_args, cast
 
 
@@ -79,8 +81,9 @@ TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "object": ["object", "flattened", "nested"],
     "vector": ["dense_vector"],
     "geo_point": ["geo_point"],
-    "tag": ["keyword"],
-    "image_url": ["wildcard"],
+    "tag": ["keyword", "wildcard"],
+    "image_url": ["wildcard", "keyword", "constant_keyword", "text"],
+    "json": ["text"],
 }
 
 
@@ -115,26 +118,38 @@ def _standardize_createfields(fields: Mapping[str, FieldType | CreateField]) -> 
     return sfields
 
 
-def coerce_type(value: Any, elastic_type: ElasticType):
+def check_forbidden_type(field: Field, type: FieldType):
+    if field.identifier:
+        for forbidden_type in ["tag", "vector"]:
+            if type == forbidden_type:
+                raise ValueError(f"Field {field} is an identifier field, which cannot be a {forbidden_type} field")
+
+
+def coerce_type(value: Any, type: FieldType):
     """
     Coerces values into the respective type in elastic
     based on ES_MAPPINGS and elastic field types
     """
-    if elastic_type in ["text", "annotated_text", "binary", "match_only_text", "keyword", "constant_keyword", "wildcard"]:
+    if type in ["text", "tag", "image_url", "date"]:
         return str(value)
-    if elastic_type in ["boolean"]:
+    if type in ["boolean"]:
         return bool(value)
-    if elastic_type in ["long", "integer", "short", "byte", "unsigned_long"]:
-        return int(value)
-    if elastic_type in ["float", "half_float", "double", "scaled_float"]:
+    if type in ["number"]:
         return float(value)
+    if type in ["integer"]:
+        return int(value)
+
+    if type == "json":
+        if isinstance(value, str):
+            return value
+        return json.dumps(value)
 
     # TODO: check coercion / validation for object, vector and geo types
-    if elastic_type in ["object", "flattened", "nested"]:
+    if type in ["object"]:
         return value
-    if elastic_type in ["dense_vector"]:
+    if type in ["vector"]:
         return value
-    if elastic_type in ["geo_point"]:
+    if type in ["geo_point"]:
         return value
 
     return value
@@ -181,6 +196,7 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
             metareader=settings.metareader or get_default_metareader(settings.type),
             client_settings=settings.client_settings or {},
         )
+        check_forbidden_type(current_fields[field], settings.type)
 
     if len(mapping) > 0:
         es().indices.put_mapping(index=index, properties=mapping)
@@ -216,6 +232,8 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
             raise ValueError(f"Field {field} does not exist")
 
         if new_settings.type is not None:
+            check_forbidden_type(current, new_settings.type)
+
             valid_es_types = TYPEMAP_AMCAT_TO_ES.get(new_settings.type)
             if valid_es_types is None:
                 raise ValueError(f"Invalid field type: {new_settings.type}")

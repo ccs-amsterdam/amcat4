@@ -51,7 +51,7 @@ from amcat4.fields import (
     create_or_verify_tag_field,
     get_fields,
 )
-from amcat4.models import CreateField, ElasticType, Field
+from amcat4.models import CreateField, Field, FieldType
 
 
 class Role(IntEnum):
@@ -400,18 +400,33 @@ def delete_user(email: str) -> None:
         set_role(ix.id, email, None)
 
 
-def _get_hash(document: dict, field_settings: dict[str, Field]) -> str:
+def create_id(document: dict, field_settings: dict[str, Field]) -> str:
     """
-    Get the hash for a document
+    Create the _id for a document.
     """
 
     identifiers = [k for k, v in field_settings.items() if v.identifier == True]
     if len(identifiers) == 0:
         # if no identifiers specified, id is hash of entire document
+        # (we could also decide that in this case we let elastic create a uuid)
         hash_values = document
     else:
-        # if identifiers specified, id is hash of those fields
-        hash_values = {k: document.get(k) for k in identifiers if k in document}
+        # if identifiers specified, we concatenate the values of these fields, and hash them if
+        # the string exceeds 512 characters (the maximum length of an id in elastic)
+        # we only use the fields that are present in the document, and sort them alphabetically,
+        # so that the id is the same after more identifiers are added.
+        id_fields = sorted(set(identifiers) & set(document.keys()))
+
+        if not id_fields:
+            raise ValueError(f"None of the identifier fields {identifiers} are present in the document")
+        if len(id_fields) == 1:
+            return str(document[id_fields[0]])
+
+        id = "|".join(f"{k}={str(document[k])}" for k in id_fields)
+        if len(id.encode("utf-8")) < 500:
+            return id
+
+        hash_values = {k: document.get(k) for k in id_fields}
 
     hash_str = json.dumps(hash_values, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
     m = hashlib.sha224()
@@ -422,7 +437,7 @@ def _get_hash(document: dict, field_settings: dict[str, Field]) -> str:
 def upload_documents(
     index: str,
     documents: list[dict[str, Any]],
-    fields: Mapping[str, ElasticType | CreateField] | None = None,
+    fields: Mapping[str, FieldType | CreateField] | None = None,
     op_type="index",
     return_ids=True,
 ):
@@ -439,22 +454,20 @@ def upload_documents(
     def es_actions(index, documents, op_type):
         field_settings = get_fields(index)
         for document in documents:
-
             for key in document.keys():
                 if key == "_id":
-                    continue
+                    raise ValueError("You cannot directly set the '_id' field in a document.")
                 if key not in field_settings:
                     raise ValueError(f"The type for field '{key}' is not yet specified")
                 document[key] = coerce_type(document[key], field_settings[key].type)
-            if "_id" not in document:
-                document["_id"] = _get_hash(document, field_settings)
+
+            id = create_id(document, field_settings)
 
             # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
             if op_type == "update":
-                id = document.pop("_id")
                 yield {"_op_type": op_type, "_index": index, "_id": id, "doc": document, "doc_as_upsert": True}
             else:
-                yield {"_op_type": op_type, "_index": index, **document}
+                yield {"_op_type": op_type, "_index": index, "_id": id, **document}
 
     actions = list(es_actions(index, documents, op_type))
     successes, failures = elasticsearch.helpers.bulk(es(), actions, stats_only=True, raise_on_error=False)

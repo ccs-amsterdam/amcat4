@@ -1,11 +1,13 @@
+from curses import OK
 from xml.dom.domreg import registered
 import pydantic
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator, validator
 from typing import Annotated, Any, Literal
+from typing_extensions import Self
 
 
 FieldType = Literal[
-    "text", "date", "boolean", "keyword", "number", "integer", "object", "vector", "geo_point", "image_url", "tag"
+    "text", "date", "boolean", "keyword", "number", "integer", "object", "vector", "geo_point", "image_url", "tag", "json"
 ]
 ElasticType = Literal[
     "text",
@@ -62,6 +64,16 @@ class Field(BaseModel):
     identifier: bool = False
     metareader: FieldMetareaderAccess = FieldMetareaderAccess()
     client_settings: dict[str, Any] = {}
+
+    @model_validator(mode="after")
+    def validate_type(self) -> Self:
+        if self.identifier:
+            # Identifiers have to be immutable. Instead of checking this in every endpoint that performs updates,
+            # we can disable it for certain types that are known to be mutable.
+            for forbidden_type in ["tag"]:
+                if self.type == forbidden_type:
+                    raise ValueError(f"Field type {forbidden_type} cannot be used as an identifier")
+        return self
 
 
 class CreateField(BaseModel):

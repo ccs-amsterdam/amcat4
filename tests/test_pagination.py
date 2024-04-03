@@ -18,11 +18,16 @@ def test_pagination(index_many):
 
 def test_sort(index_many):
     def q(key, per_page=5) -> List[int]:
-        res = query_documents(index_many, per_page=per_page, sort=key)
-        return [int(h["_id"]) for h in res.data]
 
-    assert q("id") == [0, 1, 2, 3, 4]
-    assert q("pagenr") == [10, 9, 11, 8, 12]
+        for i, k in enumerate(key):
+            if isinstance(k, str):
+                key[i] = {k: {"order": "asc"}}
+        res = query_documents(index_many, per_page=per_page, fields=[FieldSpec(name="id")], sort=key)
+        print(list(res.data))
+        return [int(h["id"]) for h in res.data]
+
+    assert q(["id"]) == [0, 1, 2, 3, 4]
+    assert q(["pagenr"]) == [10, 9, 11, 8, 12]
     assert q(["pagenr", "id"]) == [10, 9, 11, 8, 12]
     assert q([{"pagenr": {"order": "desc"}}, "id"]) == [0, 1, 19, 2, 18]
 

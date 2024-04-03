@@ -116,7 +116,6 @@ def test_multiple_index(client, index_docs, index, user):
         json={"axes": [{"field": "cat"}], "fields": ["_id"]},
         expected=200,
     )
-    print(r)
     assert dictset(r["data"]) == dictset([{"cat": "a", "n": 3}, {"n": 1, "cat": "b"}, {"n": 1, "cat": "c"}])
 
 
