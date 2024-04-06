@@ -69,7 +69,7 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
             guest_role=guest_role,
             name=new_index.name,
             description=new_index.description,
-            admin=current_user,
+            admin=current_user if current_user != "_admin" else None,
         )
     except ApiError as e:
         raise HTTPException(
