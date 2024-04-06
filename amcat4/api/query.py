@@ -10,6 +10,7 @@ from pydantic.main import BaseModel
 from amcat4 import query, aggregate
 from amcat4.aggregate import Axis, Aggregation
 from amcat4.api.auth import authenticated_user, check_fields_access
+from amcat4.config import AuthOptions, get_settings
 from amcat4.fields import create_fields
 from amcat4.index import Role, get_role, get_fields
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec
@@ -43,7 +44,6 @@ def get_or_validate_allowed_fields(
     they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
     check whether the user can access the fields (If not, raise an error).
     """
-
     if not isinstance(user, str):
         raise ValueError("User should be a string")
     if not isinstance(indices, list):
@@ -51,6 +51,7 @@ def get_or_validate_allowed_fields(
     if fields is not None and not isinstance(fields, list):
         raise ValueError("Fields should be a list or None")
 
+    no_auth = get_settings().auth == AuthOptions.no_auth
     if fields is None:
         if len(indices) > 1:
             # this restrictions is needed, because otherwise we need to return all allowed fields taking
@@ -62,7 +63,7 @@ def get_or_validate_allowed_fields(
         role = get_role(indices[0], user)
         allowed_fields: list[FieldSpec] = []
         for field in index_fields.keys():
-            if role >= Role.READER:
+            if role >= Role.READER or no_auth:
                 allowed_fields.append(FieldSpec(name=field))
             elif role == Role.METAREADER:
                 metareader = index_fields[field].metareader
@@ -78,7 +79,8 @@ def get_or_validate_allowed_fields(
         return allowed_fields
 
     for index in indices:
-        check_fields_access(index, user, fields)
+        if not no_auth:
+            check_fields_access(index, user, fields)
     return fields
 
 
@@ -234,7 +236,6 @@ def query_documents_post(
     """
     indices = index.split(",")
     fieldspecs = get_or_validate_allowed_fields(user, indices, _standardize_fieldspecs(fields))
-
     r = query.query_documents(
         indices,
         queries=_standardize_queries(queries),
