@@ -15,7 +15,7 @@ from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 
 from amcat4.index import refresh_system_index, remove_role, set_role
 from amcat4.fields import field_values, field_stats
-from amcat4.models import CreateField, ElasticType, UpdateField
+from amcat4.models import CreateField, ElasticType, FieldType, UpdateField
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 
@@ -282,7 +282,7 @@ def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)
 def create_fields(
     ix: str,
     fields: Annotated[
-        dict[str, ElasticType | CreateField],
+        dict[str, FieldType | CreateField],
         Body(
             description="Either a dictionary that maps field names to field specifications"
             "({field: {type: 'text', identifier: True }}), "
