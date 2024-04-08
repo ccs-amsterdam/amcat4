@@ -363,7 +363,6 @@ def query_update_tags(
     Add or remove tags by query or by id
     """
     indices = index.split(",")
-
     for i in indices:
         if get_role(i, user) < Role.WRITER:
             raise HTTPException(

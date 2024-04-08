@@ -470,7 +470,11 @@ def upload_documents(
                 yield {"_op_type": op_type, "_index": index, "_id": id, **document}
 
     actions = list(es_actions(index, documents, op_type))
-    successes, failures = elasticsearch.helpers.bulk(es(), actions, stats_only=True, raise_on_error=False)
+    successes, failures = elasticsearch.helpers.bulk(
+        es(),
+        actions,
+        stats_only=True,
+    )
 
     if return_ids:
         ids = [doc["_id"] for doc in actions]
@@ -505,7 +509,7 @@ def delete_document(index: str, doc_id: str):
     """
     Delete a single document
 
-    :param index: The name of the index
+    :param index: The Pname of the index
     :param doc_id: The document id (hash)
     """
     es().delete(index=index, id=doc_id)
@@ -513,7 +517,7 @@ def delete_document(index: str, doc_id: str):
 
 def update_by_query(index: str | list[str], script: str, query: dict, params: dict | None = None):
     script_dict = dict(source=script, lang="painless", params=params or {})
-    test = es().update_by_query(index=index, script=script_dict, **query)
+    test = es().update_by_query(index=index, script=script_dict, **query, refresh=True)
 
 
 TAG_SCRIPTS = dict(
