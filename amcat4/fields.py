@@ -1,9 +1,9 @@
 """
 We have two types of fields:
-- Elastic fields are the fields used under the hood by elastic. 
+- Elastic fields are the fields used under the hood by elastic.
   (https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-types.html
   These are stored in the Mapping of an index
-- Amcat fields (Field) are the fields are seen by the amcat user. They use a simplified type, and contain additional 
+- Amcat fields (Field) are the fields are seen by the amcat user. They use a simplified type, and contain additional
   information such as metareader access
   These are stored in the system index.
 
@@ -185,7 +185,7 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
             continue
 
         # if field does not exist, we add it to both the mapping and the system index
-        mapping[field] = {"type": settings.type}
+        mapping[field] = {"type": elastic_type}
         if settings.type in ["date"]:
             mapping[field]["format"] = "strict_date_optional_time"
 
