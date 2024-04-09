@@ -34,6 +34,7 @@ Elasticsearch implementation
 
 import collections
 from enum import IntEnum
+import logging
 from typing import Any, Iterable, Mapping, Optional, Literal
 
 import hashlib
@@ -438,8 +439,9 @@ def upload_documents(
     index: str,
     documents: list[dict[str, Any]],
     fields: Mapping[str, FieldType | CreateField] | None = None,
-    op_type="index",
+    op_type: Literal["index", "update"] = "index",
     return_ids=True,
+    raise_on_error=True,
 ):
     """
     Upload documents to this index
@@ -447,6 +449,7 @@ def upload_documents(
     :param index: The name of the index (without prefix)
     :param documents: A sequence of article dictionaries
     :param fields: A mapping of fieldname:UpdateField for field types
+    :param op_type: Whether to 'index' new documents (default) or 'update' existing documents
     """
     if fields:
         create_fields(index, fields)
@@ -462,7 +465,6 @@ def upload_documents(
                 document[key] = coerce_type(document[key], field_settings[key].type)
 
             id = create_id(document, field_settings)
-
             # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
             if op_type == "update":
                 yield {"_op_type": op_type, "_index": index, "_id": id, "doc": document, "doc_as_upsert": True}
@@ -470,11 +472,20 @@ def upload_documents(
                 yield {"_op_type": op_type, "_index": index, "_id": id, **document}
 
     actions = list(es_actions(index, documents, op_type))
-    successes, failures = elasticsearch.helpers.bulk(
-        es(),
-        actions,
-        stats_only=True,
-    )
+    try:
+        successes, failures = elasticsearch.helpers.bulk(
+            es(),
+            actions,
+            stats_only=True,
+            raise_on_error=raise_on_error,
+        )
+    except elasticsearch.helpers.BulkIndexError as e:
+        logging.error("Error on indexing: " + json.dumps(e.errors, indent=2, default=str))
+        if e.errors:
+            _, error = list(e.errors[0].items())[0]
+            reason = error.get("error", {}).get("reason", error)
+            e.args = e.args + (f"First error: {reason}",)
+        raise
 
     if return_ids:
         ids = [doc["_id"] for doc in actions]

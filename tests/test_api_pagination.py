@@ -28,7 +28,7 @@ def test_pagination(client, index, user):
 
 def test_scroll(client, index, user):
     set_role(index, user, Role.READER)
-    upload(index, docs=[{"i": i} for i in range(66)], fields={"i": CreateField(type="long")})
+    upload(index, docs=[{"i": i} for i in range(66)], fields={"i": CreateField(type="integer")})
     url = f"/index/{index}/query"
     r = post_json(
         client,

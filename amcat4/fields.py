@@ -14,6 +14,7 @@ We need to make sure that:
   system index
 """
 
+import datetime
 from hmac import new
 import json
 from tabnanny import check
@@ -83,6 +84,7 @@ TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "geo_point": ["geo_point"],
     "tag": ["keyword", "wildcard"],
     "image_url": ["wildcard", "keyword", "constant_keyword", "text"],
+    "url": ["wildcard", "keyword", "constant_keyword", "text"],
     "json": ["text"],
 }
 
@@ -111,7 +113,7 @@ def _standardize_createfields(fields: Mapping[str, FieldType | CreateField]) -> 
     sfields = {}
     for k, v in fields.items():
         if isinstance(v, str):
-            assert v in get_args(ElasticType), f"Unknown elastic type {v}"
+            assert v in get_args(FieldType), f"Unknown amcat type {v}"
             sfields[k] = CreateField(type=cast(FieldType, v))
         else:
             sfields[k] = v
@@ -130,6 +132,8 @@ def coerce_type(value: Any, type: FieldType):
     Coerces values into the respective type in elastic
     based on ES_MAPPINGS and elastic field types
     """
+    if type == "date" and isinstance(value, datetime.date):
+        return value.isoformat()
     if type in ["text", "tag", "image_url", "date"]:
         return str(value)
     if type in ["boolean"]:
