@@ -27,9 +27,8 @@ def test_documents(client, index, user):
         f"index/{index}/documents",
         user=user,
         json={
-            "documents": [{"id": "id", "title": "a title", "text": "text", "date": "2020-01-01"}],
+            "documents": [{"_id": "id", "title": "a title", "text": "text", "date": "2020-01-01"}],
             "fields": {
-                "id": {"type": "keyword", "identifier": True},
                 "title": {"type": "text"},
                 "text": {"type": "text"},
                 "date": {"type": "date"},

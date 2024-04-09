@@ -1,6 +1,8 @@
 from datetime import datetime
 from re import I
 
+import pytest
+
 from amcat4.index import (
     refresh_index,
     upload_documents,
@@ -45,7 +47,7 @@ def test_data_coerced(index):
 
 def test_fields(index):
     """Can we get the fields from an index"""
-    create_fields(index, {"title": "text", "date": "date", "text": "text", "url": "url"})
+    create_fields(index, {"title": "text", "date": "date", "text": "text", "url": "keyword"})
     fields = get_fields(index)
     assert set(fields.keys()) == {"title", "date", "text", "url"}
     assert fields["title"].type == "text"
@@ -96,26 +98,83 @@ def test_add_tag(index_docs):
     assert tags() == {"1": ["x"], "2": ["y"], "3": ["y"]}
 
 
-def test_deduplication(index):
+def test_upload_without_identifiers(index):
     doc = {"title": "titel", "text": "text", "date": datetime(2020, 1, 1)}
-    upload_documents(index, [doc], fields={"title": "text", "text": "text", "date": "date"})
+    res = upload_documents(index, [doc], fields={"title": "text", "text": "text", "date": "date"})
+    assert res["successes"] == 1
     _assert_n(index, 1)
-    upload_documents(index, [doc])
+
+    # this doesnt identify duplicates
+    res = upload_documents(index, [doc])
+    assert res["successes"] == 1
+    _assert_n(index, 2)
+
+
+def test_upload_with_explicit_ids(index):
+    doc = {"_id": "1", "title": "titel", "text": "text", "date": datetime(2020, 1, 1)}
+    res = upload_documents(index, [doc], fields={"title": "text", "text": "text", "date": "date"})
+    assert res["successes"] == 1
+
+    # this does skip docs with same id
+    res = upload_documents(index, [doc])
+    assert res["successes"] == 0
     _assert_n(index, 1)
 
 
-def test_identifier_deduplication(index):
+def test_upload_with_identifiers(index):
     doc = {"url": "http://", "text": "text"}
-    upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True), "text": "text"})
+    res = upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True), "text": "text"})
+    assert res["successes"] == 1
     _assert_n(index, 1)
 
     doc2 = {"url": "http://", "text": "text2"}
-    upload_documents(index, [doc2])
+    res = upload_documents(index, [doc2])
+    assert res["successes"] == 0
     _assert_n(index, 1)
 
     doc3 = {"url": "http://2", "text": "text"}
-    upload_documents(index, [doc3])
+    res = upload_documents(index, [doc3])
+    assert res["successes"] == 1
     _assert_n(index, 2)
+
+    # cannot upload explicit id if identifiers are used
+    doc4 = {"_id": "1", "url": "http://", "text": "text"}
+    with pytest.raises(ValueError):
+        upload_documents(index, [doc4])
+
+
+def test_invalid_adding_identifiers(index):
+    # identifiers can only be added if (1) the index already uses identifiers or (2) the index is still empty (no docs)
+    doc = {"text": "text"}
+    upload_documents(index, [doc], fields={"text": "text"})
+    refresh_index(index)
+
+    # adding an identifier to an existing index should fail
+    doc = {"url": "http://", "text": "text"}
+    with pytest.raises(ValueError):
+        upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True)})
+
+
+def test_valid_adding_identifiers(index):
+    # adding an identifier to an empty index should succeed
+    doc = {"text": "text"}
+    upload_documents(index, [doc], fields={"text": CreateField(type="text", identifier=True)})
+    refresh_index(index)
+    _assert_n(index, 1)
+
+    # adding an identifier to an existing index should succeed if the index already has identifiers
+    doc = {"url": "http://", "text": "text"}
+    res = upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True)})
+
+    # the document should have been added because its not a full duplicate (in first doc url was empty)
+    assert res["successes"] == 1
+
+    # both the identifier for the first doc and the second doc should still work, so the following docs are
+    # both duplicates
+    doc1 = {"text": "text"}
+    doc2 = {"url": "http://", "text": "text"}
+    res = upload_documents(index, [doc1, doc2])
+    assert res["successes"] == 0
 
 
 def _assert_n(index, n):

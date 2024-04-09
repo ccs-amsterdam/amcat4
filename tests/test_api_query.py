@@ -28,8 +28,7 @@ def test_query_post(client, index_docs, user):
     assert qi(filters={"cat": {"values": ["a"]}}) == {0, 1, 2}
 
     # Can we request specific fields?
-    all_fields = {"_id", "id", "cat", "subcat", "i", "date", "text", "title"}
-    print(q()[0])
+    all_fields = {"_id", "cat", "subcat", "i", "date", "text", "title"}
     assert set(q()[0].keys()) == all_fields
     assert set(q(fields=["cat"])[0].keys()) == {"_id", "cat"}
     assert set(q(fields=["date", "title"])[0].keys()) == {"_id", "date", "title"}
@@ -190,30 +189,32 @@ def test_query_tags(client, index_docs, user):
     set_role(index_docs, user, Role.WRITER)
 
     assert tags() == {}
-    post_json(
+    res = post_json(
         client,
         f"/index/{index_docs}/tags_update",
         user=user,
-        expected=204,
+        expected=200,
         json=dict(action="add", field="tag", tag="x", filters={"cat": "a"}),
     )
-    refresh_index(index_docs)
+    assert res["updated"] == 3
+    # should refresh before returning
+    # refresh_index(index_docs)
     assert tags() == {"0": ["x"], "1": ["x"], "2": ["x"]}
-    post_json(
+    res = post_json(
         client,
         f"/index/{index_docs}/tags_update",
         user=user,
-        expected=204,
+        expected=200,
         json=dict(action="remove", field="tag", tag="x", queries=["text"]),
     )
-    refresh_index(index_docs)
+    assert res["updated"] == 2
     assert tags() == {"2": ["x"]}
-    post_json(
+    res = post_json(
         client,
         f"/index/{index_docs}/tags_update",
         user=user,
-        expected=204,
+        expected=200,
         json=dict(action="add", field="tag", tag="y", ids=["1", "2"]),
     )
-    refresh_index(index_docs)
+    assert res["updated"] == 2
     assert tags() == {"1": ["y"], "2": ["x", "y"]}

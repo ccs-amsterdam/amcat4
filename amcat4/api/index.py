@@ -180,7 +180,7 @@ def upload_documents(
     ix: str,
     documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
     fields: Annotated[
-        dict[str, ElasticType | CreateField] | None,
+        dict[str, FieldType | CreateField] | None,
         Body(
             description="If a field in documents does not yet exist, you can create it on the spot. "
             "If you only need to specify the type, and use the default settings, "
@@ -206,7 +206,7 @@ def upload_documents(
         check_role(user, index.Role.WRITER, ix)
     else:
         check_role(user, index.Role.ADMIN, ix)
-    return index.upload_documents(ix, documents, fields, operation, return_ids=False)
+    return index.upload_documents(ix, documents, fields, operation)
 
 
 @app_index.get("/{ix}/documents/{docid}")

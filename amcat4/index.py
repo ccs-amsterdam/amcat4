@@ -33,7 +33,9 @@ Elasticsearch implementation
 """
 
 import collections
+from dataclasses import field
 from enum import IntEnum
+import functools
 import logging
 from typing import Any, Iterable, Mapping, Optional, Literal
 
@@ -408,28 +410,11 @@ def create_id(document: dict, field_settings: dict[str, Field]) -> str:
 
     identifiers = [k for k, v in field_settings.items() if v.identifier == True]
     if len(identifiers) == 0:
-        # if no identifiers specified, id is hash of entire document
-        # (we could also decide that in this case we let elastic create a uuid)
-        hash_values = document
-    else:
-        # if identifiers specified, we concatenate the values of these fields, and hash them if
-        # the string exceeds 512 characters (the maximum length of an id in elastic)
-        # we only use the fields that are present in the document, and sort them alphabetically,
-        # so that the id is the same after more identifiers are added.
-        id_fields = sorted(set(identifiers) & set(document.keys()))
+        raise ValueError("Can only create id if identifiers are specified")
 
-        if not id_fields:
-            raise ValueError(f"None of the identifier fields {identifiers} are present in the document")
-        if len(id_fields) == 1:
-            return str(document[id_fields[0]])
-
-        id = "|".join(f"{k}={str(document[k])}" for k in id_fields)
-        if len(id.encode("utf-8")) < 500:
-            return id
-
-        hash_values = {k: document.get(k) for k in id_fields}
-
-    hash_str = json.dumps(hash_values, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
+    id_keys = sorted(set(identifiers) & set(document.keys()))
+    id_fields = {k: document[k] for k in id_keys}
+    hash_str = json.dumps(id_fields, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
     m = hashlib.sha224()
     m.update(hash_str)
     return m.hexdigest()
@@ -439,9 +424,8 @@ def upload_documents(
     index: str,
     documents: list[dict[str, Any]],
     fields: Mapping[str, FieldType | CreateField] | None = None,
-    op_type: Literal["index", "update"] = "index",
-    return_ids=True,
-    raise_on_error=True,
+    op_type: Literal["create", "update"] = "create",
+    raise_on_error=False,
 ):
     """
     Upload documents to this index
@@ -456,21 +440,38 @@ def upload_documents(
 
     def es_actions(index, documents, op_type):
         field_settings = get_fields(index)
+        has_identifiers = any(field.identifier for field in field_settings.values())
         for document in documents:
-            for key in document.keys():
-                if key == "_id":
-                    # WvA: Do we really wish to disallow this?
-                    raise ValueError("You cannot directly set the '_id' field in a document.")
-                if key not in field_settings:
-                    raise ValueError(f"The type for field '{key}' is not yet specified")
-                document[key] = coerce_type(document[key], field_settings[key].type)
+            doc = dict()
+            action = {"_op_type": op_type, "_index": index}
 
-            id = create_id(document, field_settings)
+            for key in document.keys():
+                if key in field_settings:
+                    doc[key] = coerce_type(document[key], field_settings[key].type)
+                else:
+                    if key != "_id":
+                        raise ValueError(f"Field '{key}' is not yet specified")
+
+                if key == "_id":
+                    if has_identifiers:
+                        identifiers = ", ".join([name for name, field in field_settings.items() if field.identifier])
+                        raise ValueError(f"This index uses identifier ({identifiers}), so you cannot set the _id directly.")
+                    action["_id"] = document["_id"]
+                else:
+                    if has_identifiers:
+                        action["_id"] = create_id(document, field_settings)
+                ## if no id is given, elasticsearch creates a cool unique one
+
             # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
             if op_type == "update":
-                yield {"_op_type": op_type, "_index": index, "_id": id, "doc": document, "doc_as_upsert": True}
+                if "_id" not in action:
+                    raise ValueError("Update requires _id")
+                action["doc"] = doc
+                action["doc_as_upsert"] = True
             else:
-                yield {"_op_type": op_type, "_index": index, "_id": id, **document}
+                action.update(doc)
+
+            yield action
 
     actions = list(es_actions(index, documents, op_type))
     try:
@@ -488,9 +489,6 @@ def upload_documents(
             e.args = e.args + (f"First error: {reason}",)
         raise
 
-    if return_ids:
-        ids = [doc["_id"] for doc in actions]
-        return dict(ids=ids, successes=successes, failures=failures)
     return dict(successes=successes, failures=failures)
 
 

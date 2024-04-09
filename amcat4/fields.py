@@ -164,6 +164,8 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
     current_fields = get_fields(index)
 
     sfields = _standardize_createfields(fields)
+    old_identifiers = any(f.identifier for f in current_fields.values())
+    new_identifiers = False
 
     for field, settings in sfields.items():
         if settings.elastic_type is not None:
@@ -189,6 +191,9 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
             continue
 
         # if field does not exist, we add it to both the mapping and the system index
+        if settings.identifier:
+            new_identifiers = True
+
         mapping[field] = {"type": elastic_type}
         if settings.type in ["date"]:
             mapping[field]["format"] = "strict_date_optional_time"
@@ -202,7 +207,14 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
         )
         check_forbidden_type(current_fields[field], settings.type)
 
+    if new_identifiers:
+        # new identifiers are only allowed if the index had identifiers, or if it is a new index (i.e. no documents)
+        has_docs = es().count(index=index)["count"] > 0
+        if has_docs and not old_identifiers:
+            raise ValueError("Cannot add identifiers. Index already has documents with no identifiers.")
+
     if len(mapping) > 0:
+        # if there are new identifiers, check whether this is allowed first
         es().indices.put_mapping(index=index, properties=mapping)
         es().update(
             index=get_settings().system_index,

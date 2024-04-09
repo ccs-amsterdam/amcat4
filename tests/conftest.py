@@ -142,14 +142,13 @@ def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType |
     """
     res = upload_documents(index, docs, fields)
     refresh_index(index)
-    return res["ids"]
 
 
 TEST_DOCUMENTS = [
-    {"id": 0, "cat": "a", "subcat": "x", "i": 1, "date": "2018-01-01", "text": "this is a text", "title": "title"},
-    {"id": 1, "cat": "a", "subcat": "x", "i": 2, "date": "2018-02-01", "text": "a test text", "title": "title"},
+    {"_id": 0, "cat": "a", "subcat": "x", "i": 1, "date": "2018-01-01", "text": "this is a text", "title": "title"},
+    {"_id": 1, "cat": "a", "subcat": "x", "i": 2, "date": "2018-02-01", "text": "a test text", "title": "title"},
     {
-        "id": 2,
+        "_id": 2,
         "cat": "a",
         "subcat": "y",
         "i": 11,
@@ -158,7 +157,7 @@ TEST_DOCUMENTS = [
         "title": "bla",
     },
     {
-        "id": 3,
+        "_id": 3,
         "cat": "b",
         "subcat": "y",
         "i": 31,
@@ -175,7 +174,6 @@ def populate_index(index):
         index,
         TEST_DOCUMENTS,
         fields={
-            "id": CreateField(type="integer", identifier=True),
             "text": "text",
             "title": "text",
             "date": "date",
