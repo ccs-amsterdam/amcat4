@@ -89,7 +89,7 @@ def test_highlight(index):
 
 
 def test_query_multiple_index(index_docs, index):
-    upload(index, [{"text": "also a text", "i": -1}], fields={"i": "long", "text": "text"})
+    upload(index, [{"text": "also a text", "i": -1}], fields={"i": "integer", "text": "text"})
     docs = query.query_documents([index_docs, index])
     assert docs is not None
     assert len(docs.data) == 5

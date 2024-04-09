@@ -2,7 +2,7 @@ from amcat4.index import Role, refresh_index, set_role
 from amcat4.models import CreateField, FieldSpec
 from amcat4.query import query_documents
 from tests.conftest import upload
-from tests.tools import post_json, dictset
+from tests.tools import build_headers, check, post_json, dictset
 
 
 def test_query_post(client, index_docs, user):
@@ -28,7 +28,8 @@ def test_query_post(client, index_docs, user):
     assert qi(filters={"cat": {"values": ["a"]}}) == {0, 1, 2}
 
     # Can we request specific fields?
-    all_fields = {"_id", "cat", "subcat", "i", "date", "text", "title"}
+    all_fields = {"_id", "id", "cat", "subcat", "i", "date", "text", "title"}
+    print(q()[0])
     assert set(q()[0].keys()) == all_fields
     assert set(q(fields=["cat"])[0].keys()) == {"_id", "cat"}
     assert set(q(fields=["date", "title"])[0].keys()) == {"_id", "date", "title"}
@@ -58,7 +59,7 @@ def test_aggregate(client, index_docs, user):
         },
     )
     assert dictset(r["data"]) == dictset([{"avg_i": 1.5, "n": 2, "subcat": "x"}, {"avg_i": 21.0, "n": 2, "subcat": "y"}])
-    assert r["meta"]["aggregations"] == [{"field": "i", "function": "avg", "type": "number", "name": "avg_i"}]
+    assert r["meta"]["aggregations"] == [{"field": "i", "function": "avg", "type": "integer", "name": "avg_i"}]
 
     # test filtered aggregate
     r = post_json(
@@ -95,7 +96,7 @@ def test_multiple_index(client, index_docs, index, user):
         fields={
             "text": CreateField(type="text"),
             "cat": CreateField(type="keyword"),
-            "i": CreateField(type="long"),
+            "i": CreateField(type="integer"),
         },
     )
     indices = f"{index},{index_docs}"
@@ -150,11 +151,13 @@ def test_aggregate_datemappings(client, index_docs, user):
 
 def test_query_tags(client, index_docs, user):
     def tags():
-        return {
-            doc["_id"]: doc["tag"]
-            for doc in query_documents(index_docs, fields=[FieldSpec(name="tag")]).data
-            if doc.get("tag")
-        }
+        result = query_documents(index_docs, fields=[FieldSpec(name="tag")])
+        return {doc["_id"]: doc["tag"] for doc in (result.data if result else []) if doc.get("tag")}
+
+    check(client.post(f"/index/{index_docs}/tags_update"), 401)
+    check(client.post(f"/index/{index_docs}/tags_update", headers=build_headers(user=user)), 401)
+
+    set_role(index_docs, user, Role.WRITER)
 
     assert tags() == {}
     post_json(
