@@ -156,13 +156,10 @@ def test_invalid_adding_identifiers(index):
 
 
 def test_valid_adding_identifiers(index):
-    # adding an identifier to an empty index should succeed
     doc = {"text": "text"}
     upload_documents(index, [doc], fields={"text": CreateField(type="text", identifier=True)})
-    refresh_index(index)
-    _assert_n(index, 1)
 
-    # adding an identifier to an existing index should succeed if the index already has identifiers
+    # adding an additional identifier to an existing index should succeed if the index already has identifiers
     doc = {"url": "http://", "text": "text"}
     res = upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True)})
 
@@ -174,6 +171,14 @@ def test_valid_adding_identifiers(index):
     doc1 = {"text": "text"}
     doc2 = {"url": "http://", "text": "text"}
     res = upload_documents(index, [doc1, doc2])
+    assert res["successes"] == 0
+
+    # the order of adding identifiers doesn't matter. a document having just the url uses only the url as identifier
+    doc = {"url": "http://new"}
+    res = upload_documents(index, [doc])
+    assert res["successes"] == 1
+    # second time its a duplicate
+    res = upload_documents(index, [doc])
     assert res["successes"] == 0
 
 
