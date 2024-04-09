@@ -87,7 +87,7 @@ def test_highlight(index):
     )
     assert res is not None
     doc = res.data[0]
-    assert doc["title"] == "Een <em>test<docs/em> titel"
+    assert doc["title"] == "Een <em>test</em> titel"
     assert " a <em>test</em>" in doc["text"]
     assert " ... " in doc["text"]
 

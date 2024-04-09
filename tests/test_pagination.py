@@ -55,7 +55,6 @@ def test_scroll(index_many):
     allids += r.data
 
     r = query_documents(index_many, scroll_id=r.scroll_id, fields=[FieldSpec(name="id")])
-    assert r is not None
+    assert r is None
 
-    assert len(r.data) == 0
     assert {int(h["id"]) for h in allids} == {0, 2, 4, 6, 8, 10, 12, 14, 16, 18}

@@ -459,6 +459,7 @@ def upload_documents(
         for document in documents:
             for key in document.keys():
                 if key == "_id":
+                    # WvA: Do we really wish to disallow this?
                     raise ValueError("You cannot directly set the '_id' field in a document.")
                 if key not in field_settings:
                     raise ValueError(f"The type for field '{key}' is not yet specified")
