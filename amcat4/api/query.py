@@ -327,11 +327,7 @@ def query_aggregate_post(
     }
 
 
-@app_query.post(
-    "/{index}/tags_update",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
-)
+@app_query.post("/{index}/tags_update")
 def query_update_tags(
     index: str,
     action: Literal["add", "remove"] = Body(None, description="Action (add or remove) on tags"),
@@ -367,5 +363,7 @@ def query_update_tags(
 
     if isinstance(ids, (str, int)):
         ids = [ids]
-    update_tag_query(indices, action, field, tag, _standardize_queries(queries), _standardize_filters(filters), ids)
-    return
+    update_result = update_tag_query(
+        indices, action, field, tag, _standardize_queries(queries), _standardize_filters(filters), ids
+    )
+    return update_result

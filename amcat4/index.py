@@ -529,15 +529,20 @@ def delete_document(index: str, doc_id: str):
 
 def update_by_query(index: str | list[str], script: str, query: dict, params: dict | None = None):
     script_dict = dict(source=script, lang="painless", params=params or {})
-    test = es().update_by_query(index=index, script=script_dict, **query, refresh=True)
+    result = es().update_by_query(index=index, script=script_dict, **query, refresh=True)
+    return dict(updated=result["updated"], total=result["total"])
 
 
 TAG_SCRIPTS = dict(
     add="""
     if (ctx._source[params.field] == null) {
       ctx._source[params.field] = [params.tag]
-    } else if (!ctx._source[params.field].contains(params.tag)) {
-      ctx._source[params.field].add(params.tag)
+    } else {
+      if (ctx._source[params.field].contains(params.tag)) {
+        ctx.op = 'noop';
+      } else {
+        ctx._source[params.field].add(params.tag)
+      }
     }
     """,
     remove="""
@@ -546,7 +551,10 @@ TAG_SCRIPTS = dict(
       if (ctx._source[params.field].size() == 0) {
         ctx._source.remove(params.field);
       }
-    }""",
+    } else {
+      ctx.op = 'noop';
+    }
+    """,
 )
 
 
@@ -554,4 +562,4 @@ def update_tag_by_query(index: str | list[str], action: Literal["add", "remove"]
     create_or_verify_tag_field(index, field)
     script = TAG_SCRIPTS[action]
     params = dict(field=field, tag=tag)
-    update_by_query(index, script, query, params)
+    return update_by_query(index, script, query, params)

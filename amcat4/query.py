@@ -13,6 +13,8 @@ from typing import (
     Literal,
 )
 
+from urllib3 import Retry
+
 from amcat4.models import FieldSpec, FilterSpec, SortSpec
 
 from .date_mappings import mappings
@@ -171,6 +173,7 @@ def query_documents(
         for s in sort:
             for k, v in s.items():
                 kwargs["sort"].append({k: dict(v)})
+
     if scroll_id:
         result = es().scroll(scroll_id=scroll_id, **kwargs)
         if not result["hits"]["hits"]:
@@ -268,4 +271,5 @@ def update_tag_query(
     """Add or remove tags using a query"""
     body = build_body(queries, filters, ids=ids)
 
-    update_tag_by_query(index, action, body, field, tag)
+    update_result = update_tag_by_query(index, action, body, field, tag)
+    return update_result
