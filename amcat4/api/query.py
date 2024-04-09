@@ -307,11 +307,6 @@ def query_aggregate_post(
     indices = index.split(",")
     _axes = [Axis(**x.model_dump()) for x in axes] if axes else []
     _aggregations = [Aggregation(**x.model_dump()) for x in aggregations] if aggregations else []
-    if not (_axes or _aggregations):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Aggregation needs at least one axis or aggregation",
-        )
 
     results = aggregate.query_aggregate(
         indices,

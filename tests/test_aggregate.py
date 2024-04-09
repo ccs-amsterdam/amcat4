@@ -92,6 +92,9 @@ def test_metric(index_docs: str):
     assert q(None, [Aggregation("i", "avg")]) == dictset([{"n": 4, "avg_i": 11.25}])
     assert q(None, [Aggregation("i", "avg"), Aggregation("i", "max")]) == dictset([{"n": 4, "avg_i": 11.25, "max_i": 31.0}])
 
+    # Count only
+    assert q([], []) == dictset([{"n": 4}])
+
     # Check value handling - Aggregation on date fields
     assert q(None, [Aggregation("date", "max")]) == dictset([{"n": 4, "max_date": "2020-01-01T00:00:00"}])
     assert q([Axis("subcat")], [Aggregation("date", "avg")]) == dictset(

@@ -88,6 +88,36 @@ def test_aggregate(client, index_docs, user):
     assert data == {"x": 2}
 
 
+def test_bare_aggregate(client, index_docs, user):
+    r = post_json(
+        client,
+        f"/index/{index_docs}/aggregate",
+        user=user,
+        expected=200,
+        json={},
+    )
+    assert r["meta"]["axes"] == []
+    assert r["data"] == [dict(n=4)]
+
+    r = post_json(
+        client,
+        f"/index/{index_docs}/aggregate",
+        user=user,
+        expected=200,
+        json={"aggregations": [{"field": "i", "function": "avg"}]},
+    )
+    assert r["data"] == [dict(n=4, avg_i=11.25)]
+
+    r = post_json(
+        client,
+        f"/index/{index_docs}/aggregate",
+        user=user,
+        expected=200,
+        json={"aggregations": [{"field": "i", "function": "min", "name": "mini"}]},
+    )
+    assert r["data"] == [dict(n=4, mini=1)]
+
+
 def test_multiple_index(client, index_docs, index, user):
     set_role(index, user, Role.READER)
     upload(

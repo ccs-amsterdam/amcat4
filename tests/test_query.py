@@ -40,11 +40,13 @@ def test_query(index_docs):
 
 def test_snippet(index_docs):
     docs = query.query_documents(index_docs, fields=[FieldSpec(name="text", snippet=SnippetParams(nomatch_chars=5))])
+    assert docs is not None
     assert docs.data[0]["text"] == "this is"
 
     docs = query.query_documents(
         index_docs, queries={"1": "a"}, fields=[FieldSpec(name="text", snippet=SnippetParams(max_matches=1, match_chars=1))]
     )
+    assert docs is not None
     assert docs.data[0]["text"] == "a"
 
 
@@ -74,7 +76,7 @@ def test_highlight(index):
     assert doc["title"] == "Een <em>test</em> titel"
     assert doc["text"] == f"{words} a <em>test</em> document. {words} other <em>text</em> documents. {words} you!"
 
-    doc = query.query_documents(
+    res = query.query_documents(
         index,
         queries={"1": "te*"},
         fields=[
@@ -82,8 +84,10 @@ def test_highlight(index):
             FieldSpec(name="text", snippet=SnippetParams(max_matches=3, match_chars=50)),
         ],
         highlight=True,
-    ).data[0]
-    assert doc["title"] == "Een <em>test</em> titel"
+    )
+    assert res is not None
+    doc = res.data[0]
+    assert doc["title"] == "Een <em>test<docs/em> titel"
     assert " a <em>test</em>" in doc["text"]
     assert " ... " in doc["text"]
 
