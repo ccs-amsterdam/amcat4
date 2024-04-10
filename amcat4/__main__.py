@@ -143,10 +143,6 @@ def create_env(args):
     env = base_env()
     if args.admin_email:
         env["amcat4_admin_email"] = args.admin_email
-    if args.admin_password:
-        env["amcat4_admin_password"] = args.admin_password
-    if args.no_admin_password:
-        env["amcat4_admin_password"] = ""
     with open(".env", "w") as f:
         for key, val in env.items():
             f.write(f"{key}={val}\n")
@@ -166,9 +162,6 @@ def add_admin(args):
 
 
 def list_users(_args):
-    admin_password = get_settings().admin_password
-    if admin_password:
-        print("ADMIN     : admin (password set via environment AMCAT4_ADMIN_PASSWORD)")
     users = list_global_users()
 
     # sorted changes the output type of list_global_users?
@@ -176,8 +169,8 @@ def list_users(_args):
     if users:
         for user, role in users.items():
             print(f"{role.name:10}: {user}")
-    if not (users or admin_password):
-        print("(No users defined yet, set AMCAT4_ADMIN_PASSWORD in environment use add-admin to add users by email)")
+    if not users:
+        print("(No users defined yet, use add-admin to add users by email)")
 
 
 def config_amcat(args):
@@ -267,9 +260,6 @@ def main():
 
     p = subparsers.add_parser("create-env", help="Create the .env file with a random secret key")
     p.add_argument("-a", "--admin_email", help="The email address of the admin user.")
-    p.add_argument("-p", "--admin_password", help="The password of the built-in admin user.")
-    p.add_argument("-P", "--no-admin_password", action="store_true", help="Disable admin password")
-
     p.set_defaults(func=create_env)
 
     p = subparsers.add_parser("config", help="Configure amcat4 settings in an interactive menu.")

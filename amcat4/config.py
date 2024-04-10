@@ -110,7 +110,9 @@ class Settings(BaseSettings):
         ),
     ] = None
 
-    admin_password: Annotated[str | None, Field()] = None
+    minio_host: Annotated[str | None, Field()] = None
+    minio_access_key: Annotated[str | None, Field()] = None
+    minio_secret_key: Annotated[str | None, Field()] = None
 
     @model_validator(mode="after")
     def set_ssl(self: Any) -> "Settings":

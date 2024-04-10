@@ -3,7 +3,7 @@ import pytest
 import responses
 from fastapi.testclient import TestClient
 
-from amcat4 import api  # noqa: E402
+from amcat4 import api, multimedia  # noqa: E402
 from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import es
 from amcat4.index import (
@@ -16,7 +16,7 @@ from amcat4.index import (
     set_global_role,
     upload_documents,
 )
-from amcat4.models import CreateField, ElasticType, FieldType
+from amcat4.models import CreateField, FieldType
 from tests.middlecat_keypair import PUBLIC_KEY
 
 UNITS = [
@@ -33,7 +33,9 @@ UNITTEST_SYSTEM_INDEX = "amcat4_unittest_system"
 def mock_middlecat():
     get_settings().middlecat_url = "http://localhost:5000"
     get_settings().host = "http://localhost:3000"
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as resp:
+    minio = get_settings().minio_host
+    passthru = (f"http://{minio}",) if minio else ()
+    with responses.RequestsMock(passthru_prefixes=passthru, assert_all_requests_are_fired=False) as resp:
         resp.get("http://localhost:5000/api/configuration", json={"public_key": PUBLIC_KEY})
         yield None
 
@@ -212,3 +214,13 @@ def index_many():
 @pytest.fixture()
 def app():
     return api.app
+
+
+@pytest.fixture()
+def minio():
+    minio = multimedia.connect_minio()
+    if not minio:
+        pytest.skip("No minio connected, skipping multimedia tests")
+    for index in ["amcat4_unittest_index"]:
+        multimedia.delete_bucket(minio, index)
+    return minio
