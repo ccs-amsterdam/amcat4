@@ -7,12 +7,12 @@ The object store needs to be configured in the server settings.
 
 import datetime
 from io import BytesIO
-from typing import Optional
+from typing import Iterable, Optional
 from venv import create
 from amcat4.config import get_settings
 from minio import Minio, S3Error
 from minio.deleteobjects import DeleteObject
-from minio.datatypes import PostPolicy
+from minio.datatypes import PostPolicy, Object
 import functools
 
 
@@ -57,13 +57,14 @@ def get_bucket(minio: Minio, index: str, create_if_needed=True):
     return bucket
 
 
-def list_multimedia_objects(index: str):
+def list_multimedia_objects(
+    index: str, prefix: Optional[str] = None, start_after: Optional[str] = None, recursive=True
+) -> Iterable[Object]:
     minio = get_minio()
     bucket = get_bucket(minio, index, create_if_needed=False)
     if not bucket:
-        return []
-    for object in minio.list_objects(bucket_name(index), recursive=True):
-        yield dict(key=object.object_name)
+        return
+    yield from minio.list_objects(bucket_name(index), prefix=prefix, start_after=start_after, recursive=recursive)
 
 
 def delete_bucket(minio: Minio, index: str):
@@ -84,7 +85,7 @@ def add_multimedia_object(index: str, key: str, bytes: bytes):
     minio.put_object(bucket, key, data, len(bytes))
 
 
-def presigned_post(index: str, key_prefix, days_valid=1):
+def presigned_post(index: str, key_prefix: str = "", days_valid=1):
     minio = get_minio()
     bucket = get_bucket(minio, index)
     policy = PostPolicy(bucket, expiration=datetime.datetime.now() + datetime.timedelta(days=days_valid))

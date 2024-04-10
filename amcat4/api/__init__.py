@@ -9,6 +9,7 @@ from amcat4.api.index import app_index
 from amcat4.api.info import app_info
 from amcat4.api.query import app_query
 from amcat4.api.users import app_users
+from amcat4.api.multimedia import app_multimedia
 
 
 app = FastAPI(
@@ -26,12 +27,14 @@ app = FastAPI(
             "and the core process of getting units and posting annotations",
         ),
         dict(name="annotator guest", description="Annotator module endpoints for unregistered guests"),
+        dict(name="multimedia", description="Endpoints for multimedia support"),
     ],
 )
 app.include_router(app_info)
 app.include_router(app_users)
 app.include_router(app_index)
 app.include_router(app_query)
+app.include_router(app_multimedia)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

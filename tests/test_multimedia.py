@@ -7,7 +7,7 @@ from amcat4 import multimedia
 def test_upload_get_multimedia(minio, index):
     assert list(multimedia.list_multimedia_objects(index)) == []
     multimedia.add_multimedia_object(index, "test", b"bytes")
-    assert {o["key"] for o in multimedia.list_multimedia_objects(index)} == {"test"}
+    assert {o.object_name for o in multimedia.list_multimedia_objects(index)} == {"test"}
 
 
 def test_presigned_form(minio, index):
@@ -21,7 +21,7 @@ def test_presigned_form(minio, index):
         files={"file": BytesIO(bytes)},
     )
     res.raise_for_status()
-    assert {o["key"] for o in multimedia.list_multimedia_objects(index)} == {"image.png"}
+    assert {o.object_name for o in multimedia.list_multimedia_objects(index)} == {"image.png"}
 
     url = multimedia.presigned_get(index, key)
     res = requests.get(url)
