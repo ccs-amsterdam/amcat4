@@ -7,7 +7,19 @@ from typing_extensions import Self
 
 
 FieldType = Literal[
-    "text", "date", "boolean", "keyword", "number", "integer", "object", "vector", "geo_point", "image_url", "tag", "json"
+    "text",
+    "date",
+    "boolean",
+    "keyword",
+    "number",
+    "integer",
+    "object",
+    "vector",
+    "geo_point",
+    "image_url",
+    "tag",
+    "json",
+    "url",
 ]
 ElasticType = Literal[
     "text",

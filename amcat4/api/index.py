@@ -84,7 +84,7 @@ class ChangeIndex(BaseModel):
 
     name: str | None = None
     description: str | None = None
-    guest_role: Literal["ADMIN", "WRITER", "READER", "METAREADER", "NONE"] | None = None
+    guest_role: Literal["WRITER", "READER", "METAREADER", "NONE"] | None = None
     archive: bool | None = None
 
 
@@ -98,7 +98,7 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
     User needs admin rights on the index
     """
     check_role(user, index.Role.ADMIN, ix)
-    guest_role = index.Role[data.guest_role] if data.guest_role is not None else None
+    guest_role = index.GuestRole[data.guest_role] if data.guest_role is not None else None
     archived = None
     if data.archive is not None:
         d = index.get_index(ix)
@@ -127,7 +127,7 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
         role = check_role(user, index.Role.METAREADER, ix, required_global_role=index.Role.WRITER)
         d = index.get_index(ix)._asdict()
         d["user_role"] = role.name
-        d["guest_role"] = index.Role(d.get("guest_role", 0)).name
+        d["guest_role"] = index.GuestRole(d.get("guest_role", 0)).name
         d["description"] = d.get("description", "") or ""
         d["name"] = d.get("name", "") or ""
         return d

@@ -33,6 +33,7 @@ Elasticsearch implementation
 """
 
 import collections
+from curses import meta
 from dataclasses import field
 from enum import IntEnum
 import functools
@@ -63,6 +64,13 @@ class Role(IntEnum):
     READER = 20
     WRITER = 30
     ADMIN = 40
+
+
+class GuestRole(IntEnum):
+    NONE = 0
+    METAREADER = 10
+    READER = 20
+    WRITER = 30
 
 
 ADMIN_USER = "_admin"
@@ -260,18 +268,18 @@ def set_global_role(email: str, role: Role | None):
     set_role(index=GLOBAL_ROLES, email=email, role=role)
 
 
-def set_guest_role(index: str, guest_role: Optional[Role]):
+def set_guest_role(index: str, guest_role: Optional[GuestRole]):
     """
     Set the guest role for this index. Set to None to disallow guest access
     """
-    modify_index(index, guest_role=Role.NONE if guest_role is None else guest_role)
+    modify_index(index, guest_role=GuestRole.NONE if guest_role is None else guest_role)
 
 
 def modify_index(
     index: str,
     name: Optional[str] = None,
     description: Optional[str] = None,
-    guest_role: Optional[Role] = None,
+    guest_role: Optional[GuestRole] = None,
     archived: Optional[str] = None,
 ):
     doc = dict(
