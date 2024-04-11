@@ -7,6 +7,7 @@ The object store needs to be configured in the server settings.
 
 import datetime
 from io import BytesIO
+from multiprocessing import Value
 from typing import Iterable, Optional
 from venv import create
 from amcat4.config import get_settings
@@ -65,6 +66,14 @@ def list_multimedia_objects(
     if not bucket:
         return
     yield from minio.list_objects(bucket_name(index), prefix=prefix, start_after=start_after, recursive=recursive)
+
+
+def stat_multimedia_object(index: str, key: str) -> Object:
+    minio = get_minio()
+    bucket = get_bucket(minio, index, create_if_needed=False)
+    if not bucket:
+        raise ValueError(f"Bucket for {index} does not exist")
+    return minio.stat_object(bucket, key)
 
 
 def delete_bucket(minio: Minio, index: str):

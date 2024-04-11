@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 
 from amcat4 import index, multimedia
 from amcat4.api.auth import authenticated_user, check_role
-
+from minio.datatypes import Object
 
 app_multimedia = APIRouter(prefix="/index/{ix}/multimedia", tags=["multimedia"])
 
@@ -31,11 +31,23 @@ def list_multimedia(
     start_after: Optional[str] = None,
     recursive=False,
     presigned_get=False,
+    metadata=False,
     user: str = Depends(authenticated_user),
 ):
-    def process(obj):
-        result = dict(key=obj.object_name)
-        if presigned_get:
+    def process(obj: Object):
+        if metadata and (not obj.is_dir) and obj.object_name:
+            obj = multimedia.stat_multimedia_object(ix, obj.object_name)
+        result: dict[str, object] = dict(
+            key=obj.object_name,
+            is_dir=obj.is_dir,
+            last_modified=obj.last_modified,
+            size=obj.size,
+        )
+        if metadata:
+            result["metadata"] = (obj.metadata,)
+            result["content_type"] = (obj.content_type,)
+
+        if presigned_get and not obj.is_dir:
             result["presigned_get"] = multimedia.presigned_get(ix, obj.object_name)
         return result
 
