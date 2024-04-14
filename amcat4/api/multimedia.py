@@ -13,7 +13,8 @@ app_multimedia = APIRouter(prefix="/index/{ix}/multimedia", tags=["multimedia"])
 def presigned_get(ix: str, key: str, user: str = Depends(authenticated_user)):
     check_role(user, index.Role.READER, ix)
     url = multimedia.presigned_get(ix, key)
-    return dict(url=url)
+    obj = multimedia.stat_multimedia_object(ix, key)
+    return dict(url=url, content_type=(obj.content_type,), size=obj.size)
 
 
 @app_multimedia.get("/presigned_post")
