@@ -15,7 +15,7 @@ from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 
 from amcat4.index import refresh_system_index, remove_role, set_role
 from amcat4.fields import field_values, field_stats
-from amcat4.models import CreateField, ElasticType, FieldType, UpdateField
+from amcat4.models import CreateField, FieldType, UpdateField
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 

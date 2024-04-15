@@ -83,7 +83,8 @@ TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "vector": ["dense_vector"],
     "geo_point": ["geo_point"],
     "tag": ["keyword", "wildcard"],
-    "image_url": ["wildcard", "keyword", "constant_keyword", "text"],
+    "image": ["wildcard", "keyword", "constant_keyword", "text"],
+    "video": ["wildcard", "keyword", "constant_keyword", "text"],
     "url": ["wildcard", "keyword", "constant_keyword", "text"],
     "json": ["text"],
 }
