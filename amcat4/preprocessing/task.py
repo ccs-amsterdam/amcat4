@@ -66,7 +66,7 @@ TASKS: List[PreprocessingTask] = [
         name="HuggingFace Zero-Shot",
         endpoint=PreprocessingEndpoint(
             placeholder="https://api-inference.huggingface.co/models/facebook/bart-large-mnli",
-            domain=["hugginggace.co", "huggingfacecloud.com"],
+            domain=["huggingface.co", "huggingfacecloud.com"],
         ),
         parameters=[
             PreprocessingParameter(name="input", type="string", use_field="yes", path="$.inputs"),

@@ -11,6 +11,8 @@ app_preprocessing = APIRouter(tags=["preprocessing"])
 
 @app_preprocessing.get("/preprocessing_tasks")
 def list_tasks():
+    print(get_tasks())
+    print([t.model_dump() for t in get_tasks()])
     return [t.model_dump() for t in get_tasks()]
 
 

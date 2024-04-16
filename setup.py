@@ -32,6 +32,7 @@ setup(
         "class_doc",
         "mypy",
         "minio",
+        "jsonpath_ng",
     ],
     extras_require={"dev": ["pytest", "mypy", "flake8", "responses", "pre-commit", "types-requests"]},
     entry_points={"console_scripts": ["amcat4 = amcat4.__main__:main"]},
