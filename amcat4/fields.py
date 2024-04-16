@@ -15,17 +15,13 @@ We need to make sure that:
 """
 
 import datetime
-from hmac import new
 import json
-from tabnanny import check
 from typing import Any, Iterator, Mapping, get_args, cast
 
 
 from elasticsearch import NotFoundError
-from httpx import get
 
 # from amcat4.api.common import py2dict
-from amcat4 import elastic
 from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.models import FieldType, CreateField, ElasticType, Field, UpdateField, FieldMetareaderAccess
@@ -87,6 +83,7 @@ TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "video": ["wildcard", "keyword", "constant_keyword", "text"],
     "url": ["wildcard", "keyword", "constant_keyword", "text"],
     "json": ["text"],
+    "preprocess": ["object"],
 }
 
 

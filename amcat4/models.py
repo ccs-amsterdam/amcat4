@@ -21,6 +21,7 @@ FieldType = Literal[
     "tag",
     "json",
     "url",
+    "preprocess",
 ]
 ElasticType = Literal[
     "text",
