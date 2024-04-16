@@ -81,6 +81,7 @@ TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "tag": ["keyword", "wildcard"],
     "image": ["wildcard", "keyword", "constant_keyword", "text"],
     "video": ["wildcard", "keyword", "constant_keyword", "text"],
+    "audio": ["wildcard", "keyword", "constant_keyword", "text"],
     "url": ["wildcard", "keyword", "constant_keyword", "text"],
     "json": ["text"],
     "preprocess": ["object"],
@@ -132,7 +133,7 @@ def coerce_type(value: Any, type: FieldType):
     """
     if type == "date" and isinstance(value, datetime.date):
         return value.isoformat()
-    if type in ["text", "tag", "image_url", "date"]:
+    if type in ["text", "tag", "image", "video", "audio", "date"]:
         return str(value)
     if type in ["boolean"]:
         return bool(value)

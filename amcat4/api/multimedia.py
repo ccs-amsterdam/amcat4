@@ -1,10 +1,11 @@
 import itertools
 from typing import Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from amcat4 import index, multimedia
 from amcat4.api.auth import authenticated_user, check_role
 from minio.datatypes import Object
+from minio.error import S3Error
 
 app_multimedia = APIRouter(prefix="/index/{ix}/multimedia", tags=["multimedia"])
 
@@ -12,9 +13,14 @@ app_multimedia = APIRouter(prefix="/index/{ix}/multimedia", tags=["multimedia"])
 @app_multimedia.get("/presigned_get")
 def presigned_get(ix: str, key: str, user: str = Depends(authenticated_user)):
     check_role(user, index.Role.READER, ix)
-    url = multimedia.presigned_get(ix, key)
-    obj = multimedia.stat_multimedia_object(ix, key)
-    return dict(url=url, content_type=(obj.content_type,), size=obj.size)
+    try:
+        url = multimedia.presigned_get(ix, key)
+        obj = multimedia.stat_multimedia_object(ix, key)
+        return dict(url=url, content_type=(obj.content_type,), size=obj.size)
+    except S3Error as e:
+        if e.code == "NoSuchKey":
+            raise HTTPException(status_code=404, detail=f"multimedia file {key} not found")
+        raise HTTPException(status_code=404, detail=e.message)
 
 
 @app_multimedia.get("/presigned_post")

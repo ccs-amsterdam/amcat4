@@ -18,6 +18,7 @@ FieldType = Literal[
     "geo_point",
     "image",
     "video",
+    "audio",
     "tag",
     "json",
     "url",
