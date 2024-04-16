@@ -9,7 +9,7 @@ from amcat4.index import get_document, refresh_index
 from amcat4.preprocessing.instruction import PreprocessingInstruction
 import responses
 
-from amcat4.preprocessing.processor import get_todo, process_doc
+from amcat4.preprocessing.processor import get_todo, process_doc, process_documents, run_preprocessors
 from tests.conftest import TEST_DOCUMENTS
 
 INSTRUCTION = dict(
@@ -54,3 +54,11 @@ async def test_preprocess(index_docs, httpx_mock: HTTPXMock):
     refresh_index(index_docs)
     todos = list(get_todo(index_docs, i))
     assert {doc["_id"] for doc in todos} == {str(doc["_id"]) for doc in TEST_DOCUMENTS} - {todo["_id"]}
+
+    # run all preprocessors in a loop
+    await process_documents(index_docs, i, size=2)
+    refresh_index(index_docs)
+    todos = list(get_todo(index_docs, i))
+    assert len(todos) == 0
+    # There should be one call per document!
+    assert len(httpx_mock.get_requests()) == len(TEST_DOCUMENTS)
