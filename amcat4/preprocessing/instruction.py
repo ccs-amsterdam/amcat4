@@ -1,6 +1,7 @@
 import copy
 import functools
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+import httpx
 from pydantic import BaseModel
 import requests
 
@@ -25,7 +26,7 @@ class PreprocessingInstruction(BaseModel):
     arguments: List[PreprocessingArgument]
     outputs: List[PreprocessingOutput]
 
-    def build_request(self, doc):
+    def build_request(self, doc) -> httpx.Request:
         # TODO: validate that instruction is valid for task!
         task = get_task(self.task)
         if task.request.body != "json":
@@ -41,7 +42,7 @@ class PreprocessingInstruction(BaseModel):
                 value = argument.value
             param.parsed.update(body, value)
 
-        return requests.Request("POST", self.endpoint, json=body)
+        return httpx.Request("POST", self.endpoint, json=body)
 
     def parse_output(self, output) -> Iterable[Tuple[str, Any]]:
         task = get_task(self.task)

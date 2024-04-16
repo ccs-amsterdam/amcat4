@@ -1,5 +1,6 @@
 import asyncio
 from time import sleep
+from httpx import AsyncClient
 from requests import Session
 from amcat4.elastic import es
 from amcat4.index import update_document
@@ -16,7 +17,7 @@ async def run_preprocessor(index: str, instruction: PreprocessingInstruction):
     while True:
         docs = list(get_todo(index, instruction, size=10))
         for doc in docs:
-            process_doc(index, instruction, doc)
+            await process_doc(index, instruction, doc)
         if len(docs) < 10:
             # There were not enough todo items, so let's sleep
             await asyncio.sleep(30)
@@ -29,9 +30,9 @@ def get_todo(index: str, instruction: PreprocessingInstruction, size=10):
         yield {"_id": doc["_id"], **doc["_source"]}
 
 
-def process_doc(index: str, instruction: PreprocessingInstruction, doc: dict):
+async def process_doc(index: str, instruction: PreprocessingInstruction, doc: dict):
     req = instruction.build_request(doc)
-    response = Session().send(req.prepare())
+    response = await AsyncClient().send(req)
     response.raise_for_status()
     result = dict(instruction.parse_output(response.json()))
     result[instruction.field] = dict(status="done")
