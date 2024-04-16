@@ -1,15 +1,42 @@
 import asyncio
-from time import sleep
+from functools import cache
+import logging
+from typing import Dict, Tuple
+from anyio import create_task_group
 from httpx import AsyncClient
-from requests import Session
 from amcat4.elastic import es
 from amcat4.index import refresh_index, update_document
-from amcat4.preprocessing.instruction import PreprocessingInstruction
-from amcat4.preprocessing.task import get_task
+from amcat4.preprocessing.models import PreprocessingInstruction
 
 
-async def run_preprocessors():
-    pass
+class PreprocessorManager:
+    SINGLETON = None
+
+    def __init__(self):
+        self.preprocessors: Dict[Tuple[str, str], asyncio.Task] = {}
+        self.task_group = create_task_group()
+
+    def add_preprocessor(self, index: str, instruction: PreprocessingInstruction):
+        self.preprocessors[index, instruction.field] = asyncio.create_task(run_processor_loop(index, instruction))
+
+    def stop_preprocessor(self, index: str, field: str):
+        self.preprocessors[index, field].cancel()
+
+    def stop(self):
+        for task in self.preprocessors.values():
+            task.cancel()
+
+
+@cache
+def get_manager():
+    return PreprocessorManager()
+
+
+async def run_processor_loop(index, instruction: PreprocessingInstruction):
+    while True:
+        logging.info(f"Preprocessing documents for {index}.{instruction.field}")
+        await process_documents(index, instruction)
+        await asyncio.sleep(1)
 
 
 async def process_documents(index: str, instruction: PreprocessingInstruction, size=100):
@@ -27,7 +54,7 @@ async def process_documents(index: str, instruction: PreprocessingInstruction, s
         refresh_index(index)
 
 
-def get_todo(index: str, instruction: PreprocessingInstruction, size=100):
+def get_todo(index: str, instruction, size=100):
     fields = [arg.field for arg in instruction.arguments if arg.field]
     q = dict(bool=dict(must_not=dict(exists=dict(field=instruction.field))))
     for doc in es().search(index=index, size=size, source_includes=fields, query=q)["hits"]["hits"]:
@@ -35,6 +62,7 @@ def get_todo(index: str, instruction: PreprocessingInstruction, size=100):
 
 
 async def process_doc(index: str, instruction: PreprocessingInstruction, doc: dict):
+    # TODO catch errors and add to status field, rather than raising
     req = instruction.build_request(doc)
     response = await AsyncClient().send(req)
     response.raise_for_status()

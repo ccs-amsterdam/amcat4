@@ -90,3 +90,7 @@ def get_task(name):
         if task.name == name:
             return task
     raise ValueError(f"Task {task} not defined")
+
+
+def get_tasks():
+    return TASKS

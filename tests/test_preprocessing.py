@@ -1,15 +1,14 @@
+import asyncio
+import time
 from pytest_httpx import HTTPXMock
 import json
 
-import httpx
 import pytest
-import requests
 from amcat4.fields import create_fields
 from amcat4.index import get_document, refresh_index
-from amcat4.preprocessing.instruction import PreprocessingInstruction
-import responses
+from amcat4.preprocessing.instruction import PreprocessingInstruction, add_instruction
 
-from amcat4.preprocessing.processor import get_todo, process_doc, process_documents, run_preprocessors
+from amcat4.preprocessing.processor import PreprocessorManager, get_todo, process_doc, process_documents
 from tests.conftest import TEST_DOCUMENTS
 
 INSTRUCTION = dict(
@@ -62,3 +61,15 @@ async def test_preprocess(index_docs, httpx_mock: HTTPXMock):
     assert len(todos) == 0
     # There should be one call per document!
     assert len(httpx_mock.get_requests()) == len(TEST_DOCUMENTS)
+
+
+@pytest.mark.asyncio
+async def test_preprocess_loop(index_docs, httpx_mock: HTTPXMock):
+    i = PreprocessingInstruction.model_validate_json(json.dumps(INSTRUCTION))
+    httpx_mock.add_response(url=i.endpoint, json={"labels": ["politics", "sports"], "scores": [0.9, 0.1]})
+    add_instruction(index_docs, i)
+    while len(httpx_mock.get_requests()) < len(TEST_DOCUMENTS):
+        await asyncio.sleep(0.1)
+    await asyncio.sleep(0.5)
+    assert len(httpx_mock.get_requests()) == len(TEST_DOCUMENTS)
+    assert all(get_document(index_docs, doc["_id"])["class_label"] == "politics" for doc in TEST_DOCUMENTS)

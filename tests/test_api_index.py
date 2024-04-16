@@ -2,7 +2,7 @@ from starlette.testclient import TestClient
 
 from amcat4 import elastic
 
-from amcat4.index import get_guest_role, Role, set_guest_role, set_role, remove_role
+from amcat4.index import GuestRole, get_guest_role, Role, set_guest_role, set_role, remove_role
 from amcat4.fields import update_fields
 from tests.tools import build_headers, post_json, get_json, check, refresh
 
@@ -231,7 +231,7 @@ def test_name_description(client, index, index_name, user, admin):
     assert (get_json(client, f"/index/{index}", user=user) or {})["name"] == "test"
     set_role(index, user, None)
     check(client.get(f"/index/{index}", headers=build_headers(user)), 401)
-    set_guest_role(index, Role.METAREADER)
+    set_guest_role(index, GuestRole.METAREADER)
     assert (get_json(client, f"/index/{index}", user=user) or {})["name"] == "test"
 
     check(
