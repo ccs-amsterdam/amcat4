@@ -8,6 +8,7 @@ import io
 import json
 import logging
 import os
+from pathlib import Path
 import secrets
 import sys
 from typing import Any
@@ -18,6 +19,8 @@ import elasticsearch.helpers
 
 import uvicorn
 from pydantic.fields import FieldInfo
+from uvicorn.config import LOGGING_CONFIG
+
 
 from amcat4 import index
 from amcat4.config import get_settings, AuthOptions, validate_settings
@@ -69,7 +72,8 @@ def run(args):
     )
     if ping():
         logging.info(f"Connect to elasticsearch {get_settings().elastic_host}")
-    uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port)
+    log_config = "logging.yml" if Path("logging.yml").exists() else LOGGING_CONFIG
+    uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port, log_config=log_config)
 
 
 def val(val_or_list):
@@ -283,7 +287,6 @@ def main():
     logging.basicConfig(format="[%(levelname)-7s:%(name)-15s] %(message)s", level=logging.INFO)
     es_logger = logging.getLogger("elasticsearch")
     es_logger.setLevel(logging.WARNING)
-
     args.func(args)
 
 

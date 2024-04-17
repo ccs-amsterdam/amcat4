@@ -33,15 +33,23 @@ class PreprocessingInstruction(BaseModel):
         if not task.request.template:
             raise ValueError(f"Task {task.name} has json body but not template")
         body = copy.deepcopy(task.request.template)
+        headers = {}
         for argument in self.arguments:
             param = task.get_parameter(argument.name)
             if param.use_field == "yes":
                 value = doc.get(argument.field)
             else:
                 value = argument.value
-            param.parsed.update(body, value)
-
-        return httpx.Request("POST", self.endpoint, json=body)
+            if param.header:
+                if ":" in param.path:
+                    path, prefix = param.path.split(":", 1)
+                    prefix = f"{prefix} "
+                else:
+                    path, prefix = param.path, ""
+                headers[path] = f"{prefix}{value}"
+            else:
+                param.parsed.update(body, value)
+        return httpx.Request("POST", self.endpoint, json=body, headers=headers)
 
     def parse_output(self, output) -> Iterable[Tuple[str, Any]]:
         task = get_task(self.task)

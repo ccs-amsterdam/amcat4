@@ -29,6 +29,7 @@ class PreprocessingParameter(PreprocessingOutput):
     use_field: Literal["yes", "no"] = "no"
     default: Optional[bool | str | int | float] = None
     placeholder: Optional[str] = None
+    header: Optional[bool] = None
 
 
 class PreprocessingEndpoint(BaseModel):
@@ -76,6 +77,13 @@ TASKS: List[PreprocessingTask] = [
                 use_field="no",
                 placeholder="politics, sports",
                 path="$.parameters.candidate_labels",
+            ),
+            PreprocessingParameter(
+                name="Huggingface Token",
+                type="string",
+                use_field="no",
+                header=True,
+                path="Authorization:Bearer",
             ),
         ],
         outputs=[PreprocessingOutput(name="label", path="$.labels[0]")],

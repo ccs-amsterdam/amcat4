@@ -16,7 +16,7 @@ We need to make sure that:
 
 import datetime
 import json
-from typing import Any, Iterator, Mapping, get_args, cast
+from typing import Any, Iterator, Literal, Mapping, get_args, cast
 
 
 from elasticsearch import NotFoundError
@@ -192,8 +192,9 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
         # if field does not exist, we add it to both the mapping and the system index
         if settings.identifier:
             new_identifiers = True
-
         mapping[field] = {"type": elastic_type}
+        if settings.type == "preprocess":
+            mapping[field]["properties"] = dict(status=dict(type="keyword"), error=dict(type="text", index=False))
         if settings.type in ["date"]:
             mapping[field]["format"] = "strict_date_optional_time"
 
@@ -214,6 +215,7 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
 
     if len(mapping) > 0:
         # if there are new identifiers, check whether this is allowed first
+        print(json.dumps(mapping, indent=2))
         es().indices.put_mapping(index=index, properties=mapping)
         es().update(
             index=get_settings().system_index,

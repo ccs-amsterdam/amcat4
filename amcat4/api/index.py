@@ -160,17 +160,8 @@ def archive_index(
 def delete_index(ix: str, user: str = Depends(authenticated_user)):
     """Delete the index."""
     check_role(user, index.Role.ADMIN, ix)
-    min_archived_before_delete = 7  # days
-
     try:
-        d = index.get_index(ix)
-        if d.archived is None or (datetime.now() - d.archived).days < min_archived_before_delete:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Can only delete an index after it has been archived for at least {min_archived_before_delete} days",
-            )
         index.delete_index(ix)
-
     except index.IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 

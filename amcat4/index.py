@@ -225,6 +225,10 @@ def deregister_index(index: str, ignore_missing=False) -> None:
             raise
     else:
         refresh_index(system_index)
+    # Stop preprocessing loops on this index
+    from amcat4.preprocessing.processor import get_manager
+
+    get_manager().stop_preprocessors(index)
 
 
 def _roles_from_elastic(roles: list[dict]) -> dict[str, Role]:

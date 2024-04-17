@@ -1,6 +1,8 @@
 import asyncio
+import json
 import pytest
 from amcat4.index import Role, get_document, refresh_index, set_role
+from amcat4.preprocessing.models import PreprocessingInstruction
 from tests.conftest import TEST_DOCUMENTS
 from tests.test_preprocessing import INSTRUCTION
 from tests.tools import build_headers, check
@@ -24,19 +26,21 @@ def test_auth(client, index, user):
 
 @pytest.mark.asyncio
 async def test_post_get_instructions(client, user, index_docs, httpx_mock):
+    i = PreprocessingInstruction.model_validate_json(json.dumps(INSTRUCTION))
+
     set_role(index_docs, user, Role.WRITER)
     res = client.get(f"/index/{index_docs}/preprocessing", headers=build_headers(user=user))
     res.raise_for_status()
     assert len(res.json()) == 0
 
-    httpx_mock.add_response(url=INSTRUCTION["endpoint"], json={"labels": ["games", "sports"], "scores": [0.9, 0.1]})
+    httpx_mock.add_response(url=i.endpoint, json={"labels": ["games", "sports"], "scores": [0.9, 0.1]})
 
-    res = client.post(f"/index/{index_docs}/preprocessing", headers=build_headers(user=user), json=INSTRUCTION)
+    res = client.post(f"/index/{index_docs}/preprocessing", headers=build_headers(user=user), json=i.model_dump())
     res.raise_for_status()
     refresh_index(index_docs)
     res = client.get(f"/index/{index_docs}/preprocessing", headers=build_headers(user=user))
     res.raise_for_status()
-    assert {item["field"] for item in res.json()} == {INSTRUCTION["field"]}
+    assert {item["field"] for item in res.json()} == {i.field}
 
     while len(httpx_mock.get_requests()) < len(TEST_DOCUMENTS):
         await asyncio.sleep(0.1)
@@ -44,4 +48,4 @@ async def test_post_get_instructions(client, user, index_docs, httpx_mock):
     assert all(get_document(index_docs, doc["_id"])["class_label"] == "games" for doc in TEST_DOCUMENTS)
 
     # Cannot re-add the same field
-    check(client.post(f"/index/{index_docs}/preprocessing", json=INSTRUCTION, headers=build_headers(user=user)), 400)
+    check(client.post(f"/index/{index_docs}/preprocessing", json=i.model_dump(), headers=build_headers(user=user)), 400)
