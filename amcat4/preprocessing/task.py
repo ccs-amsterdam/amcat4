@@ -12,13 +12,13 @@ https://huggingface.co/docs/api-inference/detailed_parameters
 
 class PreprocessingRequest(BaseModel):
     body: Literal["json", "binary"]
-    template: Optional[dict]
+    template: Optional[dict] = None
 
 
 class PreprocessingOutput(BaseModel):
     name: str
     type: str = "string"
-    path: str
+    path: Optional[str] = None
 
     @functools.cached_property
     def parsed(self) -> jsonpath_ng.JSONPath:
@@ -88,7 +88,27 @@ TASKS: List[PreprocessingTask] = [
         ],
         outputs=[PreprocessingOutput(name="label", path="$.labels[0]")],
         request=PreprocessingRequest(body="json", template={"inputs": "", "parameters": {"candidate_labels": ""}}),
-    )
+    ),
+    PreprocessingTask(
+        # https://huggingface.co/docs/api-inference/detailed_parameters#zero-shot-classification-task
+        name="HuggingFace Image Classification",
+        endpoint=PreprocessingEndpoint(
+            placeholder="https://api-inference.huggingface.co/models/google/vit-base-patch16-224",
+            domain=["huggingface.co", "huggingfacecloud.com"],
+        ),
+        parameters=[
+            PreprocessingParameter(name="input", type="image", use_field="yes"),
+            PreprocessingParameter(
+                name="Huggingface Token",
+                type="string",
+                use_field="no",
+                header=True,
+                path="Authorization:Bearer",
+            ),
+        ],
+        outputs=[PreprocessingOutput(name="label", path="$[0].label")],
+        request=PreprocessingRequest(body="binary"),
+    ),
 ]
 
 

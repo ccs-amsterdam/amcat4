@@ -113,7 +113,7 @@ def get_counts(index: str, field: str):
 
 async def process_doc(index: str, instruction: PreprocessingInstruction, doc: dict):
     # TODO catch errors and add to status field, rather than raising
-    req = instruction.build_request(doc)
+    req = instruction.build_request(index, doc)
     try:
         response = await AsyncClient().send(req)
         response.raise_for_status()

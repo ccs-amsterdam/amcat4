@@ -76,6 +76,15 @@ def stat_multimedia_object(index: str, key: str) -> Object:
     return minio.stat_object(bucket, key)
 
 
+def get_multimedia_object(index: str, key: str) -> bytes:
+    minio = get_minio()
+    bucket = get_bucket(minio, index, create_if_needed=False)
+    if not bucket:
+        raise ValueError(f"Bucket for {index} does not exist")
+    res = minio.get_object(bucket, key)
+    return res.read()
+
+
 def delete_bucket(minio: Minio, index: str):
     bucket = get_bucket(minio, index, create_if_needed=False)
     if not bucket:
