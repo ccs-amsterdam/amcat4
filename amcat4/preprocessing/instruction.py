@@ -9,6 +9,9 @@ from amcat4.preprocessing.processor import get_manager
 def get_instructions(index: str) -> Iterable[PreprocessingInstruction]:
     res = es().get(index=get_settings().system_index, id=index, source="preprocessing")
     for i in res["_source"].get("preprocessing", []):
+        for a in i.get("arguments", []):
+            if a.get("secret"):
+                a["value"] = "********"
         yield PreprocessingInstruction.model_validate(i)
 
 
@@ -19,8 +22,9 @@ def get_instruction(index: str, field: str) -> Optional[PreprocessingInstruction
 
 
 def add_instruction(index: str, instruction: PreprocessingInstruction):
+    print(instruction)
     if instruction.field in get_fields(index):
-        raise ValueError("Field {instruction.field} already exists in index {index}")
+        raise ValueError(f"Field {instruction.field} already exists in index {index}")
     instructions = list(get_instructions(index))
     instructions.append(instruction)
     create_fields(index, {instruction.field: "preprocess"})

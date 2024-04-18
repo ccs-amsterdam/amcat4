@@ -1,8 +1,11 @@
 import functools
 from multiprocessing import Value
+from re import I
 from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel
 import jsonpath_ng
+
+from amcat4.models import FieldType
 
 """
 https://huggingface.co/docs/api-inference/detailed_parameters
@@ -15,7 +18,7 @@ class PreprocessingRequest(BaseModel):
     template: Optional[dict] = None
 
 
-class PreprocessingOutput(BaseModel):
+class PreprocessingSetting(BaseModel):
     name: str
     type: str = "string"
     path: Optional[str] = None
@@ -25,11 +28,16 @@ class PreprocessingOutput(BaseModel):
         return jsonpath_ng.parse(self.path)
 
 
-class PreprocessingParameter(PreprocessingOutput):
+class PreprocessingOutput(PreprocessingSetting):
+    recommended_type: FieldType
+
+
+class PreprocessingParameter(PreprocessingSetting):
     use_field: Literal["yes", "no"] = "no"
     default: Optional[bool | str | int | float] = None
     placeholder: Optional[str] = None
     header: Optional[bool] = None
+    secret: Optional[bool] = False
 
 
 class PreprocessingEndpoint(BaseModel):
@@ -84,9 +92,10 @@ TASKS: List[PreprocessingTask] = [
                 use_field="no",
                 header=True,
                 path="Authorization:Bearer",
+                secret=True,
             ),
         ],
-        outputs=[PreprocessingOutput(name="label", path="$.labels[0]")],
+        outputs=[PreprocessingOutput(name="label", recommended_type="keyword", path="$.labels[0]")],
         request=PreprocessingRequest(body="json", template={"inputs": "", "parameters": {"candidate_labels": ""}}),
     ),
     PreprocessingTask(
@@ -104,9 +113,10 @@ TASKS: List[PreprocessingTask] = [
                 use_field="no",
                 header=True,
                 path="Authorization:Bearer",
+                secret=True,
             ),
         ],
-        outputs=[PreprocessingOutput(name="label", path="$[0].label")],
+        outputs=[PreprocessingOutput(name="label", recommended_type="keyword", path="$[0].label")],
         request=PreprocessingRequest(body="binary"),
     ),
 ]

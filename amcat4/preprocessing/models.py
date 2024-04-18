@@ -14,6 +14,7 @@ class PreprocessingArgument(BaseModel):
     name: str
     field: Optional[str] = None
     value: Optional[str | int | bool | float | List[str] | List[int] | List[float]] = None
+    secret: Optional[bool] = False
 
 
 class PreprocessingOutput(BaseModel):
