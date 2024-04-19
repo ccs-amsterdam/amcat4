@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     ] = None
 
     minio_host: Annotated[str | None, Field()] = None
+    minio_tls: Annotated[bool, Field()] = False
     minio_access_key: Annotated[str | None, Field()] = None
     minio_secret_key: Annotated[str | None, Field()] = None
 

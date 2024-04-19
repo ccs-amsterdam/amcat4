@@ -38,7 +38,12 @@ def _connect_minio() -> Optional[Minio]:
         return None
     if settings.minio_secret_key is None or settings.minio_access_key is None:
         raise ValueError("minio_access_key or minio_secret_key not specified")
-    return Minio(settings.minio_host, secure=False, access_key=settings.minio_access_key, secret_key=settings.minio_secret_key)
+    return Minio(
+        settings.minio_host,
+        secure=settings.minio_tls,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key,
+    )
 
 
 def bucket_name(index: str) -> str:
