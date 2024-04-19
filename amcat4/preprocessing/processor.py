@@ -70,11 +70,14 @@ def start_processors():
 async def run_processor_loop(index, instruction: PreprocessingInstruction):
     logger.info(f"Starting preprocessing loop for {index}.{instruction.field}")
     while True:
-        logger.info(f"Preprocessing loop woke up for {index}.{instruction.field}")
-        get_manager().preprocessor_status[index, instruction.field] = "Active"
-        await process_documents(index, instruction)
-        get_manager().preprocessor_status[index, instruction.field] = "Sleeping"
-        logger.info(f"Preprocessing loop sleeping for {index}.{instruction.field}")
+        try:
+            logger.info(f"Preprocessing loop woke up for {index}.{instruction.field}")
+            get_manager().preprocessor_status[index, instruction.field] = "Active"
+            await process_documents(index, instruction)
+            get_manager().preprocessor_status[index, instruction.field] = "Sleeping"
+            logger.info(f"Preprocessing loop sleeping for {index}.{instruction.field}")
+        except Exception:
+            logger.exception(f"Error on preprocessing {index}.{instruction.field}")
         await asyncio.sleep(10)
 
 
@@ -104,7 +107,7 @@ def get_todo(index: str, instruction: PreprocessingInstruction, size=100):
 def get_counts(index: str, field: str):
     agg = dict(status=dict(terms=dict(field=f"{field}.status")))
 
-    res = es().search(index="test", size=0, aggs=agg)
+    res = es().search(index=index, size=0, aggs=agg)
     result = dict(total=res["hits"]["total"]["value"])
     for bucket in res["aggregations"]["status"]["buckets"]:
         result[bucket["key"]] = bucket["doc_count"]
@@ -113,7 +116,11 @@ def get_counts(index: str, field: str):
 
 async def process_doc(index: str, instruction: PreprocessingInstruction, doc: dict):
     # TODO catch errors and add to status field, rather than raising
-    req = instruction.build_request(index, doc)
+    try:
+        req = instruction.build_request(index, doc)
+    except Exception as e:
+        logging.exception(f"Error on preprocessing {index}.{instruction.field} doc {doc['_id']}")
+        update_document(index, doc["_id"], {instruction.field: dict(status="error", error=str(e))})
     try:
         response = await AsyncClient().send(req)
         response.raise_for_status()
