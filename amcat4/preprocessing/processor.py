@@ -121,6 +121,7 @@ async def process_doc(index: str, instruction: PreprocessingInstruction, doc: di
     except Exception as e:
         logging.exception(f"Error on preprocessing {index}.{instruction.field} doc {doc['_id']}")
         update_document(index, doc["_id"], {instruction.field: dict(status="error", error=str(e))})
+        return
     try:
         response = await AsyncClient().send(req)
         response.raise_for_status()
