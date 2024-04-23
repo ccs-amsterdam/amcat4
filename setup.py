@@ -34,6 +34,17 @@ setup(
         "minio",
         "jsonpath_ng",
     ],
-    extras_require={"dev": ["pytest", "pytest-httpx", "mypy", "flake8", "responses", "pre-commit", "types-requests"]},
+    extras_require={
+        "dev": [
+            "pytest",
+            "pytest-httpx",
+            "mypy",
+            "flake8",
+            "responses",
+            "pre-commit",
+            "types-requests",
+            "pytest-minio-mock @ git+ssh://git@github.com/vanatteveldt/pytest-minio-mock.git",
+        ]
+    },
     entry_points={"console_scripts": ["amcat4 = amcat4.__main__:main"]},
 )

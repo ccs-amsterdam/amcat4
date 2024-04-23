@@ -33,9 +33,7 @@ UNITTEST_SYSTEM_INDEX = "amcat4_unittest_system"
 def mock_middlecat():
     get_settings().middlecat_url = "http://localhost:5000"
     get_settings().host = "http://localhost:3000"
-    minio = get_settings().minio_host
-    passthru = (f"http://{minio}",) if minio else ()
-    with responses.RequestsMock(passthru_prefixes=passthru, assert_all_requests_are_fired=False) as resp:
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as resp:
         resp.get("http://localhost:5000/api/configuration", json={"public_key": PUBLIC_KEY})
         yield None
 
@@ -217,10 +215,11 @@ def app():
 
 
 @pytest.fixture()
-def minio():
-    minio = multimedia.connect_minio()
-    if not minio:
-        pytest.skip("No minio connected, skipping multimedia tests")
-    for index in ["amcat4_unittest_index"]:
-        multimedia.delete_bucket(minio, index)
-    return minio
+def minio(minio_mock):
+    from minio.deleteobjects import DeleteObject
+
+    minio = multimedia.get_minio()
+    for bucket in minio.list_buckets():
+        for x in minio.list_objects(bucket.name, recursive=True):
+            minio.remove_object(x.bucket_name, x.object_name)
+        minio.remove_bucket(bucket.name)
