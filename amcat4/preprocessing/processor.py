@@ -1,50 +1,82 @@
 import asyncio
 from functools import cache
 import logging
-from typing import Dict, Tuple
+from typing import Dict, Literal, Tuple
 from elasticsearch import NotFoundError
 from httpx import AsyncClient, HTTPStatusError
 from amcat4.elastic import es
-from amcat4.index import list_known_indices, refresh_index, update_document
+import amcat4.index
 from amcat4.preprocessing.models import PreprocessingInstruction
 
 logger = logging.getLogger("amcat4.preprocessing")
+
+PreprocessorStatus = Literal["Active", "Paused", "Unknown", "Error", "Stopped"]
+
+
+class RateLimit(Exception):
+    pass
+
+
+PAUSE_ON_RATE_LIMIT_SECONDS = 10
 
 
 class PreprocessorManager:
     SINGLETON = None
 
     def __init__(self):
-        self.preprocessors: Dict[Tuple[str, str], asyncio.Task] = {}
-        self.preprocessor_status: Dict[Tuple[str, str], str] = {}
+        self.preprocessors: Dict[Tuple[str, str], PreprocessingInstruction] = {}
+        self.running_tasks: Dict[Tuple[str, str], asyncio.Task] = {}
+        self.preprocessor_status: Dict[Tuple[str, str], PreprocessorStatus] = {}
+
+    def set_status(self, index: str, field: str, status: PreprocessorStatus):
+        self.preprocessor_status[index, field] = status
 
     def add_preprocessor(self, index: str, instruction: PreprocessingInstruction):
-        self.preprocessors[index, instruction.field] = asyncio.create_task(run_processor_loop(index, instruction))
+        """Start a new preprocessor task and add it to the manager, returning the Task object"""
+        self.preprocessors[index, instruction.field] = instruction
+        self.start_preprocessor(index, instruction.field)
+
+    def start_preprocessor(self, index: str, field: str):
+        if existing_task := self.running_tasks.get((index, field)):
+            if not existing_task.done:
+                return existing_task
+        instruction = self.preprocessors[index, field]
+        self.running_tasks[index, instruction.field] = asyncio.create_task(run_processor_loop(index, instruction))
+
+    def start_index_preprocessors(self, index: str):
+        for ix, field in self.preprocessors:
+            if ix == index:
+                self.start_preprocessor(index, field)
 
     def stop_preprocessor(self, index: str, field: str):
-        self.preprocessors[index, field].cancel()
-
-    def stop_preprocessors(self, index: str):
-        tasks = list(self.preprocessors.items())
-        for (ix, field), task in tasks:
-            if index == ix:
+        """Stop a preprocessor task"""
+        try:
+            if task := self.running_tasks.get((index, field)):
                 task.cancel()
-            del self.preprocessors[ix, field]
-            del self.preprocessor_status[ix, field]
+        except:
+            logging.exception(f"Error on cancelling preprocessor {index}:{field}")
 
-    def stop(self):
-        for task in self.preprocessors.values():
-            task.cancel()
+    def remove_preprocessor(self, index: str, field: str):
+        """Stop this preprocessor remove them from the manager"""
+        self.stop_preprocessor(index, field)
+        del self.preprocessor_status[index, field]
+        del self.preprocessors[index, field]
 
-    def get_status(self, index: str, field: str):
-        task = self.preprocessors.get((index, field))
-        if not task:
-            return "Unknown"
-        if task.cancelled():
-            return "Cancelled"
-        if task.done():
-            return "Stopped"
-        return self.preprocessor_status.get((index, field), "Unknown status")
+    def remove_index_preprocessors(self, index: str):
+        """Stop all preprocessors on this index and remove them from the manager"""
+        for ix, field in list(self.preprocessors.keys()):
+            if index == ix:
+                self.remove_preprocessor(ix, field)
+
+    def shutdown(self):
+        for task in self.running_tasks.values():
+            try:
+                task.cancel()
+            except:
+                logging.exception(f"Error on cancelling preprocessor")
+
+    def get_status(self, index: str, field: str) -> PreprocessorStatus:
+        return self.preprocessor_status.get((index, field), "Unknown")
 
 
 @cache
@@ -53,13 +85,11 @@ def get_manager():
 
 
 def start_processors():
-    import amcat4.preprocessing.instruction
-
     logger.info("Starting preprocessing loops (if needed)")
     manager = get_manager()
-    for index in list_known_indices():
+    for index in amcat4.index.list_known_indices():
         try:
-            instructions = list(amcat4.preprocessing.instruction.get_instructions(index.id))
+            instructions = list(amcat4.index.get_instructions(index.id))
         except NotFoundError:
             logging.warning(f"Index {index.id} does not exist!")
             continue
@@ -68,33 +98,44 @@ def start_processors():
 
 
 async def run_processor_loop(index, instruction: PreprocessingInstruction):
+    """
+    Main preprocessor loop.
+    Calls process_documents to process a batch of documents, until 'done'
+    """
+    # TODO: add logic for pausing processing on hitting rate limit
     logger.info(f"Starting preprocessing loop for {index}.{instruction.field}")
-    while True:
+    get_manager().set_status(index, instruction.field, "Active")
+    done = False
+    while not done:
         try:
-            logger.info(f"Preprocessing loop woke up for {index}.{instruction.field}")
-            get_manager().preprocessor_status[index, instruction.field] = "Active"
-            await process_documents(index, instruction)
-            get_manager().preprocessor_status[index, instruction.field] = "Sleeping"
-            logger.info(f"Preprocessing loop sleeping for {index}.{instruction.field}")
+            done = await process_documents(index, instruction)
+        except RateLimit:
+            logger.info(f"Pausing preprocessing loop for {index}.{instruction.field}")
+            get_manager().set_status(index, instruction.field, "Paused")
+            await asyncio.sleep(PAUSE_ON_RATE_LIMIT_SECONDS)
         except Exception:
             logger.exception(f"Error on preprocessing {index}.{instruction.field}")
-        await asyncio.sleep(10)
+            get_manager().set_status(index, instruction.field, "Error")
+            return
+    get_manager().set_status(index, instruction.field, "Stopped")
+    logger.info(f"Stopping preprocessing loop for {index}.{instruction.field}")
 
 
 async def process_documents(index: str, instruction: PreprocessingInstruction, size=100):
     """
-    Process all currently to-do documents in the index for this instruction.
-    Returns when it runs out of documents to do
+    Process a batch of currently to-do documents in the index for this instruction.
+    Return value indicates job completion:
+    It returns True when it runs out of documents to do, or False if there might be more documents.
     """
-    # Q: it it better to repeat a simple "get n todo docs", or to iteratively scroll past all todo items?
-    while True:
-        docs = list(get_todo(index, instruction, size=size))
-        logger.debug(f"Preprocessing for {index}.{instruction.field}: retrieved {len(docs)} docs to process")
-        for doc in docs:
-            await process_doc(index, instruction, doc)
-        if len(docs) < size:
-            return
-        refresh_index(index)
+    # Refresh index before getting new documents to make sure status updates are reflected
+    amcat4.index.refresh_index(index)
+    docs = list(get_todo(index, instruction, size=size))
+    if not docs:
+        return True
+    logger.debug(f"Preprocessing for {index}.{instruction.field}: retrieved {len(docs)} docs to process")
+    for doc in docs:
+        await process_doc(index, instruction, doc)
+    return False
 
 
 def get_todo(index: str, instruction: PreprocessingInstruction, size=100):
@@ -120,16 +161,18 @@ async def process_doc(index: str, instruction: PreprocessingInstruction, doc: di
         req = instruction.build_request(index, doc)
     except Exception as e:
         logging.exception(f"Error on preprocessing {index}.{instruction.field} doc {doc['_id']}")
-        update_document(index, doc["_id"], {instruction.field: dict(status="error", error=str(e))})
+        amcat4.index.update_document(index, doc["_id"], {instruction.field: dict(status="error", error=str(e))})
         return
     try:
         response = await AsyncClient().send(req)
         response.raise_for_status()
     except HTTPStatusError as e:
-        error = f"{e.response.status_code}: {e.response.text}"
+        if e.response.status_code == 503:
+            raise RateLimit(e)
         logging.exception(f"Error on preprocessing {index}.{instruction.field} doc {doc['_id']}")
-        update_document(index, doc["_id"], {instruction.field: dict(status="error", error=error)})
+        body = dict(status="error", status_code=e.response.status_code, response=e.response.text)
+        amcat4.index.update_document(index, doc["_id"], {instruction.field: body})
         return
     result = dict(instruction.parse_output(response.json()))
     result[instruction.field] = dict(status="done")
-    update_document(index, doc["_id"], result)
+    amcat4.index.update_document(index, doc["_id"], result)

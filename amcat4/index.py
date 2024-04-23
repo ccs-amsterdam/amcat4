@@ -56,6 +56,8 @@ from amcat4.fields import (
     get_fields,
 )
 from amcat4.models import CreateField, Field, FieldType
+from amcat4.preprocessing.models import PreprocessingInstruction
+from amcat4.preprocessing import processor
 
 
 class Role(IntEnum):
@@ -228,7 +230,7 @@ def deregister_index(index: str, ignore_missing=False) -> None:
     # Stop preprocessing loops on this index
     from amcat4.preprocessing.processor import get_manager
 
-    get_manager().stop_preprocessors(index)
+    get_manager().remove_index_preprocessors(index)
 
 
 def _roles_from_elastic(roles: list[dict]) -> dict[str, Role]:
@@ -501,6 +503,9 @@ def upload_documents(
             e.args = e.args + (f"First error: {reason}",)
         raise
 
+    # Start preprocessors for this index (if any)
+    processor.get_manager().start_index_preprocessors(index)
+
     return dict(successes=successes, failures=failures)
 
 
@@ -543,7 +548,7 @@ def update_by_query(index: str | list[str], script: str, query: dict, params: di
     return dict(updated=result["updated"], total=result["total"])
 
 
-TAG_SCRIPTS = dict(
+UDATE_SCRIPTS = dict(
     add="""
     if (ctx._source[params.field] == null) {
       ctx._source[params.field] = [params.tag]
@@ -570,6 +575,39 @@ TAG_SCRIPTS = dict(
 
 def update_tag_by_query(index: str | list[str], action: Literal["add", "remove"], query: dict, field: str, tag: str):
     create_or_verify_tag_field(index, field)
-    script = TAG_SCRIPTS[action]
+    script = UDATE_SCRIPTS[action]
     params = dict(field=field, tag=tag)
     return update_by_query(index, script, query, params)
+
+
+def get_instructions(index: str) -> Iterable[PreprocessingInstruction]:
+    res = es().get(index=get_settings().system_index, id=index, source="preprocessing")
+    for i in res["_source"].get("preprocessing", []):
+        for a in i.get("arguments", []):
+            if a.get("secret"):
+                a["value"] = "********"
+        yield PreprocessingInstruction.model_validate(i)
+
+
+def get_instruction(index: str, field: str) -> Optional[PreprocessingInstruction]:
+    for i in get_instructions(index):
+        if i.field == field:
+            return i
+
+
+def add_instruction(index: str, instruction: PreprocessingInstruction):
+    if instruction.field in get_fields(index):
+        raise ValueError(f"Field {instruction.field} already exists in index {index}")
+    instructions = list(get_instructions(index))
+    instructions.append(instruction)
+    create_fields(index, {instruction.field: "preprocess"})
+    body = [i.model_dump() for i in instructions]
+    es().update(index=get_settings().system_index, id=index, doc=dict(preprocessing=body))
+    processor.get_manager().add_preprocessor(index, instruction)
+
+
+def reassign_preprocessing_errors(index: str, field: str):
+    """Reset status for any documents with error status, and restart preprocessor"""
+    query = dict(query=dict(term={f"{field}.status": dict(value="error")}))
+    update_by_query(index, "ctx._source[params.field] = null", query, dict(field=field))
+    processor.get_manager().start_preprocessor(index, field)

@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, check_role
-from amcat4.preprocessing.instruction import PreprocessingInstruction, get_instruction, get_instructions, add_instruction
+from amcat4.preprocessing.models import PreprocessingInstruction
+from amcat4.index import get_instruction, get_instructions, add_instruction
 from amcat4.preprocessing.processor import get_counts, get_manager
 from amcat4.preprocessing.task import get_tasks
 

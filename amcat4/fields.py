@@ -215,7 +215,6 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
 
     if len(mapping) > 0:
         # if there are new identifiers, check whether this is allowed first
-        print(json.dumps(mapping, indent=2))
         es().indices.put_mapping(index=index, properties=mapping)
         es().update(
             index=get_settings().system_index,
