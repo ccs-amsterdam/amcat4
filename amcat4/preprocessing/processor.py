@@ -10,7 +10,7 @@ from amcat4.preprocessing.models import PreprocessingInstruction
 
 logger = logging.getLogger("amcat4.preprocessing")
 
-PreprocessorStatus = Literal["Active", "Paused", "Unknown", "Error", "Stopped"]
+PreprocessorStatus = Literal["Active", "Paused", "Unknown", "Error", "Stopped", "Done"]
 
 
 class RateLimit(Exception):
@@ -41,7 +41,8 @@ class PreprocessorManager:
             if not existing_task.done:
                 return existing_task
         instruction = self.preprocessors[index, field]
-        self.running_tasks[index, instruction.field] = asyncio.create_task(run_processor_loop(index, instruction))
+        task = asyncio.create_task(run_processor_loop(index, instruction))
+        self.running_tasks[index, instruction.field] = task
 
     def start_index_preprocessors(self, index: str):
         for ix, field in self.preprocessors:
@@ -54,7 +55,7 @@ class PreprocessorManager:
             if task := self.running_tasks.get((index, field)):
                 task.cancel()
         except:
-            logging.exception(f"Error on cancelling preprocessor {index}:{field}")
+            logger.exception(f"Error on cancelling preprocessor {index}:{field}")
 
     def remove_preprocessor(self, index: str, field: str):
         """Stop this preprocessor remove them from the manager"""
@@ -68,15 +69,13 @@ class PreprocessorManager:
             if index == ix:
                 self.remove_preprocessor(ix, field)
 
-    def shutdown(self):
-        for task in self.running_tasks.values():
-            try:
-                task.cancel()
-            except:
-                logging.exception(f"Error on cancelling preprocessor")
-
     def get_status(self, index: str, field: str) -> PreprocessorStatus:
-        return self.preprocessor_status.get((index, field), "Unknown")
+        status = self.preprocessor_status.get((index, field), "Unknown")
+        task = self.running_tasks.get((index, field))
+        if (not task) or task.done() and status == "Active":
+            logger.warning(f"Preprocessor {index}.{field} is {status}, but has no running task: {task}")
+            return "Unknown"
+        return status
 
 
 @cache
@@ -91,7 +90,7 @@ def start_processors():
         try:
             instructions = list(amcat4.index.get_instructions(index.id))
         except NotFoundError:
-            logging.warning(f"Index {index.id} does not exist!")
+            logger.warning(f"Index {index.id} does not exist!")
             continue
         for instruction in instructions:
             manager.add_preprocessor(index.id, instruction)
@@ -102,23 +101,26 @@ async def run_processor_loop(index, instruction: PreprocessingInstruction):
     Main preprocessor loop.
     Calls process_documents to process a batch of documents, until 'done'
     """
-    # TODO: add logic for pausing processing on hitting rate limit
-    logger.info(f"Starting preprocessing loop for {index}.{instruction.field}")
+    logger.info(f"Preprocessing START for {index}.{instruction.field}")
     get_manager().set_status(index, instruction.field, "Active")
     done = False
     while not done:
         try:
             done = await process_documents(index, instruction)
+        except asyncio.CancelledError:
+            logger.info(f"Preprocessing CANCEL for {index}.{instruction.field} cancelled")
+            get_manager().set_status(index, instruction.field, "Stopped")
+            raise
         except RateLimit:
-            logger.info(f"Pausing preprocessing loop for {index}.{instruction.field}")
+            logger.info(f"Peprocessing RATELIMIT  for {index}.{instruction.field}")
             get_manager().set_status(index, instruction.field, "Paused")
             await asyncio.sleep(PAUSE_ON_RATE_LIMIT_SECONDS)
         except Exception:
-            logger.exception(f"Error on preprocessing {index}.{instruction.field}")
+            logger.exception(f"Preprocessing ERROR for {index}.{instruction.field}")
             get_manager().set_status(index, instruction.field, "Error")
             return
-    get_manager().set_status(index, instruction.field, "Stopped")
-    logger.info(f"Stopping preprocessing loop for {index}.{instruction.field}")
+    get_manager().set_status(index, instruction.field, "Done")
+    logger.info(f"Preprocessing DONE for {index}.{instruction.field}")
 
 
 async def process_documents(index: str, instruction: PreprocessingInstruction, size=100):
@@ -160,7 +162,7 @@ async def process_doc(index: str, instruction: PreprocessingInstruction, doc: di
     try:
         req = instruction.build_request(index, doc)
     except Exception as e:
-        logging.exception(f"Error on preprocessing {index}.{instruction.field} doc {doc['_id']}")
+        logger.exception(f"Error on preprocessing {index}.{instruction.field} doc {doc['_id']}")
         amcat4.index.update_document(index, doc["_id"], {instruction.field: dict(status="error", error=str(e))})
         return
     try:

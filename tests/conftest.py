@@ -1,7 +1,10 @@
-from typing import Any
+import logging
+from typing import Any, AsyncGenerator, AsyncIterable
 import pytest
+import pytest_asyncio
 import responses
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from amcat4 import api, multimedia  # noqa: E402
 from amcat4.config import get_settings, AuthOptions
@@ -221,5 +224,12 @@ def minio(minio_mock):
     minio = multimedia.get_minio()
     for bucket in minio.list_buckets():
         for x in minio.list_objects(bucket.name, recursive=True):
-            minio.remove_object(x.bucket_name, x.object_name)
+            minio.remove_object(x.bucket_name, x.object_name or "")
         minio.remove_bucket(bucket.name)
+
+
+@pytest_asyncio.fixture
+async def aclient(app) -> AsyncIterable[AsyncClient]:
+    host = get_settings().host
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=host) as c:
+        yield c

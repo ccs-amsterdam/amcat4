@@ -108,14 +108,14 @@ async def test_preprocess_logic(index, httpx_mock: HTTPXMock):
     # Add the instruction. Since there are no documents, it should return instantly-ish
     add_instruction(index, i)
     await asyncio.sleep(0.1)
-    assert get_manager().get_status(index, i.field) == "Stopped"
+    assert get_manager().get_status(index, i.field) == "Done"
 
     # Add a document. The task should be re-activated and take half a second to complete
     upload_documents(index, [{"text": "text"}], fields={"text": "text"})
     await asyncio.sleep(0.1)
     assert get_manager().get_status(index, i.field) == "Active"
     await asyncio.sleep(0.5)
-    assert get_manager().get_status(index, i.field) == "Stopped"
+    assert get_manager().get_status(index, i.field) == "Done"
 
 
 @pytest.mark.asyncio
@@ -136,7 +136,7 @@ async def test_preprocess_ratelimit(index_docs, httpx_mock: HTTPXMock):
     httpx_mock.reset(assert_all_responses_were_requested=True)
     httpx_mock.add_response(url=i.endpoint, json={"labels": ["politics", "sports"], "scores": [0.9, 0.1]})
     await asyncio.sleep(0.5)
-    assert get_manager().get_status(index_docs, i.field) == "Stopped"
+    assert get_manager().get_status(index_docs, i.field) == "Done"
 
 
 @pytest.mark.asyncio

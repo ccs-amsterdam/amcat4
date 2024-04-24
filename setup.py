@@ -43,6 +43,7 @@ setup(
             "responses",
             "pre-commit",
             "types-requests",
+            "pytest-asyncio",
             "pytest-minio-mock @ git+ssh://git@github.com/vanatteveldt/pytest-minio-mock.git",
         ]
     },

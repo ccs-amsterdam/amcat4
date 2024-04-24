@@ -1,10 +1,19 @@
+import asyncio
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from typing import Annotated, Literal
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, check_role
 from amcat4.preprocessing.models import PreprocessingInstruction
-from amcat4.index import get_instruction, get_instructions, add_instruction
+from amcat4.index import (
+    get_instruction,
+    get_instructions,
+    add_instruction,
+    reassign_preprocessing_errors,
+    start_preprocessor,
+    stop_preprocessor,
+)
 from amcat4.preprocessing.processor import get_counts, get_manager
 from amcat4.preprocessing.task import get_tasks
 
@@ -42,3 +51,29 @@ async def get_instruction_details(ix: str, field: str, user: str = Depends(authe
     state = get_manager().get_status(ix, field)
     counts = get_counts(ix, field)
     return dict(instruction=i, status=state, counts=counts)
+
+
+@app_preprocessing.get("/index/{ix}/preprocessing/{field}/status")
+async def get_status(ix: str, field: str, user: str = Depends(authenticated_user)):
+    return dict(status=get_manager().get_status(ix, field))
+
+
+@app_preprocessing.post(
+    "/index/{ix}/preprocessing/{field}/status", status_code=status.HTTP_204_NO_CONTENT, response_class=Response
+)
+async def set_status(
+    ix: str,
+    field: str,
+    user: str = Depends(authenticated_user),
+    action: Literal["Start", "Stop", "Reassign"] = Body(description="Status to set for this preprocessing task", embed=True),
+):
+    check_role(user, index.Role.WRITER, ix)
+    current_status = get_manager().get_status(ix, field)
+    if action == "Start" and current_status in {"Unknown", "Error", "Stopped", "Done"}:
+        start_preprocessor(ix, field)
+    elif action == "Stop" and current_status in {"Active"}:
+        stop_preprocessor(ix, field)
+    elif action == "Reassign":
+        reassign_preprocessing_errors(ix, field)
+    else:
+        raise HTTPException(422, f"Cannot {action}, (status: {current_status}; field {ix}.{field})")

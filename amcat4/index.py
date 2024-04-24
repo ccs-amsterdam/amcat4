@@ -580,6 +580,9 @@ def update_tag_by_query(index: str | list[str], action: Literal["add", "remove"]
     return update_by_query(index, script, query, params)
 
 
+### WvA Should probably move these to multimedia/actions or something
+
+
 def get_instructions(index: str) -> Iterable[PreprocessingInstruction]:
     res = es().get(index=get_settings().system_index, id=index, source="preprocessing")
     for i in res["_source"].get("preprocessing", []):
@@ -610,4 +613,12 @@ def reassign_preprocessing_errors(index: str, field: str):
     """Reset status for any documents with error status, and restart preprocessor"""
     query = dict(query=dict(term={f"{field}.status": dict(value="error")}))
     update_by_query(index, "ctx._source[params.field] = null", query, dict(field=field))
+    processor.get_manager().start_preprocessor(index, field)
+
+
+def stop_preprocessor(index: str, field: str):
+    processor.get_manager().stop_preprocessor(index, field)
+
+
+def start_preprocessor(index: str, field: str):
     processor.get_manager().start_preprocessor(index, field)
