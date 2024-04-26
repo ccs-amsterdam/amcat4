@@ -115,6 +115,7 @@ async def run_processor_loop(index, instruction: PreprocessingInstruction):
             logger.info(f"Peprocessing RATELIMIT  for {index}.{instruction.field}")
             get_manager().set_status(index, instruction.field, "Paused")
             await asyncio.sleep(PAUSE_ON_RATE_LIMIT_SECONDS)
+            get_manager().set_status(index, instruction.field, "Active")
         except Exception:
             logger.exception(f"Preprocessing ERROR for {index}.{instruction.field}")
             get_manager().set_status(index, instruction.field, "Error")
@@ -171,7 +172,7 @@ async def process_doc(index: str, instruction: PreprocessingInstruction, doc: di
     except HTTPStatusError as e:
         if e.response.status_code == 503:
             raise RateLimit(e)
-        logging.exception(f"Error on preprocessing {index}.{instruction.field} doc {doc['_id']}")
+        logging.exception(f"Error on preprocessing {index}.{instruction.field} doc {doc['_id']}: {e.response.text}")
         body = dict(status="error", status_code=e.response.status_code, response=e.response.text)
         amcat4.index.update_document(index, doc["_id"], {instruction.field: body})
         return
