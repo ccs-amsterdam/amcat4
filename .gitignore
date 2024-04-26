@@ -2,6 +2,7 @@
 
 # .env environment variables
 .env
+.venv
 
 # C extensions
 *.so
