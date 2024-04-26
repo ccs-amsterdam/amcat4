@@ -4,23 +4,23 @@ User/Account and authentication endpoints.
 AmCAT4 can use either Basic or Token-based authentication.
 A client can request a token with basic authentication and store that token for future requests.
 """
+
 from typing import Literal, Optional
 from importlib.metadata import version
 
-from fastapi import APIRouter, HTTPException, status, Response
-from fastapi.params import Depends
+from fastapi import APIRouter, HTTPException, status, Response, Depends
 from pydantic import BaseModel
 from pydantic.networks import EmailStr
 
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_admin, check_global_role
 from amcat4.config import get_settings, validate_settings
-from amcat4.index import Role, set_global_role, get_global_role
+from amcat4.index import ADMIN_USER, GUEST_USER, Role, set_global_role, get_global_role, user_exists
 
 app_users = APIRouter(tags=["users"])
 
 
-ROLE = Literal["ADMIN", "WRITER", "READER", "admin", "writer", "reader"]
+ROLE = Literal["ADMIN", "WRITER", "READER", "NONE"]
 
 
 class UserForm(BaseModel):
@@ -36,10 +36,10 @@ class ChangeUserForm(BaseModel):
     role: Optional[ROLE] = None
 
 
-@app_users.post("/users/", status_code=status.HTTP_201_CREATED)
+@app_users.post("/users", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: UserForm, _=Depends(authenticated_admin)):
     """Create a new user."""
-    if get_global_role(new_user.email) is not None:
+    if user_exists(new_user.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"User {new_user.email} already exists",
@@ -74,7 +74,7 @@ def _get_user(email, current_user):
     if current_user != email:
         check_global_role(current_user, Role.WRITER)
     global_role = get_global_role(email)
-    if email in ("admin", "guest") or global_role is None:
+    if email in (ADMIN_USER, GUEST_USER) or global_role is Role.NONE:
         raise HTTPException(404, detail=f"User {email} unknown")
     else:
         return {"email": email, "role": global_role.name}
@@ -83,15 +83,10 @@ def _get_user(email, current_user):
 @app_users.get("/users", dependencies=[Depends(authenticated_admin)])
 def list_global_users():
     """List all global users"""
-    return [
-        {"email": email, "role": role.name}
-        for (email, role) in index.list_global_users().items()
-    ]
+    return [{"email": email, "role": role.name} for (email, role) in index.list_global_users().items()]
 
 
-@app_users.delete(
-    "/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response
-)
+@app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_user(email: EmailStr, current_user: str = Depends(authenticated_user)):
     """
     Delete the given user.
@@ -104,16 +99,18 @@ def delete_user(email: EmailStr, current_user: str = Depends(authenticated_user)
 
 
 @app_users.put("/users/{email}")
-def modify_user(
-    email: EmailStr, data: ChangeUserForm, _user=Depends(authenticated_admin)
-):
+def modify_user(email: EmailStr, data: ChangeUserForm, _user: str = Depends(authenticated_admin)):
     """
     Modify the given user.
     Only admin can change users.
     """
-    role = Role[data.role.upper()]
-    set_global_role(email, role)
-    return {"email": email, "role": role.name}
+    if data.role is None or data.role == "NONE":
+        set_global_role(email, None)
+        return {"email": email, "role": None}
+    else:
+        role = Role[data.role.upper()]
+        set_global_role(email, role)
+        return {"email": email, "role": role.name}
 
 
 @app_users.get("/config")

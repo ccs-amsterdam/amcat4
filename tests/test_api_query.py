@@ -1,78 +1,13 @@
 from amcat4.index import Role, refresh_index, set_role
+from amcat4.models import CreateField, FieldSpec
 from amcat4.query import query_documents
 from tests.conftest import upload
-from tests.tools import get_json, post_json, dictset
-
-TEST_DOCUMENTS = [
-    {
-        "cat": "a",
-        "subcat": "x",
-        "i": 1,
-        "date": "2018-01-01",
-        "text": "this is a text",
-    },
-    {
-        "cat": "a",
-        "subcat": "x",
-        "i": 2,
-        "date": "2018-02-01",
-        "text": "a test text",
-    },
-    {
-        "cat": "a",
-        "subcat": "y",
-        "i": 11,
-        "date": "2020-01-01",
-        "text": "and this is another test toto",
-        "title": "bla",
-    },
-    {
-        "cat": "b",
-        "subcat": "y",
-        "i": 31,
-        "date": "2018-01-01",
-        "text": "Toto je testovací článek",
-        "title": "more bla",
-    },
-]
-
-
-def test_query_get(client, index_docs, user):
-    """Can we run a simple query?"""
-
-    def q(**query_string):
-        return get_json(
-            client, f"/index/{index_docs}/documents", user=user, params=query_string
-        )["results"]
-
-    def qi(**query_string):
-        return {int(doc["_id"]) for doc in q(**query_string)}
-
-    # TODO: check auth
-    # Query strings
-    assert qi(q="text") == {0, 1}
-    assert qi(q="test*") == {1, 2, 3}
-
-    # Filters
-    assert qi(cat="a") == {0, 1, 2}
-    assert qi(cat="b", q="test*") == {3}
-    assert qi(date="2018-01-01") == {0, 3}
-    assert qi(date__gte="2018-02-01") == {1, 2}
-    assert qi(date__gt="2018-02-01") == {2}
-    assert qi(date__gte="2018-02-01", date__lt="2020-01-01") == {1}
-
-    # Can we request specific fields?
-    default_fields = {"_id", "date", "title"}
-    assert set(q()[0].keys()) == default_fields
-    assert set(q(fields="cat")[0].keys()) == {"_id", "cat"}
-    assert set(q(fields="date,title")[0].keys()) == {"_id", "date", "title"}
+from tests.tools import build_headers, check, post_json, dictset
 
 
 def test_query_post(client, index_docs, user):
     def q(**body):
-        return post_json(
-            client, f"/index/{index_docs}/query", user=user, expected=200, json=body
-        )["results"]
+        return post_json(client, f"/index/{index_docs}/query", user=user, expected=200, json=body)["results"]
 
     def qi(**query_string):
         return {int(doc["_id"]) for doc in q(**query_string)}
@@ -93,8 +28,8 @@ def test_query_post(client, index_docs, user):
     assert qi(filters={"cat": {"values": ["a"]}}) == {0, 1, 2}
 
     # Can we request specific fields?
-    default_fields = {"_id", "date", "title"}
-    assert set(q()[0].keys()) == default_fields
+    all_fields = {"_id", "cat", "subcat", "i", "date", "text", "title"}
+    assert set(q()[0].keys()) == all_fields
     assert set(q(fields=["cat"])[0].keys()) == {"_id", "cat"}
     assert set(q(fields=["date", "title"])[0].keys()) == {"_id", "date", "title"}
 
@@ -122,12 +57,8 @@ def test_aggregate(client, index_docs, user):
             "aggregations": [{"field": "i", "function": "avg"}],
         },
     )
-    assert dictset(r["data"]) == dictset(
-        [{"avg_i": 1.5, "n": 2, "subcat": "x"}, {"avg_i": 21.0, "n": 2, "subcat": "y"}]
-    )
-    assert r["meta"]["aggregations"] == [
-        {"field": "i", "function": "avg", "type": "long", "name": "avg_i"}
-    ]
+    assert dictset(r["data"]) == dictset([{"avg_i": 1.5, "n": 2, "subcat": "x"}, {"avg_i": 21.0, "n": 2, "subcat": "y"}])
+    assert r["meta"]["aggregations"] == [{"field": "i", "function": "avg", "type": "integer", "name": "avg_i"}]
 
     # test filtered aggregate
     r = post_json(
@@ -156,35 +87,66 @@ def test_aggregate(client, index_docs, user):
     assert data == {"x": 2}
 
 
+def test_bare_aggregate(client, index_docs, user):
+    r = post_json(
+        client,
+        f"/index/{index_docs}/aggregate",
+        user=user,
+        expected=200,
+        json={},
+    )
+    assert r["meta"]["axes"] == []
+    assert r["data"] == [dict(n=4)]
+
+    r = post_json(
+        client,
+        f"/index/{index_docs}/aggregate",
+        user=user,
+        expected=200,
+        json={"aggregations": [{"field": "i", "function": "avg"}]},
+    )
+    assert r["data"] == [dict(n=4, avg_i=11.25)]
+
+    r = post_json(
+        client,
+        f"/index/{index_docs}/aggregate",
+        user=user,
+        expected=200,
+        json={"aggregations": [{"field": "i", "function": "min", "name": "mini"}]},
+    )
+    assert r["data"] == [dict(n=4, mini=1)]
+
+
 def test_multiple_index(client, index_docs, index, user):
     set_role(index, user, Role.READER)
     upload(
         index,
         [{"text": "also a text", "i": -1, "cat": "c"}],
-        fields={"cat": "keyword", "i": "long"},
+        fields={
+            "text": CreateField(type="text"),
+            "cat": CreateField(type="keyword"),
+            "i": CreateField(type="integer"),
+        },
     )
     indices = f"{index},{index_docs}"
-    assert (
-        len(get_json(client, f"/index/{indices}/documents", user=user)["results"]) == 5
+
+    r = post_json(
+        client,
+        f"/index/{indices}/query",
+        user=user,
+        expected=200,
+        json=dict(fields=["_id", "cat", "i"]),
     )
-    assert (
-        len(
-            post_json(client, f"/index/{indices}/query", user=user, expected=200)[
-                "results"
-            ]
-        )
-        == 5
-    )
+    assert len(r["results"]) == 5
+
     r = post_json(
         client,
         f"/index/{indices}/aggregate",
         user=user,
-        json={"axes": [{"field": "cat"}]},
+        json={"axes": [{"field": "cat"}], "fields": ["_id"]},
         expected=200,
     )
-    assert dictset(r["data"]) == dictset(
-        [{"cat": "a", "n": 3}, {"n": 1, "cat": "b"}, {"n": 1, "cat": "c"}]
-    )
+    assert dictset(r["data"]) == dictset([{"cat": "a", "n": 3}, {"n": 1, "cat": "b"}, {"n": 1, "cat": "c"}])
 
 
 def test_aggregate_datemappings(client, index_docs, user):
@@ -218,37 +180,41 @@ def test_aggregate_datemappings(client, index_docs, user):
 
 def test_query_tags(client, index_docs, user):
     def tags():
-        return {
-            doc["_id"]: doc["tag"]
-            for doc in query_documents(index_docs, fields=["tag"]).data
-            if doc.get("tag")
-        }
+        result = query_documents(index_docs, fields=[FieldSpec(name="tag")])
+        return {doc["_id"]: doc["tag"] for doc in (result.data if result else []) if doc.get("tag")}
+
+    check(client.post(f"/index/{index_docs}/tags_update"), 401)
+    check(client.post(f"/index/{index_docs}/tags_update", headers=build_headers(user=user)), 401)
+
+    set_role(index_docs, user, Role.WRITER)
 
     assert tags() == {}
-    post_json(
+    res = post_json(
         client,
         f"/index/{index_docs}/tags_update",
         user=user,
-        expected=204,
+        expected=200,
         json=dict(action="add", field="tag", tag="x", filters={"cat": "a"}),
     )
-    refresh_index(index_docs)
+    assert res["updated"] == 3
+    # should refresh before returning
+    # refresh_index(index_docs)
     assert tags() == {"0": ["x"], "1": ["x"], "2": ["x"]}
-    post_json(
+    res = post_json(
         client,
         f"/index/{index_docs}/tags_update",
         user=user,
-        expected=204,
+        expected=200,
         json=dict(action="remove", field="tag", tag="x", queries=["text"]),
     )
-    refresh_index(index_docs)
+    assert res["updated"] == 2
     assert tags() == {"2": ["x"]}
-    post_json(
+    res = post_json(
         client,
         f"/index/{index_docs}/tags_update",
         user=user,
-        expected=204,
+        expected=200,
         json=dict(action="add", field="tag", tag="y", ids=["1", "2"]),
     )
-    refresh_index(index_docs)
+    assert res["updated"] == 2
     assert tags() == {"1": ["y"], "2": ["x", "y"]}

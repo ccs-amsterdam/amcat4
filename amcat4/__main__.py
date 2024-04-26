@@ -1,32 +1,32 @@
 """
 AmCAT4 REST API
 """
+
 import argparse
-import collections
 import csv
 import io
 import json
 import logging
 import os
+from pathlib import Path
 import secrets
 import sys
+from typing import Any
 import urllib.request
 from enum import Enum
-import elasticsearch
+from collections import defaultdict
+import elasticsearch.helpers
 
 import uvicorn
 from pydantic.fields import FieldInfo
+from uvicorn.config import LOGGING_CONFIG
+
 
 from amcat4 import index
 from amcat4.config import get_settings, AuthOptions, validate_settings
-from amcat4.elastic import connect_elastic, get_system_version, ping, upload_documents
-from amcat4.index import (
-    GLOBAL_ROLES,
-    create_index,
-    set_global_role,
-    Role,
-    list_global_users,
-)
+from amcat4.elastic import connect_elastic, get_system_version, ping
+from amcat4.index import GLOBAL_ROLES, create_index, set_global_role, Role, list_global_users, upload_documents
+from amcat4.models import ElasticType, FieldType
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -51,20 +51,17 @@ def upload_test_data() -> str:
         )
         for row in csvfile
     ]
-    columns = {"president": "keyword", "party": "keyword", "year": "double"}
-    upload_documents(SOTU_INDEX, docs, columns)
+    fields: dict[str, FieldType] = {"president": "keyword", "party": "keyword", "year": "integer"}
+    upload_documents(SOTU_INDEX, docs, fields)
     return SOTU_INDEX
 
 
 def run(args):
     auth = get_settings().auth
-    logging.info(
-        f"Starting server at port {args.port}, debug={not args.nodebug}, auth={auth}"
-    )
+    logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}, auth={auth}")
     if auth == AuthOptions.no_auth:
         logging.warning(
-            "Warning: No authentication is set up - "
-            "everyone who can access this service can view and change all data"
+            "Warning: No authentication is set up - " "everyone who can access this service can view and change all data"
         )
     if validate_settings():
         logging.warning(validate_settings())
@@ -75,9 +72,8 @@ def run(args):
     )
     if ping():
         logging.info(f"Connect to elasticsearch {get_settings().elastic_host}")
-    uvicorn.run(
-        "amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port
-    )
+    log_config = "logging.yml" if Path("logging.yml").exists() else LOGGING_CONFIG
+    uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port, log_config=log_config)
 
 
 def val(val_or_list):
@@ -88,31 +84,26 @@ def val(val_or_list):
     return val_or_list
 
 
-def migrate_index(_args):
+def migrate_index(_args) -> None:
     settings = get_settings()
     elastic = connect_elastic()
     if not elastic.ping():
         logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
         sys.exit(1)
     if not elastic.indices.exists(index=settings.system_index):
-        logging.info(
-            "System index does not exist yet. It will be created automatically if you run the server"
-        )
+        logging.info("System index does not exist yet. It will be created automatically if you run the server")
         sys.exit(1)
     # Check index format version
     version = get_system_version(elastic)
-    logging.info(
-        f"{settings.elastic_host}::{settings.system_index} is at version {version or 0}"
-    )
+    logging.info(f"{settings.elastic_host}::{settings.system_index} is at version {version or 0}")
     if version == 1:
         logging.info("Nothing to do")
     else:
         logging.info("Migrating to version 1")
         fields = ["index", "email", "role"]
-        indices = collections.defaultdict(dict)
-        for entry in elasticsearch.helpers.scan(
-            elastic, index=settings.system_index, fields=fields, _source=False
-        ):
+        indices: defaultdict[str, dict[str, str]] = defaultdict(dict)
+
+        for entry in elasticsearch.helpers.scan(elastic, index=settings.system_index, fields=fields, _source=False):
             index, email, role = [val(entry["fields"][field]) for field in fields]
             indices[index][email] = role
         if GLOBAL_ROLES not in indices:
@@ -121,15 +112,11 @@ def migrate_index(_args):
             elastic.indices.delete(index=settings.system_index)
             for index, roles_dict in indices.items():
                 guest_role = roles_dict.pop("_guest", None)
-                roles_dict.pop("admin", None)
-                roles = [
-                    {"email": email, "role": role}
-                    for (email, role) in roles_dict.items()
-                ]
-                doc = dict(name=index, guest_role=guest_role, roles=roles)
+                roles_dict.pop("ADMIN", None)
+                roles = [{"email": email, "role": role} for (email, role) in roles_dict.items()]
+                doc: dict[str, Any] = dict(name=index, guest_role=guest_role, roles=roles)
                 if index == GLOBAL_ROLES:
                     doc["version"] = 1
-                print(doc)
                 elastic.index(index=settings.system_index, id=index, document=doc)
         except Exception:
             try:
@@ -148,7 +135,7 @@ def migrate_index(_args):
 def base_env():
     return dict(
         amcat4_secret_key=secrets.token_hex(nbytes=32),
-        amcat4_middlecat_url="https://middlecat.up.netlify.app",
+        amcat4_middlecat_url="https://middlecat.net",
     )
 
 
@@ -160,10 +147,6 @@ def create_env(args):
     env = base_env()
     if args.admin_email:
         env["amcat4_admin_email"] = args.admin_email
-    if args.admin_password:
-        env["amcat4_admin_password"] = args.admin_password
-    if args.no_admin_password:
-        env["amcat4_admin_password"] = ""
     with open(".env", "w") as f:
         for key, val in env.items():
             f.write(f"{key}={val}\n")
@@ -183,45 +166,39 @@ def add_admin(args):
 
 
 def list_users(_args):
-    admin_password = get_settings().admin_password
-    if admin_password:
-        print("ADMIN     : admin (password set via environment AMCAT4_ADMIN_PASSWORD)")
-    users = sorted(list_global_users(), key=lambda ur: (ur[1], ur[0]))
+    users = list_global_users()
+
+    # sorted changes the output type of list_global_users?
+    # users = sorted(list_global_users(), key=lambda ur: (ur[1], ur[0]))
     if users:
-        for user, role in users:
+        for user, role in users.items():
             print(f"{role.name:10}: {user}")
-    if not (users or admin_password):
-        print(
-            "(No users defined yet, set AMCAT4_ADMIN_PASSWORD in environment use add-admin to add users by email)"
-        )
+    if not users:
+        print("(No users defined yet, use add-admin to add users by email)")
 
 
 def config_amcat(args):
     settings = get_settings()
-    settings_dict = settings.model_dump()
     # Not a useful entry in an actual env_file
-    env_file_location = settings_dict.pop("env_file")
-    print(f"Reading/writing settings from {env_file_location}")
-    for fieldname in settings.model_fields_set:
-        if fieldname not in settings_dict:
+    print(f"Reading/writing settings from {settings.env_file}")
+    for fieldname, fieldinfo in settings.model_fields.items():
+        if fieldname == "env_file":
             continue
-        fieldinfo = settings.model_fields[fieldname]
+
         validation_function = AuthOptions.validate if fieldname == "auth" else None
         value = getattr(settings, fieldname)
-        value = menu(
-            fieldname, fieldinfo, value, validation_function=validation_function
-        )
+        value = menu(fieldname, fieldinfo, value, validation_function=validation_function)
         if value is ABORTED:
             return
         if value is not UNCHANGED:
-            settings_dict[fieldname] = value
+            setattr(settings, fieldname, value)
 
-    with env_file_location.open("w") as f:
-        for fieldname, value in settings_dict.items():
-            fieldinfo = settings.model_fields[fieldname]
+    with settings.env_file.open("w") as f:
+        for fieldname, fieldinfo in settings.model_fields.items():
+            value = getattr(settings, fieldname)
             if doc := fieldinfo.description:
                 f.write(f"# {doc}\n")
-            if _isenum(fieldinfo):
+            if _isenum(fieldinfo) and fieldinfo.annotation:
                 f.write("# Valid options:\n")
                 for option in fieldinfo.annotation:
                     doc = option.__doc__.replace("\n", " ")
@@ -231,7 +208,7 @@ def config_amcat(args):
             else:
                 f.write(f"amcat4_{fieldname}={value}\n\n")
     os.chmod(".env", 0o600)
-    print(f"*** Written {bold('.env')} file to {env_file_location} ***")
+    print(f"*** Written {bold('.env')} file to {settings.env_file} ***")
 
 
 def bold(x):
@@ -244,24 +221,23 @@ UNCHANGED = object()
 
 def _isenum(fieldinfo: FieldInfo) -> bool:
     try:
-        return issubclass(fieldinfo.annotation, Enum)
+        return issubclass(fieldinfo.annotation, Enum) if fieldinfo.annotation is not None else False
     except TypeError:
         return False
 
 
 def menu(fieldname: str, fieldinfo: FieldInfo, value, validation_function=None):
     print(f"\n{bold(fieldname)}: {fieldinfo.description}")
-    if _isenum(fieldinfo):
+    if _isenum(fieldinfo) and fieldinfo.annotation:
         print("  Possible choices:")
-        for option in fieldinfo.annotation:
+        options: Any = fieldinfo.annotation
+        for option in options:
             print(f"  - {option.name}: {option.__doc__}")
         print()
     print(f"The current value for {bold(fieldname)} is {bold(value)}.")
     while True:
         try:
-            value = input(
-                "Enter a new value, press [enter] to leave unchanged, or press [control+c] to abort: "
-            )
+            value = input("Enter a new value, press [enter] to leave unchanged, or press [control+c] to abort: ")
         except KeyboardInterrupt:
             return ABORTED
         if not value.strip():
@@ -275,9 +251,7 @@ def menu(fieldname: str, fieldinfo: FieldInfo, value, validation_function=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, prog="python -m amcat4")
 
-    subparsers = parser.add_subparsers(
-        dest="action", title="action", help="Action to perform:", required=True
-    )
+    subparsers = parser.add_subparsers(dest="action", title="action", help="Action to perform:", required=True)
     p = subparsers.add_parser("run", help="Run the backend API in development mode")
     p.add_argument(
         "--no-debug",
@@ -288,22 +262,11 @@ def main():
     p.add_argument("-p", "--port", help="Port", default=5000)
     p.set_defaults(func=run)
 
-    p = subparsers.add_parser(
-        "create-env", help="Create the .env file with a random secret key"
-    )
+    p = subparsers.add_parser("create-env", help="Create the .env file with a random secret key")
     p.add_argument("-a", "--admin_email", help="The email address of the admin user.")
-    p.add_argument(
-        "-p", "--admin_password", help="The password of the built-in admin user."
-    )
-    p.add_argument(
-        "-P", "--no-admin_password", action="store_true", help="Disable admin password"
-    )
-
     p.set_defaults(func=create_env)
 
-    p = subparsers.add_parser(
-        "config", help="Configure amcat4 settings in an interactive menu."
-    )
+    p = subparsers.add_parser("config", help="Configure amcat4 settings in an interactive menu.")
     p.set_defaults(func=config_amcat)
 
     p = subparsers.add_parser("add-admin", help="Add a global admin")
@@ -313,24 +276,17 @@ def main():
     p = subparsers.add_parser("list-users", help="List global users")
     p.set_defaults(func=list_users)
 
-    p = subparsers.add_parser(
-        "create-test-index", help=f"Create the {SOTU_INDEX} test index"
-    )
+    p = subparsers.add_parser("create-test-index", help=f"Create the {SOTU_INDEX} test index")
     p.set_defaults(func=create_test_index)
 
-    p = subparsers.add_parser(
-        "migrate", help="Migrate the system index to the current version"
-    )
+    p = subparsers.add_parser("migrate", help="Migrate the system index to the current version")
     p.set_defaults(func=migrate_index)
 
     args = parser.parse_args()
 
-    logging.basicConfig(
-        format="[%(levelname)-7s:%(name)-15s] %(message)s", level=logging.INFO
-    )
+    logging.basicConfig(format="[%(levelname)-7s:%(name)-15s] %(message)s", level=logging.INFO)
     es_logger = logging.getLogger("elasticsearch")
     es_logger.setLevel(logging.WARNING)
-
     args.func(args)
 
 

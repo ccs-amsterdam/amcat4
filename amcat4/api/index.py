@@ -1,34 +1,25 @@
 """API Endpoints for document and index management."""
+
 from http import HTTPStatus
-from typing import List, Literal, Mapping, Optional
+from re import U
+from typing import Annotated, Any, Literal
 
 import elasticsearch
 from elastic_transport import ApiError
-from fastapi import APIRouter, HTTPException, Response, status
-from fastapi.params import Body, Depends
-from pydantic import BaseModel, ConfigDict
+from fastapi import APIRouter, HTTPException, Response, status, Depends, Body
+from pydantic import BaseModel
+from datetime import datetime
 
-from amcat4 import elastic, index
+from amcat4 import index, fields as index_fields
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
-from amcat4.api.common import py2dict
-from amcat4.index import (
-    Index,
-    IndexDoesNotExist,
-    Role,
-    get_global_role,
-    get_index,
-    get_role,
-    list_known_indices,
-    list_users,
-)
-from amcat4.index import refresh_index as es_refresh_index
+
 from amcat4.index import refresh_system_index, remove_role, set_role
+from amcat4.fields import field_values, field_stats
+from amcat4.models import CreateField, FieldType, UpdateField
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 
-RoleType = Literal[
-    "ADMIN", "WRITER", "READER", "METAREADER", "admin", "writer", "reader", "metareader"
-]
+RoleType = Literal["ADMIN", "WRITER", "READER", "METAREADER"]
 
 
 @app_index.get("/")
@@ -39,48 +30,51 @@ def index_list(current_user: str = Depends(authenticated_user)):
     Returns a list of dicts containing name, role, and guest attributes
     """
 
-    def index_to_dict(ix: Index) -> dict:
-        ix = ix._asdict()
-        ix["guest_role"] = ix["guest_role"] and ix["guest_role"].name
-        del ix["roles"]
-        return ix
+    def index_to_dict(ix: index.Index) -> dict:
+        ix_dict = ix._asdict()
+        guest_role_int = ix_dict.get("guest_role", 0)
 
-    return [index_to_dict(ix) for ix in list_known_indices(current_user)]
+        ix_dict = dict(
+            id=ix_dict["id"],
+            name=ix_dict["name"],
+            guest_role=index.Role(guest_role_int).name,
+            description=ix_dict.get("description", ""),
+            archived=ix_dict.get("archived", ""),
+        )
+        return ix_dict
+
+    return [index_to_dict(ix) for ix in index.list_known_indices(current_user)]
 
 
 class NewIndex(BaseModel):
     """Form to create a new index."""
 
     id: str
-    guest_role: Optional[RoleType] = None
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    guest_role: RoleType | None = None
+    description: str | None = None
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
-def create_index(
-    new_index: NewIndex, current_user: str = Depends(authenticated_writer)
-):
+def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_writer)):
     """
     Create a new index, setting the current user to admin (owner).
 
     POST data should be json containing name and optional guest_role
     """
-    guest_role = new_index.guest_role and Role[new_index.guest_role.upper()]
+    guest_role = new_index.guest_role and index.Role[new_index.guest_role.upper()]
     try:
         index.create_index(
             new_index.id,
             guest_role=guest_role,
             name=new_index.name,
             description=new_index.description,
-            admin=current_user,
+            admin=current_user if current_user != "_admin" else None,
         )
     except ApiError as e:
         raise HTTPException(
             status_code=400,
-            detail=dict(
-                info=f"Error on creating index: {e}", message=e.message, body=e.body
-            ),
+            detail=dict(info=f"Error on creating index: {e}", message=e.message, body=e.body),
         )
 
 
@@ -88,23 +82,10 @@ def create_index(
 class ChangeIndex(BaseModel):
     """Form to update an existing index."""
 
-    guest_role: Optional[
-        Literal[
-            "ADMIN",
-            "WRITER",
-            "READER",
-            "METAREADER",
-            "admin",
-            "writer",
-            "reader",
-            "metareader",
-            "NONE",
-            "none",
-        ]
-    ] = "None"
-    name: Optional[str] = None
-    description: Optional[str] = None
-    summary_field: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    guest_role: Literal["WRITER", "READER", "METAREADER", "NONE"] | None = None
+    archive: bool | None = None
 
 
 @app_index.put("/{ix}")
@@ -116,21 +97,23 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
 
     User needs admin rights on the index
     """
-    check_role(user, Role.ADMIN, ix)
-    guest_role, remove_guest_role = None, False
-    if data.guest_role:
-        role = data.guest_role.upper()
-        if role == "NONE":
-            remove_guest_role = True
-        else:
-            guest_role = Role[role]
+    check_role(user, index.Role.ADMIN, ix)
+    guest_role = index.GuestRole[data.guest_role] if data.guest_role is not None else None
+    archived = None
+    if data.archive is not None:
+        d = index.get_index(ix)
+        is_archived = d.archived is not None and d.archived != ""
+        if is_archived != data.archive:
+            archived = str(datetime.now()) if data.archive else ""
+
     index.modify_index(
         ix,
         name=data.name,
         description=data.description,
         guest_role=guest_role,
-        remove_guest_role=remove_guest_role,
-        summary_field=data.summary_field,
+        archived=archived,
+        # remove_guest_role=remove_guest_role,
+        # unarchive=unarchive,
     )
     refresh_system_index()
 
@@ -141,65 +124,87 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
     View the index.
     """
     try:
-        role = check_role(user, Role.METAREADER, ix, required_global_role=Role.WRITER)
-        d = get_index(ix)._asdict()
-        d["user_role"] = role and role.name
-        d["guest_role"] = d["guest_role"].name if d.get("guest_role") else None
+        role = check_role(user, index.Role.METAREADER, ix, required_global_role=index.Role.WRITER)
+        d = index.get_index(ix)._asdict()
+        d["user_role"] = role.name
+        d["guest_role"] = index.GuestRole(d.get("guest_role", 0)).name
+        d["description"] = d.get("description", "") or ""
+        d["name"] = d.get("name", "") or ""
         return d
-    except IndexDoesNotExist:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist"
-        )
+    except index.IndexDoesNotExist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
 
-@app_index.delete(
-    "/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response
-)
+@app_index.post("/{ix}/archive", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def archive_index(
+    ix: str,
+    archived: Annotated[bool, Body(description="Boolean for setting archived to true or false")],
+    user: str = Depends(authenticated_user),
+):
+    """Archive or unarchive the index. When an index is archived, it restricts usage, and adds a timestamp for when
+    it was archived. An index can only be deleted if it has been archived for a specific amount of time."""
+    check_role(user, index.Role.ADMIN, ix)
+    try:
+        d = index.get_index(ix)
+        is_archived = d.archived is not None
+        if is_archived == archived:
+            return
+        archived_date = str(datetime.now()) if archived else None
+        index.modify_index(ix, archived=archived_date)
+
+    except index.IndexDoesNotExist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
+
+
+@app_index.delete("/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_index(ix: str, user: str = Depends(authenticated_user)):
     """Delete the index."""
-    check_role(user, Role.ADMIN, ix)
-    index.delete_index(ix)
-
-
-class Document(BaseModel):
-    """Form to create (upload) a new document."""
-
-    title: str
-    date: str
-    text: str
-    url: Optional[str] = None
-    model_config = ConfigDict(extra="allow")
+    check_role(user, index.Role.ADMIN, ix)
+    try:
+        index.delete_index(ix)
+    except index.IndexDoesNotExist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
 
 @app_index.post("/{ix}/documents", status_code=status.HTTP_201_CREATED)
 def upload_documents(
     ix: str,
-    documents: List[Document] = Body(None, description="The documents to upload"),
-    columns: Optional[Mapping[str, str]] = Body(
-        None, description="Optional Specification of field (column) types"
-    ),
+    documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
+    fields: Annotated[
+        dict[str, FieldType | CreateField] | None,
+        Body(
+            description="If a field in documents does not yet exist, you can create it on the spot. "
+            "If you only need to specify the type, and use the default settings, "
+            "you can use the short form: {field: type}"
+        ),
+    ] = None,
+    operation: Annotated[
+        Literal["update", "create"],
+        Body(
+            description="The operation to perform. Default is create, which ignores any documents that already exist. "
+            "The 'update' operation behaves as an upsert (create or update). If an identical document (or document with "
+            "identical identifiers) already exists, the uploaded fields will be created or overwritten. If there are fields "
+            "in the original document that are not in the uploaded document, they will NOT be removed. since update is destructive "
+            "it requires admin rights."
+        ),
+    ] = "create",
     user: str = Depends(authenticated_user),
 ):
     """
-    Upload documents to this server.
-
-    JSON payload should contain a `documents` key, and may contain a `columns` key:
-    {
-      "documents": [{"title": .., "date": .., "text": .., ...}, ...],
-      "columns": {<field>: <type>, ...}
-    }
-    Returns a list of ids for the uploaded documents
+    Upload documents to this server. Returns a list of ids for the uploaded documents
     """
-    check_role(user, Role.WRITER, ix)
-    documents = [py2dict(doc) for doc in documents]
-    return elastic.upload_documents(ix, documents, columns)
+    if operation == "create":
+        check_role(user, index.Role.WRITER, ix)
+    else:
+        check_role(user, index.Role.ADMIN, ix)
+    return index.upload_documents(ix, documents, fields, operation)
 
 
 @app_index.get("/{ix}/documents/{docid}")
 def get_document(
     ix: str,
     docid: str,
-    fields: Optional[str] = None,
+    fields: str | None = None,
     user: str = Depends(authenticated_user),
 ):
     """
@@ -208,12 +213,12 @@ def get_document(
     GET request parameters:
     fields - Comma separated list of fields to return (default: all fields)
     """
-    check_role(user, Role.READER, ix)
+    check_role(user, index.Role.READER, ix)
     kargs = {}
     if fields:
         kargs["_source"] = fields
     try:
-        return elastic.get_document(ix, docid, **kargs)
+        return index.get_document(ix, docid, **kargs)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -237,9 +242,9 @@ def update_document(
 
     PUT request body should be a json {field: value} mapping of fields to update
     """
-    check_role(user, Role.WRITER, ix)
+    check_role(user, index.Role.WRITER, ix)
     try:
-        elastic.update_document(ix, docid, update)
+        index.update_document(ix, docid, update)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -254,9 +259,9 @@ def update_document(
 )
 def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)):
     """Delete this document."""
-    check_role(user, Role.WRITER, ix)
+    check_role(user, index.Role.WRITER, ix)
     try:
-        elastic.delete_document(ix, docid)
+        index.delete_document(ix, docid)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -264,36 +269,77 @@ def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)
         )
 
 
+@app_index.post("/{ix}/fields")
+def create_fields(
+    ix: str,
+    fields: Annotated[
+        dict[str, FieldType | CreateField],
+        Body(
+            description="Either a dictionary that maps field names to field specifications"
+            "({field: {type: 'text', identifier: True }}), "
+            "or a simplified version that only specifies the type ({field: type})"
+        ),
+    ],
+    user: str = Depends(authenticated_user),
+):
+    """
+    Create fields
+    """
+    check_role(user, index.Role.WRITER, ix)
+    index_fields.create_fields(ix, fields)
+    return "", HTTPStatus.NO_CONTENT
+
+
 @app_index.get("/{ix}/fields")
-def get_fields(ix: str, user=Depends(authenticated_user)):
+def get_fields(ix: str, user: str = Depends(authenticated_user)):
     """
     Get the fields (columns) used in this index.
 
     Returns a json array of {name, type} objects
     """
-    check_role(user, Role.METAREADER, ix)
-    indices = ix.split(",")
-    return elastic.get_fields(indices)
+    check_role(user, index.Role.METAREADER, ix)
+    return index.get_fields(ix)
 
 
-@app_index.post("/{ix}/fields")
-def set_fields(
-    ix: str, body: dict = Body(...), user: str = Depends(authenticated_user)
+@app_index.put("/{ix}/fields")
+def update_fields(
+    ix: str, fields: Annotated[dict[str, UpdateField], Body(description="")], user: str = Depends(authenticated_user)
 ):
     """
-    Set the field types used in this index.
-
-    POST body should be a dict of {field: type} or {field: {type: type, meta: meta}}
+    Update the field settings
     """
-    check_role(user, Role.WRITER, ix)
-    elastic.set_fields(ix, body)
+    check_role(user, index.Role.WRITER, ix)
+
+    index_fields.update_fields(ix, fields)
     return "", HTTPStatus.NO_CONTENT
 
 
 @app_index.get("/{ix}/fields/{field}/values")
-def get_values(ix: str, field: str, _=Depends(authenticated_user)):
-    """Get the fields (columns) used in this index."""
-    return elastic.get_values(ix, field, size=100)
+def get_field_values(ix: str, field: str, user: str = Depends(authenticated_user)):
+    """
+    Get unique values for a specific field. Should mainly/only be used for tag fields.
+    Main purpose is to provide a list of values for a dropdown menu.
+
+    TODO: at the moment 'only' returns top 2000 values. Currently throws an
+    error if there are more than 2000 unique values. We can increase this limit, but
+    there should be a limit. Querying could be an option, but not sure if that is
+    efficient, since elastic has to aggregate all values first.
+    """
+    check_role(user, index.Role.READER, ix)
+    values = field_values(ix, field, size=2001)
+    if len(values) > 2000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Field {field} has more than 2000 unique values",
+        )
+    return values
+
+
+@app_index.get("/{ix}/fields/{field}/stats")
+def get_field_stats(ix: str, field: str, user: str = Depends(authenticated_user)):
+    """Get statistics for a specific value. Only works for numeric (incl date) fields."""
+    check_role(user, index.Role.READER, ix)
+    return field_stats(ix, field)
 
 
 @app_index.get("/{ix}/users")
@@ -303,17 +349,17 @@ def list_index_users(ix: str, user: str = Depends(authenticated_user)):
 
     Allowed for global admin and local readers
     """
-    if get_global_role(user) != Role.ADMIN:
-        check_role(user, Role.READER, ix)
-    return [{"email": u, "role": r.name} for (u, r) in list_users(ix).items()]
+    if index.get_global_role(user) != index.Role.ADMIN:
+        check_role(user, index.Role.READER, ix)
+    return [{"email": u, "role": r.name} for (u, r) in index.list_users(ix).items()]
 
 
 def _check_can_modify_user(ix, user, target_user, target_role):
-    if get_global_role(user) != Role.ADMIN:
+    if index.get_global_role(user) != index.Role.ADMIN:
         required_role = (
-            Role.ADMIN
-            if (target_role == Role.ADMIN or get_role(ix, target_user) == Role.ADMIN)
-            else Role.WRITER
+            index.Role.ADMIN
+            if (target_role == index.Role.ADMIN or index.get_role(ix, target_user) == index.Role.ADMIN)
+            else index.Role.WRITER
         )
         check_role(user, required_role, ix)
 
@@ -331,7 +377,7 @@ def add_index_users(
     To create regular users you need WRITER permission. To create ADMIN users, you need ADMIN permission.
     Global ADMINs can always add users.
     """
-    r = Role[role]
+    r = index.Role[role]
     _check_can_modify_user(ix, user, email, r)
     set_role(ix, email, r)
     return {"user": email, "index": ix, "role": r.name}
@@ -350,7 +396,7 @@ def modify_index_user(
     This requires WRITER rights on the index or global ADMIN rights.
     If changing a user from or to ADMIN, it requires (local or global) ADMIN rights
     """
-    r = Role[role]
+    r = index.Role[role]
     _check_can_modify_user(ix, user, email, r)
     set_role(ix, email, r)
     return {"user": email, "index": ix, "role": r.name}
@@ -369,8 +415,6 @@ def remove_index_user(ix: str, email: str, user: str = Depends(authenticated_use
     return {"user": email, "index": ix, "role": None}
 
 
-@app_index.get(
-    "/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT, response_class=Response
-)
+@app_index.get("/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def refresh_index(ix: str):
-    es_refresh_index(ix)
+    index.refresh_index(ix)

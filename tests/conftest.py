@@ -1,10 +1,12 @@
-from typing import Iterable
-
+import logging
+from typing import Any, AsyncGenerator, AsyncIterable
 import pytest
+import pytest_asyncio
 import responses
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
-from amcat4 import elastic, api  # noqa: E402
+from amcat4 import api, multimedia  # noqa: E402
 from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import es
 from amcat4.index import (
@@ -15,7 +17,9 @@ from amcat4.index import (
     delete_user,
     remove_global_role,
     set_global_role,
+    upload_documents,
 )
+from amcat4.models import CreateField, FieldType
 from tests.middlecat_keypair import PUBLIC_KEY
 
 UNITS = [
@@ -33,9 +37,7 @@ def mock_middlecat():
     get_settings().middlecat_url = "http://localhost:5000"
     get_settings().host = "http://localhost:3000"
     with responses.RequestsMock(assert_all_requests_are_fired=False) as resp:
-        resp.get(
-            "http://localhost:5000/api/configuration", json={"public_key": PUBLIC_KEY}
-        )
+        resp.get("http://localhost:5000/api/configuration", json={"public_key": PUBLIC_KEY})
         yield None
 
 
@@ -137,39 +139,19 @@ def guest_index():
     delete_index(index, ignore_missing=True)
 
 
-def upload(index: str, docs: Iterable[dict], **kwargs):
+def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType | CreateField] | None = None):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
-    ids = []
-    for i, doc in enumerate(docs):
-        id = str(i)
-        ids.append(id)
-        defaults = {"title": "title", "date": "2018-01-01", "text": "text", "_id": id}
-        for k, v in defaults.items():
-            if k not in doc:
-                doc[k] = v
-    elastic.upload_documents(index, docs, **kwargs)
+    res = upload_documents(index, docs, fields)
     refresh_index(index)
-    return ids
 
 
 TEST_DOCUMENTS = [
+    {"_id": 0, "cat": "a", "subcat": "x", "i": 1, "date": "2018-01-01", "text": "this is a text", "title": "title"},
+    {"_id": 1, "cat": "a", "subcat": "x", "i": 2, "date": "2018-02-01", "text": "a test text", "title": "title"},
     {
-        "cat": "a",
-        "subcat": "x",
-        "i": 1,
-        "date": "2018-01-01",
-        "text": "this is a text",
-    },
-    {
-        "cat": "a",
-        "subcat": "x",
-        "i": 2,
-        "date": "2018-02-01",
-        "text": "a test text",
-    },
-    {
+        "_id": 2,
         "cat": "a",
         "subcat": "y",
         "i": 11,
@@ -178,6 +160,7 @@ TEST_DOCUMENTS = [
         "title": "bla",
     },
     {
+        "_id": 3,
         "cat": "b",
         "subcat": "y",
         "i": 31,
@@ -189,10 +172,18 @@ TEST_DOCUMENTS = [
 
 
 def populate_index(index):
+
     upload(
         index,
         TEST_DOCUMENTS,
-        fields={"cat": "keyword", "subcat": "keyword", "i": "long"},
+        fields={
+            "text": "text",
+            "title": "text",
+            "date": "date",
+            "cat": "keyword",
+            "subcat": "keyword",
+            "i": "integer",
+        },
     )
     return TEST_DOCUMENTS
 
@@ -214,10 +205,8 @@ def index_many():
     create_index(index, guest_role=Role.READER)
     upload(
         index,
-        [
-            dict(id=i, pagenr=abs(10 - i), text=text)
-            for (i, text) in enumerate(["odd", "even"] * 10)
-        ],
+        [dict(id=i, pagenr=abs(10 - i), text=text) for (i, text) in enumerate(["odd", "even"] * 10)],
+        fields={"id": "integer", "pagenr": "integer", "text": "text"},
     )
     yield index
     delete_index(index, ignore_missing=True)
@@ -226,3 +215,21 @@ def index_many():
 @pytest.fixture()
 def app():
     return api.app
+
+
+@pytest.fixture()
+def minio(minio_mock):
+    from minio.deleteobjects import DeleteObject
+
+    minio = multimedia.get_minio()
+    for bucket in minio.list_buckets():
+        for x in minio.list_objects(bucket.name, recursive=True):
+            minio.remove_object(x.bucket_name, x.object_name or "")
+        minio.remove_bucket(bucket.name)
+
+
+@pytest_asyncio.fixture
+async def aclient(app) -> AsyncIterable[AsyncClient]:
+    host = get_settings().host
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=host) as c:
+        yield c

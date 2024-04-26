@@ -2,6 +2,7 @@
 
 # .env environment variables
 .env
+.venv
 
 # C extensions
 *.so
@@ -49,8 +50,10 @@ nosetests.xml
 # PyCharm meuk
 .idea
 
-# vscode meuk
-.vscode
+# vscode meuk (only include extensions and settings)
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 
 # static files
 navigator/media/static

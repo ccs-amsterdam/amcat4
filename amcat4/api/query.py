@@ -1,15 +1,19 @@
 """API Endpoints for querying."""
 
-from typing import Dict, List, Optional, Any, Union, Iterable, Tuple, Literal
+from re import search
+from typing import Annotated, Dict, List, Optional, Any, Union, Iterable, Literal
 
-from fastapi import APIRouter, HTTPException, status, Request, Query, Depends, Response
-from fastapi.params import Body
+from fastapi import APIRouter, HTTPException, status, Depends, Response, Body
+from pydantic import InstanceOf
 from pydantic.main import BaseModel
 
 from amcat4 import query, aggregate
 from amcat4.aggregate import Axis, Aggregation
-from amcat4.api.auth import authenticated_user, check_role
-from amcat4.index import Role
+from amcat4.api.auth import authenticated_user, check_fields_access
+from amcat4.config import AuthOptions, get_settings
+from amcat4.fields import create_fields
+from amcat4.index import Role, get_role, get_fields
+from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec
 from amcat4.query import update_tag_query
 
 app_query = APIRouter(prefix="/index", tags=["query"])
@@ -32,234 +36,216 @@ class QueryResult(BaseModel):
     meta: QueryMeta
 
 
-def _check_query_role(
-    indices: List[str], user: str, fields: List[str], highlight: bool
-):
-    if (not fields) or ("text" in fields) or (highlight):
-        role = Role.READER
-    else:
-        role = Role.METAREADER
-    for ix in indices:
-        check_role(user, role, ix)
-
-
-@app_query.get("/{index}/documents", response_model=QueryResult)
-def get_documents(
-    index: str,
-    request: Request,
-    q: List[str] = Query(
-        None,
-        description="Elastic query string. "
-        "Argument may be repeated for multiple queries (treated as OR)",
-    ),
-    sort: str = Query(
-        None,
-        description="Comma separated list of fields to sort on",
-        examples="id,date:desc",
-        pattern=r"\w+(:desc)?(,\w+(:desc)?)*",
-    ),
-    fields: str = Query(
-        None,
-        description="Comma separated list of fields to return",
-        pattern=r"\w+(,\w+)*",
-    ),
-    per_page: int = Query(None, description="Number of results per page"),
-    page: int = Query(None, description="Page to fetch"),
-    scroll: str = Query(
-        None,
-        description="Create a new scroll_id to download all results in subsequent calls",
-        examples="3m",
-    ),
-    scroll_id: str = Query(None, description="Get the next batch from this scroll id"),
-    highlight: bool = Query(False, description="add highlight tags <em>"),
-    annotations: bool = Query(
-        False,
-        description="if true, also return _annotations "
-        "with query matches as annotations",
-    ),
-    user: str = Depends(authenticated_user),
-):
+def get_or_validate_allowed_fields(
+    user: str, indices: Iterable[str], fields: list[FieldSpec] | None = None
+) -> list[FieldSpec]:
     """
-    List (possibly filtered) documents in this index.
-
-    Any additional GET parameters are interpreted as filters, and can be
-    field=value for a term query, or field__xxx=value for a range query, with xxx in gte, gt, lte, lt
-    Note that dates can use relative queries, see elasticsearch 'date math'
-    In case of conflict between field names and (other) arguments, you may prepend a field name with __
-    If your field names contain __, it might be better to use POST queries
-
-    Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
+    For any endpoint that returns field values, make sure the user only gets fields that
+    they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
+    check whether the user can access the fields (If not, raise an error).
     """
-    indices = index.split(",")
-    fields = fields and fields.split(",")
-    if not fields:
-        fields = ["date", "title", "url"]
-    _check_query_role(indices, user, fields, highlight)
-    args = {}
-    sort = sort and [
-        {x.replace(":desc", ""): "desc"} if x.endswith(":desc") else x
-        for x in sort.split(",")
-    ]
-    known_args = ["page", "per_page", "scroll", "scroll_id", "highlight", "annotations"]
-    for name in known_args:
-        val = locals()[name]
-        if val:
-            args[name] = int(val) if name in ["page", "per_page"] else val
-    filters: Dict[str, Dict] = {}
-    for f, v in request.query_params.items():
-        if f not in known_args + ["fields", "sort", "q"]:
-            if f.startswith("__"):
-                f = f[2:]
-            if "__" in f:  # range query
-                (field, operator) = f.split("__")
-                if field not in filters:
-                    filters[field] = {}
-                filters[field][operator] = v
-            else:  # value query
-                if f not in filters:
-                    filters[f] = {"values": []}
-                filters[f]["values"].append(v)
-    r = query.query_documents(
-        indices, fields=fields, queries=q, filters=filters, sort=sort, **args
-    )
-    if r is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No results")
-    return r.as_dict()
+    if not isinstance(user, str):
+        raise ValueError("User should be a string")
+    if not isinstance(indices, list):
+        raise ValueError("Indices should be a list")
+    if fields is not None and not isinstance(fields, list):
+        raise ValueError("Fields should be a list or None")
+
+    no_auth = get_settings().auth == AuthOptions.no_auth
+    if fields is None:
+        if len(indices) > 1:
+            # this restrictions is needed, because otherwise we need to return all allowed fields taking
+            # into account the user's role for each index, and take the lowest possible access.
+            # this is error prone and complex, so best to just disallow it. Also, requesting all fields
+            # for multiple indices is probably not something we should support anyway
+            raise ValueError("Fields should be specified if multiple indices are given")
+        index_fields = get_fields(indices[0])
+        role = get_role(indices[0], user)
+        allowed_fields: list[FieldSpec] = []
+        for field in index_fields.keys():
+            if role >= Role.READER or no_auth:
+                allowed_fields.append(FieldSpec(name=field))
+            elif role == Role.METAREADER:
+                metareader = index_fields[field].metareader
+                if metareader.access == "read":
+                    allowed_fields.append(FieldSpec(name=field))
+                if metareader.access == "snippet":
+                    allowed_fields.append(FieldSpec(name=field, snippet=metareader.max_snippet))
+            else:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"User {user} does not have a role on index {indices[0]}",
+                )
+        return allowed_fields
+
+    for index in indices:
+        if not no_auth:
+            check_fields_access(index, user, fields)
+    return fields
 
 
-FilterValue = Union[str, int]
-
-
-class FilterSpec(BaseModel):
-    """Form for filter specification."""
-
-    values: Optional[List[FilterValue]] = None
-    gt: Optional[FilterValue] = None
-    lt: Optional[FilterValue] = None
-    gte: Optional[FilterValue] = None
-    lte: Optional[FilterValue] = None
-    exists: Optional[bool] = None
-
-
-def _process_queries(
-    queries: Optional[Union[str, List[str], List[Dict[str, str]]]] = None
-) -> Optional[dict]:
+def _standardize_queries(queries: str | list[str] | dict[str, str] | None = None) -> dict[str, str] | None:
     """Convert query json to dict format: {label1:query1, label2: query2} uses indices if no labels given."""
+
     if queries:
         # to dict format: {label1:query1, label2: query2}  uses indices if no labels given
         if isinstance(queries, str):
-            queries = [queries]
-        if isinstance(queries, list):
-            queries = {str(i): q for i, q in enumerate(queries)}
-        return queries
+            return {"1": queries}
+        elif isinstance(queries, list):
+            return {str(i): q for i, q in enumerate(queries)}
+        elif isinstance(queries, dict):
+            return queries
+    return None
 
 
-def _process_filters(
-    filters: Optional[
-        Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]
-    ] = None
-) -> Iterable[Tuple[str, dict]]:
+def _standardize_filters(
+    filters: dict[str, FilterValue | list[FilterValue] | FilterSpec] | None = None
+) -> dict[str, FilterSpec] | None:
     """Convert filters to dict format: {field: {values: []}}."""
     if not filters:
-        return
+        return None
+
+    f: dict[str, FilterSpec] = {}
     for field, filter_ in filters.items():
         if isinstance(filter_, str):
-            filter_ = [filter_]
-        if isinstance(filter_, list):
-            yield field, {"values": filter_}
+            f[field] = FilterSpec(values=[filter_])
+        elif isinstance(filter_, list):
+            f[field] = FilterSpec(values=filter_)
         elif isinstance(filter_, FilterSpec):
-            yield field, {
-                k: v for (k, v) in filter_.model_dump().items() if v is not None
-            }
+            f[field] = filter_
         else:
             raise ValueError(f"Cannot parse filter: {filter_}")
+    return f
+
+
+def _standardize_fieldspecs(fields: list[str | FieldSpec] | None = None) -> list[FieldSpec] | None:
+    """Convert fields to list of FieldSpecs."""
+    if not fields:
+        return None
+
+    f = []
+    for field in fields:
+        if isinstance(field, str):
+            f.append(FieldSpec(name=field))
+        elif isinstance(field, FieldSpec):
+            f.append(field)
+        else:
+            raise ValueError(f"Cannot parse field: {field}")
+    return f
+
+
+def _standardize_sort(sort: str | list[str] | list[dict[str, SortSpec]] | None = None) -> list[dict[str, SortSpec]] | None:
+    """Convert sort to list of dicts."""
+
+    # TODO: sort cannot be right. that array around dict is useless
+
+    if not sort:
+        return None
+    if isinstance(sort, str):
+        return [{sort: SortSpec(order="asc")}]
+
+    sortspec: list[dict[str, SortSpec]] = []
+
+    for field in sort:
+        if isinstance(field, str):
+            sortspec.append({field: SortSpec(order="asc")})
+        elif isinstance(field, dict):
+            sortspec.append(field)
+        else:
+            raise ValueError(f"Cannot parse sort: {sort}")
+
+    return sortspec
 
 
 @app_query.post("/{index}/query", response_model=QueryResult)
 def query_documents_post(
     index: str,
-    queries: Optional[Union[str, List[str], Dict[str, str]]] = Body(
-        None,
-        description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-        "or a dict of {'label': 'query'}",
-    ),
-    fields: Optional[List[str]] = Body(
-        None, description="List of fields to retrieve for each document"
-    ),
-    filters: Optional[
-        Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]
-    ] = Body(
-        None,
-        description="Field filters, should be a dict of field names to filter specifications,"
-        "which can be either a value, a list of values, or a FilterSpec dict",
-    ),
-    sort: Optional[Union[str, List[str], List[Dict[str, dict]]]] = Body(
-        None,
-        description="Sort by field name(s) or dict (see "
-        "https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html for dict format)",
-        examples={
-            "simple": {"summary": "Sort by single field", "value": "'date'"},
-            "multiple": {
-                "summary": "Sort by multiple fields",
-                "value": "['date', 'title']",
+    queries: Annotated[
+        str | list[str] | dict[str, str] | None,
+        Body(
+            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
+            "or a dict of {'label': 'query'}",
+        ),
+    ] = None,
+    fields: Annotated[
+        list[str | FieldSpec] | None,
+        Body(
+            description="List of fields to retrieve for each document"
+            "In the list you can specify a fieldname, but also a FieldSpec dict."
+            "Using the FieldSpec allows you to request only a snippet of a field."
+            "fieldname[nomatch_chars;max_matches;match_chars]. 'matches' here refers to words from text queries. "
+            "If there is no query, the snippet is the first [nomatch_chars] characters. "
+            "If there is a query, snippets are returned for up to [max_matches] matches, with each match having [match_chars] "
+            "characters. If there are multiple matches, they are concatenated with ' ... '.",
+            openapi_examples={
+                "simple": {"summary": "Retrieve single field", "value": '["title", "text", "date"]'},
+                "text as snippet": {
+                    "summary": "Retrieve the full title, but text only as snippet",
+                    "value": '["title", {"name": "text", "snippet": {"nomatch_chars": 100}}]',
+                },
+                "all allowed fields": {
+                    "summary": "If fields is left empty, all fields that the user is allowed to see are returned",
+                },
             },
-            "dict": {
-                "summary": "Use dict to specify sort options",
-                "value": " [{'date': {'order':'desc'}}]",
+        ),
+    ] = None,
+    filters: Annotated[
+        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
+        Body(
+            description="Field filters, should be a dict of field names to filter specifications,"
+            "which can be either a value, a list of values, or a FilterSpec dict",
+        ),
+    ] = None,
+    sort: Annotated[
+        str | list[str] | list[dict[str, SortSpec]] | None,
+        Body(
+            description="Sort by field name(s) or dict (see "
+            "https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html for dict format)",
+            openapi_examples={
+                "simple": {"summary": "Sort by single field", "value": "'date'"},
+                "multiple": {
+                    "summary": "Sort by multiple fields",
+                    "value": "['date', 'title']",
+                },
+                "dict": {
+                    "summary": "Use dict to specify sort options",
+                    "value": " [{'date': {'order':'desc'}}]",
+                },
             },
-        },
-    ),
-    per_page: Optional[int] = Body(10, description="Number of documents per page"),
-    page: Optional[int] = Body(0, description="Which page to retrieve"),
-    scroll: Optional[str] = Body(
-        None,
-        description="Scroll specification (e.g. '5m') to start a scroll request"
-        "This will return a scroll_id which should be passed to subsequent calls"
-        "(this is the advised way of scrolling through multiple pages of results)",
-        examples="5m",
-    ),
-    scroll_id: Optional[str] = Body(
-        None, description="Scroll id from previous response to continue scrolling"
-    ),
-    annotations: Optional[bool] = Body(
-        None, description="Return _annotations with query matches as annotations"
-    ),
-    highlight: Optional[Union[bool, Dict]] = Body(
-        None,
-        description="Highlight document. 'true' highlights whole document, see elastic docs for dict format"
-        "https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html",
-    ),
-    user=Depends(authenticated_user),
+        ),
+    ] = None,
+    per_page: Annotated[int, Body(le=200, description="Number of documents per page")] = 10,
+    page: Annotated[int, Body(description="Which page to retrieve")] = 0,
+    scroll: Annotated[
+        str | None,
+        Body(
+            description="Scroll specification (e.g. '5m') to start a scroll request"
+            "This will return a scroll_id which should be passed to subsequent calls"
+            "(this is the advised way of scrolling through multiple pages of results)",
+            examples=["5m"],
+        ),
+    ] = None,
+    scroll_id: Annotated[str | None, Body(description="Scroll id from previous response to continue scrolling")] = None,
+    highlight: Annotated[bool, Body(description="If true, highlight fields")] = False,
+    user: str = Depends(authenticated_user),
 ):
     """
     List or query documents in this index.
 
     Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     """
-    # TODO check user rights on index
-    # Standardize fields, queries and filters to their most versatile format
     indices = index.split(",")
-    if fields:
-        # to array format: fields: [field1, field2]
-        if isinstance(fields, str):
-            fields = [fields]
-    else:
-        fields = ["date", "title", "url"]
-    _check_query_role(indices, user, fields, highlight is not None)
-
-    queries = _process_queries(queries)
-    filters = dict(_process_filters(filters))
+    fieldspecs = get_or_validate_allowed_fields(user, indices, _standardize_fieldspecs(fields))
     r = query.query_documents(
         indices,
-        queries=queries,
-        filters=filters,
-        fields=fields,
-        sort=sort,
+        queries=_standardize_queries(queries),
+        filters=_standardize_filters(filters),
+        fields=fieldspecs,
+        sort=_standardize_sort(sort),
         per_page=per_page,
         page=page,
         scroll_id=scroll_id,
         scroll=scroll,
-        annotations=annotations,
         highlight=highlight,
     )
     if r is None:
@@ -287,25 +273,24 @@ class AxisSpec(BaseModel):
 @app_query.post("/{index}/aggregate")
 def query_aggregate_post(
     index: str,
-    axes: Optional[List[AxisSpec]] = Body(
-        None, description="Axes to aggregate on (i.e. group by)"
-    ),
-    aggregations: Optional[List[AggregationSpec]] = Body(
-        None, description="Aggregate functions to compute"
-    ),
-    queries: Optional[Union[str, List[str], Dict[str, str]]] = Body(
-        None,
-        description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-        "or a dict of queries {'label': 'query'}",
-    ),
-    filters: Optional[
-        Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]
-    ] = Body(
-        None,
-        description="Field filters, should be a dict of field names to filter specifications,"
-        "which can be either a value, a list of values, or a FilterSpec dict",
-    ),
-    _user=Depends(authenticated_user),
+    axes: Optional[List[AxisSpec]] = Body(None, description="Axes to aggregate on (i.e. group by)"),
+    aggregations: Optional[List[AggregationSpec]] = Body(None, description="Aggregate functions to compute"),
+    queries: Annotated[
+        str | list[str] | dict[str, str] | None,
+        Body(
+            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
+            "or a dict of {'label': 'query'}",
+        ),
+    ] = None,
+    filters: Annotated[
+        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
+        Body(
+            description="Field filters, should be a dict of field names to filter specifications,"
+            "which can be either a value, a list of values, or a FilterSpec dict",
+        ),
+    ] = None,
+    after: Annotated[dict[str, Any] | None, Body(description="After cursor for pagination")] = None,
+    user: str = Depends(authenticated_user),
 ):
     """
     Construct an aggregate query.
@@ -321,64 +306,64 @@ def query_aggregate_post(
     # TODO check user rights on index
     indices = index.split(",")
     _axes = [Axis(**x.model_dump()) for x in axes] if axes else []
-    _aggregations = (
-        [Aggregation(**x.model_dump()) for x in aggregations] if aggregations else []
-    )
-    if not (_axes or _aggregations):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Aggregation needs at least one axis or aggregation",
-        )
-    queries = _process_queries(queries)
-    filters = dict(_process_filters(filters))
+    _aggregations = [Aggregation(**x.model_dump()) for x in aggregations] if aggregations else []
+
     results = aggregate.query_aggregate(
-        indices, _axes, _aggregations, queries=queries, filters=filters
+        indices,
+        _axes,
+        _aggregations,
+        queries=_standardize_queries(queries),
+        filters=_standardize_filters(filters),
+        after=after,
     )
+
     return {
         "meta": {
             "axes": [axis.asdict() for axis in results.axes],
             "aggregations": [a.asdict() for a in results.aggregations],
+            "after": results.after,
         },
         "data": list(results.as_dicts()),
     }
 
 
-@app_query.post(
-    "/{index}/tags_update",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
-)
+@app_query.post("/{index}/tags_update")
 def query_update_tags(
     index: str,
-    action: Literal["add", "remove"] = Body(
-        None, description="Action (add or remove) on tags"
-    ),
+    action: Literal["add", "remove"] = Body(None, description="Action (add or remove) on tags"),
     field: str = Body(None, description="Tag field to update"),
     tag: str = Body(None, description="Tag to add or remove"),
-    queries: Optional[Union[str, List[str], Dict[str, str]]] = Body(
-        None,
-        description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-        "or a dict of {'label': 'query'}",
-    ),
-    filters: Optional[
-        Dict[str, Union[FilterValue, List[FilterValue], FilterSpec]]
-    ] = Body(
-        None,
-        description="Field filters, should be a dict of field names to filter specifications,"
-        "which can be either a value, a list of values, or a FilterSpec dict",
-    ),
-    ids: Optional[Union[str, List[str]]] = Body(
-        None, description="Document IDs of documents to update"
-    ),
-    _user=Depends(authenticated_user),
+    queries: Annotated[
+        str | list[str] | dict[str, str] | None,
+        Body(
+            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
+            "or a dict of {'label': 'query'}",
+        ),
+    ] = None,
+    filters: Annotated[
+        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
+        Body(
+            description="Field filters, should be a dict of field names to filter specifications,"
+            "which can be either a value, a list of values, or a FilterSpec dict",
+        ),
+    ] = None,
+    ids: Optional[Union[str, List[str]]] = Body(None, description="Document IDs of documents to update"),
+    user: str = Depends(authenticated_user),
 ):
     """
     Add or remove tags by query or by id
     """
     indices = index.split(",")
-    queries = _process_queries(queries)
-    filters = dict(_process_filters(filters))
+    for i in indices:
+        if get_role(i, user) < Role.WRITER:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"User {user} does not have permission to update tags on index {i}",
+            )
+
     if isinstance(ids, (str, int)):
         ids = [ids]
-    update_tag_query(indices, action, field, tag, queries, filters, ids)
-    return
+    update_result = update_tag_query(
+        indices, action, field, tag, _standardize_queries(queries), _standardize_filters(filters), ids
+    )
+    return update_result

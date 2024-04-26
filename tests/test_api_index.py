@@ -1,7 +1,9 @@
 from starlette.testclient import TestClient
 
 from amcat4 import elastic
-from amcat4.index import get_guest_role, Role, set_guest_role, set_role, remove_role
+
+from amcat4.index import GuestRole, get_guest_role, Role, set_guest_role, set_role, remove_role
+from amcat4.fields import update_fields
 from tests.tools import build_headers, post_json, get_json, check, refresh
 
 
@@ -18,7 +20,7 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
     # Writers can create indices
     post_json(client, "/index/", user=writer, json=dict(id=index_name))
     refresh()
-    assert index_name in {x["name"] for x in get_json(client, "/index/", user=writer)}
+    assert index_name in {x["name"] for x in get_json(client, "/index/", user=writer) or []}
 
     # Users can GET their own index, global writer can GET all indices, others cannot GET non-public indices
     check(client.get(f"/index/{index_name}"), 401)
@@ -27,11 +29,9 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
     check(client.get(f"/index/{index_name}", headers=build_headers(user=writer2)), 200)
 
     # Users can only see indices that they have a role in or that have a guest role
-    assert index_name not in {x["name"] for x in get_json(client, "/index/", user=user)}
-    assert index_name not in {
-        x["name"] for x in get_json(client, "/index/", user=writer2)
-    }
-    assert index_name in {x["name"] for x in get_json(client, "/index/", user=writer)}
+    assert index_name not in {x["name"] for x in get_json(client, "/index/", user=user) or []}
+    assert index_name not in {x["name"] for x in get_json(client, "/index/", user=writer2) or []}
+    assert index_name in {x["name"] for x in get_json(client, "/index/", user=writer) or []}
 
     # (Only) index admin can change index guest role
     check(client.put(f"/index/{index_name}", json={"guest_role": "METAREADER"}), 401)
@@ -62,7 +62,7 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
     assert get_guest_role(index_name).name == "READER"
 
     # Index should now be visible to non-authorized users
-    assert index_name in {x["name"] for x in get_json(client, "/index/", user=writer)}
+    assert index_name in {x["name"] for x in get_json(client, "/index/", user=writer) or []}
     check(client.get(f"/index/{index_name}", headers=build_headers(user=user)), 200)
 
 
@@ -79,55 +79,52 @@ def test_fields_upload(client: TestClient, user: str, index: str):
             }
             for i, x in enumerate(["a", "a", "b"])
         ],
-        "columns": {"x": "keyword"},
+        "fields": {
+            "title": "text",
+            "text": "text",
+            "date": "date",
+            "x": "keyword",
+        },
     }
 
     # You need METAREADER permissions to read fields, and WRITER to upload docs
     check(client.get(f"/index/{index}/fields"), 401)
     check(
-        client.post(
-            f"/index/{index}/documents", headers=build_headers(user), json=body
-        ),
+        client.post(f"/index/{index}/documents", headers=build_headers(user), json=body),
         401,
     )
 
     set_role(index, user, Role.METAREADER)
-    fields = get_json(client, f"/index/{index}/fields", user=user)
-    assert set(fields.keys()) == {"title", "date", "text", "url"}
-    assert fields["date"]["type"] == "date"
+
+    ## can get fields
+    fields = get_json(client, f"/index/{index}/fields", user=user) or {}
+    ## but should still be empty, since no fields were created
+    assert len(set(fields.keys())) == 0
     check(
-        client.post(
-            f"/index/{index}/documents", headers=build_headers(user), json=body
-        ),
+        client.post(f"/index/{index}/documents", headers=build_headers(user), json=body),
         401,
     )
 
     set_role(index, user, Role.WRITER)
     post_json(client, f"/index/{index}/documents", user=user, json=body)
     get_json(client, f"/index/{index}/refresh", expected=204)
-    doc = get_json(client, f"/index/{index}/documents/0", user=user)
+    doc = get_json(client, f"/index/{index}/documents/0", user=user) or {}
     assert set(doc.keys()) == {"date", "text", "title", "x"}
     assert doc["title"] == "doc 0"
 
     # field selection
-    assert set(
-        get_json(
-            client, f"/index/{index}/documents/0", user=user, params={"fields": "title"}
-        ).keys()
-    ) == {"title"}
-    assert (
-        get_json(client, f"/index/{index}/fields", user=user)["x"]["type"] == "keyword"
-    )
+    assert set((get_json(client, f"/index/{index}/documents/0", user=user, params={"fields": "title"}) or {}).keys()) == {
+        "title"
+    }
+    assert (get_json(client, f"/index/{index}/fields", user=user) or {})["x"]["type"] == "keyword"
     elastic.es().indices.refresh()
-    assert set(get_json(client, f"/index/{index}/fields/x/values", user=user)) == {
+    assert set(get_json(client, f"/index/{index}/fields/x/values", user=user) or []) == {
         "a",
         "b",
     }
 
 
-def test_set_get_delete_roles(
-    client: TestClient, admin: str, writer: str, user: str, index: str
-):
+def test_set_get_delete_roles(client: TestClient, admin: str, writer: str, user: str, index: str):
     body = {"email": user, "role": "READER"}
     # Anon, unauthorized; READER can't add users
     check(client.post(f"/index/{index}/users", json=body), 401)
@@ -159,15 +156,10 @@ def test_set_get_delete_roles(
         json={"email": writer, "role": "WRITER"},
         user=admin,
     )
-    assert get_json(client, f"/index/{index}/users", user=writer) == [
-        {"email": writer, "role": "WRITER"}
-    ]
+    assert get_json(client, f"/index/{index}/users", user=writer) == [{"email": writer, "role": "WRITER"}]
     # Writer can now add a new user
     post_json(client, f"/index/{index}/users", json=body, user=writer)
-    users = {
-        u["email"]: u["role"]
-        for u in get_json(client, f"/index/{index}/users", user=writer)
-    }
+    users = {u["email"]: u["role"] for u in get_json(client, f"/index/{index}/users", user=writer) or []}
     assert users == {writer: "WRITER", user: "READER"}
 
     # Anon, unauthorized or READER can't change users
@@ -183,15 +175,10 @@ def test_set_get_delete_roles(
         client.put(user_url, json={"role": "WRITER"}, headers=build_headers(writer)),
         200,
     )
-    users = {
-        u["email"]: u["role"]
-        for u in get_json(client, f"/index/{index}/users", user=writer)
-    }
+    users = {u["email"]: u["role"] for u in get_json(client, f"/index/{index}/users", user=writer) or []}
     assert users == {writer: "WRITER", user: "WRITER"}
     # Writer can't change to admin
-    check(
-        client.put(writer_url, json={"role": "ADMIN"}, headers=build_headers(user)), 401
-    )
+    check(client.put(writer_url, json={"role": "ADMIN"}, headers=build_headers(user)), 401)
     # Writer can't change from admin
     set_role(index, writer, Role.ADMIN)
     check(
@@ -217,18 +204,14 @@ def test_name_description(client, index, index_name, user, admin):
     check(client.put(f"/index/{index}", json=dict(name="test")), 401)
     check(client.get(f"/index/{index}"), 401)
     check(
-        client.put(
-            f"/index/{index}", json=dict(name="test"), headers=build_headers(user)
-        ),
+        client.put(f"/index/{index}", json=dict(name="test"), headers=build_headers(user)),
         401,
     )
     check(client.get(f"/index/{index}", headers=build_headers(user)), 401)
 
     # global admin and index writer can change details
     check(
-        client.put(
-            f"/index/{index}", json=dict(name="test"), headers=build_headers(admin)
-        ),
+        client.put(f"/index/{index}", json=dict(name="test"), headers=build_headers(admin)),
         200,
     )
     set_role(index, user, Role.ADMIN)
@@ -242,14 +225,14 @@ def test_name_description(client, index, index_name, user, admin):
     )
 
     # global admin and index or guest metareader can read details
-    assert get_json(client, f"/index/{index}", user=admin)["description"] == "ooktest"
-    assert get_json(client, f"/index/{index}", user=user)["name"] == "test"
+    assert (get_json(client, f"/index/{index}", user=admin) or {})["description"] == "ooktest"
+    assert (get_json(client, f"/index/{index}", user=user) or {})["name"] == "test"
     set_role(index, user, Role.METAREADER)
-    assert get_json(client, f"/index/{index}", user=user)["name"] == "test"
+    assert (get_json(client, f"/index/{index}", user=user) or {})["name"] == "test"
     set_role(index, user, None)
     check(client.get(f"/index/{index}", headers=build_headers(user)), 401)
-    set_guest_role(index, Role.METAREADER)
-    assert get_json(client, f"/index/{index}", user=user)["name"] == "test"
+    set_guest_role(index, GuestRole.METAREADER)
+    assert (get_json(client, f"/index/{index}", user=user) or {})["name"] == "test"
 
     check(
         client.post(
@@ -257,32 +240,16 @@ def test_name_description(client, index, index_name, user, admin):
             json=dict(
                 id=index_name,
                 description="test2",
-                guest_role="metareader",
-                summary_field="party",
+                guest_role="METAREADER",
             ),
             headers=build_headers(admin),
         ),
         201,
     )
-    assert get_json(client, f"/index/{index_name}", user=user)["description"] == "test2"
+    assert (get_json(client, f"/index/{index_name}", user=user) or {})["description"] == "test2"
 
     # name and description should be present in list of indices
     refresh()
-    indices = {ix["id"]: ix for ix in get_json(client, "/index")}
+    indices = {ix["id"]: ix for ix in get_json(client, "/index") or []}
     assert indices[index]["description"] == "ooktest"
     assert indices[index_name]["description"] == "test2"
-
-    # can set and get summary field
-    elastic.set_fields(index_name, {"party": "keyword"})
-    refresh()
-    check(
-        client.put(
-            f"/index/{index_name}",
-            json=dict(summary_field="party"),
-            headers=build_headers(admin),
-        ),
-        200,
-    )
-    assert (
-        get_json(client, f"/index/{index_name}", user=admin)["summary_field"] == "party"
-    )
