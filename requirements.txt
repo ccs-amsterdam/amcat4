@@ -7,7 +7,7 @@ cffi==1.15.1
 charset-normalizer==3.2.0
 class-doc==0.2.0b0
 click==8.1.6
-cryptography==41.0.2
+cryptography==42.0.4
 dnspython==2.4.1
 elastic-transport==8.4.0
 elasticsearch==8.8.2
