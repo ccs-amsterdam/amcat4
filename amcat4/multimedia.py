@@ -8,11 +8,8 @@ The object store needs to be configured in the server settings.
 import datetime
 from io import BytesIO
 from multiprocessing import Value
-import re
 from typing import Iterable, Optional
 from venv import create
-
-from urllib3 import PoolManager
 from amcat4.config import get_settings
 from minio import Minio, S3Error
 from minio.deleteobjects import DeleteObject
@@ -35,35 +32,17 @@ def connect_minio() -> Optional[Minio]:
         raise Exception(f"Cannot connect to minio {get_settings().minio_host!r}: {e}")
 
 
-class SimpleMinioProxy(PoolManager):
-    """Redirect urls, e.g. localhost:9000 to minio:9000 in a docker"""
-
-    def __init__(self, proxy, endpoint, *args, **kargs):
-        self.proxy = proxy
-        self.endpoint = endpoint
-        super().__init__(*args, **kargs)
-
-    def urlopen(self, method: str, url: str, redirect: bool = True, **kw):
-        new_url = re.sub(f"^(https?://){self.endpoint}/", f"\\g<1>{self.proxy}/", url)
-        return super().urlopen(method, new_url, redirect, **kw)
-
-
 def _connect_minio() -> Optional[Minio]:
     settings = get_settings()
     if settings.minio_host is None:
         return None
     if settings.minio_secret_key is None or settings.minio_access_key is None:
         raise ValueError("minio_access_key or minio_secret_key not specified")
-    if settings.minio_proxy:
-        proxy = SimpleMinioProxy(settings.minio_proxy, settings.minio_host)
-    else:
-        proxy = None
     return Minio(
         settings.minio_host,
         secure=settings.minio_tls,
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
-        http_client=proxy,
     )
 
 
@@ -141,5 +120,4 @@ def presigned_post(index: str, key_prefix: str = "", days_valid=1):
 def presigned_get(index: str, key, days_valid=1):
     minio = get_minio()
     bucket = get_bucket(minio, index)
-    url = minio.presigned_get_object(bucket, key, expires=datetime.timedelta(days=days_valid))
-    return url
+    return minio.presigned_get_object(bucket, key, expires=datetime.timedelta(days=days_valid))
