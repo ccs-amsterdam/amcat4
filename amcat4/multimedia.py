@@ -8,6 +8,7 @@ The object store needs to be configured in the server settings.
 import datetime
 from io import BytesIO
 from multiprocessing import Value
+import re
 from typing import Iterable, Optional
 from venv import create
 from amcat4.config import get_settings
@@ -123,4 +124,9 @@ def presigned_post(index: str, key_prefix: str = "", days_valid=1):
 def presigned_get(index: str, key, days_valid=1):
     minio = get_minio()
     bucket = get_bucket(minio, index)
-    return minio.presigned_get_object(bucket, key, expires=datetime.timedelta(days=days_valid))
+    url = minio.presigned_get_object(bucket, key, expires=datetime.timedelta(days=days_valid))
+    public_host = get_settings().public_minio_host
+    if public_host:
+        url = re.sub("https?://.*?/", "", url)
+        url = f"{public_host}/{url}"
+    return url
