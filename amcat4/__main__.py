@@ -51,7 +51,14 @@ def upload_test_data() -> str:
         )
         for row in csvfile
     ]
-    fields: dict[str, FieldType] = {"president": "keyword", "party": "keyword", "year": "integer"}
+    fields: dict[str, FieldType] = {
+        "text": "text",
+        "title": "text",
+        "date": "date",
+        "president": "keyword",
+        "party": "keyword",
+        "year": "integer",
+    }
     upload_documents(SOTU_INDEX, docs, fields)
     return SOTU_INDEX
 
