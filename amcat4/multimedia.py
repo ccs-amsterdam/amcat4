@@ -113,7 +113,10 @@ def presigned_post(index: str, key_prefix: str = "", days_valid=1):
     bucket = get_bucket(minio, index)
     policy = PostPolicy(bucket, expiration=datetime.datetime.now() + datetime.timedelta(days=days_valid))
     policy.add_starts_with_condition("key", key_prefix)
-    url = f"http{'s' if get_settings().minio_tls else ''}://{get_settings().minio_host}/{bucket}"
+    minio_host = (
+        get_settings().public_minio_host or f"http{'s' if get_settings().minio_tls else ''}://{get_settings().minio_host}"
+    )
+    url = f"{minio_host}/{bucket}"
     return url, minio.presigned_post_policy(policy)
 
 
