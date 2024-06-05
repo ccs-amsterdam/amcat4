@@ -208,7 +208,15 @@ def query_documents(
             scroll_id=result["_scroll_id"],
         )
     else:
-        return QueryResult(data, n=result["hits"]["total"]["value"], per_page=per_page, page=page)
+        n = result["hits"]["total"]["value"]
+        if n == 10000:
+            # Default elastic max on non-scrolled values. I think we should return the actual count,
+            # even if elastic will error (I think) if the user ever retrieves a page > 1000
+            # TODO: can we not hard-code the 10k limit?
+            res = es().count(index=index, query=body["query"])
+            n = res["count"]
+
+        return QueryResult(data, n=n, per_page=per_page, page=page)
 
 
 def query_highlight(fields: list[FieldSpec], highlight_queries: bool = False) -> dict[str, Any]:
