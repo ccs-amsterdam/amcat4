@@ -542,12 +542,6 @@ def delete_document(index: str, doc_id: str):
     es().delete(index=index, id=doc_id)
 
 
-def update_by_query(index: str | list[str], script: str, query: dict, params: dict | None = None):
-    script_dict = dict(source=script, lang="painless", params=params or {})
-    result = es().update_by_query(index=index, script=script_dict, **query, refresh=True)
-    return dict(updated=result["updated"], total=result["total"])
-
-
 UDATE_SCRIPTS = dict(
     add="""
     if (ctx._source[params.field] == null) {
@@ -575,9 +569,19 @@ UDATE_SCRIPTS = dict(
 
 def update_tag_by_query(index: str | list[str], action: Literal["add", "remove"], query: dict, field: str, tag: str):
     create_or_verify_tag_field(index, field)
-    script = UDATE_SCRIPTS[action]
-    params = dict(field=field, tag=tag)
-    return update_by_query(index, script, query, params)
+    script = dict(source=UDATE_SCRIPTS[action], lang="painless", params=dict(field=field, tag=tag))
+    result = es().update_by_query(index=index, script=script, **query, refresh=True)
+    return dict(updated=result["updated"], total=result["total"])
+
+
+def update_documents_by_query(index: str | list[str], query: dict, field: str, value: Any):
+    if value is None:
+        script = dict(source="ctx._source.remove(params.field)", lang="painless", params=dict(field=field))
+    else:
+        script = dict(
+            source="ctx._source[params.field] = params.value", lang="painless", params=dict(field=field, value=value)
+        )
+    return es().update_by_query(index=index, query=query, script=script, refresh=True)
 
 
 ### WvA Should probably move these to multimedia/actions or something
@@ -611,8 +615,8 @@ def add_instruction(index: str, instruction: PreprocessingInstruction):
 
 def reassign_preprocessing_errors(index: str, field: str):
     """Reset status for any documents with error status, and restart preprocessor"""
-    query = dict(query=dict(term={f"{field}.status": dict(value="error")}))
-    update_by_query(index, "ctx._source[params.field] = null", query, dict(field=field))
+    query = dict(term={f"{field}.status": dict(value="error")})
+    update_documents_by_query(index, query, field, None)
     processor.get_manager().start_preprocessor(index, field)
 
 

@@ -19,7 +19,7 @@ from amcat4.models import FieldSpec, FilterSpec, SortSpec
 
 from .date_mappings import mappings
 from .elastic import es
-from amcat4.index import update_tag_by_query
+from amcat4.index import update_documents_by_query, update_tag_by_query
 
 
 def build_body(
@@ -273,3 +273,15 @@ def update_tag_query(
 
     update_result = update_tag_by_query(index, action, body, field, tag)
     return update_result
+
+
+def update_query(
+    index: str | list[str],
+    field: str,
+    value: Any,
+    queries: dict[str, str] | None = None,
+    filters: dict[str, FilterSpec] | None = None,
+    ids: list[str] | None = None,
+):
+    query = build_body(queries, filters, ids=ids)
+    return update_documents_by_query(index=index, query=query["query"], field=field, value=value)

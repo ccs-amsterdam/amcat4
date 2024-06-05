@@ -5,6 +5,7 @@ import pytest
 
 from amcat4.index import (
     refresh_index,
+    update_documents_by_query,
     upload_documents,
     get_document,
     update_document,
@@ -73,6 +74,19 @@ def test_update(index_docs):
     assert get_document(index_docs, "0", _source=["annotations"]) == {}
     update_document(index_docs, "0", {"annotations": {"x": 3}})
     assert get_document(index_docs, "0", _source=["annotations"])["annotations"] == {"x": 3}
+
+
+def test_update_by_query(index_docs):
+    def cats():
+        res = query_documents(index_docs, fields=[FieldSpec(name="cat"), FieldSpec(name="subcat")])
+        return {doc["_id"]: doc.get("subcat") for doc in (res.data if res else [])}
+
+    assert cats() == {"0": "x", "1": "x", "2": "y", "3": "y"}
+    update_documents_by_query(index_docs, query=dict(term={"cat": dict(value="a")}), field="subcat", value="z")
+    assert cats() == {"0": "z", "1": "z", "2": "z", "3": "y"}
+    update_documents_by_query(index_docs, query=dict(term={"cat": dict(value="b")}), field="subcat", value=None)
+    assert cats() == {"0": "z", "1": "z", "2": "z", "3": None}
+    assert "subcat" not in get_document(index_docs, "3").keys()
 
 
 def test_add_tag(index_docs):

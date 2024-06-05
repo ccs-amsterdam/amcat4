@@ -9,12 +9,12 @@ from pydantic.main import BaseModel
 
 from amcat4 import query, aggregate
 from amcat4.aggregate import Axis, Aggregation
-from amcat4.api.auth import authenticated_user, check_fields_access
+from amcat4.api.auth import authenticated_user, check_fields_access, check_role
 from amcat4.config import AuthOptions, get_settings
 from amcat4.fields import create_fields
-from amcat4.index import Role, get_role, get_fields
+from amcat4.index import Role, get_role, get_fields, update_documents_by_query
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec
-from amcat4.query import update_tag_query
+from amcat4.query import update_query, update_tag_query
 
 app_query = APIRouter(prefix="/index", tags=["query"])
 
@@ -303,8 +303,10 @@ def query_aggregate_post(
 
     Returns a JSON object {data: [{axis1, ..., n, aggregate1, ...}, ...], meta: {axes: [...], aggregations: [...]}
     """
-    # TODO check user rights on index
+
     indices = index.split(",")
+    for index in indices:
+        check_role(user, Role.READER, index)
     _axes = [Axis(**x.model_dump()) for x in axes] if axes else []
     _aggregations = [Aggregation(**x.model_dump()) for x in aggregations] if aggregations else []
 
@@ -367,3 +369,33 @@ def query_update_tags(
         indices, action, field, tag, _standardize_queries(queries), _standardize_filters(filters), ids
     )
     return update_result
+
+
+@app_query.post("/{index}/update_by_query")
+def update_by_query(
+    index: str,
+    field: Annotated[str, Body(description="Field to update")],
+    value: Annotated[str | None, Body(description="New value for the field, or null/None to delete field")],
+    queries: Annotated[
+        str | list[str] | dict[str, str] | None,
+        Body(
+            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
+            "or a dict of {'label': 'query'}",
+        ),
+    ] = None,
+    filters: Annotated[
+        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
+        Body(
+            description="Field filters, should be a dict of field names to filter specifications,"
+            "which can be either a value, a list of values, or a FilterSpec dict",
+        ),
+    ] = None,
+    user: str = Depends(authenticated_user),
+):
+    """
+    Update documents by query.
+
+    Select documents using queries and/or filters, and specify a field and new value.
+    """
+    check_role(user, Role.WRITER, index)
+    return update_query(index, field, value, _standardize_queries(queries), _standardize_filters(filters))
