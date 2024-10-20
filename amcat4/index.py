@@ -492,7 +492,7 @@ def upload_documents(
         successes, failures = elasticsearch.helpers.bulk(
             es(),
             actions,
-            stats_only=True,
+            stats_only=False,
             raise_on_error=raise_on_error,
         )
     except elasticsearch.helpers.BulkIndexError as e:
