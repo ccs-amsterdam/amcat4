@@ -9,7 +9,7 @@ from tests.tools import get_json, create_token
 def test_handler_responses(client: TestClient, admin):
     def test(expected=200, **payload):
         token = create_token(**payload)
-        headers = {'Authorization': f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}"}
         return get_json(client, "/users/me", headers=headers, expected=expected)
 
     # Guests have no /me
@@ -25,16 +25,16 @@ def test_handler_responses(client: TestClient, admin):
 
     # A valid token needs a valid resource, expiry, and email
     now = int(datetime.now().timestamp())
-    test(resource='http://localhost:3000', email=admin, expected=401)
-    test(exp=now+1000, email=admin, expected=401)
-    assert test(resource='http://localhost:3000', exp=now + 1000, email=admin)['email'] == admin
+    test(resource="http://localhost:3000", email=admin, expected=401)
+    test(exp=now + 1000, email=admin, expected=401)
+    assert test(resource="http://localhost:3000", exp=now + 1000, email=admin)["email"] == admin
     # Expired tokens don't work
-    test(resource='http://localhost:3000', exp=now - 1000, email=admin, expected=401)
+    test(resource="http://localhost:3000", exp=now - 1000, email=admin, expected=401)
     # Wrong resource
-    test(resource='http://wrong.com', exp=now + 1000, email=admin, expected=401)
+    test(resource="http://wrong.com", exp=now + 1000, email=admin, expected=401)
 
 
 def test_config(client: TestClient):
     result = get_json(client, "/config")
-    assert result['middlecat_url'] == get_settings().middlecat_url
-    assert result['authorization'] == get_settings().auth.name
+    assert result["middlecat_url"] == get_settings().middlecat_url
+    assert result["authorization"] == get_settings().auth.name

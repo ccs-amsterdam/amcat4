@@ -1,7 +1,7 @@
 from amcat4.index import Role, set_role
 from amcat4.models import CreateField
 from tests.conftest import upload
-from tests.tools import get_json, post_json
+from tests.tools import post_json
 
 
 def test_pagination(client, index, user):

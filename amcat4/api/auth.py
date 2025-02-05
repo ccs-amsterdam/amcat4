@@ -1,6 +1,5 @@
 """Helper methods for authentication and authorization."""
 
-from argparse import ONE_OR_MORE
 import functools
 import logging
 from datetime import datetime

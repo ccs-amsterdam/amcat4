@@ -1,10 +1,7 @@
-import logging
-from typing import Any, AsyncGenerator, AsyncIterable
+from typing import Any
 import pytest
-import pytest_asyncio
 import responses
 from fastapi.testclient import TestClient
-from httpx import ASGITransport, AsyncClient
 
 from amcat4 import api
 from amcat4.config import get_settings, AuthOptions
@@ -143,7 +140,7 @@ def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType |
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
-    res = upload_documents(index, docs, fields)
+    upload_documents(index, docs, fields)
     refresh_index(index)
 
 

@@ -1,7 +1,6 @@
 """API Endpoints for document and index management."""
 
 from http import HTTPStatus
-from re import U
 from typing import Annotated, Any, Literal
 
 import elasticsearch
@@ -184,8 +183,8 @@ def upload_documents(
             description="The operation to perform. Default is create, which ignores any documents that already exist. "
             "The 'update' operation behaves as an upsert (create or update). If an identical document (or document with "
             "identical identifiers) already exists, the uploaded fields will be created or overwritten. If there are fields "
-            "in the original document that are not in the uploaded document, they will NOT be removed. since update is destructive "
-            "it requires admin rights."
+            "in the original document that are not in the uploaded document, they will NOT be removed. "
+            "Since update is destructive it requires admin rights."
         ),
     ] = "create",
     user: str = Depends(authenticated_user),

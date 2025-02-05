@@ -1,5 +1,4 @@
 from datetime import datetime
-from re import I
 
 import pytest
 
@@ -11,7 +10,7 @@ from amcat4.index import (
     update_document,
     update_tag_by_query,
 )
-from amcat4.fields import create_fields, update_fields, get_fields, field_values
+from amcat4.fields import create_fields, get_fields, field_values
 from amcat4.models import CreateField, FieldSpec
 from amcat4.query import query_documents
 from tests.conftest import upload
@@ -55,7 +54,7 @@ def test_fields(index):
     assert fields["date"].type == "date"
 
     # default settings
-    assert fields["date"].identifier == False
+    assert fields["date"].identifier is False
     assert fields["date"].client_settings is not None
 
     # default settings depend on the type

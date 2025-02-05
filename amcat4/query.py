@@ -6,14 +6,11 @@ from math import ceil
 
 from typing import (
     Union,
-    Sequence,
     Any,
     Dict,
     Tuple,
     Literal,
 )
-
-from urllib3 import Retry
 
 from amcat4.models import FieldSpec, FilterSpec, SortSpec
 

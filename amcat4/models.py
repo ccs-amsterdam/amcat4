@@ -1,7 +1,5 @@
-from curses import OK
-from xml.dom.domreg import registered
 import pydantic
-from pydantic import BaseModel, field_validator, model_validator, validator
+from pydantic import BaseModel, model_validator
 from typing import Annotated, Any, Literal
 from typing_extensions import Self
 

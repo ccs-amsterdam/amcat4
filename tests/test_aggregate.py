@@ -3,7 +3,7 @@ from datetime import datetime, date
 
 from amcat4.aggregate import query_aggregate, Axis, Aggregation
 from amcat4.api.query import _standardize_queries
-from amcat4.models import CreateField, Field
+from amcat4.models import CreateField
 from tests.conftest import upload
 from tests.tools import dictset
 

@@ -1,4 +1,4 @@
-from amcat4.index import Role, refresh_index, set_role
+from amcat4.index import Role, set_role
 from amcat4.models import CreateField, FieldSpec
 from amcat4.query import query_documents
 from tests.conftest import upload

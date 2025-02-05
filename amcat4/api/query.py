@@ -1,18 +1,15 @@
 """API Endpoints for querying."""
 
-from re import search
 from typing import Annotated, Dict, List, Optional, Any, Union, Iterable, Literal
 
-from fastapi import APIRouter, HTTPException, status, Depends, Response, Body
-from pydantic import InstanceOf
+from fastapi import APIRouter, HTTPException, status, Depends, Body
 from pydantic.main import BaseModel
 
 from amcat4 import query, aggregate
 from amcat4.aggregate import Axis, Aggregation
 from amcat4.api.auth import authenticated_user, check_fields_access, check_role
 from amcat4.config import AuthOptions, get_settings
-from amcat4.fields import create_fields
-from amcat4.index import Role, get_role, get_fields, update_documents_by_query
+from amcat4.index import Role, get_role, get_fields
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec
 from amcat4.query import update_query, update_tag_query
 

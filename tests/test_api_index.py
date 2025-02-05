@@ -3,7 +3,6 @@ from starlette.testclient import TestClient
 from amcat4 import elastic
 
 from amcat4.index import GuestRole, get_guest_role, Role, set_guest_role, set_role, remove_role
-from amcat4.fields import update_fields
 from tests.tools import build_headers, post_json, get_json, check, refresh
 
 
@@ -96,9 +95,9 @@ def test_fields_upload(client: TestClient, user: str, index: str):
 
     set_role(index, user, Role.METAREADER)
 
-    ## can get fields
+    # can get fields
     fields = get_json(client, f"/index/{index}/fields", user=user) or {}
-    ## but should still be empty, since no fields were created
+    # but should still be empty, since no fields were created
     assert len(set(fields.keys())) == 0
     check(
         client.post(f"/index/{index}/documents", headers=build_headers(user), json=body),

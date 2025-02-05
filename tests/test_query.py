@@ -2,7 +2,7 @@ import functools
 from typing import Set, Optional
 
 from amcat4 import query
-from amcat4.models import FieldSpec, FilterSpec, FilterValue, SnippetParams, UpdateField
+from amcat4.models import FieldSpec, FilterSpec, FilterValue, SnippetParams
 from amcat4.api.query import _standardize_queries, _standardize_filters
 from tests.conftest import upload
 

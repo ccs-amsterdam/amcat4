@@ -413,7 +413,7 @@ def create_id(document: dict, field_settings: dict[str, Field]) -> str:
     Create the _id for a document.
     """
 
-    identifiers = [k for k, v in field_settings.items() if v.identifier == True]
+    identifiers = [k for k, v in field_settings.items() if v.identifier is True]
     if len(identifiers) == 0:
         raise ValueError("Can only create id if identifiers are specified")
 
@@ -465,7 +465,7 @@ def upload_documents(
                 else:
                     if has_identifiers:
                         action["_id"] = create_id(document, field_settings)
-                ## if no id is given, elasticsearch creates a cool unique one
+                # if no id is given, elasticsearch creates a cool unique one
 
             # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
             if op_type == "update":

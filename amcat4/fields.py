@@ -16,7 +16,7 @@ We need to make sure that:
 
 import datetime
 import json
-from typing import Any, Iterator, Literal, Mapping, get_args, cast
+from typing import Any, Iterator, Mapping, get_args, cast
 
 
 from elasticsearch import NotFoundError
@@ -252,7 +252,8 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
                 raise ValueError(f"Invalid field type: {new_settings.type}")
             if current.elastic_type not in valid_es_types:
                 raise ValueError(
-                    f"Field {field} has the elastic type {current.elastic_type}. A {new_settings.type} field can only have the following elastic types: {valid_es_types}."
+                    f"Field {field} has the elastic type {current.elastic_type}. A {new_settings.type} "
+                    "field can only have the following elastic types: {valid_es_types}."
                 )
             current_fields[field].type = new_settings.type
 
