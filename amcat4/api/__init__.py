@@ -28,8 +28,6 @@ app = FastAPI(
             "and the core process of getting units and posting annotations",
         ),
         dict(name="annotator guest", description="Annotator module endpoints for unregistered guests"),
-        dict(name="multimedia", description="Endpoints for multimedia support"),
-        dict(name="preprocessing", description="Endpoints for preprocessing support"),
     ],
 )
 app.include_router(app_info)

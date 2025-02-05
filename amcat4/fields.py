@@ -84,7 +84,6 @@ TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "audio": ["wildcard", "keyword", "constant_keyword", "text"],
     "url": ["wildcard", "keyword", "constant_keyword", "text"],
     "json": ["text"],
-    "preprocess": ["object"],
 }
 
 
@@ -193,8 +192,6 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
         if settings.identifier:
             new_identifiers = True
         mapping[field] = {"type": elastic_type}
-        if settings.type == "preprocess":
-            mapping[field]["properties"] = dict(status=dict(type="keyword"), error=dict(type="text", index=False))
         if settings.type in ["date"]:
             mapping[field]["format"] = "strict_date_optional_time"
 

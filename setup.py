@@ -8,7 +8,7 @@ setup(
     description="API for AmCAT4 Text Analysis",
     author="Wouter van Atteveldt",
     author_email="wouter@vanatteveldt.com",
-    packages=["amcat4", "amcat4.api", "amcat4.preprocessing"],
+    packages=["amcat4", "amcat4.api"],
     include_package_data=True,
     zip_safe=False,
     keywords=["API", "text"],
@@ -31,7 +31,6 @@ setup(
         "requests",
         "class_doc",
         "mypy",
-        "minio",
         "jsonpath_ng",
     ],
     extras_require={
@@ -44,7 +43,6 @@ setup(
             "pre-commit",
             "types-requests",
             "pytest-asyncio",
-            "pytest-minio-mock @ git+ssh://git@github.com/vanatteveldt/pytest-minio-mock.git",
         ]
     },
     entry_points={"console_scripts": ["amcat4 = amcat4.__main__:main"]},
