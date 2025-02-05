@@ -6,7 +6,7 @@ import responses
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-from amcat4 import api, multimedia  # noqa: E402
+from amcat4 import api
 from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import es
 from amcat4.index import (
@@ -215,21 +215,3 @@ def index_many():
 @pytest.fixture()
 def app():
     return api.app
-
-
-@pytest.fixture()
-def minio(minio_mock):
-    from minio.deleteobjects import DeleteObject
-
-    minio = multimedia.get_minio()
-    for bucket in minio.list_buckets():
-        for x in minio.list_objects(bucket.name, recursive=True):
-            minio.remove_object(x.bucket_name, x.object_name or "")
-        minio.remove_bucket(bucket.name)
-
-
-@pytest_asyncio.fixture
-async def aclient(app) -> AsyncIterable[AsyncClient]:
-    host = get_settings().host
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=host) as c:
-        yield c

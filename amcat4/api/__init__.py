@@ -11,18 +11,6 @@ from amcat4.api.index import app_index
 from amcat4.api.info import app_info
 from amcat4.api.query import app_query
 from amcat4.api.users import app_users
-from amcat4.api.multimedia import app_multimedia
-from amcat4.api.preprocessing import app_preprocessing
-from amcat4.preprocessing.processor import start_processors
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    try:
-        start_processors()
-    except:
-        logging.exception("Error on initializing preprocessing")
-    yield
 
 
 app = FastAPI(
@@ -43,14 +31,11 @@ app = FastAPI(
         dict(name="multimedia", description="Endpoints for multimedia support"),
         dict(name="preprocessing", description="Endpoints for preprocessing support"),
     ],
-    lifespan=lifespan,
 )
 app.include_router(app_info)
 app.include_router(app_users)
 app.include_router(app_index)
 app.include_router(app_query)
-app.include_router(app_multimedia)
-app.include_router(app_preprocessing)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

@@ -33,10 +33,7 @@ Elasticsearch implementation
 """
 
 import collections
-from curses import meta
-from dataclasses import field
 from enum import IntEnum
-import functools
 import logging
 from typing import Any, Iterable, Mapping, Optional, Literal
 
@@ -56,8 +53,6 @@ from amcat4.fields import (
     get_fields,
 )
 from amcat4.models import CreateField, Field, FieldType
-from amcat4.preprocessing.models import PreprocessingInstruction
-from amcat4.preprocessing import processor
 
 
 class Role(IntEnum):
@@ -227,10 +222,6 @@ def deregister_index(index: str, ignore_missing=False) -> None:
             raise
     else:
         refresh_index(system_index)
-    # Stop preprocessing loops on this index
-    from amcat4.preprocessing.processor import get_manager
-
-    get_manager().remove_index_preprocessors(index)
 
 
 def _roles_from_elastic(roles: list[dict]) -> dict[str, Role]:
@@ -503,9 +494,6 @@ def upload_documents(
             e.args = e.args + (f"First error: {reason}",)
         raise
 
-    # Start preprocessors for this index (if any)
-    processor.get_manager().start_index_preprocessors(index)
-
     return dict(successes=successes, failures=failures)
 
 
@@ -582,47 +570,3 @@ def update_documents_by_query(index: str | list[str], query: dict, field: str, v
             source="ctx._source[params.field] = params.value", lang="painless", params=dict(field=field, value=value)
         )
     return es().update_by_query(index=index, query=query, script=script, refresh=True)
-
-
-### WvA Should probably move these to multimedia/actions or something
-
-
-def get_instructions(index: str) -> Iterable[PreprocessingInstruction]:
-    res = es().get(index=get_settings().system_index, id=index, source="preprocessing")
-    for i in res["_source"].get("preprocessing", []):
-        for a in i.get("arguments", []):
-            if a.get("secret"):
-                a["value"] = "********"
-        yield PreprocessingInstruction.model_validate(i)
-
-
-def get_instruction(index: str, field: str) -> Optional[PreprocessingInstruction]:
-    for i in get_instructions(index):
-        if i.field == field:
-            return i
-
-
-def add_instruction(index: str, instruction: PreprocessingInstruction):
-    if instruction.field in get_fields(index):
-        raise ValueError(f"Field {instruction.field} already exists in index {index}")
-    instructions = list(get_instructions(index))
-    instructions.append(instruction)
-    create_fields(index, {instruction.field: "preprocess"})
-    body = [i.model_dump() for i in instructions]
-    es().update(index=get_settings().system_index, id=index, doc=dict(preprocessing=body))
-    processor.get_manager().add_preprocessor(index, instruction)
-
-
-def reassign_preprocessing_errors(index: str, field: str):
-    """Reset status for any documents with error status, and restart preprocessor"""
-    query = dict(term={f"{field}.status": dict(value="error")})
-    update_documents_by_query(index, query, field, None)
-    processor.get_manager().start_preprocessor(index, field)
-
-
-def stop_preprocessor(index: str, field: str):
-    processor.get_manager().stop_preprocessor(index, field)
-
-
-def start_preprocessor(index: str, field: str):
-    processor.get_manager().start_preprocessor(index, field)
