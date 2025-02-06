@@ -35,6 +35,7 @@ Elasticsearch implementation
 import collections
 from enum import IntEnum
 import logging
+from multiprocessing import Value
 from typing import Any, Iterable, Mapping, Optional, Literal
 
 import hashlib
@@ -570,3 +571,32 @@ def update_documents_by_query(index: str | list[str], query: dict, field: str, v
             source="ctx._source[params.field] = params.value", lang="painless", params=dict(field=field, value=value)
         )
     return es().update_by_query(index=index, query=query, script=script, refresh=True)
+
+
+def get_branding():
+    # We (ab)use the _global settings document for this, even if using summary_field for an icon url is a bit weird
+    # (Maybe we should just add a nested object for more flexibility?)
+    doc = es().get(
+        index=get_settings().system_index, id=GLOBAL_ROLES, source_includes=["name", "description", "summary_field"]
+    )
+    return dict(
+        server_name=doc["_source"].get("name"),
+        welcome_text=doc["_source"].get("description"),
+        server_icon=doc["_source"].get("summary_field"),
+    )
+
+
+def set_branding(server_name: Optional[str] = None, welcome_text: Optional[str] = None, server_icon: Optional[str] = None):
+    """Change the branding info for this server. Set params to None to keep unchanged, or to '' to delete the entry"""
+    doc = {}
+    if server_name is not None:
+        doc["name"] = server_name or None
+    if welcome_text is not None:
+        doc["description"] = welcome_text or None
+    if server_icon is not None:
+        doc["summary_field"] = server_icon or None
+    if not doc:
+        # Nothing to do!
+        return
+
+    return es().update(index=get_settings().system_index, id=GLOBAL_ROLES, doc=doc)

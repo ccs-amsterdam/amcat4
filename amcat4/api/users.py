@@ -111,15 +111,3 @@ def modify_user(email: EmailStr, data: ChangeUserForm, _user: str = Depends(auth
         role = Role[data.role.upper()]
         set_global_role(email, role)
         return {"email": email, "role": role.name}
-
-
-@app_users.get("/config")
-@app_users.get("/middlecat")
-def get_auth_config():
-    return {
-        "middlecat_url": get_settings().middlecat_url,
-        "resource": get_settings().host,
-        "authorization": get_settings().auth,
-        "warnings": [validate_settings()],
-        "api_version": version("amcat4"),
-    }

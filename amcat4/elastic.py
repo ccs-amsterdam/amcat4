@@ -75,7 +75,7 @@ def get_system_version(elastic=None) -> Optional[int]:
         r = elastic.get(index=settings.system_index, id=GLOBAL_ROLES, source_includes="version")
     except NotFoundError:
         return None
-    return r["_source"]["version"]
+    return r["_source"].get("version")
 
 
 def _setup_elastic():
