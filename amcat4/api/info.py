@@ -1,8 +1,7 @@
-from fastapi import Depends, Request
-from fastapi import APIRouter
-from fastapi.templating import Jinja2Templates
 from importlib.metadata import version
 
+from fastapi import APIRouter, Depends, Request
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from amcat4 import elastic
@@ -51,11 +50,19 @@ def read_branding():
 
 
 class ChangeBranding(BaseModel):
-    server_name: str
-    server_icon: str
-    welcome_text: str
+    server_name: str | None = None
+    server_icon: str | None = None
+    server_url: str | None = None
+    welcome_text: str | None = None
+    client_data: str | None = None
 
 
 @app_info.put("/config/branding")
 def change_branding(data: ChangeBranding, user: str = Depends(authenticated_admin)):
-    set_branding(server_icon=data.server_icon, server_name=data.server_name, welcome_text=data.welcome_text)
+    set_branding(
+        server_icon=data.server_icon,
+        server_name=data.server_name,
+        welcome_text=data.welcome_text,
+        client_data=data.client_data,
+        server_url=data.server_url,
+    )

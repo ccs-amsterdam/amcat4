@@ -33,13 +33,12 @@ Elasticsearch implementation
 """
 
 import collections
-from enum import IntEnum
-import logging
-from multiprocessing import Value
-from typing import Any, Iterable, Mapping, Optional, Literal
-
 import hashlib
 import json
+import logging
+from enum import IntEnum
+from multiprocessing import Value
+from typing import Any, Iterable, Literal, Mapping, Optional
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
@@ -47,12 +46,7 @@ from elasticsearch import NotFoundError
 # from amcat4.api.common import py2dict
 from amcat4.config import AuthOptions, get_settings
 from amcat4.elastic import es
-from amcat4.fields import (
-    coerce_type,
-    create_fields,
-    create_or_verify_tag_field,
-    get_fields,
-)
+from amcat4.fields import coerce_type, create_fields, create_or_verify_tag_field, get_fields
 from amcat4.models import CreateField, Field, FieldType
 
 
@@ -77,7 +71,7 @@ GLOBAL_ROLES = "_global"
 
 Index = collections.namedtuple(
     "Index",
-    ["id", "name", "description", "guest_role", "archived", "roles", "summary_field"],
+    ["id", "name", "description", "guest_role", "archived", "roles", "summary_field", "folder", "image_url"],
 )
 
 
@@ -131,6 +125,8 @@ def _index_from_elastic(index):
         archived=src.get("archived"),
         roles=_roles_from_elastic(src.get("roles", [])),
         summary_field=src.get("summary_field"),
+        folder=src.get("folder"),
+        image_url=src.get("image_url"),
     )
 
 
@@ -148,6 +144,8 @@ def create_index(
     name: Optional[str] = None,
     description: Optional[str] = None,
     admin: Optional[str] = None,
+    folder: Optional[str] = None,
+    image_url: Optional[str] = None,
 ) -> None:
     """
     Create a new index in elasticsearch and register it with this AmCAT instance
@@ -165,6 +163,8 @@ def create_index(
         name=name or index,
         description=description or "",
         admin=admin,
+        folder=folder,
+        image_url=image_url,
     )
 
 
@@ -174,6 +174,8 @@ def register_index(
     name: Optional[str] = None,
     description: Optional[str] = None,
     admin: Optional[str] = None,
+    folder: Optional[str] = None,
+    image_url: Optional[str] = None,
 ) -> None:
     """
     Register an existing elastic index with this AmCAT instance, i.e. create an entry in the system index
@@ -193,6 +195,8 @@ def register_index(
             roles=roles,
             description=description,
             guest_role=guest_role.name if guest_role is not None else "NONE",
+            folder=folder,
+            image_url=image_url,
         ),
     )
     refresh_index(system_index)
@@ -279,12 +283,16 @@ def modify_index(
     description: Optional[str] = None,
     guest_role: Optional[GuestRole] = None,
     archived: Optional[str] = None,
+    folder: Optional[str] = None,
+    image_url: Optional[str] = None,
 ):
     doc = dict(
         name=name,
         description=description,
         guest_role=guest_role.name if guest_role is not None else None,
         archived=archived,
+        folder=folder,
+        image_url=image_url,
     )
 
     doc = {x: v for (x, v) in doc.items() if v is not None}
@@ -574,29 +582,42 @@ def update_documents_by_query(index: str | list[str], query: dict, field: str, v
 
 
 def get_branding():
-    # We (ab)use the _global settings document for this, even if using summary_field for an icon url is a bit weird
+    # We (ab)use the _global settings document for this
     # (Maybe we should just add a nested object for more flexibility?)
     doc = es().get(
-        index=get_settings().system_index, id=GLOBAL_ROLES, source_includes=["name", "description", "summary_field"]
+        index=get_settings().system_index,
+        id=GLOBAL_ROLES,
+        source_includes=["name", "description", "image_url", "client_data", "external_url"],
     )
     return dict(
         server_name=doc["_source"].get("name"),
+        server_url=doc["_source"].get("external_url"),
         welcome_text=doc["_source"].get("description"),
-        server_icon=doc["_source"].get("summary_field"),
+        server_icon=doc["_source"].get("image_url"),
+        client_data=doc["_source"].get("client_data"),
     )
 
 
-def set_branding(server_name: Optional[str] = None, welcome_text: Optional[str] = None, server_icon: Optional[str] = None):
+def set_branding(
+    server_name: Optional[str] = None,
+    server_url: Optional[str] = None,
+    welcome_text: Optional[str] = None,
+    server_icon: Optional[str] = None,
+    client_data: Optional[str] = None,
+):
     """Change the branding info for this server. Set params to None to keep unchanged, or to '' to delete the entry"""
     doc = {}
     if server_name is not None:
         doc["name"] = server_name or None
+    if server_url is not None:
+        doc["external_url"] = server_url or None
     if welcome_text is not None:
         doc["description"] = welcome_text or None
     if server_icon is not None:
-        doc["summary_field"] = server_icon or None
+        doc["image_url"] = server_icon or None
+    if client_data is not None:
+        doc["client_data"] = client_data or None
     if not doc:
         # Nothing to do!
         return
-
     return es().update(index=get_settings().system_index, id=GLOBAL_ROLES, doc=doc)

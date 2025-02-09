@@ -1,19 +1,19 @@
 """API Endpoints for document and index management."""
 
+from datetime import datetime
 from http import HTTPStatus
 from typing import Annotated, Any, Literal
 
 import elasticsearch
 from elastic_transport import ApiError
-from fastapi import APIRouter, HTTPException, Response, status, Depends, Body
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from pydantic import BaseModel
-from datetime import datetime
 
-from amcat4 import index, fields as index_fields
+from amcat4 import fields as index_fields
+from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
-
+from amcat4.fields import field_stats, field_values
 from amcat4.index import refresh_system_index, remove_role, set_role
-from amcat4.fields import field_values, field_stats
 from amcat4.models import CreateField, FieldType, UpdateField
 
 app_index = APIRouter(prefix="/index", tags=["index"])
@@ -52,6 +52,8 @@ class NewIndex(BaseModel):
     name: str | None = None
     guest_role: RoleType | None = None
     description: str | None = None
+    folder: str | None = None
+    image_url: str | None = None
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
@@ -69,6 +71,8 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
             name=new_index.name,
             description=new_index.description,
             admin=current_user if current_user != "_admin" else None,
+            folder=new_index.folder,
+            image_url=new_index.image_url,
         )
     except ApiError as e:
         raise HTTPException(
@@ -85,6 +89,8 @@ class ChangeIndex(BaseModel):
     description: str | None = None
     guest_role: Literal["WRITER", "READER", "METAREADER", "NONE"] | None = None
     archive: bool | None = None
+    folder: str | None = None
+    image_url: str | None = None
 
 
 @app_index.put("/{ix}")
@@ -111,6 +117,8 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
         description=data.description,
         guest_role=guest_role,
         archived=archived,
+        folder=data.folder,
+        image_url=data.image_url,
         # remove_guest_role=remove_guest_role,
         # unarchive=unarchive,
     )
@@ -129,6 +137,8 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
         d["guest_role"] = index.GuestRole(d.get("guest_role", 0)).name
         d["description"] = d.get("description", "") or ""
         d["name"] = d.get("name", "") or ""
+        d["folder"] = d.get("folder", "") or ""
+        d["image_url"] = d.get("image_url")
         return d
     except index.IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
@@ -140,8 +150,10 @@ def archive_index(
     archived: Annotated[bool, Body(description="Boolean for setting archived to true or false")],
     user: str = Depends(authenticated_user),
 ):
-    """Archive or unarchive the index. When an index is archived, it restricts usage, and adds a timestamp for when
-    it was archived. An index can only be deleted if it has been archived for a specific amount of time."""
+    """
+    Archive or unarchive the index. When an index is archived, it restricts usage, and adds a timestamp for when
+    it was archived.
+    """
     check_role(user, index.Role.ADMIN, ix)
     try:
         d = index.get_index(ix)

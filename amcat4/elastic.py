@@ -10,14 +10,14 @@ Some things to note:
 """
 
 import functools
-
 import logging
 from typing import Optional
 
 from elasticsearch import Elasticsearch, NotFoundError
+
 from amcat4.config import get_settings
 
-SYSTEM_INDEX_VERSION = 1
+SYSTEM_INDEX_VERSION = 2
 
 SYSTEM_MAPPING = {
     "name": {"type": "text"},
@@ -25,6 +25,10 @@ SYSTEM_MAPPING = {
     "roles": {"type": "nested"},
     "summary_field": {"type": "keyword"},
     "guest_role": {"type": "keyword"},
+    "folder": {"type": "keyword"},
+    "image_url": {"type": "keyword"},
+    "branding": {"type": "object"},
+    "external_url": {"type": "keyword"},
 }
 
 
@@ -95,11 +99,21 @@ def _setup_elastic():
         raise CannotConnectElastic(f"Cannot connect to elasticsearch server {settings.elastic_host}")
     if elastic.indices.exists(index=settings.system_index):
         # Check index format version
-        if get_system_version(elastic) is None:
+        if version := get_system_version(elastic) is None:
             raise CannotConnectElastic(
                 f"System index {settings.elastic_host}::{settings.system_index} is corrupted or uses an "
                 f"old format. Please repair or migrate before continuing"
             )
+        if version < SYSTEM_INDEX_VERSION:
+            # Try to set mapping of each field, warn if not possible
+            for field, fieldtype in SYSTEM_MAPPING.items():
+                try:
+                    elastic.indices.put_mapping(
+                        index=settings.system_index,
+                        properties={field: fieldtype},
+                    )
+                except Exception as e:
+                    logging.warning(e)
 
     else:
         logging.info(f"Creating amcat4 system index: {settings.system_index}")
