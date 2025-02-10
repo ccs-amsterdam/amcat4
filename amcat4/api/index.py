@@ -39,6 +39,8 @@ def index_list(current_user: str = Depends(authenticated_user)):
             guest_role=index.Role(guest_role_int).name,
             description=ix_dict.get("description", ""),
             archived=ix_dict.get("archived", ""),
+            folder=ix_dict.get("folder", ""),
+            image_url=ix_dict.get("image_url", ""),
         )
         return ix_dict
 
