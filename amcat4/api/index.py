@@ -13,7 +13,7 @@ from amcat4 import fields as index_fields
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 from amcat4.fields import field_stats, field_values
-from amcat4.index import refresh_system_index, remove_role, set_role
+from amcat4.index import get_role, refresh_system_index, remove_role, set_role
 from amcat4.models import CreateField, FieldType, UpdateField
 
 app_index = APIRouter(prefix="/index", tags=["index"])
@@ -37,6 +37,7 @@ def index_list(current_user: str = Depends(authenticated_user)):
             id=ix_dict["id"],
             name=ix_dict["name"],
             guest_role=index.Role(guest_role_int).name,
+            user_role=index.Role(get_role(ix.id, current_user)).name,
             description=ix_dict.get("description", ""),
             archived=ix_dict.get("archived", ""),
             folder=ix_dict.get("folder", ""),
