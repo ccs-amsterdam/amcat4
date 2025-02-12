@@ -107,7 +107,7 @@ def list_known_indices(email: str | None = None) -> Iterable[Index]:
     check_role = not (email is None or get_global_role(email) == Role.ADMIN or get_settings().auth == "no_auth")
     for index in elasticsearch.helpers.scan(es(), index=get_settings().system_index, fields=[], _source=True):
         ix = _index_from_elastic(index)
-        if ix.name == GLOBAL_ROLES:
+        if ix.id == GLOBAL_ROLES:
             continue
         if (not check_role) or (ix.guest_role) or (email in ix.roles):
             yield ix
