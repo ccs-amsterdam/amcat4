@@ -1,9 +1,14 @@
 import functools
-from typing import Set, Optional
+from time import sleep
+from typing import Optional, Set
+
+from pytest import raises
 
 from amcat4 import query
+from amcat4.api.query import _standardize_filters, _standardize_queries
+from amcat4.fields import get_fields
+from amcat4.index import create_index, delete_index, refresh_index
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SnippetParams
-from amcat4.api.query import _standardize_queries, _standardize_filters
 from tests.conftest import upload
 
 
@@ -105,3 +110,31 @@ def test_query_multiple_index(index_docs, index):
 #     q = functools.partial(query_ids, index_docs)
 #     assert q(filters={"date": {"monthnr": "2"}}) == {1}
 #     assert q(filters={"date": {"dayofweek": "Monday"}}) == {0, 3}
+
+
+def test_reindex(index_docs, index_name):
+    # Re-indexing should error if destination does not exist
+    with raises(Exception):
+        query.reindex(source_index=index_docs, destination_index=index_name)
+    create_index(index_name)
+    task = query.reindex(source_index=index_docs, destination_index=index_name)
+    while True:
+        status = query.get_task_status(task["task"])
+        if status["completed"]:
+            break
+        sleep(0.1)
+    refresh_index(index_name)
+    assert query_ids(index_docs) == query_ids(index_name)
+    assert get_fields(index_docs) == get_fields(index_name)
+
+    delete_index(index_name)
+    create_index(index_name)
+    query.reindex(
+        source_index=index_docs,
+        destination_index=index_name,
+        filters={"cat": FilterSpec(values=["b"])},
+        wait_for_completion=True,
+    )
+
+    refresh_index(index_name)
+    assert query_ids(index_name) == {3}

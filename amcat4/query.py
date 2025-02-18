@@ -2,21 +2,16 @@
 All things query
 """
 
+import logging
 from math import ceil
+from typing import Any, Dict, Literal, Tuple, Union
 
-from typing import (
-    Union,
-    Any,
-    Dict,
-    Tuple,
-    Literal,
-)
-
-from amcat4.models import FieldSpec, FilterSpec, SortSpec
+from amcat4.fields import create_fields, get_fields
+from amcat4.index import update_documents_by_query, update_tag_by_query
+from amcat4.models import FieldSpec, FieldType, FilterSpec, SortSpec
 
 from .date_mappings import mappings
 from .elastic import es
-from amcat4.index import update_documents_by_query, update_tag_by_query
 
 
 def build_body(
@@ -290,3 +285,38 @@ def update_query(
 ):
     query = build_body(queries, filters, ids=ids)
     return update_documents_by_query(index=index, query=query["query"], field=field, value=value)
+
+
+def reindex(
+    source_index: str,
+    destination_index: str,
+    queries: dict[str, str] | None = None,
+    filters: dict[str, FilterSpec] | None = None,
+    wait_for_completion=False,
+):
+    """Start a reindex task.
+    This will first create any fields missing in the target index, and then start the reindex task.
+    If wait_for_completion is False (default), returns a {'task': task_id} dict
+    """
+    if not es().indices.exists(index=destination_index):
+        # Note: We could automatically create, but then also need to think about
+        #       name, roles, etc., so for now let client create first
+        raise Exception("Please create index before re-indexing!")
+
+    dest_fields = get_fields(destination_index)
+    fields: dict[str, FieldType] = {
+        field: definition.type for (field, definition) in get_fields(source_index).items() if field not in dest_fields
+    }
+    if fields:
+        logging.info(f"Creating fields {fields}")
+        create_fields(destination_index, fields)
+    source: dict = {"index": source_index}
+    if queries or filters:
+        source.update(build_body(queries, filters))
+    import json
+
+    return es().reindex(dest=dict(index=destination_index), source=source, wait_for_completion=wait_for_completion)
+
+
+def get_task_status(task_id):
+    return es().tasks.get(task_id=task_id)
