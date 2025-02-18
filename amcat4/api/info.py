@@ -5,9 +5,10 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from amcat4 import elastic
-from amcat4.api.auth import authenticated_admin, get_middlecat_config
+from amcat4.api.auth import authenticated_admin, authenticated_user, get_middlecat_config
 from amcat4.config import get_settings, validate_settings
 from amcat4.index import get_branding, set_branding
+from amcat4.query import get_task_status
 
 templates = Jinja2Templates(directory="templates")
 
@@ -58,7 +59,7 @@ class ChangeBranding(BaseModel):
 
 
 @app_info.put("/config/branding")
-def change_branding(data: ChangeBranding, user: str = Depends(authenticated_admin)):
+def change_branding(data: ChangeBranding, _user: str = Depends(authenticated_admin)):
     set_branding(
         server_icon=data.server_icon,
         server_name=data.server_name,
@@ -66,3 +67,8 @@ def change_branding(data: ChangeBranding, user: str = Depends(authenticated_admi
         client_data=data.client_data,
         server_url=data.server_url,
     )
+
+
+@app_info.get("/task/{taskId}")
+def task_status(taskId: str, _user: str = Depends(authenticated_user)):
+    return get_task_status(taskId)

@@ -1,15 +1,15 @@
 """API Endpoints for querying."""
 
-from typing import Annotated, Dict, List, Optional, Any, Union, Iterable, Literal
+from typing import Annotated, Any, Dict, Iterable, List, Literal, Mapping, Optional, Union
 
-from fastapi import APIRouter, HTTPException, status, Depends, Body
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic.main import BaseModel
 
-from amcat4 import query, aggregate
-from amcat4.aggregate import Axis, Aggregation
+from amcat4 import aggregate, query
+from amcat4.aggregate import Aggregation, Axis
 from amcat4.api.auth import authenticated_user, check_fields_access, check_role
 from amcat4.config import AuthOptions, get_settings
-from amcat4.index import Role, get_role, get_fields
+from amcat4.index import Role, get_fields, get_role
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec
 from amcat4.query import update_query, update_tag_query
 
@@ -96,7 +96,7 @@ def _standardize_queries(queries: str | list[str] | dict[str, str] | None = None
 
 
 def _standardize_filters(
-    filters: dict[str, FilterValue | list[FilterValue] | FilterSpec] | None = None
+    filters: Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None = None
 ) -> dict[str, FilterSpec] | None:
     """Convert filters to dict format: {field: {values: []}}."""
     if not filters:

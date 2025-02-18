@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from http import HTTPStatus
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Mapping
 
 import elasticsearch
 from elastic_transport import ApiError
@@ -14,7 +14,10 @@ from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
 from amcat4.fields import field_stats, field_values
 from amcat4.index import get_role, refresh_system_index, remove_role, set_role
-from amcat4.models import CreateField, FieldType, UpdateField
+from amcat4.models import CreateField, FieldType, FilterSpec, FilterValue, UpdateField
+from amcat4.query import reindex
+
+from .query import _standardize_filters, _standardize_queries
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 
@@ -432,3 +435,30 @@ def remove_index_user(ix: str, email: str, user: str = Depends(authenticated_use
 @app_index.get("/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def refresh_index(ix: str):
     index.refresh_index(ix)
+
+
+@app_index.post("/{ix}/reindex")
+def start_reindex(
+    ix: str,
+    destination: str = Body(..., description="Email address of the user to add"),
+    queries: Annotated[
+        str | list[str] | dict[str, str] | None,
+        Body(
+            description="Query/Queries to select documents to reindex. Value should be a single query string, a list of query strings, "
+            "or a dict of {'label': 'query'}",
+        ),
+    ] = None,
+    filters: Annotated[
+        Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None,
+        Body(
+            description="Field filters, should be a dict of field names to filter specifications,"
+            "which can be either a value, a list of values, or a FilterSpec dict",
+        ),
+    ] = None,
+    user: str = Depends(authenticated_user),
+):
+    check_role(user, index.Role.READER, ix)
+    check_role(user, index.Role.WRITER, destination)
+    filters = _standardize_filters(filters)
+    queries = _standardize_queries(queries)
+    return reindex(source_index=ix, destination_index=destination, queries=queries, filters=filters)
