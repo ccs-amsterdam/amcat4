@@ -16,16 +16,14 @@ We need to make sure that:
 
 import datetime
 import json
-from typing import Any, Iterator, Mapping, get_args, cast
-
+from typing import Any, Iterable, Iterator, Mapping, cast, get_args
 
 from elasticsearch import NotFoundError
 
 # from amcat4.api.common import py2dict
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import FieldType, CreateField, ElasticType, Field, UpdateField, FieldMetareaderAccess
-
+from amcat4.models import CreateField, ElasticType, Field, FieldMetareaderAccess, FieldType, UpdateField
 
 # given an elastic field type, Check if it is supported by AmCAT.
 # this is not just the inverse of TYPEMAP_AMCAT_TO_ES because some AmCAT types map to multiple elastic
@@ -132,6 +130,8 @@ def coerce_type(value: Any, type: FieldType):
     """
     if type == "date" and isinstance(value, datetime.date):
         return value.isoformat()
+    if type == "tag" and isinstance(value, Iterable):
+        return [str(val) for val in value]
     if type in ["text", "tag", "image", "video", "audio", "date"]:
         return str(value)
     if type in ["boolean"]:
@@ -140,7 +140,6 @@ def coerce_type(value: Any, type: FieldType):
         return float(value)
     if type in ["integer"]:
         return int(value)
-
     if type == "json":
         if isinstance(value, str):
             return value
