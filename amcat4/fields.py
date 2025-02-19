@@ -130,7 +130,7 @@ def coerce_type(value: Any, type: FieldType):
     """
     if type == "date" and isinstance(value, datetime.date):
         return value.isoformat()
-    if type == "tag" and isinstance(value, Iterable):
+    if type == "tag" and isinstance(value, Iterable) and not isinstance(value, str):
         return [str(val) for val in value]
     if type in ["text", "tag", "image", "video", "audio", "date"]:
         return str(value)
