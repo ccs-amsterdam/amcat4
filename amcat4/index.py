@@ -37,8 +37,7 @@ import hashlib
 import json
 import logging
 from enum import IntEnum
-from multiprocessing import Value
-from typing import Any, Iterable, Literal, Mapping, Optional
+from typing import Any, Iterable, Literal, Optional
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
@@ -46,8 +45,8 @@ from elasticsearch import NotFoundError
 # from amcat4.api.common import py2dict
 from amcat4.config import AuthOptions, get_settings
 from amcat4.elastic import es
-from amcat4.fields import coerce_type, create_fields, create_or_verify_tag_field, get_fields
-from amcat4.models import CreateField, Field, FieldType
+from amcat4.fields import coerce_type, create_or_verify_tag_field, get_fields
+from amcat4.models import Field
 
 
 class Role(IntEnum):
@@ -437,7 +436,6 @@ def create_id(document: dict, field_settings: dict[str, Field]) -> str:
 def upload_documents(
     index: str,
     documents: list[dict[str, Any]],
-    fields: Mapping[str, FieldType | CreateField] | None = None,
     op_type: Literal["create", "update"] = "create",
     raise_on_error=False,
 ):
@@ -449,8 +447,6 @@ def upload_documents(
     :param fields: A mapping of fieldname:UpdateField for field types
     :param op_type: Whether to 'index' new documents (default) or 'update' existing documents
     """
-    if fields:
-        create_fields(index, fields)
 
     def es_actions(index, documents, op_type):
         field_settings = get_fields(index)

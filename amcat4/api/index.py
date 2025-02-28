@@ -1,7 +1,6 @@
 """API Endpoints for document and index management."""
 
 from datetime import datetime
-from http import HTTPStatus
 from typing import Annotated, Any, Literal, Mapping
 
 import elasticsearch
@@ -9,12 +8,12 @@ from elastic_transport import ApiError
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 
-from amcat4 import fields as index_fields
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
-from amcat4.fields import field_stats, field_values
+from amcat4.api.fields import standardize_fields
+from amcat4.fields import set_fields
 from amcat4.index import get_role, refresh_system_index, remove_role, set_role
-from amcat4.models import CreateField, FieldType, FilterSpec, FilterValue, UpdateField
+from amcat4.models import Field, FieldType, FilterSpec, FilterValue, PartialField
 from amcat4.query import reindex
 
 from .query import _standardize_filters, _standardize_queries
@@ -188,7 +187,7 @@ def upload_documents(
     ix: str,
     documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
     fields: Annotated[
-        dict[str, FieldType | CreateField] | None,
+        Mapping[str, FieldType | PartialField] | None,
         Body(
             description="If a field in documents does not yet exist, you can create it on the spot. "
             "If you only need to specify the type, and use the default settings, "
@@ -214,7 +213,10 @@ def upload_documents(
         check_role(user, index.Role.WRITER, ix)
     else:
         check_role(user, index.Role.ADMIN, ix)
-    return index.upload_documents(ix, documents, fields, operation)
+    if fields:
+        fields = standardize_fields(fields)
+        set_fields(ix, fields)
+    return index.upload_documents(ix, documents, operation)
 
 
 @app_index.get("/{ix}/documents/{docid}")
@@ -284,79 +286,6 @@ def delete_document(ix: str, docid: str, user: str = Depends(authenticated_user)
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Document {ix}/{docid} not found",
         )
-
-
-@app_index.post("/{ix}/fields")
-def create_fields(
-    ix: str,
-    fields: Annotated[
-        dict[str, FieldType | CreateField],
-        Body(
-            description="Either a dictionary that maps field names to field specifications"
-            "({field: {type: 'text', identifier: True }}), "
-            "or a simplified version that only specifies the type ({field: type})"
-        ),
-    ],
-    user: str = Depends(authenticated_user),
-):
-    """
-    Create fields
-    """
-    check_role(user, index.Role.WRITER, ix)
-    index_fields.create_fields(ix, fields)
-    return "", HTTPStatus.NO_CONTENT
-
-
-@app_index.get("/{ix}/fields")
-def get_fields(ix: str, user: str = Depends(authenticated_user)):
-    """
-    Get the fields (columns) used in this index.
-
-    Returns a json array of {name, type} objects
-    """
-    check_role(user, index.Role.METAREADER, ix)
-    return index.get_fields(ix)
-
-
-@app_index.put("/{ix}/fields")
-def update_fields(
-    ix: str, fields: Annotated[dict[str, UpdateField], Body(description="")], user: str = Depends(authenticated_user)
-):
-    """
-    Update the field settings
-    """
-    check_role(user, index.Role.WRITER, ix)
-
-    index_fields.update_fields(ix, fields)
-    return "", HTTPStatus.NO_CONTENT
-
-
-@app_index.get("/{ix}/fields/{field}/values")
-def get_field_values(ix: str, field: str, user: str = Depends(authenticated_user)):
-    """
-    Get unique values for a specific field. Should mainly/only be used for tag fields.
-    Main purpose is to provide a list of values for a dropdown menu.
-
-    TODO: at the moment 'only' returns top 2000 values. Currently throws an
-    error if there are more than 2000 unique values. We can increase this limit, but
-    there should be a limit. Querying could be an option, but not sure if that is
-    efficient, since elastic has to aggregate all values first.
-    """
-    check_role(user, index.Role.READER, ix)
-    values = field_values(ix, field, size=2001)
-    if len(values) > 2000:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Field {field} has more than 2000 unique values",
-        )
-    return values
-
-
-@app_index.get("/{ix}/fields/{field}/stats")
-def get_field_stats(ix: str, field: str, user: str = Depends(authenticated_user)):
-    """Get statistics for a specific value. Only works for numeric (incl date) fields."""
-    check_role(user, index.Role.READER, ix)
-    return field_stats(ix, field)
 
 
 @app_index.get("/{ix}/users")

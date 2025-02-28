@@ -6,9 +6,9 @@ import logging
 from math import ceil
 from typing import Any, Dict, Literal, Tuple, Union
 
-from amcat4.fields import create_fields, get_fields
+from amcat4.fields import get_fields, set_fields
 from amcat4.index import update_documents_by_query, update_tag_by_query
-from amcat4.models import FieldSpec, FieldType, FilterSpec, SortSpec
+from amcat4.models import Field, FieldSpec, FieldType, FilterSpec, SortSpec
 
 from .date_mappings import mappings
 from .elastic import es
@@ -295,6 +295,7 @@ def reindex(
     wait_for_completion=False,
 ):
     """Start a reindex task.
+
     This will first create any fields missing in the target index, and then start the reindex task.
     If wait_for_completion is False (default), returns a {'task': task_id} dict
     """
@@ -304,16 +305,13 @@ def reindex(
         raise Exception("Please create index before re-indexing!")
 
     dest_fields = get_fields(destination_index)
-    fields: dict[str, FieldType] = {
-        field: definition.type for (field, definition) in get_fields(source_index).items() if field not in dest_fields
-    }
+    fields: dict[str, Field] = {name: field for (name, field) in get_fields(source_index).items() if field not in dest_fields}
     if fields:
         logging.info(f"Creating fields {fields}")
-        create_fields(destination_index, fields)
+        set_fields(destination_index, fields)
     source: dict = {"index": source_index}
     if queries or filters:
         source.update(build_body(queries, filters))
-    import json
 
     return es().reindex(dest=dict(index=destination_index), source=source, wait_for_completion=wait_for_completion)
 

@@ -1,22 +1,25 @@
 from typing import Any
+
 import pytest
 import responses
 from fastapi.testclient import TestClient
 
 from amcat4 import api
-from amcat4.config import get_settings, AuthOptions
+from amcat4.api.fields import standardize_fields
+from amcat4.config import AuthOptions, get_settings
 from amcat4.elastic import es
+from amcat4.fields import set_fields
 from amcat4.index import (
+    Role,
     create_index,
     delete_index,
-    Role,
-    refresh_index,
     delete_user,
+    refresh_index,
     remove_global_role,
     set_global_role,
     upload_documents,
 )
-from amcat4.models import CreateField, FieldType
+from amcat4.models import FieldType, PartialField
 from tests.middlecat_keypair import PUBLIC_KEY
 
 UNITS = [
@@ -136,11 +139,13 @@ def guest_index():
     delete_index(index, ignore_missing=True)
 
 
-def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType | CreateField] | None = None):
+def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType | PartialField] | None = None):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
-    upload_documents(index, docs, fields)
+    if fields:
+        set_fields(index, standardize_fields(fields))
+    upload_documents(index, docs)
     refresh_index(index)
 
 

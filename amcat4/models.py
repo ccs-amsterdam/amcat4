@@ -1,8 +1,8 @@
+from typing import Annotated, Any, Literal
+
 import pydantic
 from pydantic import BaseModel, model_validator
-from typing import Annotated, Any, Literal
 from typing_extensions import Self
-
 
 FieldType = Literal[
     "text",
@@ -67,43 +67,34 @@ class FieldMetareaderAccess(BaseModel):
     max_snippet: SnippetParams | None = None
 
 
-class Field(BaseModel):
-    """Settings for a field. Some settings, such as metareader, have a strict type because they are used
-    server side. Others, such as client_settings, are free-form and can be used by the client to store settings."""
-
-    type: FieldType
-    elastic_type: ElasticType
-    identifier: bool = False
-    metareader: FieldMetareaderAccess = FieldMetareaderAccess()
-    client_settings: dict[str, Any] = {}
-
-    @model_validator(mode="after")
-    def validate_type(self) -> Self:
-        if self.identifier:
-            # Identifiers have to be immutable. Instead of checking this in every endpoint that performs updates,
-            # we can disable it for certain types that are known to be mutable.
-            for forbidden_type in ["tag"]:
-                if self.type == forbidden_type:
-                    raise ValueError(f"Field type {forbidden_type} cannot be used as an identifier")
-        return self
+class FieldValue(BaseModel):
+    value: str
+    description: str | None = None
 
 
-class CreateField(BaseModel):
-    """Model for creating a field"""
+class PartialField(BaseModel):
+    """Class for updates to a field"""
 
-    type: FieldType
+    type: FieldType | None = None
     elastic_type: ElasticType | None = None
     identifier: bool = False
     metareader: FieldMetareaderAccess | None = None
     client_settings: dict[str, Any] | None = None
+    description: str | None = None
+    values: list[FieldValue] | None = None
 
 
-class UpdateField(BaseModel):
-    """Model for updating a field"""
+class Field(PartialField):
+    """Settings for a field. Some settings, such as metareader, have a strict type because they are used
+    server side. Others, such as client_settings, are free-form and can be used by the client to store settings."""
 
-    type: FieldType | None = None
-    metareader: FieldMetareaderAccess | None = None
-    client_settings: dict[str, Any] | None = None
+    # Note: Python forces subclasses to have default values if superclass had them
+    #       As a workaround, add a dummy default value, but force a value in the constructor
+    type: FieldType = None  # type: ignore
+    elastic_type: ElasticType = None  # type: ignore
+
+    def __init__(self, type: FieldType, elastic_type: ElasticType, **data):
+        super().__init__(type=type, elastic_type=elastic_type, **data)
 
 
 FilterValue = str | int
