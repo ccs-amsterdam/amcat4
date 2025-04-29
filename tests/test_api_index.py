@@ -117,7 +117,7 @@ def test_fields_upload(client: TestClient, user: str, index: str):
     }
     assert (get_json(client, f"/index/{index}/fields", user=user) or {})["x"]["type"] == "keyword"
     elastic.es().indices.refresh()
-    assert set(get_json(client, f"/index/{index}/fields/x/values", user=user) or []) == {
+    assert {a["value"] for a in get_json(client, f"/index/{index}/fields/x/values", user=user) or []} == {
         "a",
         "b",
     }

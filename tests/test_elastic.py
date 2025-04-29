@@ -1,19 +1,29 @@
 from datetime import datetime
+from typing import Mapping
 
 import pytest
 
+from amcat4.fields import field_values, get_fields, set_fields
 from amcat4.index import (
-    refresh_index,
-    update_documents_by_query,
-    upload_documents,
     get_document,
+    refresh_index,
     update_document,
+    update_documents_by_query,
     update_tag_by_query,
+    upload_documents,
 )
-from amcat4.fields import create_fields, get_fields, field_values
-from amcat4.models import CreateField, FieldSpec
+from amcat4.models import FieldSpec, FieldType, PartialField
 from amcat4.query import query_documents
 from tests.conftest import upload
+
+
+def create_fields(ix: str, fields: Mapping[str, FieldType | PartialField]):
+    set_fields(ix, {k: PartialField(type=v) if isinstance(v, str) else v for (k, v) in fields.items()})
+
+
+def do_upload_documents(index, docs, fields: Mapping[str, FieldType | PartialField]):
+    create_fields(index, fields)
+    return upload_documents(index, docs)
 
 
 def test_upload_retrieve_document(index):
@@ -25,7 +35,7 @@ def test_upload_retrieve_document(index):
         _id="test",
         term_tfidf=[{"term": "test", "value": 0.2}, {"term": "value", "value": 0.3}],
     )
-    upload_documents(index, [a], fields={"text": "text", "title": "text", "date": "date", "term_tfidf": "object"})
+    do_upload_documents(index, [a], fields={"text": "text", "title": "text", "date": "date", "term_tfidf": "object"})
     d = get_document(index, "test")
     assert d["title"] == a["title"]
     assert d["term_tfidf"] == a["term_tfidf"]
@@ -45,27 +55,10 @@ def test_data_coerced(index):
     assert isinstance(d["title"], str)
 
 
-def test_fields(index):
-    """Can we get the fields from an index"""
-    create_fields(index, {"title": "text", "date": "date", "text": "text", "url": "keyword"})
-    fields = get_fields(index)
-    assert set(fields.keys()) == {"title", "date", "text", "url"}
-    assert fields["title"].type == "text"
-    assert fields["date"].type == "date"
-
-    # default settings
-    assert fields["date"].identifier is False
-    assert fields["date"].client_settings is not None
-
-    # default settings depend on the type
-    assert fields["date"].metareader.access == "read"
-    assert fields["text"].metareader.access == "none"
-
-
 def test_values(index):
     """Can we get values for a specific field"""
     upload(index, [dict(bla=x) for x in ["odd", "even", "even"] * 10], fields={"bla": "keyword"})
-    assert set(field_values(index, "bla", 10)) == {"odd", "even"}
+    assert {fv.value for fv in field_values(index, "bla", 10)} == {"odd", "even"}
 
 
 def test_update(index_docs):
@@ -113,7 +106,7 @@ def test_add_tag(index_docs):
 
 def test_upload_without_identifiers(index):
     doc = {"title": "titel", "text": "text", "date": datetime(2020, 1, 1)}
-    res = upload_documents(index, [doc], fields={"title": "text", "text": "text", "date": "date"})
+    res = do_upload_documents(index, [doc], fields={"title": "text", "text": "text", "date": "date"})
     assert res["successes"] == 1
     _assert_n(index, 1)
 
@@ -125,7 +118,7 @@ def test_upload_without_identifiers(index):
 
 def test_upload_with_explicit_ids(index):
     doc = {"_id": "1", "title": "titel", "text": "text", "date": datetime(2020, 1, 1)}
-    res = upload_documents(index, [doc], fields={"title": "text", "text": "text", "date": "date"})
+    res = do_upload_documents(index, [doc], fields={"title": "text", "text": "text", "date": "date"})
     assert res["successes"] == 1
 
     # this does skip docs with same id
@@ -136,7 +129,7 @@ def test_upload_with_explicit_ids(index):
 
 def test_upload_with_identifiers(index):
     doc = {"url": "http://", "text": "text"}
-    res = upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True), "text": "text"})
+    res = do_upload_documents(index, [doc], fields={"url": PartialField(type="keyword", identifier=True), "text": "text"})
     assert res["successes"] == 1
     _assert_n(index, 1)
 
@@ -159,22 +152,22 @@ def test_upload_with_identifiers(index):
 def test_invalid_adding_identifiers(index):
     # identifiers can only be added if (1) the index already uses identifiers or (2) the index is still empty (no docs)
     doc = {"text": "text"}
-    upload_documents(index, [doc], fields={"text": "text"})
+    do_upload_documents(index, [doc], fields={"text": "text"})
     refresh_index(index)
 
     # adding an identifier to an existing index should fail
     doc = {"url": "http://", "text": "text"}
     with pytest.raises(ValueError):
-        upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True)})
+        do_upload_documents(index, [doc], fields={"url": PartialField(type="keyword", identifier=True)})
 
 
 def test_valid_adding_identifiers(index):
     doc = {"text": "text"}
-    upload_documents(index, [doc], fields={"text": CreateField(type="text", identifier=True)})
+    do_upload_documents(index, [doc], fields={"text": PartialField(type="text", identifier=True)})
 
     # adding an additional identifier to an existing index should succeed if the index already has identifiers
     doc = {"url": "http://", "text": "text"}
-    res = upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True)})
+    res = do_upload_documents(index, [doc], fields={"url": PartialField(type="keyword", identifier=True)})
 
     # the document should have been added because its not a full duplicate (in first doc url was empty)
     assert res["successes"] == 1

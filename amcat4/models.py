@@ -70,6 +70,7 @@ class FieldMetareaderAccess(BaseModel):
 class FieldValue(BaseModel):
     value: str
     description: str | None = None
+    n: int | None = None
 
 
 class PartialField(BaseModel):

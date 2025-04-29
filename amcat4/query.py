@@ -305,7 +305,7 @@ def reindex(
         raise Exception("Please create index before re-indexing!")
 
     dest_fields = get_fields(destination_index)
-    fields: dict[str, Field] = {name: field for (name, field) in get_fields(source_index).items() if field not in dest_fields}
+    fields: dict[str, Field] = {name: field for (name, field) in get_fields(source_index).items() if name not in dest_fields}
     if fields:
         logging.info(f"Creating fields {fields}")
         set_fields(destination_index, fields)

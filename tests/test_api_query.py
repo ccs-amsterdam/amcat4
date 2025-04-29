@@ -1,8 +1,8 @@
 from amcat4.index import Role, set_role
-from amcat4.models import CreateField, FieldSpec
+from amcat4.models import FieldSpec, PartialField
 from amcat4.query import query_documents
 from tests.conftest import upload
-from tests.tools import build_headers, check, post_json, dictset
+from tests.tools import build_headers, check, dictset, post_json
 
 
 def test_query_post(client, index_docs, user):
@@ -123,9 +123,9 @@ def test_multiple_index(client, index_docs, index, user):
         index,
         [{"text": "also a text", "i": -1, "cat": "c"}],
         fields={
-            "text": CreateField(type="text"),
-            "cat": CreateField(type="keyword"),
-            "i": CreateField(type="integer"),
+            "text": PartialField(type="text"),
+            "cat": PartialField(type="keyword"),
+            "i": PartialField(type="integer"),
         },
     )
     indices = f"{index},{index_docs}"

@@ -16,14 +16,14 @@ We need to make sure that:
 
 import datetime
 import json
-from typing import Any, Iterable, Iterator, Mapping, cast, get_args
+from typing import Any, Iterable, Iterator, List, Mapping, Sequence, cast, get_args
 
 from elasticsearch import NotFoundError
 
 # from amcat4.api.common import py2dict
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import ElasticType, Field, FieldMetareaderAccess, FieldType, PartialField
+from amcat4.models import ElasticType, Field, FieldMetareaderAccess, FieldType, FieldValue, PartialField
 
 # given an elastic field type, Check if it is supported by AmCAT.
 # this is not just the inverse of TYPEMAP_AMCAT_TO_ES because some AmCAT types map to multiple elastic
@@ -186,7 +186,6 @@ def set_fields(index: str, fields: Mapping[str, PartialField]):
     existing_fields = get_fields(index)
     updated_fields = {name: field.model_copy() for (name, field) in existing_fields.items()}
     new_elastic_fields_mapping: dict[str, Any] = {}
-    amcat_field_updates: dict[str, Any] = {}
     identifiers_have_changed = False
 
     for name, field in fields.items():
@@ -207,7 +206,6 @@ def set_fields(index: str, fields: Mapping[str, PartialField]):
 
     if len(new_elastic_fields_mapping) > 0:
         es().indices.put_mapping(index=index, properties=new_elastic_fields_mapping)
-
     if updated_fields != existing_fields:
         es().update(
             index=get_settings().system_index,
@@ -257,12 +255,10 @@ def get_fields(index: str) -> dict[str, Field]:
             # skip over unsupported elastic fields.
             # (TODO: also return warning to client?)
             continue
-
         if field not in system_index_fields:
             fields[field] = _set_new_field_defaults(PartialField(type=type))
         else:
             fields[field] = system_index_fields[field]
-
     return fields
 
 
@@ -277,14 +273,14 @@ def create_or_verify_tag_field(index: str | list[str], field: str):
             if current_fields[field].type != "tag":
                 raise ValueError(f"Field '{field}' already exists in index '{ix}' and is not a tag field")
 
-    else:
-        add_to_indices.append(ix)
+        else:
+            add_to_indices.append(ix)
 
     for ix in add_to_indices:
         set_fields(index=ix, fields={field: PartialField(type="tag")})
 
 
-def field_values(index: str, field: str, size: int = 2000) -> list[str]:
+def field_values(index: str, field: str, size: int = 2000) -> List[FieldValue]:
     """
     Get the values for a given field (e.g. to populate list of filter values on keyword field)
     This combines the values from the metadata (value + name + description) and from elastic (value + n)
@@ -296,9 +292,20 @@ def field_values(index: str, field: str, size: int = 2000) -> list[str]:
     :param field: The field name
     :return: A list of values
     """
+    # Get declared field values
+    if f := get_fields(index).get(field):
+        values = {v.value: v for v in f.values or []}
+    else:
+        values = {}
+
+    # Add actual field values to declared values
     aggs = {"unique_values": {"terms": {"field": field, "size": size}}}
-    r = es().search(index=index, size=0, aggs=aggs)
-    return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]
+    for bucket in es().search(index=index, size=0, aggs=aggs)["aggregations"]["unique_values"]["buckets"]:
+        if bucket["key"] in values:
+            values[bucket["key"]].n = bucket["doc_count"]
+        else:
+            values[bucket["key"]] = FieldValue(value=bucket["key"], n=bucket["doc_count"])
+    return sorted(values.values(), key=lambda fv: fv.n or 0, reverse=True)
 
 
 def field_stats(index: str, field: str) -> list[str]:
