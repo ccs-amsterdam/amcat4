@@ -9,9 +9,9 @@ from amcat4 import aggregate, query
 from amcat4.aggregate import Aggregation, Axis
 from amcat4.api.auth import authenticated_user, check_fields_access, check_role
 from amcat4.config import AuthOptions, get_settings
-from amcat4.index import Role, get_fields, get_role
+from amcat4.index import Role, delete_documents_by_query, get_fields, get_role
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec
-from amcat4.query import update_query, update_tag_query
+from amcat4.query import delete_query, update_query, update_tag_query
 
 app_query = APIRouter(prefix="/index", tags=["query"])
 
@@ -396,3 +396,33 @@ def update_by_query(
     """
     check_role(user, Role.WRITER, index)
     return update_query(index, field, value, _standardize_queries(queries), _standardize_filters(filters))
+
+
+
+
+@app_query.post("/{index}/delete_by_query")
+def delete_by_query(
+    index: str,
+    queries: Annotated[
+        str | list[str] | dict[str, str] | None,
+        Body(
+            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
+            "or a dict of {'label': 'query'}",
+        ),
+    ] = None,
+    filters: Annotated[
+        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
+        Body(
+            description="Field filters, should be a dict of field names to filter specifications,"
+            "which can be either a value, a list of values, or a FilterSpec dict",
+        ),
+    ] = None,
+    user: str = Depends(authenticated_user),
+):
+    """
+    Update documents by query.
+
+    Select documents using queries and/or filters, and specify a field and new value.
+    """
+    check_role(user, Role.WRITER, index)
+    return delete_query(index, _standardize_queries(queries), _standardize_filters(filters))

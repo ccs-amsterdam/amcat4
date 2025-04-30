@@ -3,6 +3,7 @@ from datetime import datetime
 import pytest
 
 from amcat4.index import (
+    delete_documents_by_query,
     refresh_index,
     update_documents_by_query,
     upload_documents,
@@ -14,6 +15,7 @@ from amcat4.fields import create_fields, get_fields, field_values
 from amcat4.models import CreateField, FieldSpec
 from amcat4.query import query_documents
 from tests.conftest import upload
+from tests.tools import refresh
 
 
 def test_upload_retrieve_document(index):
@@ -86,6 +88,16 @@ def test_update_by_query(index_docs):
     update_documents_by_query(index_docs, query=dict(term={"cat": dict(value="b")}), field="subcat", value=None)
     assert cats() == {"0": "z", "1": "z", "2": "z", "3": None}
     assert "subcat" not in get_document(index_docs, "3").keys()
+
+
+def test_delete_by_query(index_docs):
+    def ids():
+        refresh_index(index_docs)
+        res = query_documents(index_docs)
+        return {doc["_id"] for doc in (res.data if res else [])}
+    assert ids() == {'0','1','2','3'}
+    delete_documents_by_query(index_docs, query=dict(term={"cat": dict(value="a")}))
+    assert ids() == {'3'}
 
 
 def test_add_tag(index_docs):

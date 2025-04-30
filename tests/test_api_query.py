@@ -1,4 +1,4 @@
-from amcat4.index import Role, set_role
+from amcat4.index import Role, refresh_index, set_role
 from amcat4.models import CreateField, FieldSpec
 from amcat4.query import query_documents
 from tests.conftest import upload
@@ -220,15 +220,51 @@ def test_query_tags(client, index_docs, user):
     assert tags() == {"1": ["y"], "2": ["x", "y"]}
 
 
-def test_api_update_by_query(client, index_docs, admin):
+def test_api_update_by_query(client, index_docs, user):
     def cats():
         res = query_documents(index_docs, fields=[FieldSpec(name="cat"), FieldSpec(name="subcat")])
         return {doc["_id"]: doc.get("subcat") for doc in (res.data if res else [])}
 
+    # Delete requires WRITER privs
+    set_role(index_docs, user, Role.READER)
     res = client.post(
         f"/index/{index_docs}/update_by_query",
         json=dict(field="subcat", value="z", filters=dict(cat="a")),
-        headers=build_headers(user=admin),
+        headers=build_headers(user=user),
+    )
+    assert res.status_code == 401
+
+    set_role(index_docs, user, Role.WRITER)
+    res = client.post(
+        f"/index/{index_docs}/update_by_query",
+        json=dict(field="subcat", value="z", filters=dict(cat="a")),
+        headers=build_headers(user=user),
     )
     res.raise_for_status()
     assert cats() == {"0": "z", "1": "z", "2": "z", "3": "y"}
+
+
+def test_api_delete_by_query(client, index_docs, user):
+    def ids():
+        refresh_index(index_docs)
+        res = query_documents(index_docs)
+        return {doc["_id"] for doc in (res.data if res else [])}
+
+    # Delete requires WRITER privs
+    set_role(index_docs, user, Role.READER)
+    res = client.post(
+        f"/index/{index_docs}/delete_by_query",
+        json=dict(filters=dict(cat="a")),
+        headers=build_headers(user=user),
+    )
+    assert res.status_code == 401
+
+    set_role(index_docs, user, Role.WRITER)
+    res = client.post(
+        f"/index/{index_docs}/delete_by_query",
+        json=dict(filters=dict(cat="a")),
+        headers=build_headers(user=user),
+    )
+    res.raise_for_status()
+    assert ids() == {'3'}
+

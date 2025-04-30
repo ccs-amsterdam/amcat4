@@ -7,7 +7,7 @@ from math import ceil
 from typing import Any, Dict, Literal, Tuple, Union
 
 from amcat4.fields import create_fields, get_fields
-from amcat4.index import update_documents_by_query, update_tag_by_query
+from amcat4.index import delete_documents_by_query, update_documents_by_query, update_tag_by_query
 from amcat4.models import FieldSpec, FieldType, FilterSpec, SortSpec
 
 from .date_mappings import mappings
@@ -285,6 +285,16 @@ def update_query(
 ):
     query = build_body(queries, filters, ids=ids)
     return update_documents_by_query(index=index, query=query["query"], field=field, value=value)
+
+
+def delete_query(
+    index: str | list[str],
+    queries: dict[str, str] | None = None,
+    filters: dict[str, FilterSpec] | None = None,
+    ids: list[str] | None = None,
+):
+    query = build_body(queries, filters, ids=ids)
+    return delete_documents_by_query(index=index, query=query["query"])
 
 
 def reindex(

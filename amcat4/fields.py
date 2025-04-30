@@ -373,7 +373,3 @@ def field_stats(index: str, field: str) -> list[str]:
     r = es().search(index=index, size=0, aggs=aggs)
     return r["aggregations"]["facets"]
 
-
-def update_by_query(index: str | list[str], script: str, query: dict, params: dict | None = None):
-    script_dict = dict(source=script, lang="painless", params=params or {})
-    es().update_by_query(index=index, script=script_dict, **query)

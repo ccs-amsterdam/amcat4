@@ -580,6 +580,9 @@ def update_documents_by_query(index: str | list[str], query: dict, field: str, v
         )
     return es().update_by_query(index=index, query=query, script=script, refresh=True)
 
+def delete_documents_by_query(index: str | list[str], query: dict):
+    return es().delete_by_query(index=index, query=query)
+
 
 def get_branding():
     # We (ab)use the _global settings document for this
