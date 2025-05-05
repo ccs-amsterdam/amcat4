@@ -96,7 +96,7 @@ def _standardize_queries(queries: str | list[str] | dict[str, str] | None = None
 
 
 def _standardize_filters(
-    filters: Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None = None
+    filters: Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None = None,
 ) -> dict[str, FilterSpec] | None:
     """Convert filters to dict format: {field: {values: []}}."""
     if not filters:
@@ -372,7 +372,7 @@ def query_update_tags(
 def update_by_query(
     index: str,
     field: Annotated[str, Body(description="Field to update")],
-    value: Annotated[str | None, Body(description="New value for the field, or null/None to delete field")],
+    value: Annotated[str | int | float | None, Body(description="New value for the field, or null/None to delete field")],
     queries: Annotated[
         str | list[str] | dict[str, str] | None,
         Body(
@@ -387,6 +387,7 @@ def update_by_query(
             "which can be either a value, a list of values, or a FilterSpec dict",
         ),
     ] = None,
+    ids: Optional[List[str]] = Body(None, description="Document IDs of documents to delete"),
     user: str = Depends(authenticated_user),
 ):
     """
@@ -395,9 +396,7 @@ def update_by_query(
     Select documents using queries and/or filters, and specify a field and new value.
     """
     check_role(user, Role.WRITER, index)
-    return update_query(index, field, value, _standardize_queries(queries), _standardize_filters(filters))
-
-
+    return update_query(index, field, value, _standardize_queries(queries), _standardize_filters(filters), ids)
 
 
 @app_query.post("/{index}/delete_by_query")
@@ -417,6 +416,7 @@ def delete_by_query(
             "which can be either a value, a list of values, or a FilterSpec dict",
         ),
     ] = None,
+    ids: Optional[List[str]] = Body(None, description="Document IDs of documents to delete"),
     user: str = Depends(authenticated_user),
 ):
     """
@@ -425,4 +425,4 @@ def delete_by_query(
     Select documents using queries and/or filters, and specify a field and new value.
     """
     check_role(user, Role.WRITER, index)
-    return delete_query(index, _standardize_queries(queries), _standardize_filters(filters))
+    return delete_query(index, _standardize_queries(queries), _standardize_filters(filters), ids)
