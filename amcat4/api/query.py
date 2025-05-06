@@ -64,9 +64,9 @@ def get_or_validate_allowed_fields(
                 allowed_fields.append(FieldSpec(name=field))
             elif role == Role.METAREADER:
                 metareader = index_fields[field].metareader
-                if metareader.access == "read":
+                if metareader and metareader.access == "read":
                     allowed_fields.append(FieldSpec(name=field))
-                if metareader.access == "snippet":
+                if metareader and metareader.access == "snippet":
                     allowed_fields.append(FieldSpec(name=field, snippet=metareader.max_snippet))
             else:
                 raise HTTPException(
@@ -96,7 +96,7 @@ def _standardize_queries(queries: str | list[str] | dict[str, str] | None = None
 
 
 def _standardize_filters(
-    filters: Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None = None
+    filters: Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None = None,
 ) -> dict[str, FilterSpec] | None:
     """Convert filters to dict format: {field: {values: []}}."""
     if not filters:
