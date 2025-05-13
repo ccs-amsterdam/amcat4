@@ -58,6 +58,107 @@ def test_metareader_read(client: TestClient, admin, index_docs):
     check_allowed(client, index_docs, field=snippet, allowed=True)
 
 
+def test_metareader_aggregation(client: TestClient, admin, index_docs):
+    """
+    Test that metareader users can use fields they have access to for aggregation
+    """
+    create_index_metareader(client, index_docs, admin)
+    client.put(
+        f"/index/{index_docs}/fields",
+        headers=build_headers(admin),
+        json={"cat": {"metareader": {"access": "read"}}},
+    )
+    client.put(
+        f"/index/{index_docs}/fields",
+        headers=build_headers(admin),
+        json={"text": {"metareader": {"access": "none"}}},
+    )
+    response = post_json(
+        client,
+        f"/index/{index_docs}/aggregate",
+        user="meta@reader.com",
+        expected=200,
+        json={"axes": [{"field": "cat"}]},
+    )
+    assert "data" in response
+    assert any(item.get("cat") == "a" for item in response["data"])
+
+    # But metareader should not be able to aggregate on "text" field
+    response = client.post(
+        f"/index/{index_docs}/aggregate",
+        headers=build_headers("meta@reader.com"),
+        json={"axes": [{"field": "text"}]},
+    )
+    assert response.status_code == 401
+    assert "metareader cannot read text" in response.json()["detail"].lower()
+
+    # Metareader should be able to use aggregation functions on fields they have access to
+    client.put(
+        f"/index/{index_docs}/fields",
+        headers=build_headers(admin),
+        json={"i": {"metareader": {"access": "read"}}},
+    )
+    response = post_json(
+        client,
+        f"/index/{index_docs}/aggregate",
+        user="meta@reader.com",
+        expected=200,
+        json={"aggregations": [{"field": "i", "function": "avg"}]},
+    )
+    assert "data" in response
+    assert "avg_i" in response["data"][0]
+
+    # But not on fields they have no access
+    client.put(
+        f"/index/{index_docs}/fields",
+        headers=build_headers(admin),
+        json={"i": {"metareader": {"access": "none"}}},
+    )
+    response = client.post(
+        f"/index/{index_docs}/aggregate",
+        headers=build_headers("meta@reader.com"),
+        json={"aggregations": [{"field": "i", "function": "avg"}]},
+    )
+    assert response.status_code == 401
+    assert "metareader cannot read i" in response.json()["detail"].lower()
+
+
+def test_metareader_field_stats(client: TestClient, admin, index_docs):
+    """
+    Test that metareader users can get field statistics for fields they have access to
+    """
+    create_index_metareader(client, index_docs, admin)
+
+    client.put(
+        f"/index/{index_docs}/fields",
+        headers=build_headers(admin),
+        json={"i": {"metareader": {"access": "read"}}},
+    )
+    client.put(
+        f"/index/{index_docs}/fields",
+        headers=build_headers(admin),
+        json={"date": {"metareader": {"access": "none"}}},
+    )
+    response = client.get(
+        f"/index/{index_docs}/fields/i/stats",
+        headers=build_headers("meta@reader.com"),
+    )
+    assert response.status_code == 200
+    stats = response.json()
+    assert "count" in stats
+    assert "min" in stats
+    assert "max" in stats
+    assert "avg" in stats
+
+    # Metareader should not be able to get stats for "date" field
+    response = client.get(
+        f"/index/{index_docs}/fields/date/stats",
+        headers=build_headers("meta@reader.com"),
+    )
+    assert response.status_code == 401
+    assert "metareader cannot" in response.json()["detail"].lower()
+
+
 def test_metareader_snippet(client: TestClient, admin, index_docs):
     """
     Set text field to metareader_access=snippet[50;1;20]
