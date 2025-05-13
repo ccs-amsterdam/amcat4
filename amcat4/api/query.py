@@ -302,8 +302,22 @@ def query_aggregate_post(
     """
 
     indices = index.split(",")
-    for index in indices:
-        check_role(user, Role.READER, index)
+
+    fields_to_check = []
+
+    if axes:
+        for axis in axes:
+            if axis.field != "_query":
+                fields_to_check.append(FieldSpec(name=axis.field))
+
+    if aggregations:
+        for agg in aggregations:
+            fields_to_check.append(FieldSpec(name=agg.field))
+
+    for index_name in indices:
+        if fields_to_check:
+            check_fields_access(index_name, user, fields_to_check)
+
     _axes = [Axis(**x.model_dump()) for x in axes] if axes else []
     _aggregations = [Aggregation(**x.model_dump()) for x in aggregations] if aggregations else []
 

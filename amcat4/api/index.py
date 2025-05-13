@@ -11,10 +11,10 @@ from pydantic import BaseModel
 
 from amcat4 import fields as index_fields
 from amcat4 import index
-from amcat4.api.auth import authenticated_user, authenticated_writer, check_role
+from amcat4.api.auth import authenticated_user, authenticated_writer, check_role, check_fields_access
 from amcat4.fields import field_stats, field_values
 from amcat4.index import get_role, refresh_system_index, remove_role, set_role
-from amcat4.models import CreateField, FieldType, FilterSpec, FilterValue, UpdateField
+from amcat4.models import CreateField, FieldType, FieldSpec, FilterSpec, FilterValue, UpdateField
 from amcat4.query import reindex
 
 from .query import _standardize_filters, _standardize_queries
@@ -355,7 +355,7 @@ def get_field_values(ix: str, field: str, user: str = Depends(authenticated_user
 @app_index.get("/{ix}/fields/{field}/stats")
 def get_field_stats(ix: str, field: str, user: str = Depends(authenticated_user)):
     """Get statistics for a specific value. Only works for numeric (incl date) fields."""
-    check_role(user, index.Role.READER, ix)
+    check_fields_access(ix, user, [FieldSpec(name=field)])
     return field_stats(ix, field)
 
 
