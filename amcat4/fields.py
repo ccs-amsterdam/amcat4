@@ -273,7 +273,8 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
 
 def _get_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:
     r = es().indices.get_mapping(index=index)
-
+    if prefix := get_settings().elastic_prefix:
+        index = f"{prefix}{index}"
     if len(r[index]["mappings"]) > 0:
         for k, v in r[index]["mappings"]["properties"].items():
             yield k, v.get("type", "object")
@@ -372,4 +373,3 @@ def field_stats(index: str, field: str) -> list[str]:
     aggs = {"facets": {"stats": {"field": field}}}
     r = es().search(index=index, size=0, aggs=aggs)
     return r["aggregations"]["facets"]
-

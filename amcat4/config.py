@@ -11,9 +11,10 @@ import functools
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any
+
 from class_doc import extract_docs_from_cls_obj
 from dotenv import load_dotenv
-from pydantic import model_validator, Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_PREFIX = "amcat4_"
@@ -84,6 +85,15 @@ class Settings(BaseSettings):
             description=(
                 "Elasticsearch verify SSL (only used if elastic_password is set). " "Default: True unless host is localhost)"
             ),
+        ),
+    ] = None
+
+    elastic_prefix: Annotated[
+        str | None,
+        Field(
+            description="If set, all indices will pre prefixed with this value. "
+            "Warning: Changing this value when the server is being used will cause problems "
+            "as it can no longer find the indices!"
         ),
     ] = None
 

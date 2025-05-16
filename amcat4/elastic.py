@@ -11,7 +11,7 @@ Some things to note:
 
 import functools
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from elasticsearch import Elasticsearch, NotFoundError
 
@@ -32,6 +32,37 @@ SYSTEM_MAPPING = {
 }
 
 
+class PrefixedWrapper:
+    """Class wrapper that prepends a prefix to each index name"""
+
+    def __init__(self, wrapped, prefix):
+        self.wrapped = wrapped
+        self.prefix = prefix
+
+    def options(self, **kargs):
+        return PrefixedWrapper(self.wrapped.options(**kargs), prefix=self.prefix)
+
+    def __getattr__(self, attr):
+        attr = getattr(self.wrapped, attr)
+        if callable(attr):
+
+            def wrapped(*args, **kargs):
+                if "index" in kargs:
+                    index = kargs["index"]
+                    if isinstance(index, str):
+                        kargs["index"] = f"{self.prefix}{index}"
+                    else:
+                        kargs["index"] = [f"{self.prefix}{ix}" for ix in index]
+
+                return attr(*args, **kargs)
+
+            return wrapped
+        else:
+            if attr.__class__.__name__.endswith("Client"):
+                return PrefixedWrapper(attr, prefix=self.prefix)
+        return attr
+
+
 class CannotConnectElastic(Exception):
     pass
 
@@ -39,7 +70,7 @@ class CannotConnectElastic(Exception):
 @functools.lru_cache()
 def es() -> Elasticsearch:
     try:
-        return _setup_elastic()
+        return _setup_elastic()  # type: ignore (can be elasticsearch or wrapped elastic, but should be equivalent)
     except ValueError as e:
         raise ValueError(f"Cannot connect to elastic {get_settings().elastic_host!r}: {e}")
 
@@ -49,6 +80,7 @@ def connect_elastic() -> Elasticsearch:
     Connect to the elastic server using the system settings
     """
     settings = get_settings()
+
     if settings.elastic_password:
         host = settings.elastic_host
         if settings.elastic_verify_ssl is None:
@@ -95,6 +127,8 @@ def _setup_elastic():
         f"password? {'yes' if settings.elastic_password else 'no'} "
     )
     elastic = connect_elastic()
+    if settings.elastic_prefix:
+        elastic = PrefixedWrapper(elastic, settings.elastic_prefix)
     if not elastic.ping():
         raise CannotConnectElastic(f"Cannot connect to elasticsearch server {settings.elastic_host}")
     if elastic.indices.exists(index=settings.system_index):
