@@ -438,7 +438,7 @@ def upload_documents(
     index: str,
     documents: list[dict[str, Any]],
     fields: Mapping[str, FieldType | CreateField] | None = None,
-    op_type: Literal["create", "update"] = "create",
+    op_type: Literal["index", "create", "update"] = "index",
     raise_on_error=False,
 ):
     """
@@ -579,6 +579,7 @@ def update_documents_by_query(index: str | list[str], query: dict, field: str, v
             source="ctx._source[params.field] = params.value", lang="painless", params=dict(field=field, value=value)
         )
     return es().update_by_query(index=index, query=query, script=script, refresh=True)
+
 
 def delete_documents_by_query(index: str | list[str], query: dict):
     return es().delete_by_query(index=index, query=query)

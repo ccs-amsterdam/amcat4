@@ -2,16 +2,16 @@ from datetime import datetime
 
 import pytest
 
+from amcat4.fields import create_fields, field_values, get_fields
 from amcat4.index import (
     delete_documents_by_query,
-    refresh_index,
-    update_documents_by_query,
-    upload_documents,
     get_document,
+    refresh_index,
     update_document,
+    update_documents_by_query,
     update_tag_by_query,
+    upload_documents,
 )
-from amcat4.fields import create_fields, get_fields, field_values
 from amcat4.models import CreateField, FieldSpec
 from amcat4.query import query_documents
 from tests.conftest import upload
@@ -95,9 +95,10 @@ def test_delete_by_query(index_docs):
         refresh_index(index_docs)
         res = query_documents(index_docs)
         return {doc["_id"] for doc in (res.data if res else [])}
-    assert ids() == {'0','1','2','3'}
+
+    assert ids() == {"0", "1", "2", "3"}
     delete_documents_by_query(index_docs, query=dict(term={"cat": dict(value="a")}))
-    assert ids() == {'3'}
+    assert ids() == {"3"}
 
 
 def test_add_tag(index_docs):
@@ -139,11 +140,14 @@ def test_upload_with_explicit_ids(index):
     doc = {"_id": "1", "title": "titel", "text": "text", "date": datetime(2020, 1, 1)}
     res = upload_documents(index, [doc], fields={"title": "text", "text": "text", "date": "date"})
     assert res["successes"] == 1
+    assert get_document(index, "1")["text"] == "text"
 
-    # this does skip docs with same id
+    # uploading a doc with same id should replace the existing document
+    doc = {"_id": "1", "title": "new title", "date": datetime(2020, 1, 1)}
     res = upload_documents(index, [doc])
-    assert res["successes"] == 0
+    assert res["successes"] == 1
     _assert_n(index, 1)
+    assert get_document(index, "1")["title"] == "new title"
 
 
 def test_upload_with_identifiers(index):
@@ -152,10 +156,12 @@ def test_upload_with_identifiers(index):
     assert res["successes"] == 1
     _assert_n(index, 1)
 
+    # Re-uploading a document with the same identifier should update the document
     doc2 = {"url": "http://", "text": "text2"}
     res = upload_documents(index, [doc2])
-    assert res["successes"] == 0
+    assert res["successes"] == 1
     _assert_n(index, 1)
+    assert {doc["text"] for doc in query_documents(index, fields=[FieldSpec(name="text")]).data} == {"text2"}
 
     doc3 = {"url": "http://2", "text": "text"}
     res = upload_documents(index, [doc3])
@@ -190,21 +196,25 @@ def test_valid_adding_identifiers(index):
 
     # the document should have been added because its not a full duplicate (in first doc url was empty)
     assert res["successes"] == 1
+    _assert_n(index, 2)
 
     # both the identifier for the first doc and the second doc should still work, so the following docs are
     # both duplicates
     doc1 = {"text": "text"}
     doc2 = {"url": "http://", "text": "text"}
     res = upload_documents(index, [doc1, doc2])
-    assert res["successes"] == 0
+    assert res["successes"] == 2
+    _assert_n(index, 2)
 
     # the order of adding identifiers doesn't matter. a document having just the url uses only the url as identifier
     doc = {"url": "http://new"}
     res = upload_documents(index, [doc])
     assert res["successes"] == 1
+    _assert_n(index, 3)
     # second time its a duplicate
     res = upload_documents(index, [doc])
-    assert res["successes"] == 0
+    assert res["successes"] == 1
+    _assert_n(index, 3)
 
 
 def _assert_n(index, n):
