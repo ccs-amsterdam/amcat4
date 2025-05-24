@@ -11,10 +11,10 @@ from pydantic import BaseModel
 
 from amcat4 import fields as index_fields
 from amcat4 import index
-from amcat4.api.auth import authenticated_user, authenticated_writer, check_role, check_fields_access
+from amcat4.api.auth import authenticated_user, authenticated_writer, check_fields_access, check_role
 from amcat4.fields import field_stats, field_values
 from amcat4.index import get_role, refresh_system_index, remove_role, set_role
-from amcat4.models import CreateField, FieldType, FieldSpec, FilterSpec, FilterValue, UpdateField
+from amcat4.models import CreateField, FieldSpec, FieldType, FilterSpec, FilterValue, UpdateField
 from amcat4.query import reindex
 
 from .query import _standardize_filters, _standardize_queries
@@ -196,24 +196,21 @@ def upload_documents(
         ),
     ] = None,
     operation: Annotated[
-        Literal["update", "create"],
+        Literal["index", "update", "create"],
         Body(
-            description="The operation to perform. Default is create, which ignores any documents that already exist. "
+            description="The operation to perform. Default is index, which replaces documents that already exist. "
             "The 'update' operation behaves as an upsert (create or update). If an identical document (or document with "
             "identical identifiers) already exists, the uploaded fields will be created or overwritten. If there are fields "
             "in the original document that are not in the uploaded document, they will NOT be removed. "
-            "Since update is destructive it requires admin rights."
+            "The 'create' operation only uploads new documents, and returns failures for documents with existing ids"
         ),
-    ] = "create",
+    ] = "index",
     user: str = Depends(authenticated_user),
 ):
     """
     Upload documents to this server. Returns a list of ids for the uploaded documents
     """
-    if operation == "create":
-        check_role(user, index.Role.WRITER, ix)
-    else:
-        check_role(user, index.Role.ADMIN, ix)
+    check_role(user, index.Role.WRITER, ix)
     return index.upload_documents(ix, documents, fields, operation)
 
 
