@@ -4,13 +4,13 @@ Aggregate queries
 
 import copy
 from datetime import datetime
-from typing import Any, Mapping, Iterable, Union, Tuple, Sequence, List, Dict
+from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple, Union
 
 from amcat4.date_mappings import interval_mapping
 from amcat4.elastic import es
 from amcat4.fields import get_fields
-from amcat4.query import build_body
 from amcat4.models import Field, FilterSpec
+from amcat4.query import build_body
 
 
 def _combine_mappings(mappings):
@@ -287,7 +287,7 @@ def query_aggregate(
                     {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
     :return: a pair of (Axis, results), where results is a sequence of tuples
     """
-    if axes and len([x.field == "_query" for x in axes[1:]]) > 1:
+    if axes and sum([x.field == "_query" for x in axes[1:]]) > 1:
         raise ValueError("Only one aggregation axis may be by query")
 
     all_fields: dict[str, Field] = dict()
