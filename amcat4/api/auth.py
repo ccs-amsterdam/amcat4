@@ -7,14 +7,14 @@ from datetime import datetime
 import requests
 from authlib.common.errors import AuthlibBaseError
 from authlib.jose import jwt
-from fastapi import HTTPException, Depends
+from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from starlette.status import HTTP_401_UNAUTHORIZED
 
-from amcat4.models import FieldSpec
-from amcat4.config import get_settings, AuthOptions
-from amcat4.index import ADMIN_USER, GUEST_USER, Role, get_role, get_global_role
+from amcat4.config import AuthOptions, get_settings
 from amcat4.fields import get_fields
+from amcat4.index import ADMIN_USER, GUEST_USER, Role, get_global_role, get_role
+from amcat4.models import FieldSpec
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
@@ -121,6 +121,8 @@ def check_fields_access(index: str, user: str, fields: list[FieldSpec]) -> None:
     :param snippets: The snippets to check
     :return: Nothing. Throws HTTPException if the user is not allowed to query the given fields and snippets.
     """
+    if get_settings().auth == AuthOptions.no_auth:
+        return None
 
     role = get_role(index, user)
     if role is None:
