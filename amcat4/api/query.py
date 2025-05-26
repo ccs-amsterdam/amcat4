@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic.main import BaseModel
 
 from amcat4 import aggregate, query
-from amcat4.aggregate import Aggregation, Axis
+from amcat4.aggregate import Aggregation, Axis, TopHitsAggregation
 from amcat4.api.auth import authenticated_user, check_fields_access, check_role
 from amcat4.config import AuthOptions, get_settings
 from amcat4.index import Role, delete_documents_by_query, get_fields, get_role
@@ -258,6 +258,23 @@ class AggregationSpec(BaseModel):
     function: str
     name: Optional[str] = None
 
+    def instantiate(self):
+        return Aggregation(**self.model_dump())
+
+
+class TopHitsAggregationSpec(BaseModel):
+    """Form for an aggregation."""
+
+    # TODO: can probably merge wth TopHitsAggregation class?
+    fields: list[str]
+    function: Literal["top_hits"] = "top_hits"
+    name: Optional[str] = None
+    sort: Optional[list[dict[str, SortSpec]]] = None
+    n: int = 1
+
+    def instantiate(self):
+        return TopHitsAggregation(**self.model_dump())
+
 
 class AxisSpec(BaseModel):
     """Form for an axis specification."""
@@ -271,7 +288,9 @@ class AxisSpec(BaseModel):
 def query_aggregate_post(
     index: str,
     axes: Optional[List[AxisSpec]] = Body(None, description="Axes to aggregate on (i.e. group by)"),
-    aggregations: Optional[List[AggregationSpec]] = Body(None, description="Aggregate functions to compute"),
+    aggregations: Optional[List[AggregationSpec | TopHitsAggregationSpec]] = Body(
+        None, description="Aggregate functions to compute"
+    ),
     queries: Annotated[
         str | list[str] | dict[str, str] | None,
         Body(
@@ -312,15 +331,17 @@ def query_aggregate_post(
 
     if aggregations:
         for agg in aggregations:
-            fields_to_check.append(FieldSpec(name=agg.field))
+            if isinstance(agg, AggregationSpec):
+                fields_to_check.append(FieldSpec(name=agg.field))
+            else:
+                fields_to_check += [FieldSpec(name=f) for f in agg.fields]
 
     for index_name in indices:
         if fields_to_check:
             check_fields_access(index_name, user, fields_to_check)
 
     _axes = [Axis(**x.model_dump()) for x in axes] if axes else []
-    _aggregations = [Aggregation(**x.model_dump()) for x in aggregations] if aggregations else []
-
+    _aggregations = [a.instantiate() for a in aggregations] if aggregations else []
     results = aggregate.query_aggregate(
         indices,
         _axes,

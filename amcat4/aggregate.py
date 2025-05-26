@@ -4,12 +4,12 @@ Aggregate queries
 
 import copy
 from datetime import datetime
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
 
 from amcat4.date_mappings import interval_mapping
 from amcat4.elastic import es
 from amcat4.fields import get_fields
-from amcat4.models import Field, FilterSpec
+from amcat4.models import Field, FilterSpec, SortSpec
 from amcat4.query import build_body
 
 
@@ -71,12 +71,59 @@ class Axis:
             return m.mapping(self.field)
 
 
+class TopHitsAggregation:
+    """
+    Specification of a top hits aggregation
+    """
+
+    def __init__(
+        self,
+        fields: list[str],
+        sort: list[dict[str, SortSpec]] | None = None,
+        *,
+        n: int = 1,
+        name: str | None = None,
+        function: Literal["top_hits"] = "top_hits",
+    ):
+        self.fields = fields
+        self.name = name or "tophits"
+        self.sort = sort
+        self.n = n
+        self.type = "_tophits"
+
+    def dsl_item(self):
+        dsl = {"top_hits": {"size": self.n, "_source": self.fields}}
+        if self.sort:
+            dsl["top_hits"]["sort"] = []
+            for s in self.sort:
+                for k, v in s.items():
+                    dsl["top_hits"]["sort"].append({k: dict(v)})
+
+        return self.name, dsl
+
+    def get_value(self, bucket: dict):
+        result = [hit["_source"] for hit in bucket[self.name]["hits"]["hits"]]
+        return result
+
+    def asdict(self):
+        return {"fields": self.fields, "function": "top_hits", "name": self.name}
+
+    def set_ftype(self, all_fields: dict):
+        pass
+
+
 class Aggregation:
     """
     Specification of a single aggregation, that is, field and aggregation function
     """
 
-    def __init__(self, field: str, function: str, name: str | None = None, ftype: str | None = None):
+    def __init__(
+        self,
+        field: str,
+        function: str,
+        name: str | None = None,
+        ftype: str | None = None,
+    ):
         self.field = field
         self.function = function
         self.name = name or f"{function}_{field}"
@@ -94,8 +141,11 @@ class Aggregation:
     def asdict(self):
         return {"field": self.field, "type": self.ftype, "function": self.function, "name": self.name}
 
+    def set_ftype(self, all_fields: dict):
+        self.ftype = all_fields[self.field].type
 
-def aggregation_dsl(aggregations: Iterable[Aggregation]) -> dict:
+
+def aggregation_dsl(aggregations: Iterable[Aggregation | TopHitsAggregation]) -> dict:
     """Get the aggregation DSL dict for a list of aggregations"""
     return dict(a.dsl_item() for a in aggregations)
 
@@ -104,7 +154,7 @@ class AggregateResult:
     def __init__(
         self,
         axes: Sequence[Axis],
-        aggregations: List[Aggregation],
+        aggregations: List[Aggregation | TopHitsAggregation],
         data: List[tuple],
         count_column: str = "n",
         after: dict | None = None,
@@ -124,7 +174,9 @@ class AggregateResult:
             yield dict(zip(keys, row))
 
 
-def _bare_aggregate(index: str | list[str], queries, filters, aggregations: Sequence[Aggregation]) -> Tuple[int, dict]:
+def _bare_aggregate(
+    index: str | list[str], queries, filters, aggregations: Sequence[Aggregation | TopHitsAggregation]
+) -> Tuple[int, dict]:
     """
     Aggregate without sources/group_by.
     Returns a tuple of doc count and aggregegations (doc_count, {metric: value})
@@ -142,7 +194,7 @@ def _elastic_aggregate(
     axes,
     queries,
     filters,
-    aggregations: list[Aggregation],
+    aggregations: list[Aggregation | TopHitsAggregation],
     runtime_mappings: dict[str, Mapping] | None = None,
     after_key=None,
 ) -> Tuple[list, dict | None]:
@@ -161,7 +213,6 @@ def _elastic_aggregate(
     if filters or queries:
         q = build_body(queries=queries, filters=filters)
         kargs["query"] = q["query"]
-
     result = es().search(
         index=index if isinstance(index, str) else ",".join(index),
         size=0,
@@ -191,7 +242,7 @@ def _aggregate_results(
     axes: List[Axis],
     queries: dict[str, str] | None,
     filters: dict[str, FilterSpec] | None,
-    aggregations: List[Aggregation],
+    aggregations: List[Aggregation | TopHitsAggregation],
     after: dict[str, Any] | None = None,
 ):
 
@@ -268,7 +319,7 @@ def _aggregate_results(
 def query_aggregate(
     index: str | list[str],
     axes: list[Axis] | None = None,
-    aggregations: list[Aggregation] | None = None,
+    aggregations: list[Aggregation | TopHitsAggregation] | None = None,
     *,
     queries: dict[str, str] | None = None,
     filters: dict[str, FilterSpec] | None = None,
@@ -309,7 +360,7 @@ def query_aggregate(
     if not aggregations:
         aggregations = []
     for aggregation in aggregations:
-        aggregation.ftype = all_fields[aggregation.field].type
+        aggregation.set_ftype(all_fields)
 
     # We get the rows in sets of queries * buckets, and if there are queries or buckets left,
     # the last_after value serves as a pagination cursor. Once we have > [stop_after] rows,
