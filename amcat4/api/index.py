@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from http import HTTPStatus
+import logging
 from typing import Annotated, Any, Literal, Mapping
 
 import elasticsearch
@@ -139,8 +140,13 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
     try:
         role = check_role(user, index.Role.METAREADER, ix, required_global_role=index.Role.WRITER)
         d = index.get_index(ix)._asdict()
+        try:
+            guest_role = index.GuestRole(d.get("guest_role", 0)).name
+        except ValueError:
+            logging.warning(f"Invalid guest role {d.get('guest_role')} for index {ix}")
+            guest_role = None
         d["user_role"] = role.name
-        d["guest_role"] = index.GuestRole(d.get("guest_role", 0)).name
+        d["guest_role"] = guest_role
         d["description"] = d.get("description", "") or ""
         d["name"] = d.get("name", "") or ""
         d["folder"] = d.get("folder", "") or ""
