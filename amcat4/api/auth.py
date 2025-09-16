@@ -95,16 +95,17 @@ def check_role(user: str, required_role: Role, index: str, required_global_role:
     :param required_global_role: If the user has this global role (default: admin), also allow them access
     :return: the actual role of the user on this index
     """
-    # First, check global role (also checks that user exists and deals with 'admin' special user)
+    # First, check global role.
     if check_global_role(user, required_global_role, raise_error=False):
         return get_role(index, user)
-    # Global role check was false, so now check local role
-    actual_role = get_role(index, user)
+
+    # Global role check was false, so now check index role
+    index_role = get_role(index, user)
 
     if get_settings().auth == AuthOptions.no_auth:
-        return actual_role
-    elif actual_role and actual_role >= required_role:
-        return actual_role
+        return index_role
+    elif index_role and index_role >= required_role:
+        return index_role
     else:
         raise HTTPException(
             status_code=401,
@@ -196,8 +197,10 @@ async def authenticated_user(token: str = Depends(oauth2_scheme)) -> str:
     except Exception:
         logging.exception("Login failed")
         raise HTTPException(status_code=401, detail="Invalid token")
+
     if auth == AuthOptions.authorized_users_only:
-        if get_global_role(user) is None:
+        print(get_global_role(user))
+        if get_global_role(user) is Role.NONE:
             raise HTTPException(
                 status_code=401,
                 detail=f"The user {user} is not authorized to access this AmCAT instance",

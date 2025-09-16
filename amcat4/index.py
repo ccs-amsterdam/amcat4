@@ -39,6 +39,7 @@ import logging
 from enum import IntEnum
 from multiprocessing import Value
 from typing import Any, Iterable, Literal, Mapping, Optional
+from fnmatch import fnmatch
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
@@ -74,6 +75,23 @@ Index = collections.namedtuple(
     ["id", "name", "description", "guest_role", "archived", "roles", "summary_field", "folder", "image_url"],
 )
 
+IndexWithRole = collections.namedtuple(
+    "IndexWithRole",
+    [
+        "id",
+        "name",
+        "description",
+        "guest_role",
+        "archived",
+        "roles",
+        "summary_field",
+        "folder",
+        "image_url",
+        "user_roles",
+        "user_role",
+    ],
+)
+
 
 class IndexDoesNotExist(ValueError):
     pass
@@ -93,41 +111,85 @@ def refresh_system_index():
     es().indices.refresh(index=get_settings().system_index)
 
 
-def list_known_indices(email: str | None = None) -> Iterable[Index]:
+def list_all_indices() -> Iterable[Index]:
     """
     List all known indices, e.g. indices registered in this amcat4 instance
-    :param email: if given, only list indices visible to this user
     """
-    # TODO: Maybe this can be done with a smart query, rather than getting all indices and filtering in python?
-    # I tried the following but had no luck
-    # q_guest = {"bool" : {"filter": {"exists": {"field": "guest_role"}},
-    #                      "must_not": {"term": {"guest_role": {"value": "none", "case_insensitive": True}}}}}
-    # q_role = {"nested": {"path": "roles", "query": {"term": {"roles.email": email}}}}
-    # query = {"bool": {"should": [q_guest, q_role]}}
-    check_role = not (email is None or get_global_role(email) == Role.ADMIN or get_settings().auth == "no_auth")
     for index in elasticsearch.helpers.scan(es(), index=get_settings().system_index, fields=[], _source=True):
         ix = _index_from_elastic(index)
-        if ix.id == GLOBAL_ROLES:
-            continue
-        if (not check_role) or (ix.guest_role) or (email in ix.roles):
+        if ix.id != GLOBAL_ROLES:
             yield ix
+
+
+def list_user_indices(email: str) -> Iterable[IndexWithRole]:
+    """
+    List all indices this user has access to, and add the user roles to the index
+    """
+
+    check_role = get_global_role(email) != Role.ADMIN and get_settings().auth != "no_auth"
+
+    for index in list_all_indices():
+        user_role, user_roles = get_index_user_roles(index.guest_role, index.roles, email)
+
+        if check_role and user_role == Role.NONE:
+            continue
+
+        yield IndexWithRole(
+            **index._asdict(),
+            user_roles=user_roles,
+            user_role=user_role,
+        )
 
 
 def _index_from_elastic(index):
     src = index["_source"]
+
     guest_role = src.get("guest_role", "NONE")
+    guest_role = Role[guest_role] if guest_role in Role.__members__ else Role.NONE
 
     return Index(
         id=index["_id"],
         name=src.get("name", index["_id"]),
         description=src.get("description"),
-        guest_role=Role[guest_role] if guest_role in Role.__members__ else Role.NONE,
-        archived=src.get("archived"),
+        guest_role=guest_role,
         roles=_roles_from_elastic(src.get("roles", [])),
+        archived=src.get("archived"),
         summary_field=src.get("summary_field"),
         folder=src.get("folder"),
         image_url=src.get("image_url"),
     )
+
+
+def get_index_user_roles(guest_role: GuestRole, role_dict: dict[str, Role], email: str):
+    """
+    Returns the highest role the user has on this index, and a list of all roles the user matches.
+    """
+    # least specific role match is the guest role
+    user_roles = [{"match": "guest role", "role": guest_role.name}]
+
+    # Now match any roles based on email
+    for email_wildcard, role in role_dict.items():
+        if "*" in email_wildcard:
+            if not fnmatch(email, email_wildcard):
+                continue
+        elif email != email_wildcard:
+            continue
+
+        user_roles.append({"match": email_wildcard, "role": Role(role).name})
+
+    # Sort role matches by specificity
+    def specificity(pattern: str) -> int:
+        if pattern == 'guest role':
+            return 0
+        if pattern == email:
+            return 99999
+        return sum(1 for char in pattern if char not in '*?[]')
+
+    user_roles = sorted(user_roles, key=lambda item: specificity(item["match"]))
+
+    # Use most specific match
+    user_role = user_roles[-1]["role"]
+    return Role[user_role], user_roles
 
 
 def get_index(index: str) -> Index:
@@ -140,7 +202,7 @@ def get_index(index: str) -> Index:
 
 def create_index(
     index: str,
-    guest_role: Optional[Role] = None,
+    guest_role: Optional[GuestRole] = None,
     name: Optional[str] = None,
     description: Optional[str] = None,
     admin: Optional[str] = None,
@@ -159,7 +221,7 @@ def create_index(
     es().indices.create(index=index, mappings={"properties": {}})
     register_index(
         index,
-        guest_role=guest_role or Role.NONE,
+        guest_role=guest_role or GuestRole.NONE,
         name=name or index,
         description=description or "",
         admin=admin,
@@ -170,7 +232,7 @@ def create_index(
 
 def register_index(
     index: str,
-    guest_role: Optional[Role] = None,
+    guest_role: Optional[GuestRole] = None,
     name: Optional[str] = None,
     description: Optional[str] = None,
     admin: Optional[str] = None,
@@ -332,7 +394,8 @@ def user_exists(email: str, index: str = GLOBAL_ROLES) -> bool:
 
 def get_role(index: str, email: str) -> Role:
     """
-    Retrieve the role of this user on this index, or the guest role if user has no role
+    Retrieve the role of this user on this index, or the guest role if user has no role.
+    Index can also be the GLOBAL_ROLES pseudo-index to get the global role of this user.
     Raises a ValueError if the index does not exist
     :returns: a Role object, or Role.NONE if the user has no role and no guest role exists
     """
@@ -344,21 +407,13 @@ def get_role(index: str, email: str) -> Role:
         )
     except NotFoundError:
         raise IndexDoesNotExist(f"Index {index} does not exist or is not registered")
-    roles_dict = _roles_from_elastic(doc["_source"].get("roles", []))
-    if role := roles_dict.get(email):
-        return role
-    if index == GLOBAL_ROLES:
-        return Role.NONE
 
-    # are guests allowed?
-    if get_settings().auth == AuthOptions.authorized_users_only:
-        # only allow guests if authorized at server level
-        global_role = get_global_role(email, only_es=True)
-        if global_role == Role.NONE:
-            return Role.NONE
+    guest_role = doc["_source"].get("guest_role", "NONE")
+    guest_role = GuestRole[guest_role] if guest_role in Role.__members__ else GuestRole.NONE
+    roles = _roles_from_elastic(doc["_source"].get("roles", []))
 
-    return get_guest_role(index)
-
+    user_role, user_roles = get_index_user_roles(guest_role, roles, email)
+    return user_role
 
 def get_guest_role(index: str) -> Role:
     """
@@ -413,7 +468,7 @@ def list_global_users() -> dict[str, Role]:
 def delete_user(email: str) -> None:
     """Delete this user from all indices"""
     set_global_role(email, None)
-    for ix in list_known_indices(email):
+    for ix in list_user_indices(email):
         set_role(ix.id, email, None)
 
 

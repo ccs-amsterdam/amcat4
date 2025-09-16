@@ -10,6 +10,7 @@ from amcat4.index import (
     create_index,
     delete_index,
     Role,
+    GuestRole,
     refresh_index,
     delete_user,
     remove_global_role,
@@ -131,7 +132,7 @@ def index_name():
 def guest_index():
     index = "amcat4_unittest_guest_index"
     delete_index(index, ignore_missing=True)
-    create_index(index, guest_role=Role.READER)
+    create_index(index, guest_role=GuestRole.READER)
     yield index
     delete_index(index, ignore_missing=True)
 
@@ -189,7 +190,7 @@ def populate_index(index):
 def index_docs():
     index = "amcat4_unittest_indexdocs"
     delete_index(index, ignore_missing=True)
-    create_index(index, guest_role=Role.READER)
+    create_index(index, guest_role=GuestRole.READER)
     populate_index(index)
     yield index
     delete_index(index, ignore_missing=True)
@@ -199,7 +200,7 @@ def index_docs():
 def index_many():
     index = "amcat4_unittest_indexmany"
     delete_index(index, ignore_missing=True)
-    create_index(index, guest_role=Role.READER)
+    create_index(index, guest_role=GuestRole.READER)
     upload(
         index,
         [dict(id=i, pagenr=abs(10 - i), text=text) for (i, text) in enumerate(["odd", "even"] * 10)],

@@ -41,6 +41,7 @@ def get_or_validate_allowed_fields(
     they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
     check whether the user can access the fields (If not, raise an error).
     """
+
     if not isinstance(user, str):
         raise ValueError("User should be a string")
     if not isinstance(indices, list):
