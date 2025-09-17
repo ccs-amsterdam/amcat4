@@ -66,6 +66,7 @@ class YearNr(DateMapping):
     def postprocess(self, value):
         return int(value)
 
+
 class Decade(DateMapping):
     interval = "decade"
 
@@ -76,7 +77,8 @@ class Decade(DateMapping):
         return "emit((doc['date'].value.getYear() / 10) * 10)"
 
     def postprocess(self, value):
-        return "{decade}-01-01".format(decade=int(value))
+        return int(value)
+        # return "{decade}-01-01".format(decade=int(value))
 
 class DayOfMonth(DateMapping):
     interval = "dayofmonth"

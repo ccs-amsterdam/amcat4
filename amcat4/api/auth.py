@@ -86,26 +86,29 @@ def check_global_role(user: str, required_role: Role, raise_error=True):
         return False
 
 
-def check_role(user: str, required_role: Role, index: str, required_global_role: Role = Role.ADMIN):
-    """Check if the given user have at least the given role (in the index, if given), raise Exception otherwise.
+def check_role(user: str, required_role: Role, index: str, always_allow_admin=True) -> None:
+    """Check if the given user has the required role in an index. Raise Exception if not.
+    Server admin always has access, unless always_allow_admin is False.
 
     :param user: The email address of the authenticated user
     :param required_role: The minimum role of the user on the given index
     :param index: The index to check the role on
-    :param required_global_role: If the user has this global role (default: admin), also allow them access
+    :param always_allow_admin: If True, server admin always has access
     :return: the actual role of the user on this index
     """
-    # First, check global role.
-    if check_global_role(user, required_global_role, raise_error=False):
-        return get_role(index, user)
-
-    # Global role check was false, so now check index role
-    index_role = get_role(index, user)
-
+    # Skip all checks if auth is disabled
     if get_settings().auth == AuthOptions.no_auth:
-        return index_role
-    elif index_role and index_role >= required_role:
-        return index_role
+        return None
+
+    # Check global role.
+    if always_allow_admin:
+        if check_global_role(user, Role.ADMIN, raise_error=False):
+            return None
+
+    # Check index role
+    index_role = get_role(index, user)
+    if index_role and index_role >= required_role:
+        return None
     else:
         raise HTTPException(
             status_code=401,

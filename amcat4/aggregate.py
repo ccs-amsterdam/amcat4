@@ -3,7 +3,7 @@ Aggregate queries
 """
 
 import copy
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
 
 from amcat4.date_mappings import interval_mapping
@@ -58,7 +58,7 @@ class Axis:
         if m := interval_mapping(self.interval):
             value = m.postprocess(value)
         elif self.ftype == "date":
-            value = datetime.utcfromtimestamp(value / 1000.0)
+            value = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc)
             if self.interval in {"year", "month", "week", "day"}:
                 value = value.date()
         return value
@@ -135,7 +135,7 @@ class Aggregation:
     def get_value(self, bucket: dict):
         result = bucket[self.name]["value"]
         if result and self.ftype == "date":
-            result = datetime.utcfromtimestamp(result / 1000.0)
+            result = datetime.fromtimestamp(result / 1000.0, tz=timezone.utc)
         return result
 
     def asdict(self):
