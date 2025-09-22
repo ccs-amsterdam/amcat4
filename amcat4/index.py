@@ -36,10 +36,11 @@ import collections
 import hashlib
 import json
 import logging
+from datetime import datetime
 from enum import IntEnum
+from fnmatch import fnmatch
 from multiprocessing import Value
 from typing import Any, Iterable, Literal, Mapping, Optional
-from fnmatch import fnmatch
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
@@ -179,11 +180,11 @@ def get_index_user_roles(guest_role: GuestRole, role_dict: dict[str, Role], emai
 
     # Sort role matches by specificity
     def specificity(pattern: str) -> int:
-        if pattern == 'guest role':
+        if pattern == "guest role":
             return 0
         if pattern == email:
             return 99999
-        return sum(1 for char in pattern if char not in '*?[]')
+        return sum(1 for char in pattern if char not in "*?[]")
 
     user_roles = sorted(user_roles, key=lambda item: specificity(item["match"]))
 
@@ -414,6 +415,7 @@ def get_role(index: str, email: str) -> Role:
 
     user_role, user_roles = get_index_user_roles(guest_role, roles, email)
     return user_role
+
 
 def get_guest_role(index: str) -> Role:
     """
@@ -680,3 +682,38 @@ def set_branding(
         # Nothing to do!
         return
     return es().update(index=get_settings().system_index, id=GLOBAL_ROLES, doc=doc)
+
+
+def set_role_request(index: str, email: str, role: Optional[Role]):
+    """
+    Create or update a role request for this user on the given index)
+    If role is None, remove the role request
+    """
+    # TODO: It would probably be better to do this with a query script on elastic
+    system_index = get_settings().system_index
+    try:
+        d = es().get(index=system_index, id=index, source_includes="role_requests")
+    except NotFoundError:
+        raise ValueError(f"Index {index} is not registered")
+
+    requests = {request["email"]: request for request in d["_source"].get("role_requests", [])}
+
+    if role:
+        requests[email] = dict(email=email, role=role.name, timestamp=datetime.now().isoformat())
+    else:
+        requests.pop(email, None)
+
+    es().update(
+        index=system_index,
+        id=index,
+        doc=dict(role_requests=list(requests.values())),
+    )
+
+
+def get_role_requests(index: str):
+    system_index = get_settings().system_index
+    try:
+        d = es().get(index=system_index, id=index, source_includes="role_requests")
+    except NotFoundError:
+        raise ValueError(f"Index {index} is not registered")
+    return d["_source"].get("role_requests", [])
