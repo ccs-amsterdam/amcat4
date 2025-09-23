@@ -14,12 +14,11 @@ from amcat4 import fields as index_fields
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_fields_access, check_role
 from amcat4.fields import field_stats, field_values
-from amcat4.index import refresh_system_index, remove_role, set_role, get_index_user_roles
-from amcat4.models import CreateField, FieldSpec, FieldType, FilterSpec, FilterValue, UpdateField
+from amcat4.index import refresh_system_index, remove_role, set_role, get_index_user_role
+from amcat4.models import CreateField, FieldSpec, FieldType, FilterSpec, FilterValue, UpdateField, ContactInfo
 from amcat4.query import reindex
 
 from .query import _standardize_filters, _standardize_queries
-from amcat4.index import Role
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 
@@ -35,13 +34,13 @@ def index_list(current_user: str = Depends(authenticated_user)):
     Returns a list of dicts with index details, including the user role.
     """
 
-    def index_to_dict(ix: index.IndexWithRole) -> dict:
+    def index_to_dict(ix: index.Index, role: index.Role) -> dict:
         ix_dict = ix._asdict()
 
         ix_dict = dict(
             id=ix_dict["id"],
             name=ix_dict["name"],
-            user_role=ix_dict["user_role"].name,
+            user_role=role.name,
             description=ix_dict.get("description", ""),
             archived=ix_dict.get("archived", ""),
             folder=ix_dict.get("folder", ""),
@@ -49,7 +48,7 @@ def index_list(current_user: str = Depends(authenticated_user)):
         )
         return ix_dict
 
-    return [index_to_dict(ix) for ix in index.list_user_indices(current_user)]
+    return [index_to_dict(ix, role) for ix, role in index.list_user_indices(current_user)]
 
 
 class NewIndex(BaseModel):
@@ -60,6 +59,7 @@ class NewIndex(BaseModel):
     description: str | None = None
     folder: str | None = None
     image_url: str | None = None
+    contact: list[ContactInfo] = None
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
@@ -80,7 +80,9 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
             admin=current_user if current_user != "_admin" else None,
             folder=new_index.folder,
             image_url=new_index.image_url,
+            contact=new_index.contact
         )
+
     except ApiError as e:
         raise HTTPException(
             status_code=400,
@@ -94,10 +96,11 @@ class ChangeIndex(BaseModel):
 
     name: str | None = None
     description: str | None = None
-    guest_role: GuestRoleType | None = None
+    guest_role: GuestRoleType | Literal["NONE"] | None = None
     archive: bool | None = None
     folder: str | None = None
     image_url: str | None = None
+    contact: list[ContactInfo] = None
 
 
 @app_index.put("/{ix}")
@@ -126,7 +129,7 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
         archived=archived,
         folder=data.folder,
         image_url=data.image_url,
-        # remove_guest_role=remove_guest_role,
+        contact=data.contact
         # unarchive=unarchive,
     )
     refresh_system_index()
@@ -147,11 +150,9 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
             logging.warning(f"Invalid guest role {d['guest_role']} for index {ix}")
             guest_role = index.GuestRole(0)
 
-        user_role, user_roles = get_index_user_roles(guest_role, d['roles'], user)
-        print(user_roles)
+        user_role = get_index_user_role(guest_role, d['roles'], user)
 
         d["user_role"] = user_role.name
-        d["user_roles"] = user_roles
         d["guest_role"] = guest_role.name
         d["description"] = d.get("description", "") or ""
         d["name"] = d.get("name", "") or ""
@@ -381,7 +382,6 @@ def list_index_users(ix: str, user: str = Depends(authenticated_user)):
     return [{"email": u, "role": r.name} for (u, r) in index.list_users(ix).items()]
 
 
-
 @app_index.post("/{ix}/users", status_code=status.HTTP_201_CREATED)
 def add_index_users(
     ix: str,
@@ -442,15 +442,19 @@ def start_reindex(
     queries: Annotated[
         str | list[str] | dict[str, str] | None,
         Body(
-            description="Query/Queries to select documents to reindex. Value should be a single query string, a list of query strings, "
-            "or a dict of {'label': 'query'}",
+            description=(
+                "Query/Queries to select documents to reindex. Value should be a single query string, "
+                "a list of query strings, or a dict of {'label': 'query'}"
+            ),
         ),
     ] = None,
     filters: Annotated[
         Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None,
         Body(
-            description="Field filters, should be a dict of field names to filter specifications,"
-            "which can be either a value, a list of values, or a FilterSpec dict",
+            description=(
+                "Field filters, should be a dict of field names to filter specifications, "
+                "which can be either a value, a list of values, or a FilterSpec dict"
+            ),
         ),
     ] = None,
     user: str = Depends(authenticated_user),

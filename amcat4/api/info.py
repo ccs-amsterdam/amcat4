@@ -22,6 +22,7 @@ def index(request: Request):
     auth = get_settings().auth
     has_admin_email = bool(get_settings().admin_email)
     middlecat_url = get_settings().middlecat_url
+
     middlecat_alive = False
     api_version = version("amcat4")
     if middlecat_url:
@@ -36,11 +37,13 @@ def index(request: Request):
 @app_info.get("/config")
 @app_info.get("/middlecat")
 def get_auth_config():
+    print(get_settings())
     return {
         "middlecat_url": get_settings().middlecat_url,
         "resource": get_settings().host,
         "authorization": get_settings().auth,
         "warnings": [validate_settings()],
+        "minio": get_settings().minio_host != "None",
         "api_version": version("amcat4"),
     }
 

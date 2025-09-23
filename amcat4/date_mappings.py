@@ -80,6 +80,7 @@ class Decade(DateMapping):
         return int(value)
         # return "{decade}-01-01".format(decade=int(value))
 
+
 class DayOfMonth(DateMapping):
     interval = "dayofmonth"
 

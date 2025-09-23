@@ -268,7 +268,7 @@ def _aggregate_results(
             raise ValueError("Queries must be specified when aggregating by query")
         # Strip off _query axis and run separate aggregation for each query
         i = [ax.field for ax in axes].index("_query")
-        _axes = axes[:i] + axes[(i + 1) :]
+        _axes = axes[:i] + axes[(i + 1):]
 
         query_items = list(queries.items())
         for label, query in query_items:

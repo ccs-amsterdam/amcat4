@@ -40,7 +40,7 @@ def list_index_names(email: str | None = None) -> List[str]:
     if email is None:
         return [ix.name for ix in list_all_indices()]
     else:
-        return [ix.name for ix in list_user_indices(email)]
+        return [ix.name for ix, role in list_user_indices(email)]
 
 
 def test_create_delete_index():

@@ -2,7 +2,7 @@ from starlette.testclient import TestClient
 
 from amcat4 import elastic
 
-from amcat4.index import GuestRole, get_guest_role, Role, set_guest_role, set_role, remove_role
+from amcat4.index import GuestRole, get_guest_role, Role, set_guest_role, set_role
 from tests.tools import build_headers, post_json, get_json, check, refresh
 
 

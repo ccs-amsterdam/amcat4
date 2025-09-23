@@ -32,24 +32,22 @@ Elasticsearch implementation
     but use field metadata to define specific fields.
 """
 
-import collections
 import hashlib
 import json
 import logging
 from datetime import datetime
 from enum import IntEnum
-from fnmatch import fnmatch
 from multiprocessing import Value
-from typing import Any, Iterable, Literal, Mapping, Optional
+from typing import Any, Iterable, Literal, Mapping, Optional, NamedTuple
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
 
 # from amcat4.api.common import py2dict
-from amcat4.config import AuthOptions, get_settings
+from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.fields import coerce_type, create_fields, create_or_verify_tag_field, get_fields
-from amcat4.models import CreateField, Field, FieldType
+from amcat4.models import CreateField, Field, FieldType, ContactInfo
 
 
 class Role(IntEnum):
@@ -71,27 +69,18 @@ ADMIN_USER = "_admin"
 GUEST_USER = "_guest"
 GLOBAL_ROLES = "_global"
 
-Index = collections.namedtuple(
-    "Index",
-    ["id", "name", "description", "guest_role", "archived", "roles", "summary_field", "folder", "image_url"],
-)
 
-IndexWithRole = collections.namedtuple(
-    "IndexWithRole",
-    [
-        "id",
-        "name",
-        "description",
-        "guest_role",
-        "archived",
-        "roles",
-        "summary_field",
-        "folder",
-        "image_url",
-        "user_roles",
-        "user_role",
-    ],
-)
+class Index(NamedTuple):
+    id: str
+    name: str
+    description: Optional[str]
+    guest_role: GuestRole
+    archived: Optional[str]
+    roles: dict[str, Role]
+    summary_field: Optional[str]
+    folder: Optional[str]
+    image_url: Optional[str]
+    contact: Optional[list[ContactInfo]]
 
 
 class IndexDoesNotExist(ValueError):
@@ -122,24 +111,22 @@ def list_all_indices() -> Iterable[Index]:
             yield ix
 
 
-def list_user_indices(email: str) -> Iterable[IndexWithRole]:
+def list_user_indices(email: str) -> Iterable[[Index, Role]]:
     """
     List all indices this user has access to, and add the user roles to the index
     """
 
     check_role = get_global_role(email) != Role.ADMIN and get_settings().auth != "no_auth"
 
+    # TODO: replace list_all_indices with a more efficient ES query
+
     for index in list_all_indices():
-        user_role, user_roles = get_index_user_roles(index.guest_role, index.roles, email)
+        user_role = get_index_user_role(index.guest_role, index.roles, email)
 
         if check_role and user_role == Role.NONE:
             continue
 
-        yield IndexWithRole(
-            **index._asdict(),
-            user_roles=user_roles,
-            user_role=user_role,
-        )
+        yield index, user_role
 
 
 def _index_from_elastic(index):
@@ -158,24 +145,31 @@ def _index_from_elastic(index):
         summary_field=src.get("summary_field"),
         folder=src.get("folder"),
         image_url=src.get("image_url"),
+        contact=src.get("contact"),
     )
 
 
-def get_index_user_roles(guest_role: GuestRole, role_dict: dict[str, Role], email: str):
+def get_index_user_role(guest_role: GuestRole, role_dict: dict[str, Role], email: str):
     """
-    Returns the highest role the user has on this index, and a list of all roles the user matches.
+    Returns the role of this user on this index.
     """
-    # least specific role match is the guest role
-    user_roles = [{"match": "guest role", "role": guest_role.name}]
+    user_role = guest_role.name
 
     # Now match any roles based on email
-    for email_wildcard, role in role_dict.items():
-        if "*" in email_wildcard:
-            if not fnmatch(email, email_wildcard):
+    for email_matcher, role in role_dict.items():
+        if email_matcher.startswith("*@"):
+            # domain match
+            domain = email_matcher[2:]
+            if (email.endswith(f"@{domain}")):
+                user_role = role.name
                 continue
-        elif email != email_wildcard:
-            continue
+        elif email == email_matcher:
+            # exact match
+            user_role = role.name
+            break
 
+
+<< << << < HEAD
         user_roles.append({"match": email_wildcard, "role": Role(role).name})
 
     # Sort role matches by specificity
@@ -191,6 +185,9 @@ def get_index_user_roles(guest_role: GuestRole, role_dict: dict[str, Role], emai
     # Use most specific match
     user_role = user_roles[-1]["role"]
     return Role[user_role], user_roles
+=======
+    return Role[user_role]
+>>>>>>> 04e1cfb (added index contactinfo)
 
 
 def get_index(index: str) -> Index:
@@ -209,6 +206,7 @@ def create_index(
     admin: Optional[str] = None,
     folder: Optional[str] = None,
     image_url: Optional[str] = None,
+    contact: Optional[list[ContactInfo]] = None,
 ) -> None:
     """
     Create a new index in elasticsearch and register it with this AmCAT instance
@@ -228,6 +226,7 @@ def create_index(
         admin=admin,
         folder=folder,
         image_url=image_url,
+        contact=contact
     )
 
 
@@ -239,6 +238,7 @@ def register_index(
     admin: Optional[str] = None,
     folder: Optional[str] = None,
     image_url: Optional[str] = None,
+    contact: Optional[list[ContactInfo]] = None
 ) -> None:
     """
     Register an existing elastic index with this AmCAT instance, i.e. create an entry in the system index
@@ -260,6 +260,7 @@ def register_index(
             guest_role=guest_role.name if guest_role is not None else "NONE",
             folder=folder,
             image_url=image_url,
+            contact=[m.model_dump() for m in contact] if contact else None,
         ),
     )
     refresh_index(system_index)
@@ -348,6 +349,7 @@ def modify_index(
     archived: Optional[str] = None,
     folder: Optional[str] = None,
     image_url: Optional[str] = None,
+    contact: Optional[list[ContactInfo]] = None
 ):
     doc = dict(
         name=name,
@@ -356,6 +358,7 @@ def modify_index(
         archived=archived,
         folder=folder,
         image_url=image_url,
+        contact=[m.model_dump() for m in contact] if contact else None,
     )
 
     doc = {x: v for (x, v) in doc.items() if v is not None}
@@ -413,7 +416,7 @@ def get_role(index: str, email: str) -> Role:
     guest_role = GuestRole[guest_role] if guest_role in Role.__members__ else GuestRole.NONE
     roles = _roles_from_elastic(doc["_source"].get("roles", []))
 
-    user_role, user_roles = get_index_user_roles(guest_role, roles, email)
+    user_role = get_index_user_role(guest_role, roles, email)
     return user_role
 
 
@@ -470,7 +473,7 @@ def list_global_users() -> dict[str, Role]:
 def delete_user(email: str) -> None:
     """Delete this user from all indices"""
     set_global_role(email, None)
-    for ix in list_user_indices(email):
+    for ix, role in list_user_indices(email):
         set_role(ix.id, email, None)
 
 
@@ -509,42 +512,7 @@ def upload_documents(
     if fields:
         create_fields(index, fields)
 
-    def es_actions(index, documents, op_type):
-        field_settings = get_fields(index)
-        has_identifiers = any(field.identifier for field in field_settings.values())
-        for document in documents:
-            doc = dict()
-            action = {"_op_type": op_type, "_index": index}
-
-            for key in document.keys():
-                if key in field_settings:
-                    doc[key] = coerce_type(document[key], field_settings[key].type)
-                else:
-                    if key != "_id":
-                        raise ValueError(f"Field '{key}' is not yet specified")
-
-                if key == "_id":
-                    if has_identifiers:
-                        identifiers = ", ".join([name for name, field in field_settings.items() if field.identifier])
-                        raise ValueError(f"This index uses identifier ({identifiers}), so you cannot set the _id directly.")
-                    action["_id"] = document["_id"]
-                else:
-                    if has_identifiers:
-                        action["_id"] = create_id(document, field_settings)
-                # if no id is given, elasticsearch creates a cool unique one
-
-            # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
-            if op_type == "update":
-                if "_id" not in action:
-                    raise ValueError("Update requires _id")
-                action["doc"] = doc
-                action["doc_as_upsert"] = True
-            else:
-                action.update(doc)
-
-            yield action
-
-    actions = list(es_actions(index, documents, op_type))
+    actions = list(upload_document_es_actions(index, documents, op_type))
     try:
         successes, failures = elasticsearch.helpers.bulk(
             es(),
@@ -561,6 +529,42 @@ def upload_documents(
         raise
 
     return dict(successes=successes, failures=failures)
+
+
+def upload_document_es_actions(index, documents, op_type):
+    field_settings = get_fields(index)
+    has_identifiers = any(field.identifier for field in field_settings.values())
+    for document in documents:
+        doc = dict()
+        action = {"_op_type": op_type, "_index": index}
+
+        for key in document.keys():
+            if key in field_settings:
+                doc[key] = coerce_type(document[key], field_settings[key].type)
+            else:
+                if key != "_id":
+                    raise ValueError(f"Field '{key}' is not yet specified")
+
+            if key == "_id":
+                if has_identifiers:
+                    identifiers = ", ".join([name for name, field in field_settings.items() if field.identifier])
+                    raise ValueError(f"This index uses identifier ({identifiers}), so you cannot set the _id directly.")
+                action["_id"] = document["_id"]
+            else:
+                if has_identifiers:
+                    action["_id"] = create_id(document, field_settings)
+            # if no id is given, elasticsearch creates a cool unique one
+
+        # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
+        if op_type == "update":
+            if "_id" not in action:
+                raise ValueError("Update requires _id")
+            action["doc"] = doc
+            action["doc_as_upsert"] = True
+        else:
+            action.update(doc)
+
+        yield action
 
 
 def get_document(index: str, doc_id: str, **kargs) -> dict:

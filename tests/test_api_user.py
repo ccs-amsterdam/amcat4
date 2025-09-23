@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from amcat4.config import AuthOptions
-from amcat4.index import delete_user, get_global_role, set_guest_role, Role, GuestRole
+from amcat4.index import delete_user, get_global_role, set_guest_role, GuestRole
 from tests.tools import get_json, build_headers, post_json, check, refresh, set_auth
 
 

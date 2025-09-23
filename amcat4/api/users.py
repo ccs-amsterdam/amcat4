@@ -6,7 +6,6 @@ A client can request a token with basic authentication and store that token for 
 """
 
 from typing import Literal, Optional
-from importlib.metadata import version
 
 from fastapi import APIRouter, HTTPException, status, Response, Depends
 from pydantic import BaseModel
@@ -14,7 +13,6 @@ from pydantic.networks import EmailStr
 
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_admin, check_global_role
-from amcat4.config import get_settings, validate_settings
 from amcat4.index import ADMIN_USER, GUEST_USER, Role, set_global_role, get_global_role, user_exists
 
 app_users = APIRouter(tags=["users"])
