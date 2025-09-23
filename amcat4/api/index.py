@@ -14,7 +14,15 @@ from amcat4 import fields as index_fields
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_fields_access, check_role
 from amcat4.fields import field_stats, field_values
-from amcat4.index import refresh_system_index, remove_role, set_role, get_index_user_role
+from amcat4.index import (
+    GUEST_USER,
+    get_role_requests,
+    refresh_system_index,
+    remove_role,
+    set_role,
+    get_index_user_role,
+    set_role_request,
+)
 from amcat4.models import CreateField, FieldSpec, FieldType, FilterSpec, FilterValue, UpdateField, ContactInfo
 from amcat4.query import reindex
 
@@ -53,6 +61,7 @@ def index_list(current_user: str = Depends(authenticated_user)):
 
 class NewIndex(BaseModel):
     """Form to create a new index."""
+
     id: str
     name: str | None = None
     guest_role: GuestRoleType | None = None
@@ -80,7 +89,7 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
             admin=current_user if current_user != "_admin" else None,
             folder=new_index.folder,
             image_url=new_index.image_url,
-            contact=new_index.contact
+            contact=new_index.contact,
         )
 
     except ApiError as e:
@@ -129,7 +138,7 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
         archived=archived,
         folder=data.folder,
         image_url=data.image_url,
-        contact=data.contact
+        contact=data.contact,
         # unarchive=unarchive,
     )
     refresh_system_index()
@@ -145,12 +154,12 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
         d = index.get_index(ix)._asdict()
 
         try:
-            guest_role = index.GuestRole(d['guest_role'])
+            guest_role = index.GuestRole(d["guest_role"])
         except ValueError:
             logging.warning(f"Invalid guest role {d['guest_role']} for index {ix}")
             guest_role = index.GuestRole(0)
 
-        user_role = get_index_user_role(guest_role, d['roles'], user)
+        user_role = get_index_user_role(guest_role, d["roles"], user)
 
         d["user_role"] = user_role.name
         d["guest_role"] = guest_role.name
@@ -464,3 +473,29 @@ def start_reindex(
     filters = _standardize_filters(filters)
     queries = _standardize_queries(queries)
     return reindex(source_index=ix, destination_index=destination, queries=queries, filters=filters)
+
+
+@app_index.get("/{ix}/role_requests")
+def get_index_role_requests(ix: str, user: str = Depends(authenticated_user)):
+    check_role(user, index.Role.ADMIN, ix)
+    return get_role_requests(ix)
+
+
+class RoleRequest(BaseModel):
+    role: RoleType | Literal["NONE"]
+
+
+@app_index.post("/{ix}/role_requests", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def post_index_role_requests(
+    ix: str,
+    request: RoleRequest,
+    user: str = Depends(authenticated_user),
+):
+    if user == GUEST_USER:
+        raise HTTPException(
+            status_code=401,
+            detail="Anonymous guests cannot make access requests",
+        )
+
+    role = None if request.role == "NONE" else index.Role[request.role]
+    set_role_request(ix, user, role)

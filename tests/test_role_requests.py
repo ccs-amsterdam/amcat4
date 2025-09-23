@@ -1,4 +1,7 @@
-from amcat4.index import Role, get_role_requests, refresh_system_index, set_role_request
+from amcat4.index import Role, get_role_requests, refresh_system_index, set_role, set_role_request
+from starlette.testclient import TestClient
+
+from tests.tools import build_headers, check
 
 
 def test_role_requests(index):
@@ -29,3 +32,16 @@ def test_role_requests(index):
     set_role_request(index, "vanatteveldt@gmail.com", role=None)
     refresh_system_index()
     assert get_role_requests(index) == []
+
+
+def test_role_request_api_auth(client, index, user):
+    # any authenticated user can post a role request
+    check(client.post(f"/index/{index}/role_requests", json=dict(role="ADMIN")), 401)
+    check(client.post(f"/index/{index}/role_requests", json=dict(role="ADMIN"), headers=build_headers(user=user)), 204)
+
+    # only index admins can get role requests
+    check(client.get(f"/index/{index}/role_requests"), 401)
+    set_role(index, user, Role.WRITER)
+    check(client.get(f"/index/{index}/role_requests", headers=build_headers(user=user)), 401)
+    set_role(index, user, Role.ADMIN)
+    check(client.get(f"/index/{index}/role_requests", headers=build_headers(user=user)), 200)

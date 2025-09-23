@@ -111,7 +111,7 @@ def list_all_indices() -> Iterable[Index]:
             yield ix
 
 
-def list_user_indices(email: str) -> Iterable[[Index, Role]]:
+def list_user_indices(email: str) -> Iterable[tuple[Index, Role]]:
     """
     List all indices this user has access to, and add the user roles to the index
     """
@@ -160,7 +160,7 @@ def get_index_user_role(guest_role: GuestRole, role_dict: dict[str, Role], email
         if email_matcher.startswith("*@"):
             # domain match
             domain = email_matcher[2:]
-            if (email.endswith(f"@{domain}")):
+            if email.endswith(f"@{domain}"):
                 user_role = role.name
                 continue
         elif email == email_matcher:
@@ -207,7 +207,7 @@ def create_index(
         admin=admin,
         folder=folder,
         image_url=image_url,
-        contact=contact
+        contact=contact,
     )
 
 
@@ -219,7 +219,7 @@ def register_index(
     admin: Optional[str] = None,
     folder: Optional[str] = None,
     image_url: Optional[str] = None,
-    contact: Optional[list[ContactInfo]] = None
+    contact: Optional[list[ContactInfo]] = None,
 ) -> None:
     """
     Register an existing elastic index with this AmCAT instance, i.e. create an entry in the system index
@@ -330,7 +330,7 @@ def modify_index(
     archived: Optional[str] = None,
     folder: Optional[str] = None,
     image_url: Optional[str] = None,
-    contact: Optional[list[ContactInfo]] = None
+    contact: Optional[list[ContactInfo]] = None,
 ):
     doc = dict(
         name=name,
