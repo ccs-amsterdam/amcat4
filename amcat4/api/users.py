@@ -13,7 +13,17 @@ from pydantic.networks import EmailStr
 
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_admin, check_global_role
-from amcat4.index import ADMIN_USER, GUEST_USER, Role, set_global_role, get_global_role, user_exists
+from amcat4.api.index import RoleRequest
+from amcat4.index import (
+    ADMIN_USER,
+    GUEST_USER,
+    Role,
+    get_role_requests,
+    set_global_role,
+    get_global_role,
+    set_role_request,
+    user_exists,
+)
 
 app_users = APIRouter(tags=["users"])
 
@@ -109,3 +119,24 @@ def modify_user(email: EmailStr, data: ChangeUserForm, _user: str = Depends(auth
         role = Role[data.role.upper()]
         set_global_role(email, role)
         return {"email": email, "role": role.name}
+
+
+@app_users.get("/role_requests")
+def get_global_role_requests(user: str = Depends(authenticated_user)):
+    check_global_role(user, index.Role.ADMIN)
+    return get_role_requests(index=None)
+
+
+@app_users.post("/role_requests", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def post_global_role_requests(
+    request: RoleRequest,
+    user: str = Depends(authenticated_user),
+):
+    if user == GUEST_USER:
+        raise HTTPException(
+            status_code=401,
+            detail="Anonymous guests cannot make access requests",
+        )
+
+    role = None if request.role == "NONE" else index.Role[request.role]
+    set_role_request(index=None, email=user, role=role)

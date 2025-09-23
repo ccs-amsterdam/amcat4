@@ -38,7 +38,7 @@ import logging
 from datetime import datetime
 from enum import IntEnum
 from multiprocessing import Value
-from typing import Any, Iterable, Literal, Mapping, Optional, NamedTuple
+from typing import Any, Iterable, Literal, Mapping, NamedTuple, Optional
 
 import elasticsearch.helpers
 from elasticsearch import NotFoundError
@@ -47,7 +47,7 @@ from elasticsearch import NotFoundError
 from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.fields import coerce_type, create_fields, create_or_verify_tag_field, get_fields
-from amcat4.models import CreateField, Field, FieldType, ContactInfo
+from amcat4.models import ContactInfo, CreateField, Field, FieldType
 
 
 class Role(IntEnum):
@@ -669,13 +669,15 @@ def set_branding(
     return es().update(index=get_settings().system_index, id=GLOBAL_ROLES, doc=doc)
 
 
-def set_role_request(index: str, email: str, role: Optional[Role]):
+def set_role_request(index: str | None, email: str, role: Optional[Role]):
     """
     Create or update a role request for this user on the given index)
     If role is None, remove the role request
     """
     # TODO: It would probably be better to do this with a query script on elastic
     system_index = get_settings().system_index
+    if not index:
+        index = GLOBAL_ROLES
     try:
         d = es().get(index=system_index, id=index, source_includes="role_requests")
     except NotFoundError:
@@ -695,8 +697,10 @@ def set_role_request(index: str, email: str, role: Optional[Role]):
     )
 
 
-def get_role_requests(index: str):
+def get_role_requests(index: str | None = GLOBAL_ROLES):
     system_index = get_settings().system_index
+    if not index:
+        index = GLOBAL_ROLES
     try:
         d = es().get(index=system_index, id=index, source_includes="role_requests")
     except NotFoundError:

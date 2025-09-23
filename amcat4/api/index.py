@@ -1,8 +1,8 @@
 """API Endpoints for document and index management."""
 
+import logging
 from datetime import datetime
 from http import HTTPStatus
-import logging
 from typing import Annotated, Any, Literal, Mapping
 
 import elasticsearch
@@ -16,14 +16,14 @@ from amcat4.api.auth import authenticated_user, authenticated_writer, check_fiel
 from amcat4.fields import field_stats, field_values
 from amcat4.index import (
     GUEST_USER,
+    get_index_user_role,
     get_role_requests,
     refresh_system_index,
     remove_role,
     set_role,
-    get_index_user_role,
     set_role_request,
 )
-from amcat4.models import CreateField, FieldSpec, FieldType, FilterSpec, FilterValue, UpdateField, ContactInfo
+from amcat4.models import ContactInfo, CreateField, FieldSpec, FieldType, FilterSpec, FilterValue, UpdateField
 from amcat4.query import reindex
 
 from .query import _standardize_filters, _standardize_queries
