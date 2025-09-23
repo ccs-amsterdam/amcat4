@@ -168,26 +168,7 @@ def get_index_user_role(guest_role: GuestRole, role_dict: dict[str, Role], email
             user_role = role.name
             break
 
-
-<< << << < HEAD
-        user_roles.append({"match": email_wildcard, "role": Role(role).name})
-
-    # Sort role matches by specificity
-    def specificity(pattern: str) -> int:
-        if pattern == "guest role":
-            return 0
-        if pattern == email:
-            return 99999
-        return sum(1 for char in pattern if char not in "*?[]")
-
-    user_roles = sorted(user_roles, key=lambda item: specificity(item["match"]))
-
-    # Use most specific match
-    user_role = user_roles[-1]["role"]
-    return Role[user_role], user_roles
-=======
     return Role[user_role]
->>>>>>> 04e1cfb (added index contactinfo)
 
 
 def get_index(index: str) -> Index:
