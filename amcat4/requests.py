@@ -132,7 +132,7 @@ def process_role_request(r: RoleRequest):
 
 
 def process_project_request(r: CreateProjectRequest):
-    create_index(r.index, admin=r.email)
+    create_index(r.index, admin=r.email, name=r.name, description=r.description, folder=r.folder)
 
 
 def clear_requests():

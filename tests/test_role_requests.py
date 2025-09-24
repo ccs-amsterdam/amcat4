@@ -19,7 +19,6 @@ def all_requests() -> dict[tuple[str, str, str | None], PermissionRequest]:
 
 
 def keys(requests):
-    print(requests)
     return {(r["request_type"], r["email"], r["index"]) for r in requests}
 
 
@@ -115,6 +114,22 @@ def test_resolve_requests(clean_requests, index, index_name, user, admin):
     assert get_index(index_name).id == index_name
     assert get_role(index_name, user) == Role.ADMIN
     assert all_requests() == {}
+
+
+def test_project_attributes(clean_requests, index_name, user, admin):
+    create_request(CreateProjectRequest(index=index_name, email=user, message="message", name="name"))
+    requests = list(list_admin_requests(admin))
+    process_requests(requests)
+    assert get_index(index_name).name == "name"
+
+
+def test_request_attributes_api(clean_requests, client, index_name, user):
+    request = dict(request_type="create_project", index=index_name, email=user, message="message", name="name")
+    post_json(client, "/permission_requests", json=request, user=user, expected=204)
+    r = get_json(client, "/permission_requests", user=user)
+    assert len(r) == 1
+    assert r[0]["message"] == "message"
+    assert r[0]["name"] == "name"
 
 
 def test_api_post_request(clean_requests, client, index, index_name, user):
