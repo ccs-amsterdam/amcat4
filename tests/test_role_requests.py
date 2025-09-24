@@ -1,6 +1,7 @@
 from starlette.testclient import TestClient
 
-from amcat4.index import Role, get_role_requests, refresh_system_index, set_global_role, set_role, set_role_request
+from amcat4.index import Role, refresh_system_index, set_global_role, set_role
+from amcat4.requests import get_role_requests, set_role_request
 from tests.tools import build_headers, check, get_json, post_json
 
 

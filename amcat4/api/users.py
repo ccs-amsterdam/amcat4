@@ -7,23 +7,13 @@ A client can request a token with basic authentication and store that token for 
 
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException, status, Response, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 from pydantic.networks import EmailStr
 
 from amcat4 import index
-from amcat4.api.auth import authenticated_user, authenticated_admin, check_global_role
-from amcat4.api.index import RoleRequest
-from amcat4.index import (
-    ADMIN_USER,
-    GUEST_USER,
-    Role,
-    get_role_requests,
-    set_global_role,
-    get_global_role,
-    set_role_request,
-    user_exists,
-)
+from amcat4.api.auth import authenticated_admin, authenticated_user, check_global_role
+from amcat4.index import ADMIN_USER, GUEST_USER, Role, get_global_role, set_global_role, user_exists
 
 app_users = APIRouter(tags=["users"])
 
@@ -119,24 +109,3 @@ def modify_user(email: EmailStr, data: ChangeUserForm, _user: str = Depends(auth
         role = Role[data.role.upper()]
         set_global_role(email, role)
         return {"email": email, "role": role.name}
-
-
-@app_users.get("/role_requests")
-def get_all_role_requests(user: str = Depends(authenticated_user)):
-    check_global_role(user, index.Role.ADMIN)
-    return get_role_requests(user = user)
-
-
-@app_users.post("/role_requests", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def post_global_role_requests(
-    request: RoleRequest,
-    user: str = Depends(authenticated_user),
-):
-    if user == GUEST_USER:
-        raise HTTPException(
-            status_code=401,
-            detail="Anonymous guests cannot make access requests",
-        )
-
-    role = None if request.role == "NONE" else index.Role[request.role]
-    set_role_request(index=None, email=user, role=role)

@@ -14,15 +14,7 @@ from amcat4 import fields as index_fields
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_fields_access, check_role
 from amcat4.fields import field_stats, field_values
-from amcat4.index import (
-    GUEST_USER,
-    get_index_user_role,
-    get_role_requests,
-    refresh_system_index,
-    remove_role,
-    set_role,
-    set_role_request,
-)
+from amcat4.index import get_index_user_role, refresh_system_index, remove_role, set_role
 from amcat4.models import ContactInfo, CreateField, FieldSpec, FieldType, FilterSpec, FilterValue, UpdateField
 from amcat4.query import reindex
 
@@ -473,29 +465,3 @@ def start_reindex(
     filters = _standardize_filters(filters)
     queries = _standardize_queries(queries)
     return reindex(source_index=ix, destination_index=destination, queries=queries, filters=filters)
-
-
-@app_index.get("/{ix}/role_requests")
-def get_index_role_requests(ix: str, user: str = Depends(authenticated_user)):
-    check_role(user, index.Role.ADMIN, ix)
-    return get_role_requests(ix)
-
-
-class RoleRequest(BaseModel):
-    role: RoleType | Literal["NONE"]
-
-
-@app_index.post("/{ix}/role_requests", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def post_index_role_requests(
-    ix: str,
-    request: RoleRequest,
-    user: str = Depends(authenticated_user),
-):
-    if user == GUEST_USER:
-        raise HTTPException(
-            status_code=401,
-            detail="Anonymous guests cannot make access requests",
-        )
-
-    role = None if request.role == "NONE" else index.Role[request.role]
-    set_role_request(ix, user, role)
