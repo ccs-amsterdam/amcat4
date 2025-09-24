@@ -11,7 +11,7 @@ class DateMapping:
     def mapping_script(self, field: str) -> str:
         raise NotImplementedError()
 
-    def mapping_type(self):
+    def mapping_type(self) -> str:
         return "keyword"
 
     def fieldname(self, field: str) -> str:

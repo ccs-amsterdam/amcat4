@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import secrets
 import sys
-from typing import Any
+from typing import Any, get_args
 import urllib.request
 from enum import Enum
 from collections import defaultdict
@@ -207,7 +207,7 @@ def config_amcat(args):
                 f.write(f"# {doc}\n")
             if _isenum(fieldinfo) and fieldinfo.annotation:
                 f.write("# Valid options:\n")
-                for option in fieldinfo.annotation:
+                for option in get_args(fieldinfo.annotation):
                     doc = option.__doc__.replace("\n", " ")
                     f.write(f"# - {option.name}: {doc}\n")
             if val is None:

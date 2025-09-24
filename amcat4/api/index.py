@@ -68,7 +68,7 @@ class NewIndex(BaseModel):
     description: str | None = None
     folder: str | None = None
     image_url: str | None = None
-    contact: list[ContactInfo] = None
+    contact: list[ContactInfo] | None = None
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
@@ -109,7 +109,7 @@ class ChangeIndex(BaseModel):
     archive: bool | None = None
     folder: str | None = None
     image_url: str | None = None
-    contact: list[ContactInfo] = None
+    contact: list[ContactInfo] | None = None
 
 
 @app_index.put("/{ix}")

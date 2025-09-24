@@ -6,6 +6,7 @@ from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.index import (
     Role,
+    GuestRole,
     create_index,
     delete_index,
     deregister_index,
@@ -125,7 +126,7 @@ def test_index_roles(index):
 
 def test_guest_role(index):
     assert get_guest_role(index) == Role.NONE
-    set_guest_role(index, Role.READER)
+    set_guest_role(index, GuestRole.READER)
     refresh()
     assert get_guest_role(index) == Role.READER
 

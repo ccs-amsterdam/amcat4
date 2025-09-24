@@ -133,7 +133,7 @@ def _index_from_elastic(index):
     src = index["_source"]
 
     guest_role = src.get("guest_role", "NONE")
-    guest_role = Role[guest_role] if guest_role in Role.__members__ else Role.NONE
+    guest_role = GuestRole[guest_role] if guest_role in GuestRole.__members__ else GuestRole.NONE
 
     return Index(
         id=index["_id"],
