@@ -8,7 +8,7 @@ def test_role_requests(index):
     assert get_role_requests(index) == []
     set_role_request(index, "vanatteveldt@gmail.com", Role.ADMIN)
     refresh_system_index()
-    requests = {r["email"]: r for r in get_role_requests(index)}
+    requests = {r["email"]: r for r in get_role_requests()}
     assert len(requests) == 1
     result = requests["vanatteveldt@gmail.com"]
     assert result["role"] == "ADMIN"
@@ -16,7 +16,7 @@ def test_role_requests(index):
     # Does re-filing the request update the timestamp
     set_role_request(index, "vanatteveldt@gmail.com", Role.ADMIN)
     refresh_system_index()
-    requests = {r["email"]: r for r in get_role_requests(index)}
+    requests = {r["email"]: r for r in get_role_requests()}
     assert len(requests) == 1
     assert requests["vanatteveldt@gmail.com"]["role"] == "ADMIN"
     assert requests["vanatteveldt@gmail.com"]["timestamp"] > result["timestamp"]
@@ -24,7 +24,7 @@ def test_role_requests(index):
     # Updating a request
     set_role_request(index, "vanatteveldt@gmail.com", Role.METAREADER)
     refresh_system_index()
-    requests = {r["email"]: r for r in get_role_requests(index)}
+    requests = {r["email"]: r for r in get_role_requests()}
     assert len(requests) == 1
     assert requests["vanatteveldt@gmail.com"]["role"] == "METAREADER"
 
@@ -35,18 +35,20 @@ def test_role_requests(index):
 
 
 def test_role_request_api(client, index, user, admin):
-    for url in [f"/index/{index}/role_requests", "/role_requests"]:
-        post_json(client, url, user=user, json={"role": "ADMIN"}, expected=204)
-        (r,) = get_json(client, url, user=admin)
-        assert r["email"] == user
-        assert r["role"] == "ADMIN"
-        post_json(client, url, user=user, json={"role": "WRITER"}, expected=204)
-        (r,) = get_json(client, url, user=admin)
-        assert r["email"] == user
-        assert r["role"] == "WRITER"
-        post_json(client, url, user=user, json={"role": "NONE"}, expected=204)
-        r = get_json(client, url, user=admin)
-        assert len(r) == 0
+    url = "/role_requests"
+    index_url = f"/index/{index}/role_requests"
+
+    post_json(client, index_url, user=user, json={"role": "ADMIN"}, expected=204)
+    (r,) = get_json(client, url, user=admin)
+    assert r["email"] == user
+    assert r["role"] == "ADMIN"
+    post_json(client, url, user=user, json={"role": "WRITER"}, expected=204)
+    (r,) = get_json(client, url, user=admin)
+    assert r["email"] == user
+    assert r["role"] == "WRITER"
+    post_json(client, url, user=user, json={"role": "NONE"}, expected=204)
+    r = get_json(client, url, user=admin)
+    assert len(r) == 0
 
 
 def test_role_request_api_auth(client, index, user):

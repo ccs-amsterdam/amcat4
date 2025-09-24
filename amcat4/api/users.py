@@ -124,7 +124,7 @@ def modify_user(email: EmailStr, data: ChangeUserForm, _user: str = Depends(auth
 @app_users.get("/role_requests")
 def get_global_role_requests(user: str = Depends(authenticated_user)):
     check_global_role(user, index.Role.ADMIN)
-    return get_role_requests(index=None)
+    return get_role_requests(user = user)
 
 
 @app_users.post("/role_requests", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)

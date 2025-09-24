@@ -123,7 +123,7 @@ def list_user_indices(email: str) -> Iterable[tuple[Index, Role]]:
     for index in list_all_indices():
         user_role = get_index_user_role(index.guest_role, index.roles, email)
 
-        if check_role and user_role == Role.NONE:
+        if check_role and user_role == Role.NONE and index.guest_role == GuestRole.NONE:
             continue
 
         yield index, user_role
@@ -697,12 +697,109 @@ def set_role_request(index: str | None, email: str, role: Optional[Role]):
     )
 
 
-def get_role_requests(index: str | None = GLOBAL_ROLES):
+def get_role_requests(user: str | None = None):
+    """
+    List all role requests, optionally filtered by index and user
+    :param user: If a user is given, only return requests that this
+                 user has authority over (i.e. if the user is admin
+                 or has admin role on the index)
+    """
     system_index = get_settings().system_index
-    if not index:
-        index = GLOBAL_ROLES
-    try:
-        d = es().get(index=system_index, id=index, source_includes="role_requests")
-    except NotFoundError:
-        raise ValueError(f"Index {index} is not registered")
-    return d["_source"].get("role_requests", [])
+
+    query_filter = create_index_filter_query(
+        exists=["role_requests"]
+        # Don't use role filter until we fixed the system index on amcat4.labs.vu.nl
+        # user=user if user else None,
+        # min_role=Role.ADMIN if user else None
+    )
+
+    query = {
+        "_source": {
+            "includes": ["role_requests", "roles", "guest_role"]
+        },
+        "query": query_filter
+    }
+
+    requests = []
+    for ix in elasticsearch.helpers.scan(es(), query=query, index=system_index):
+        if user:
+            roles = _roles_from_elastic(ix['_source'].get('roles', []))
+            guest_role = GuestRole[ix['_source'].get('guest_role', "NONE")]
+            user_role = get_index_user_role(guest_role, roles, user)
+            if user_role != Role.ADMIN and get_settings().auth != "no_auth":
+                continue
+
+        for request in ix["_source"].get("role_requests", []):
+           request["index"] = ix["_id"]
+           requests.append(request)
+           if len(requests) > 2000:
+               break
+
+    # I don't think it's possible to sort role_requests across documents, so we do it in python.
+    # If requests ever gets too large (now 2000) this only affects the order.
+    requests.sort(key=lambda x: datetime.fromisoformat(x.get("timestamp")))
+
+    return requests
+
+
+def create_index_filter_query(ids: Optional[list[str]] = None,
+                              user: Optional[str] = None,
+                              min_role: Optional[Role] = None,
+                              exists: Optional[list[str]] = None):
+    """
+    Create an elasticsearch query filter for the given includes and excludes
+    :param ids: A list of index names to include, or None for all indices
+    :param includes: A list of index names to include, or None for all indices
+    :param user: If given, only include indices where this user has at least min_role
+    :param min_role: The minimum role the user should have on the index, if user
+    :return: An elasticsearch query dict
+    """
+    filters = []
+    if ids:
+        filters.append({"ids": {"values": ids}})
+    if exists:
+        for f in exists:
+            filters.append({"exists": {"field": f}})
+
+    if min_role and get_settings().auth != "no_auth":
+        valid_roles = []
+        for role in ["ADMIN", "WRITER", "READER", "METAREADER"]:
+            valid_roles.append(role)
+            if min_role.name == role:
+                break
+
+        # make filter for guest role
+        role_filter = {
+            "nested": {
+                "path": "roles",
+                "query": {
+                    "bool": {
+                        "should": [
+                            {"terms": {"guest_role.keyword": valid_roles}}
+                        ]
+                    }
+                }
+            }
+        }
+
+        # if user is given, add user role to filter
+        if user is not None:
+            # include domain wildcard
+            wildcard_user = f"*@{user.split('@')[-1]}"
+            email_matches = [user, wildcard_user]
+
+            role_filter['nested']['query']['bool']['should'].append(
+                {"bool": {
+                    "must": [
+                        {"terms": {"roles.email.keyword": email_matches}},
+                        {"terms": {"roles.role.keyword": valid_roles}}
+                    ]
+                }}
+            )
+
+        filters.append(role_filter)
+
+    if filters:
+        return {"bool": {"filter": filters}}
+    else:
+        return {"match_all": {}}
