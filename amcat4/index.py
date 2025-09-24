@@ -305,6 +305,7 @@ def set_role(index: str, email: str, role: Optional[Role]):
         index=system_index,
         id=index,
         doc=dict(roles=_roles_to_elastic(roles_dict)),
+        refresh=True
     )
 
 
@@ -694,6 +695,7 @@ def set_role_request(index: str | None, email: str, role: Optional[Role]):
         index=system_index,
         id=index,
         doc=dict(role_requests=list(requests.values())),
+        refresh=True
     )
 
 
@@ -720,9 +722,10 @@ def get_role_requests(user: str | None = None):
         "query": query_filter
     }
 
+
     requests = []
     for ix in elasticsearch.helpers.scan(es(), query=query, index=system_index):
-        if user:
+        if user is not None:
             roles = _roles_from_elastic(ix['_source'].get('roles', []))
             guest_role = GuestRole[ix['_source'].get('guest_role', "NONE")]
             user_role = get_index_user_role(guest_role, roles, user)

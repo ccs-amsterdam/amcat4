@@ -38,15 +38,25 @@ def test_role_request_api(client, index, user, admin):
     url = "/role_requests"
     index_url = f"/index/{index}/role_requests"
 
+    # set request on index
     post_json(client, index_url, user=user, json={"role": "ADMIN"}, expected=204)
+
+    # admin is not yet an index admin, so doesn't see the request
+    res = get_json(client, url, user=admin)
+    assert len(res) == 0
+
+    # make admin an index admin, so he can see the request
+    post_json(client, f"/index/{index}/users", user=admin, json={"email": admin,"role": "ADMIN" }, expected=201)
+
     (r,) = get_json(client, url, user=admin)
     assert r["email"] == user
     assert r["role"] == "ADMIN"
-    post_json(client, url, user=user, json={"role": "WRITER"}, expected=204)
+
+    post_json(client, index_url, user=user, json={"role": "WRITER"}, expected=204)
     (r,) = get_json(client, url, user=admin)
     assert r["email"] == user
     assert r["role"] == "WRITER"
-    post_json(client, url, user=user, json={"role": "NONE"}, expected=204)
+    post_json(client, index_url, user=user, json={"role": "NONE"}, expected=204)
     r = get_json(client, url, user=admin)
     assert len(r) == 0
 
