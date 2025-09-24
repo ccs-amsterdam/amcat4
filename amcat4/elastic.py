@@ -23,7 +23,7 @@ SYSTEM_MAPPING = {
     "name": {"type": "text"},
     "description": {"type": "text"},
     "roles": {"type": "nested"},
-    "role_requests": {"type": "object"},
+    "requests": {"type": "nested"},
     "summary_field": {"type": "keyword"},
     "guest_role": {"type": "keyword"},
     "folder": {"type": "keyword"},

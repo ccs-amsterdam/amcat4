@@ -18,6 +18,7 @@ from amcat4.index import (
     upload_documents,
 )
 from amcat4.models import CreateField, FieldType
+from amcat4.requests import clear_requests
 from tests.middlecat_keypair import PUBLIC_KEY
 
 UNITS = [
@@ -135,6 +136,14 @@ def guest_index():
     create_index(index, guest_role=GuestRole.READER)
     yield index
     delete_index(index, ignore_missing=True)
+
+
+@pytest.fixture()
+def clean_requests():
+    """Clean up requests before and after the test"""
+    clear_requests()
+    yield
+    clear_requests()
 
 
 def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType | CreateField] | None = None):
