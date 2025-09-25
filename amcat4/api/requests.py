@@ -1,15 +1,9 @@
-import re
-
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
-from httpx import request
-from pydantic import BaseModel, RootModel
-from requests import Request
 
-from amcat4.api.auth import authenticated_user, check_global_role, check_role
+from amcat4.api.auth import authenticated_user, check_global_role
 from amcat4.index import GUEST_USER, Role, get_global_role, list_user_indices
 from amcat4.requests import (
     PermissionRequest,
-    RoleRequest,
     create_request,
     list_admin_requests,
     list_user_requests,

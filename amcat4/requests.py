@@ -1,23 +1,16 @@
 from datetime import datetime
-from multiprocessing import Value
-from typing import Annotated, Iterable, Literal, Optional, Union
+from typing import Annotated, Iterable, Literal, Union
 
-import elasticsearch
-import elasticsearch.helpers
 from pydantic import BaseModel, Field
 
-from amcat4.api.auth import check_global_role
 from amcat4.api.index import RoleType
 from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.index import (
     GLOBAL_ROLES,
-    GuestRole,
     Role,
-    _roles_from_elastic,
     create_index,
     get_global_role,
-    get_index_user_role,
     list_user_indices,
     set_global_role,
     set_role,

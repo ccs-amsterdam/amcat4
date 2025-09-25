@@ -153,6 +153,7 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
 
         user_role = get_index_user_role(guest_role, d["roles"], user)
 
+        d.pop("roles", None)
         d["user_role"] = user_role.name
         d["guest_role"] = guest_role.name
         d["description"] = d.get("description", "") or ""
