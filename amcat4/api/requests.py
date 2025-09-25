@@ -69,4 +69,9 @@ def post_requests(request: PermissionRequest, user: str = Depends(authenticated_
             status_code=401,
             detail="Anonymous guests cannot make access requests",
         )
+    if user != request.email:
+        raise HTTPException(
+            status_code=401,
+            detail="Request email does not match user",
+        )
     create_request(request)

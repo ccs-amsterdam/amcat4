@@ -27,24 +27,26 @@ from amcat4.index import (
 # type + email + index should be unique
 
 
-class RoleRequest(BaseModel):
-    request_type: Literal["role"] = "role"
-    index: str | None = None
+class AbstractRequest(BaseModel):
     email: str
-    role: RoleType | Literal["NONE"]
     timestamp: datetime | None = None
     message: str | None = None
+    reject: bool = False
 
 
-class CreateProjectRequest(BaseModel):
+class RoleRequest(AbstractRequest):
+    request_type: Literal["role"] = "role"
+    index: str | None = None
+    role: RoleType | Literal["NONE"]
+
+
+class CreateProjectRequest(AbstractRequest):
     request_type: Literal["create_project"] = "create_project"
     index: str
     email: str
-    timestamp: datetime | None = None
     description: str | None = None
     name: str | None = None
     folder: str | None = None
-    message: str | None = None
 
 
 PermissionRequest = Annotated[Union[RoleRequest, CreateProjectRequest], Field(discriminator="request_type")]
@@ -107,15 +109,16 @@ def create_request(request: PermissionRequest):
 def process_requests(requests: list[PermissionRequest]):
     all_requests = {(r.request_type, r.email, r.index): r for r in list_all_requests()}
     for r in requests:
-        match r.request_type:
-            case "role":
-                assert isinstance(r, RoleRequest)
-                process_role_request(r)
-            case "create_project":
-                assert isinstance(r, CreateProjectRequest)
-                process_project_request(r)
-            case _:
-                raise ValueError(f"Cannot process {r}")
+        if not r.reject:
+            match r.request_type:
+                case "role":
+                    assert isinstance(r, RoleRequest)
+                    process_role_request(r)
+                case "create_project":
+                    assert isinstance(r, CreateProjectRequest)
+                    process_project_request(r)
+                case _:
+                    raise ValueError(f"Cannot process {r}")
         # Remove the request from the pending requests
         all_requests.pop((r.request_type, r.email, r.index), None)
     # Update requests list in elastic

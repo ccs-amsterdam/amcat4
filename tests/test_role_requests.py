@@ -137,7 +137,11 @@ def test_api_post_request(clean_requests, client, index, index_name, user):
     request = {"request_type": "role", "index": index, "email": user, "role": "ADMIN"}
     # Guests / unauthenticated users cannot post requests
     check(client.post("/permission_requests", json=request), expected=401)
-
+    # You cannot post a request for someone else
+    check(
+        client.post("/permission_requests", json=request | {"email": "me@me.com"}, headers=build_headers(user=user)),
+        expected=401,
+    )
     # Can we post role and project requests?
     post_json(
         client,
@@ -193,26 +197,33 @@ def test_api_get_admin_requests(clean_requests, client, guest_index, index, inde
     }
 
 
-def test_api_post_admin_requests(clean_requests, client, guest_index, index, index_name, user, admin):
+def test_api_post_admin_requests(clean_requests, client, guest_index, index, index_name, user, reader, admin):
     # Check initial state: no requests, no role, no index
     assert all_requests() == {}
     assert get_role(index, user) == Role.NONE
     with pytest.raises(IndexDoesNotExist):
         get_index(index_name)
     # Create and retrieve requests for making index, assigning role
+    create_request(RoleRequest(index=guest_index, email=user, role="ADMIN"))
     create_request(RoleRequest(index=index, email=user, role="ADMIN"))
     create_request(CreateProjectRequest(index=index_name, email=user))
     requests = [r.model_dump() | {"timestamp": r.timestamp and r.timestamp.isoformat()} for r in list_admin_requests(admin)]
-
+    # Let's reject the role request for index
+    for r in requests:
+        if r["index"] == index:
+            r["reject"] = True
     # Let's also create a request that we won't pass along
-    create_request(RoleRequest(index=guest_index, email=user, role="ADMIN"))
+    create_request(RoleRequest(index=index, email=reader, role="ADMIN"))
     # Let's go :D
     post_json(client, "/permission_requests/admin", expected=204, user=admin, json=requests)
     # Now, the index should be made, the roles assigned, and the resolved requests disappeared
-    assert get_role(index, user) == Role.ADMIN
+    assert get_role(guest_index, user) == Role.ADMIN
     assert get_index(index_name).id == index_name
     assert get_role(index_name, user) == Role.ADMIN
-    assert set(all_requests().keys()) == {("role", user, guest_index)}
+    # The rejected request should not be processed
+    assert get_role(index, user) == Role.NONE
+    # But it should be cleared, and the only request left should be the one from 'reader'
+    assert set(all_requests().keys()) == {("role", reader, index)}
 
 
 def test_api_post_admin_requests_auth(clean_requests, client, guest_index, index, index_name, user, reader):
