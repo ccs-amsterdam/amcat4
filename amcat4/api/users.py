@@ -72,7 +72,7 @@ def _get_user(email, current_user):
     if current_user != email:
         check_global_role(current_user, Role.WRITER)
     global_role = get_global_role(email)
-    if email in (ADMIN_USER, GUEST_USER) or global_role is Role.NONE:
+    if email in (ADMIN_USER, GUEST_USER):
         raise HTTPException(404, detail=f"User {email} unknown")
     else:
         return {"email": email, "role": global_role.name}
