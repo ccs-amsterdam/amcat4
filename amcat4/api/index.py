@@ -1,5 +1,6 @@
 """API Endpoints for document and index management."""
 
+import logging
 from datetime import datetime
 from http import HTTPStatus
 from typing import Annotated, Any, Literal, Mapping
@@ -13,8 +14,8 @@ from amcat4 import fields as index_fields
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_fields_access, check_role
 from amcat4.fields import field_stats, field_values
-from amcat4.index import get_role, refresh_system_index, remove_role, set_role
-from amcat4.models import CreateField, FieldSpec, FieldType, FilterSpec, FilterValue, UpdateField
+from amcat4.index import get_index_user_role, refresh_system_index, remove_role, set_role
+from amcat4.models import ContactInfo, CreateField, FieldSpec, FieldType, FilterSpec, FilterValue, UpdateField
 from amcat4.query import reindex
 
 from .query import _standardize_filters, _standardize_queries
@@ -22,25 +23,24 @@ from .query import _standardize_filters, _standardize_queries
 app_index = APIRouter(prefix="/index", tags=["index"])
 
 RoleType = Literal["ADMIN", "WRITER", "READER", "METAREADER"]
+GuestRoleType = Literal["WRITER", "READER", "METAREADER"]
 
 
 @app_index.get("/")
 def index_list(current_user: str = Depends(authenticated_user)):
     """
-    List index from this server.
+    List indices from this server that the user has access to.
 
-    Returns a list of dicts containing name, role, and guest attributes
+    Returns a list of dicts with index details, including the user role.
     """
 
-    def index_to_dict(ix: index.Index) -> dict:
+    def index_to_dict(ix: index.Index, role: index.Role) -> dict:
         ix_dict = ix._asdict()
-        guest_role_int = ix_dict.get("guest_role", 0)
 
         ix_dict = dict(
             id=ix_dict["id"],
             name=ix_dict["name"],
-            guest_role=index.Role(guest_role_int).name,
-            user_role=index.Role(get_role(ix.id, current_user)).name,
+            user_role=role.name,
             description=ix_dict.get("description", ""),
             archived=ix_dict.get("archived", ""),
             folder=ix_dict.get("folder", ""),
@@ -48,7 +48,7 @@ def index_list(current_user: str = Depends(authenticated_user)):
         )
         return ix_dict
 
-    return [index_to_dict(ix) for ix in index.list_known_indices(current_user)]
+    return [index_to_dict(ix, role) for ix, role in index.list_user_indices(current_user)]
 
 
 class NewIndex(BaseModel):
@@ -56,10 +56,11 @@ class NewIndex(BaseModel):
 
     id: str
     name: str | None = None
-    guest_role: RoleType | None = None
+    guest_role: GuestRoleType | None = None
     description: str | None = None
     folder: str | None = None
     image_url: str | None = None
+    contact: list[ContactInfo] | None = None
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
@@ -69,7 +70,8 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
 
     POST data should be json containing name and optional guest_role
     """
-    guest_role = new_index.guest_role and index.Role[new_index.guest_role.upper()]
+    guest_role = new_index.guest_role and index.GuestRole[new_index.guest_role.upper()]
+
     try:
         index.create_index(
             new_index.id,
@@ -79,7 +81,9 @@ def create_index(new_index: NewIndex, current_user: str = Depends(authenticated_
             admin=current_user if current_user != "_admin" else None,
             folder=new_index.folder,
             image_url=new_index.image_url,
+            contact=new_index.contact,
         )
+
     except ApiError as e:
         raise HTTPException(
             status_code=400,
@@ -93,10 +97,11 @@ class ChangeIndex(BaseModel):
 
     name: str | None = None
     description: str | None = None
-    guest_role: Literal["WRITER", "READER", "METAREADER", "NONE"] | None = None
+    guest_role: GuestRoleType | Literal["NONE"] | None = None
     archive: bool | None = None
     folder: str | None = None
     image_url: str | None = None
+    contact: list[ContactInfo] | None = None
 
 
 @app_index.put("/{ix}")
@@ -125,7 +130,7 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
         archived=archived,
         folder=data.folder,
         image_url=data.image_url,
-        # remove_guest_role=remove_guest_role,
+        contact=data.contact,
         # unarchive=unarchive,
     )
     refresh_system_index()
@@ -137,15 +142,26 @@ def view_index(ix: str, user: str = Depends(authenticated_user)):
     View the index.
     """
     try:
-        role = check_role(user, index.Role.METAREADER, ix, required_global_role=index.Role.WRITER)
+        check_role(user, index.Role.METAREADER, ix)
         d = index.get_index(ix)._asdict()
-        d["user_role"] = role.name
-        d["guest_role"] = index.GuestRole(d.get("guest_role", 0)).name
+
+        try:
+            guest_role = index.GuestRole(d["guest_role"])
+        except ValueError:
+            logging.warning(f"Invalid guest role {d['guest_role']} for index {ix}")
+            guest_role = index.GuestRole(0)
+
+        user_role = get_index_user_role(guest_role, d["roles"], user)
+
+        d.pop("roles", None)
+        d["user_role"] = user_role.name
+        d["guest_role"] = guest_role.name
         d["description"] = d.get("description", "") or ""
         d["name"] = d.get("name", "") or ""
         d["folder"] = d.get("folder", "") or ""
         d["image_url"] = d.get("image_url")
         return d
+
     except index.IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
@@ -368,16 +384,6 @@ def list_index_users(ix: str, user: str = Depends(authenticated_user)):
     return [{"email": u, "role": r.name} for (u, r) in index.list_users(ix).items()]
 
 
-def _check_can_modify_user(ix, user, target_user, target_role):
-    if index.get_global_role(user) != index.Role.ADMIN:
-        required_role = (
-            index.Role.ADMIN
-            if (target_role == index.Role.ADMIN or index.get_role(ix, target_user) == index.Role.ADMIN)
-            else index.Role.WRITER
-        )
-        check_role(user, required_role, ix)
-
-
 @app_index.post("/{ix}/users", status_code=status.HTTP_201_CREATED)
 def add_index_users(
     ix: str,
@@ -388,11 +394,10 @@ def add_index_users(
     """
     Add an existing user to this index.
 
-    To create regular users you need WRITER permission. To create ADMIN users, you need ADMIN permission.
-    Global ADMINs can always add users.
+    This requires ADMIN rights on the index or server
     """
     r = index.Role[role]
-    _check_can_modify_user(ix, user, email, r)
+    check_role(user, index.Role.ADMIN, ix)
     set_role(ix, email, r)
     return {"user": email, "index": ix, "role": r.name}
 
@@ -407,11 +412,10 @@ def modify_index_user(
     """
     Change the role of an existing user.
 
-    This requires WRITER rights on the index or global ADMIN rights.
-    If changing a user from or to ADMIN, it requires (local or global) ADMIN rights
+    This requires ADMIN rights on the index or server
     """
     r = index.Role[role]
-    _check_can_modify_user(ix, user, email, r)
+    check_role(user, index.Role.ADMIN, ix)
     set_role(ix, email, r)
     return {"user": email, "index": ix, "role": r.name}
 
@@ -421,10 +425,9 @@ def remove_index_user(ix: str, email: str, user: str = Depends(authenticated_use
     """
     Remove this user from the index.
 
-    This requires WRITER rights on the index.
-    If removing an ADMIN user, it requires ADMIN rights
+    This requires ADMIN rights on the index or server
     """
-    _check_can_modify_user(ix, user, email, None)
+    check_role(user, index.Role.ADMIN, ix)
     remove_role(ix, email)
     return {"user": email, "index": ix, "role": None}
 
@@ -441,15 +444,19 @@ def start_reindex(
     queries: Annotated[
         str | list[str] | dict[str, str] | None,
         Body(
-            description="Query/Queries to select documents to reindex. Value should be a single query string, a list of query strings, "
-            "or a dict of {'label': 'query'}",
+            description=(
+                "Query/Queries to select documents to reindex. Value should be a single query string, "
+                "a list of query strings, or a dict of {'label': 'query'}"
+            ),
         ),
     ] = None,
     filters: Annotated[
         Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None,
         Body(
-            description="Field filters, should be a dict of field names to filter specifications,"
-            "which can be either a value, a list of values, or a FilterSpec dict",
+            description=(
+                "Field filters, should be a dict of field names to filter specifications, "
+                "which can be either a value, a list of values, or a FilterSpec dict"
+            ),
         ),
     ] = None,
     user: str = Depends(authenticated_user),

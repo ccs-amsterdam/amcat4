@@ -1,5 +1,5 @@
 import functools
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from amcat4.aggregate import query_aggregate, Axis, Aggregation
 from amcat4.api.query import _standardize_queries
@@ -21,7 +21,7 @@ def do_query(index: str, *args, **kwargs):
 
 
 def _d(x):
-    return datetime.strptime(x, "%Y-%m-%d")
+    return datetime.strptime(x, "%Y-%m-%d").replace(tzinfo=timezone.utc)
 
 
 def _y(y):
@@ -31,6 +31,7 @@ def _y(y):
 def test_aggregate(index_docs):
     q = functools.partial(do_query, index_docs)
     assert q(Axis("cat")) == {"a": 3, "b": 1}
+    print(q(Axis(field="date")))
     assert q(Axis(field="date")) == {_d("2018-01-01"): 2, _d("2018-02-01"): 1, _d("2020-01-01"): 1}
 
 
@@ -96,11 +97,11 @@ def test_metric(index_docs: str):
     assert q([], []) == dictset([{"n": 4}])
 
     # Check value handling - Aggregation on date fields
-    assert q(None, [Aggregation("date", "max")]) == dictset([{"n": 4, "max_date": "2020-01-01T00:00:00"}])
+    assert q(None, [Aggregation("date", "max")]) == dictset([{"n": 4, "max_date": "2020-01-01T00:00:00+00:00"}])
     assert q([Axis("subcat")], [Aggregation("date", "avg")]) == dictset(
         [
-            {"subcat": "x", "n": 2, "avg_date": "2018-01-16T12:00:00"},
-            {"subcat": "y", "n": 2, "avg_date": "2019-01-01T00:00:00"},
+            {"subcat": "x", "n": 2, "avg_date": "2018-01-16T12:00:00+00:00"},
+            {"subcat": "y", "n": 2, "avg_date": "2019-01-01T00:00:00+00:00"},
         ]
     )
 

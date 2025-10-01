@@ -6,8 +6,8 @@ from tests.tools import build_headers, post_json
 
 def create_index_metareader(client, index, admin):
     # Create new user and set index role to metareader
-    client.post("/users", headers=build_headers(admin), json={"email": "meta@reader.com", "role": "METAREADER"}),
-    client.put(f"/index/{index}/users/meta@reader.com", headers=build_headers(admin), json={"role": "METAREADER"}),
+    client.post("/users", headers=build_headers(admin), json={"email": "meta@reader.com", "role": "METAREADER"})
+    client.put(f"/index/{index}/users/meta@reader.com", headers=build_headers(admin), json={"role": "METAREADER"})
 
 
 def set_metareader_access(client, index, admin, metareader):

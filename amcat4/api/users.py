@@ -6,16 +6,14 @@ A client can request a token with basic authentication and store that token for 
 """
 
 from typing import Literal, Optional
-from importlib.metadata import version
 
-from fastapi import APIRouter, HTTPException, status, Response, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 from pydantic.networks import EmailStr
 
 from amcat4 import index
-from amcat4.api.auth import authenticated_user, authenticated_admin, check_global_role
-from amcat4.config import get_settings, validate_settings
-from amcat4.index import ADMIN_USER, GUEST_USER, Role, set_global_role, get_global_role, user_exists
+from amcat4.api.auth import authenticated_admin, authenticated_user, check_global_role
+from amcat4.index import ADMIN_USER, GUEST_USER, Role, get_global_role, set_global_role, user_exists
 
 app_users = APIRouter(tags=["users"])
 
@@ -74,7 +72,7 @@ def _get_user(email, current_user):
     if current_user != email:
         check_global_role(current_user, Role.WRITER)
     global_role = get_global_role(email)
-    if email in (ADMIN_USER, GUEST_USER) or global_role is Role.NONE:
+    if email in (ADMIN_USER, GUEST_USER):
         raise HTTPException(404, detail=f"User {email} unknown")
     else:
         return {"email": email, "role": global_role.name}

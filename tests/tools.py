@@ -71,9 +71,13 @@ def dictset(dicts: Iterable[dict]) -> Set[str]:
 
 
 def check(response, expected: int, msg: Optional[str] = None):
+    try:
+        content = response.json()
+    except Exception:
+        content = response.content
     assert response.status_code == expected, (
         f"{msg or ''}{': ' if msg else ''}Unexpected status: received {response.status_code} != expected {expected};"
-        f" reply: {response.json()}"
+        f" reply: {content}"
     )
 
 

@@ -9,7 +9,7 @@ from amcat4 import aggregate, query
 from amcat4.aggregate import Aggregation, Axis, TopHitsAggregation
 from amcat4.api.auth import authenticated_user, check_fields_access, check_role
 from amcat4.config import AuthOptions, get_settings
-from amcat4.index import Role, delete_documents_by_query, get_fields, get_role
+from amcat4.index import Role, get_fields, get_role
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec
 from amcat4.query import delete_query, update_query, update_tag_query
 
@@ -41,6 +41,7 @@ def get_or_validate_allowed_fields(
     they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
     check whether the user can access the fields (If not, raise an error).
     """
+
     if not isinstance(user, str):
         raise ValueError("User should be a string")
     if not isinstance(indices, list):

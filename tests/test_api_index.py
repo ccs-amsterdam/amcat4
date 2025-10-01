@@ -2,7 +2,7 @@ from starlette.testclient import TestClient
 
 from amcat4 import elastic
 
-from amcat4.index import GuestRole, get_guest_role, Role, set_guest_role, set_role, remove_role
+from amcat4.index import GuestRole, get_guest_role, Role, set_guest_role, set_role
 from tests.tools import build_headers, post_json, get_json, check, refresh
 
 
@@ -21,11 +21,12 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
     refresh()
     assert index_name in {x["name"] for x in get_json(client, "/index/", user=writer) or []}
 
-    # Users can GET their own index, global writer can GET all indices, others cannot GET non-public indices
+    # Users can GET their own index, admins can GET all indices, others cannot GET non-public indices
     check(client.get(f"/index/{index_name}"), 401)
     check(client.get(f"/index/{index_name}", headers=build_headers(user=user)), 401)
     check(client.get(f"/index/{index_name}", headers=build_headers(user=writer)), 200)
-    check(client.get(f"/index/{index_name}", headers=build_headers(user=writer2)), 200)
+    check(client.get(f"/index/{index_name}", headers=build_headers(user=writer2)), 401)
+    check(client.get(f"/index/{index_name}", headers=build_headers(user=admin)), 200)
 
     # Users can only see indices that they have a role in or that have a guest role
     assert index_name not in {x["name"] for x in get_json(client, "/index/", user=user) or []}
@@ -125,7 +126,7 @@ def test_fields_upload(client: TestClient, user: str, index: str):
 
 def test_set_get_delete_roles(client: TestClient, admin: str, writer: str, user: str, index: str):
     body = {"email": user, "role": "READER"}
-    # Anon, unauthorized; READER can't add users
+    # Anon, unauthorized, READER, WRITER can't create users
     check(client.post(f"/index/{index}/users", json=body), 401)
     check(
         client.post(f"/index/{index}/users", json=body, headers=build_headers(writer)),
@@ -136,66 +137,62 @@ def test_set_get_delete_roles(client: TestClient, admin: str, writer: str, user:
         client.post(f"/index/{index}/users", json=body, headers=build_headers(writer)),
         401,
     )
-    # WRITER can't add or change ADMIN
     set_role(index, writer, Role.WRITER)
     check(
-        client.post(
-            f"/index/{index}/users",
-            json={"email": user, "role": "ADMIN"},
-            headers=build_headers(writer),
-        ),
+        client.post(f"/index/{index}/users", json=body, headers=build_headers(writer)),
         401,
     )
-    remove_role(index, writer)
 
-    # Global admin can add anyone
+    # Global admin can add or change users within an index
+    # here we make USER an admin
     post_json(
         client,
         f"/index/{index}/users",
-        json={"email": writer, "role": "WRITER"},
+        json={"email": user, "role": "ADMIN"},
         user=admin,
     )
-    assert get_json(client, f"/index/{index}/users", user=writer) == [{"email": writer, "role": "WRITER"}]
-    # Writer can now add a new user
-    post_json(client, f"/index/{index}/users", json=body, user=writer)
-    users = {u["email"]: u["role"] for u in get_json(client, f"/index/{index}/users", user=writer) or []}
-    assert users == {writer: "WRITER", user: "READER"}
 
-    # Anon, unauthorized or READER can't change users
-    writer_url = f"/index/{index}/users/{writer}"
+    # so now we should have two registered users: writer is a writer, and user is an admin
+    users = {u["email"]: u["role"] for u in get_json(client, f"/index/{index}/users", user=user) or []}
+    assert users == {writer: "WRITER", user: "ADMIN"}
+
+    # user as ADMIN can now add a new user
+    post_json(client, f"/index/{index}/users", json={"email": "*@anyone.com", "role": "READER"}, user=user)
+    users = {u["email"]: u["role"] for u in get_json(client, f"/index/{index}/users", user=user) or []}
+    assert users == {writer: "WRITER", user: "ADMIN", "*@anyone.com": "READER"}
+
+    # Anon, unauthorized
     user_url = f"/index/{index}/users/{user}"
+    writer_url = f"/index/{index}/users/{writer}"
     check(client.put(writer_url, json={"role": "READER"}), 401)
     check(
-        client.put(writer_url, json={"role": "READER"}, headers=build_headers(user)),
+        client.put(writer_url, json={"role": "READER"}, headers=build_headers(writer)),
         401,
     )
-    # Writer can change to writer
+    # WRITER cant change, not even themselvs
     check(
-        client.put(user_url, json={"role": "WRITER"}, headers=build_headers(writer)),
-        200,
-    )
-    users = {u["email"]: u["role"] for u in get_json(client, f"/index/{index}/users", user=writer) or []}
-    assert users == {writer: "WRITER", user: "WRITER"}
-    # Writer can't change to admin
-    check(client.put(writer_url, json={"role": "ADMIN"}, headers=build_headers(user)), 401)
-    # Writer can't change from admin
-    set_role(index, writer, Role.ADMIN)
-    check(
-        client.put(writer_url, json={"role": "WRITER"}, headers=build_headers(user)),
+        client.put(writer_url, json={"role": "READER"}, headers=build_headers(writer)),
         401,
     )
 
-    # Anon, unauthorized or READER can't delete users
+    # ADMIN (user) can
+    check(
+        client.put(writer_url, json={"role": "READER"}, headers=build_headers(user)),
+        200,
+    )
+    users = {u["email"]: u["role"] for u in get_json(client, f"/index/{index}/users", user=user) or []}
+    assert users[writer] == "READER"
+
+    # Anon can't delete
     check(client.delete(writer_url), 401)
-    check(client.delete(writer_url, headers=build_headers(user)), 401)
-    # Writer can't delete admin
-    set_role(index, user, Role.WRITER)
-    check(client.delete(writer_url, headers=build_headers(user)), 401)
+    # Writer can't delete, not even themselves
+    check(client.delete(writer_url, headers=build_headers(writer)), 401)
     # Admin can delete writer
-    check(client.delete(user_url, headers=build_headers(writer)), 200)
-    # Global admin can delete anyone
-    check(client.delete(writer_url, headers=build_headers(admin)), 200)
-    assert get_json(client, f"/index/{index}/users", user=admin) == []
+    check(client.delete(writer_url, headers=build_headers(user)), 200)
+    # Global admin can delete index admin
+    check(client.delete(user_url, headers=build_headers(admin)), 200)
+    users = {u["email"]: u["role"] for u in get_json(client, f"/index/{index}/users", user=admin) or []}
+    assert user not in users
 
 
 def test_name_description(client, index, index_name, user, admin):

@@ -6,6 +6,7 @@ from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.index import (
     Role,
+    GuestRole,
     create_index,
     delete_index,
     deregister_index,
@@ -14,7 +15,8 @@ from amcat4.index import (
     get_index,
     get_role,
     list_global_users,
-    list_known_indices,
+    list_all_indices,
+    list_user_indices,
     list_users,
     modify_index,
     refresh_index,
@@ -36,7 +38,10 @@ def list_es_indices() -> List[str]:
 
 
 def list_index_names(email: str | None = None) -> List[str]:
-    return [ix.name for ix in list_known_indices(email)]
+    if email is None:
+        return [ix.name for ix in list_all_indices()]
+    else:
+        return [ix.name for ix, role in list_user_indices(email)]
 
 
 def test_create_delete_index():
@@ -121,7 +126,7 @@ def test_index_roles(index):
 
 def test_guest_role(index):
     assert get_guest_role(index) == Role.NONE
-    set_guest_role(index, Role.READER)
+    set_guest_role(index, GuestRole.READER)
     refresh()
     assert get_guest_role(index) == Role.READER
 
@@ -154,7 +159,7 @@ def test_name_description(index):
     refresh()
     assert get_index(index).name == "test"
     assert get_index(index).description == "ooktest"
-    indices = {x.id: x for x in list_known_indices()}
+    indices = {x.id: x for x in list_all_indices()}
     assert indices[index].name == "test"
 
 

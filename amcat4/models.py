@@ -131,3 +131,11 @@ class SortSpec(BaseModel):
     """Form for sort specification."""
 
     order: Literal["asc", "desc"] = "asc"
+
+
+class ContactInfo(BaseModel):
+    """Contact information for server or index maintainers"""
+
+    name: str | None = None
+    email: str | None = None
+    url: str | None = None

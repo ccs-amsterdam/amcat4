@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from amcat4.config import AuthOptions
-from amcat4.index import delete_user, get_global_role, set_guest_role, Role
+from amcat4.index import delete_user, get_global_role, set_guest_role, GuestRole
 from tests.tools import get_json, build_headers, post_json, check, refresh, set_auth
 
 
@@ -15,7 +15,7 @@ def test_auth(client: TestClient, user, admin, index):
     with set_auth(AuthOptions.allow_guests):
         # Allow guests - unauthenticated user can access projects with guest roles
         assert client.get(f"/index/{index}").status_code == 401
-        set_guest_role(index, Role.READER)
+        set_guest_role(index, GuestRole.READER)
         refresh()
         assert client.get(f"/index/{index}").status_code == 200
         assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
@@ -28,12 +28,8 @@ def test_auth(client: TestClient, user, admin, index):
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
     with set_auth(AuthOptions.authorized_users_only):
-        # Only users with a index-level role can access other indices (even as guest)
-        # KW: I don't understand what this means. Do we need to check every index?
-        # Now changed it so that only users with a server level role can access other indices as guest.
-        # In other words, in this auth mode you either need index level authorization or server level
-        # authorization with guest access. (this did pass the test)
-        set_guest_role(index, Role.READER)
+        # Users MUST have a server-level role to access anything
+        set_guest_role(index, GuestRole.READER)
         refresh()
         assert client.get(f"/index/{index}").status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 401
