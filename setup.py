@@ -4,7 +4,7 @@ from distutils.core import setup
 
 setup(
     name="amcat4",
-    version="4.0.16",
+    version="4.0.17",
     description="API for AmCAT4 Text Analysis",
     author="Wouter van Atteveldt",
     author_email="wouter@vanatteveldt.com",
