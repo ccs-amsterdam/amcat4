@@ -46,9 +46,10 @@ def test_get_user(client: TestClient, writer, user):
     # writer can see everyone
     assert get_json(client, f"/users/{user}", user=writer) == {"email": user, "role": "READER"}
     assert get_json(client, f"/users/{writer}", user=writer) == {"email": writer, "role": "WRITER"}
-    # Retrieving a non-existing user as admin should give 404
+
+    # Retrieving a non-existing user as admin gives the NONE role
     delete_user(user)
-    assert client.get(f"/users/{user}", headers=build_headers(writer)).status_code == 404
+    assert get_json(client, f"/users/{user}", user=writer) == {"email": user, "role": "NONE"}
 
 
 def test_create_user(client: TestClient, user, writer, admin, username):

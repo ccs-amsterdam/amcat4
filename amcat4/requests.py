@@ -25,6 +25,7 @@ class AbstractRequest(BaseModel):
     timestamp: datetime | None = None
     message: str | None = None
     reject: bool = False
+    cancel: bool = False
 
 
 class RoleRequest(AbstractRequest):
@@ -82,15 +83,15 @@ def list_all_requests() -> Iterable[PermissionRequest]:
 
 def create_request(request: PermissionRequest):
     """
-    Create a new request or update an existing request.
+    Create, update or cancel a request.
     """
     # TODO add timestamp=datetime.now().isoformat())
     # Index requests  by type+email+index
     if not request.timestamp:
         request.timestamp = datetime.now()
     requests = {(r.request_type, r.email, r.index): r for r in list_all_requests()}
-    if isinstance(request, RoleRequest) and request.role == "NONE":
-        # Remove role request
+
+    if request.cancel:
         del requests[request.request_type, request.email, request.index]
     else:
         # Overwrite existing or add new request on key

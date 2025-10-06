@@ -55,7 +55,7 @@ def test_role_requests(clean_requests, index, user):
     assert r.role == "METAREADER"
 
     # Cancelling a request
-    create_request(RoleRequest(index=index, email=user, role="NONE"))
+    create_request(RoleRequest(index=index, email=user, role='METAREADER', cancel=True))
     assert all_requests() == {}
 
 
