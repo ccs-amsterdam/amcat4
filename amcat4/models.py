@@ -139,3 +139,18 @@ class ContactInfo(BaseModel):
     name: str | None = None
     email: str | None = None
     url: str | None = None
+
+
+class Roles(BaseModel):
+    role: Literal["NONE", "METAREADER", "READER", "WRITER", "ADMIN"]
+    email: str
+
+
+class Links(BaseModel):
+    label: str
+    href: str
+
+
+class LinksGroup(BaseModel):
+    title: str
+    links: list[Links]

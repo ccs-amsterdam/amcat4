@@ -24,8 +24,9 @@ from uvicorn.config import LOGGING_CONFIG
 
 from amcat4 import index
 from amcat4.config import get_settings, AuthOptions, validate_settings
-from amcat4.elastic import connect_elastic, get_system_version, ping
+from amcat4.elastic import connect_elastic, ping
 from amcat4.index import GLOBAL_ROLES, create_index, set_global_role, Role, list_global_users, upload_documents
+from amcat4.system_index.system_index import migrate
 from amcat4.models import FieldType
 
 SOTU_INDEX = "state_of_the_union"
@@ -100,43 +101,8 @@ def migrate_index(_args) -> None:
     if not elastic.indices.exists(index=settings.system_index):
         logging.info("System index does not exist yet. It will be created automatically if you run the server")
         sys.exit(1)
-    # Check index format version
-    version = get_system_version(elastic)
-    logging.info(f"{settings.elastic_host}::{settings.system_index} is at version {version or 0}")
-    if version == 1:
-        logging.info("Nothing to do")
-    else:
-        logging.info("Migrating to version 1")
-        fields = ["index", "email", "role"]
-        indices: defaultdict[str, dict[str, str]] = defaultdict(dict)
 
-        for entry in elasticsearch.helpers.scan(elastic, index=settings.system_index, fields=fields, _source=False):
-            index, email, role = [val(entry["fields"][field]) for field in fields]
-            indices[index][email] = role
-        if GLOBAL_ROLES not in indices:
-            indices[GLOBAL_ROLES] = {}
-        try:
-            elastic.indices.delete(index=settings.system_index)
-            for index, roles_dict in indices.items():
-                guest_role = roles_dict.pop("_guest", None)
-                roles_dict.pop("ADMIN", None)
-                roles = [{"email": email, "role": role} for (email, role) in roles_dict.items()]
-                doc: dict[str, Any] = dict(name=index, guest_role=guest_role, roles=roles)
-                if index == GLOBAL_ROLES:
-                    doc["version"] = 1
-                elastic.index(index=settings.system_index, id=index, document=doc)
-        except Exception:
-            try:
-                open("roles.csv", "w").write(json.dumps(indices, indent=2))
-                dest = "roles.csv"
-            except Exception:
-                print(json.dumps(indices, indent=2))
-                dest = "screen"
-            logging.exception(
-                "Something went wrong in migrating, and the old system index is probably lost. Sorry!"
-                f"The authorization information is written to {dest}, I hope this can be fixed..."
-            )
-            sys.exit(1)
+    migrate()
 
 
 def base_env():

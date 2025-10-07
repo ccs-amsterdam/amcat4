@@ -13,7 +13,7 @@ from amcat4.api.users import app_users
 
 app = FastAPI(
     title="AmCAT4",
-    description=__doc__,
+    description=__doc__ if __doc__ else "",
     openapi_tags=[
         dict(name="users", description="Endpoints for user management"),
         dict(name="requests", description="Endpoints for authorization requests"),

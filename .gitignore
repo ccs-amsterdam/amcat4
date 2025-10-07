@@ -55,6 +55,9 @@ nosetests.xml
 !.vscode/settings.json
 !.vscode/extensions.json
 
+# dev meuk
+/playground.py
+
 # static files
 navigator/media/static
 static/components/

@@ -57,7 +57,6 @@ class Role(IntEnum):
     WRITER = 30
     ADMIN = 40
 
-
 class GuestRole(IntEnum):
     NONE = 0
     METAREADER = 10
@@ -77,7 +76,6 @@ class Index(NamedTuple):
     guest_role: GuestRole
     archived: Optional[str]
     roles: dict[str, Role]
-    summary_field: Optional[str]
     folder: Optional[str]
     image_url: Optional[str]
     contact: Optional[list[ContactInfo]]
@@ -142,7 +140,6 @@ def _index_from_elastic(index):
         guest_role=guest_role,
         roles=_roles_from_elastic(src.get("roles", [])),
         archived=src.get("archived"),
-        summary_field=src.get("summary_field"),
         folder=src.get("folder"),
         image_url=src.get("image_url"),
         contact=src.get("contact"),
