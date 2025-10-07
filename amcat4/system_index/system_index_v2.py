@@ -13,7 +13,8 @@ import json
 
 
 # TODO: think about whether we want to keep the 'current' version of each amcat4.models model in the version files.
-# If we don't, we can't 'change' them (only add keys). If we do, we have to keep them in sync,
+# If we don't, we can't 'change' them (only add keys, or replace them). If we do, we have to keep them in sync
+# in the models.py file and in the current system index version file,
 # (or import the models from the last system_index version, which might make sense?)
 #
 # For models that haven't changed, we'd then import them here and re-assign them
