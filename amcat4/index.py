@@ -574,7 +574,7 @@ def delete_document(index: str, doc_id: str):
     es().delete(index=index, id=doc_id)
 
 
-UDATE_SCRIPTS = dict(
+UPDATE_SCRIPTS = dict(
     add="""
     if (ctx._source[params.field] == null) {
       ctx._source[params.field] = [params.tag]
@@ -601,7 +601,7 @@ UDATE_SCRIPTS = dict(
 
 def update_tag_by_query(index: str | list[str], action: Literal["add", "remove"], query: dict, field: str, tag: str):
     create_or_verify_tag_field(index, field)
-    script = dict(source=UDATE_SCRIPTS[action], lang="painless", params=dict(field=field, tag=tag))
+    script = dict(source=UPDATE_SCRIPTS[action], lang="painless", params=dict(field=field, tag=tag))
     result = es().update_by_query(index=index, script=script, **query, refresh=True)
     return dict(updated=result["updated"], total=result["total"])
 
@@ -618,45 +618,3 @@ def update_documents_by_query(index: str | list[str], query: dict, field: str, v
 
 def delete_documents_by_query(index: str | list[str], query: dict):
     return es().delete_by_query(index=index, query=query)
-
-
-def get_branding():
-    # We (ab)use the _global settings document for this
-    # (Maybe we should just add a nested object for more flexibility?)
-    doc = es().get(
-        index=get_settings().system_index,
-        id=GLOBAL_ROLES,
-        source_includes=["name", "description", "image_url", "client_data", "external_url"],
-    )
-    return dict(
-        server_name=doc["_source"].get("name"),
-        server_url=doc["_source"].get("external_url"),
-        welcome_text=doc["_source"].get("description"),
-        server_icon=doc["_source"].get("image_url"),
-        client_data=doc["_source"].get("client_data"),
-    )
-
-
-def set_branding(
-    server_name: Optional[str] = None,
-    server_url: Optional[str] = None,
-    welcome_text: Optional[str] = None,
-    server_icon: Optional[str] = None,
-    client_data: Optional[str] = None,
-):
-    """Change the branding info for this server. Set params to None to keep unchanged, or to '' to delete the entry"""
-    doc = {}
-    if server_name is not None:
-        doc["name"] = server_name or None
-    if server_url is not None:
-        doc["external_url"] = server_url or None
-    if welcome_text is not None:
-        doc["description"] = welcome_text or None
-    if server_icon is not None:
-        doc["image_url"] = server_icon or None
-    if client_data is not None:
-        doc["client_data"] = client_data or None
-    if not doc:
-        # Nothing to do!
-        return
-    return es().update(index=get_settings().system_index, id=GLOBAL_ROLES, doc=doc)

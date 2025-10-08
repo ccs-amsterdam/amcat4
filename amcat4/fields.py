@@ -199,7 +199,6 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
             elastic_type=elastic_type,
             identifier=settings.identifier,
             metareader=settings.metareader or get_default_metareader(settings.type),
-            client_settings=settings.client_settings or {},
         )
         check_forbidden_type(current_fields[field], settings.type)
 
@@ -262,8 +261,8 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
                 raise ValueError(f"Field {field} is not of type text, cannot set metareader access to snippet")
             current_fields[field].metareader = new_settings.metareader
 
-        if new_settings.client_settings is not None:
-            current_fields[field].client_settings = new_settings.client_settings
+        if new_settings.client_data is not None:
+            current_fields[field].client_data = new_settings.client_data
 
     es().update(
         index=get_settings().system_index,

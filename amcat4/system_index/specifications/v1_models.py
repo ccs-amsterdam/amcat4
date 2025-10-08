@@ -1,3 +1,5 @@
+# This is a copy of all the models in amcat4.models.py that are used in v1.
+
 import pydantic
 from pydantic import BaseModel, model_validator
 from typing import Annotated, Any, Literal
@@ -21,6 +23,7 @@ FieldType = Literal[
     "json",
     "url",
 ]
+
 ElasticType = Literal[
     "text",
     "annotated_text",
@@ -49,28 +52,17 @@ ElasticType = Literal[
 
 
 class SnippetParams(BaseModel):
-    """
-    Snippet parameters for a specific field.
-    nomatch_chars is the number of characters to show if there is no query match. This is always
-    the first [nomatch_chars] of the field.
-    """
-
     nomatch_chars: Annotated[int, pydantic.Field(ge=1)] = 100
     max_matches: Annotated[int, pydantic.Field(ge=0)] = 0
     match_chars: Annotated[int, pydantic.Field(ge=1)] = 50
 
 
 class FieldMetareaderAccess(BaseModel):
-    """Metareader access for a specific field."""
-
     access: Literal["none", "read", "snippet"] = "none"
     max_snippet: SnippetParams | None = None
 
 
 class Field(BaseModel):
-    """Settings for a field. Some settings, such as metareader, have a strict type because they are used
-    server side. Others, such as client_settings, are free-form and can be used by the client to store settings."""
-
     type: FieldType
     elastic_type: ElasticType
     identifier: bool = False
@@ -88,54 +80,7 @@ class Field(BaseModel):
         return self
 
 
-class CreateField(BaseModel):
-    """Model for creating a field"""
-
-    type: FieldType
-    elastic_type: ElasticType | None = None
-    identifier: bool = False
-    metareader: FieldMetareaderAccess | None = None
-    client_settings: dict[str, Any] | None = None
-
-
-class UpdateField(BaseModel):
-    """Model for updating a field"""
-
-    type: FieldType | None = None
-    metareader: FieldMetareaderAccess | None = None
-    client_settings: dict[str, Any] | None = None
-
-
-FilterValue = str | int
-
-
-class FilterSpec(BaseModel):
-    """Form for filter specification."""
-
-    values: list[FilterValue] | None = None
-    gt: FilterValue | None = None
-    lt: FilterValue | None = None
-    gte: FilterValue | None = None
-    lte: FilterValue | None = None
-    exists: bool | None = None
-
-
-class FieldSpec(BaseModel):
-    """Form for field specification."""
-
-    name: str
-    snippet: SnippetParams | None = None
-
-
-class SortSpec(BaseModel):
-    """Form for sort specification."""
-
-    order: Literal["asc", "desc"] = "asc"
-
-
 class ContactInfo(BaseModel):
-    """Contact information for server or index maintainers"""
-
     name: str | None = None
     email: str | None = None
     url: str | None = None
@@ -146,21 +91,9 @@ class Roles(BaseModel):
     email: str
 
 
-class Links(BaseModel):
-    label: str
-    href: str
-
-
-class LinksGroup(BaseModel):
-    title: str
-    links: list[Links]
-
-
 class Branding(BaseModel):
-    name: str | None = None
-    icon: str | None = None
-    external_url: str | None = None
-    description: str | None = None
+    server_name: str | None = None
+    server_icon: str | None = None
+    server_url: str | None = None
     welcome_text: str | None = None
-    information_links: list[LinksGroup] | None = None
-    welcome_buttons: list[Links] | None = None
+    client_data: str | None = None

@@ -22,6 +22,7 @@ class Table(BaseModel):
 class SystemIndexSpec(BaseModel):
     version: int
     tables: list[Table]
+    types: dict[str, Type[BaseModel]] | None = None
 
 
 def get_system_index_name(version: int, table: str | None = None):
@@ -133,12 +134,13 @@ def validate_system_index_input(spec: SystemIndexSpec, path: str, doc: dict, par
     raise ValueError(f"Document does not conform to any model for path {path}")
 
 
-def safe_write_to_system_index(spec: SystemIndexSpec, path: str, docs: list[dict] | dict, op_type: Literal["index", "update"] = "index") -> None:
+def safe_write_to_system_index(spec: SystemIndexSpec, path: str, docs: list[dict] | dict, op_type: Literal["index", "update"] = "index", refresh: bool = True) -> None:
     """
     Safely write one or more documents to the system index, validating them first.
     If op_type is "index", the document will be created or replaced.
     If op_type is "update", the document will be updated (and must already exist).
     """
+    index = get_system_index_name(spec.version, path)
     docs = docs if isinstance(docs, list) else [docs]
 
     actions = []
@@ -146,7 +148,6 @@ def safe_write_to_system_index(spec: SystemIndexSpec, path: str, docs: list[dict
 
     for doc in docs:
         valid_doc = validate_system_index_input(spec, path, doc, partial=partial)
-        index = get_system_index_name(spec.version, path)
         id = valid_doc.pop("id", None)
         if not id:
             raise ValueError("Document must have an 'id' field")
@@ -159,10 +160,21 @@ def safe_write_to_system_index(spec: SystemIndexSpec, path: str, docs: list[dict
         })
 
         try:
-            successes, failures = elasticsearch.helpers.bulk(
+            elasticsearch.helpers.bulk(
                 _elastic_connection(),
                 actions,
                 stats_only=False,
             )
         except elasticsearch.helpers.BulkIndexError as e:
             logging.error("Error on updating system index: " + json.dumps(e.errors, indent=2, default=str))
+
+    if refresh:
+        refresh_index(spec, path)
+
+
+def refresh_index(spec: SystemIndexSpec, path: str) -> None:
+    index = get_system_index_name(spec.version, path)
+    _elastic_connection().indices.refresh(index=index)
+
+
+SINGLE_DOC_INDEX_ID = "_single_doc_index"

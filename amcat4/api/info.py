@@ -7,8 +7,9 @@ from pydantic import BaseModel
 from amcat4 import elastic
 from amcat4.api.auth import authenticated_admin, authenticated_user, get_middlecat_config
 from amcat4.config import get_settings, validate_settings
-from amcat4.index import get_branding, set_branding
 from amcat4.query import get_task_status
+from amcat4.system_index  import get_from_system_index, insert_to_system_index, update_system_index
+from amcat4.models import Branding
 
 templates = Jinja2Templates(directory="templates")
 
@@ -50,26 +51,19 @@ def get_auth_config():
 
 @app_info.get("/config/branding")
 def read_branding():
-    return get_branding()
-
-
-class ChangeBranding(BaseModel):
-    server_name: str | None = None
-    server_icon: str | None = None
-    server_url: str | None = None
-    welcome_text: str | None = None
-    client_data: str | None = None
+    return get_from_system_index("server_settings")
 
 
 @app_info.put("/config/branding")
-def change_branding(data: ChangeBranding, _user: str = Depends(authenticated_admin)):
-    set_branding(
-        server_icon=data.server_icon,
-        server_name=data.server_name,
-        welcome_text=data.welcome_text,
-        client_data=data.client_data,
-        server_url=data.server_url,
-    )
+def change_branding(data: Branding, _user: str = Depends(authenticated_admin)):
+    ## This doesn't yet make sense. The problem is that if we have a separate branding endpoint,
+    ## we need to make sure that the server_settings document exists.
+    has_branding = get_from_system_index("server_settings", sources=[])
+    if has_branding:
+        update_system_index("server_settings", data.model_dump())
+    else:
+        insert_to_system_index("server_settings", data.model_dump())
+
 
 
 @app_info.get("/task/{taskId}")
