@@ -1,11 +1,10 @@
 from datetime import datetime
-from typing import Annotated, Iterable, Literal, Union
-
-from pydantic import BaseModel, Field
+from typing import Iterable
 
 from amcat4.api.index import RoleType
 from amcat4.config import get_settings
 from amcat4.elastic import es
+from amcat4.models import PermissionRequest, RoleRequest, CreateProjectRequest
 from amcat4.index import (
     GLOBAL_ROLES,
     Role,
@@ -18,32 +17,6 @@ from amcat4.index import (
 
 # Requests are (for now) either role requets or create project requests
 # type + email + index should be unique
-
-
-class AbstractRequest(BaseModel):
-    email: str
-    timestamp: datetime | None = None
-    message: str | None = None
-    reject: bool = False
-    cancel: bool = False
-
-
-class RoleRequest(AbstractRequest):
-    request_type: Literal["role"] = "role"
-    index: str | None = None
-    role: RoleType | Literal["NONE"]
-
-
-class CreateProjectRequest(AbstractRequest):
-    request_type: Literal["create_project"] = "create_project"
-    index: str
-    email: str
-    description: str | None = None
-    name: str | None = None
-    folder: str | None = None
-
-
-PermissionRequest = Annotated[Union[RoleRequest, CreateProjectRequest], Field(discriminator="request_type")]
 
 
 def request_from_elastic(d) -> PermissionRequest:

@@ -261,8 +261,8 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
                 raise ValueError(f"Field {field} is not of type text, cannot set metareader access to snippet")
             current_fields[field].metareader = new_settings.metareader
 
-        if new_settings.client_data is not None:
-            current_fields[field].client_data = new_settings.client_data
+        if new_settings.client_settings is not None:
+            current_fields[field].client_settings = new_settings.client_settings
 
     es().update(
         index=get_settings().system_index,

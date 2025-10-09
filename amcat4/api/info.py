@@ -2,7 +2,6 @@ from importlib.metadata import version
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
 
 from amcat4 import elastic
 from amcat4.api.auth import authenticated_admin, authenticated_user, get_middlecat_config

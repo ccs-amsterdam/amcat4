@@ -13,11 +13,11 @@ def migrate():
 
     for ix in export_v1_index_list():
         if ix.id == "_global":
-            import_v2_server_settings(ix)
+            import_v2_settings(ix)
             import_v2_requests(ix)
             import_v2_users(ix)
         else:
-            import_v2_index_list(ix)
+            import_v2_settings(ix)
             import_v2_users(ix)
 
 
@@ -44,26 +44,48 @@ def export_v1_index_list() -> Iterable[v1.SI_IndexList]:
 
 
 
-def import_v2_index_list(v1_ix: v1.SI_IndexList):
-    si_index_list = get_system_index_name(v2.SPEC.version, 'index_list')
+def import_v2_index_settings(v1_ix: v1.SI_IndexList):
+    si_settings = get_system_index_name(v2.SPEC.version, 'settings')
 
-    doc = v2.SI_IndexList(
-        id=v1_ix.id,
-        name=v1_ix.name or "",
-        description=v1_ix.description,
-        guest_role=v1_ix.guest_role,
-        archived=v1_ix.archived,
-        folder=v1_ix.folder,
-        image_url=v1_ix.image_url,
-        contact=v1_ix.contact,
-        fields=v1_ix.fields
-    )
+    d = v1_ix.model_dump(include={
+        'id','name','description','guest_role',
+        'archived','folder','image_url','contact','fields'})
+    doc = v2.SI_Settings.model_validate(**d)
 
     doc_dict = doc.model_dump()
     id = doc_dict.pop('id')
 
     _elastic_connection().index(
-        index=si_index_list,
+        index=si_settings,
+        id=id,
+        document=doc_dict,
+    )
+
+
+def import_v2_server_settings(vi_global: v1.SI_IndexList):
+    si_settings = get_system_index_name(v2.SPEC.version, 'settings')
+
+    # V2 does specify the client data
+    client_data = json.loads(vi_global.client_data or "{}")
+    branding = vi_global.branding.model_dump() if vi_global.branding else {}
+
+    doc = v2.SI_Settings.model_validate(
+        id="_global",
+        name=vi_global.name,
+        description=None,
+        server_name=branding.get("server_name"),
+        server_url=branding.get('server_url'),
+        welcome_text=branding.get('welcome_text'),
+        server_icon=branding.get('server_icon'),
+        welcome_buttons=client_data.get("welcome_buttons"),
+        information_links=client_data.get("information_links"),
+        contact=vi_global.contact,
+    )
+
+    doc_dict = doc.model_dump()
+    id = doc_dict.pop('id')
+    _elastic_connection().index(
+        index=si_server_settings,
         id=id,
         document=doc_dict,
     )
@@ -88,34 +110,6 @@ def import_v2_users(v1_ix: v1.SI_IndexList):
     if len(actions) > 0:
         elasticsearch.helpers.bulk(_elastic_connection(), actions)
 
-
-def import_v2_server_settings(vi_global: v1.SI_IndexList):
-    si_server_settings = get_system_index_name(v2.SPEC.version, 'server_settings')
-
-    # V2 does specify the client data
-    client_data = json.loads(vi_global.client_data or "{}")
-    branding = vi_global.branding.model_dump() if vi_global.branding else {}
-
-    doc = v2.SI_ServerSettings(
-        id=SINGLE_DOC_INDEX_ID,
-        name=vi_global.name,
-        description=None,
-        server_name=branding.get("server_name"),
-        server_url=branding.get('server_url'),
-        welcome_text=branding.get('welcome_text'),
-        server_icon=branding.get('server_icon'),
-        welcome_buttons=client_data.get("welcome_buttons"),
-        information_links=client_data.get("information_links"),
-        contact=vi_global.contact,
-    )
-
-    doc_dict = doc.model_dump()
-    id = doc_dict.pop('id')
-    _elastic_connection().index(
-        index=si_server_settings,
-        id=id,
-        document=doc_dict,
-    )
 
 
 def import_v2_requests(v1_global: v1.SI_IndexList):

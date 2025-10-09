@@ -1,7 +1,11 @@
 import pydantic
+from datetime import datetime
 from pydantic import BaseModel, model_validator
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Union
 from typing_extensions import Self
+
+RoleType = Literal["ADMIN", "WRITER", "READER", "METAREADER"]
+GuestRoleType = Literal["WRITER", "READER", "METAREADER"]
 
 
 FieldType = Literal[
@@ -46,7 +50,6 @@ ElasticType = Literal[
     "dense_vector",
     "geo_point",
 ]
-
 
 class SnippetParams(BaseModel):
     """
@@ -141,10 +144,6 @@ class ContactInfo(BaseModel):
     url: str | None = None
 
 
-class Roles(BaseModel):
-    role: Literal["NONE", "METAREADER", "READER", "WRITER", "ADMIN"]
-    email: str
-
 
 class Links(BaseModel):
     label: str
@@ -164,3 +163,39 @@ class Branding(BaseModel):
     welcome_text: str | None = None
     information_links: list[LinksGroup] | None = None
     welcome_buttons: list[Links] | None = None
+
+class AbstractRequest(BaseModel):
+    email: str
+    timestamp: datetime | None = None
+    message: str | None = None
+    reject: bool = False
+    cancel: bool = False
+
+
+class RoleRequest(AbstractRequest):
+    request_type: Literal["role"] = "role"
+    index: str | None = None
+    role: RoleType | Literal["NONE"]
+
+
+class CreateProjectRequest(AbstractRequest):
+    request_type: Literal["create_project"] = "create_project"
+    index: str
+    email: str
+    description: str | None = None
+    name: str | None = None
+    folder: str | None = None
+
+PermissionRequest = Annotated[Union[RoleRequest, CreateProjectRequest], pydantic.Field(discriminator="request_type")]
+
+
+class NewIndex(BaseModel):
+    """Form to create a new index."""
+
+    id: str
+    name: str | None = None
+    guest_role: GuestRoleType | None = None
+    description: str | None = None
+    folder: str | None = None
+    image_url: str | None = None
+    contact: list[ContactInfo] | None = None

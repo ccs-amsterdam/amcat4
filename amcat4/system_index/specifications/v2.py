@@ -1,104 +1,55 @@
 
 # Version 2 splits the system index V1 into multiple indices.
 
+from typing_extensions import Annotated
+import pydantic
 from pydantic import BaseModel
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
+from amcat4.system_index.mapping import SI_ElasticMapping, create_pydantic_model_from_mapping
 from amcat4.system_index.util import SystemIndexSpec, Table
-from amcat4.models import ContactInfo, Field, Links, LinksGroup
+from amcat4.models import Branding, ContactInfo, Field, Links, LinksGroup, PermissionRequest
 from datetime import datetime
 
 
-# INDEX LIST TABLE ----------------------------------------------------
-class SI_IndexList(BaseModel):
-    id: str
-    name: str
-    description: Optional[str]
-    guest_role: Literal["NONE", "METAREADER", "READER", "WRITER"]
-    archived: Optional[str]
-    folder: Optional[str]
-    image_url: Optional[str]
-    fields: Optional[dict[str, Field]]
-    contact: Optional[list[ContactInfo]]
+# SETTINGS TABLE ----------------------------------------------------
 
-
-SI_IndexList_mapping = {
-    "name": {"type": "text"},
+SI_Settings_mapping: SI_ElasticMapping = {
+    "name": {"type": "keyword"},
     "description": {"type": "text"},
+    "contact": {"type": "flattened"},
+    "type": {"type": "keyword"},
+    # Index specific
     "guest_role": {"type": "keyword"},
-    "fields": {"type": "object"},
     "archived": {"type": "date"},
     "folder": {"type": "keyword"},
     "image_url": {"type": "keyword"},
+    "fields": {"type": "flattened"},
+    # Server specific
     "external_url": {"type": "keyword"},
-}
-
-
-# SERVER SETTINGS TABLE ----------------------------------------------------
-class SI_ServerSettings(BaseModel):
-    id: str
-    name: Optional[str]
-    description: Optional[str]
-    server_name: Optional[str]
-    server_url: Optional[str]
-    welcome_text: Optional[str]
-    server_icon: Optional[str]
-    welcome_buttons: Optional[list[Links]]
-    information_links: Optional[list[LinksGroup]]
-    contact: Optional[list[ContactInfo]]
-
-
-SI_ServerSettings_mapping = {
-    "name": {"type": "text"},
-    "branding": {"type": "object"},
-    "description": {"type": "text"},
-    "server_name": {"type": "keyword"},
-    "server_url": {"type": "keyword"},
     "welcome_text": {"type": "text"},
-    "server_icon": {"type": "keyword"},
-    "welcome_buttons": {"type": "object"},
-    "information_links": {"type": "object"},
-    "contact": {"type": "object"},
+    "information_links": {"type": "flattened"},
+    "welcome_buttons": {"type": "flattened"},
+    "icon": {"type": "keyword"},
 }
+
+SI_Settings = create_pydantic_model_from_mapping("SI_Settings", SI_Settings_mapping)
 
 
 # USERS TABLE ------------------------------------------------------------
-class SI_Users(BaseModel):
-    email: str
-    index: str   # global for global roles
-    role: Literal["NONE", "METAREADER", "READER", "WRITER", "ADMIN"]
 
-
-SI_Users_mapping = {
+SI_Users_mapping: SI_ElasticMapping = {
     "email": {"type": "keyword"},
     "index": {"type": "keyword"},
     "role": {"type": "keyword"},
 }
 
 
+SI_Users = create_pydantic_model_from_mapping("SI_Users", SI_Users_mapping)
+
+
 # REQUESTS TABLE ----------------------------------------------------------
-class AbstractRequest(BaseModel):
-    email: str
-    timestamp: datetime | None = None
-    message: str | None = None
-    status: Literal["PENDING", "APPROVED", "REJECTED", "CANCELED"] = "PENDING"
 
-
-class SI_RoleRequest(AbstractRequest):
-    request_type: Literal["role"] = "role"
-    index: str | None = None
-    role: Literal["NONE", "METAREADER", "READER", "WRITER", "ADMIN"]
-
-
-class SI_CreateProjectRequest(AbstractRequest):
-    request_type: Literal["create_project"] = "create_project"
-    index: str
-    email: str
-    description: str | None = None
-    name: str | None = None
-    folder: str | None = None
-
-
-SI_Requests_mapping = {
+SI_Requests_mapping: SI_ElasticMapping = {
     "request_type": {"type": "keyword"},
     "email": {"type": "keyword"},
     "index": {"type": "keyword"},
@@ -111,13 +62,14 @@ SI_Requests_mapping = {
     "folder": {"type": "keyword"},
 }
 
+SI_Requests = create_pydantic_model_from_mapping("SI_Requests", SI_Requests_mapping)
+
 
 SPEC = SystemIndexSpec(
     version=1,
     tables=[
-        Table(path='index_list', model=SI_IndexList, es_mapping=SI_IndexList_mapping),
-        Table(path='server_settings', model=SI_ServerSettings, es_mapping=SI_ServerSettings_mapping),
+        Table(path='settings', model=SI_Settings, es_mapping=SI_Settings_mapping),
         Table(path='users', model=SI_Users, es_mapping=SI_Users_mapping),
-        Table(path='requests', model=[SI_RoleRequest, SI_CreateProjectRequest], es_mapping=SI_Requests_mapping)
+        Table(path='requests', model=SI_Requests, es_mapping=SI_Requests_mapping)
     ]
 )

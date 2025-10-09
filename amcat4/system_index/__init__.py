@@ -1,4 +1,3 @@
-from pydantic.main import BaseModel
 from amcat4.system_index.specifications import v2
 from amcat4.system_index.util import SINGLE_DOC_INDEX_ID, create_or_refresh_system_index, safe_write_to_system_index, get_system_index_name, refresh_index
 from amcat4.elastic_connection import _elastic_connection
@@ -34,6 +33,10 @@ def get_from_system_index(path: str, id: str | None = None, sources: list[str] |
 
 
 def query_from_system_index(path: str, query: dict, size: int = 1000, sources: list[str] | None = None) -> list[dict]:
+    """
+    Query documents from the system index at the given path using the given Elasticsearch query.
+    Returns a list of documents (as dictionaries).
+    """
     params: dict[str,Any] = {
         "index": get_system_index_name(SPEC.version, path),
         "query": query,

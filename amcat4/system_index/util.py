@@ -7,6 +7,7 @@ from pydantic.fields import FieldInfo
 from amcat4.config import get_settings
 from typing import Type, Literal
 from amcat4.elastic_connection import _elastic_connection
+from amcat4.system_index.mapping import SI_ElasticMapping
 
 
 class InvalidSystemIndex(Exception):
@@ -15,8 +16,8 @@ class InvalidSystemIndex(Exception):
 
 class Table(BaseModel):
     path: str
-    model: list[Type[BaseModel]] | Type[BaseModel]  # if two models, test union
-    es_mapping: dict[str, dict[str, str]]
+    model: Type[BaseModel]
+    es_mapping: SI_ElasticMapping
 
 
 class SystemIndexSpec(BaseModel):
@@ -123,13 +124,11 @@ def validate_system_index_input(spec: SystemIndexSpec, path: str, doc: dict, par
         if key not in table.es_mapping and key != "id":
             raise ValueError(f"Key '{key}' not in Elasticsearch mapping for path {path}")
 
-    models = table.model if isinstance(table.model, list) else [table.model]
-    for model in models:
-        model = model if not partial else create_partial_model(model, list(doc.keys()))
-        try:
-            return model.model_validate(doc).model_dump()
-        except Exception:
-            pass
+    model = table.model if not partial else create_partial_model(table.model, list(doc.keys()))
+    try:
+        return model.model_validate(doc).model_dump()
+    except Exception:
+        pass
 
     raise ValueError(f"Document does not conform to any model for path {path}")
 
