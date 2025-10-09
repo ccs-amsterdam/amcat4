@@ -1,5 +1,5 @@
 from amcat4.system_index.specifications import v2
-from amcat4.system_index.util import SINGLE_DOC_INDEX_ID, create_or_refresh_system_index, safe_write_to_system_index, get_system_index_name, refresh_index
+from amcat4.system_index.util import SINGLE_DOC_INDEX_ID, create_or_refresh_system_index, safe_write_to_system_index, get_system_index_name
 from amcat4.elastic_connection import _elastic_connection
 from typing import Any
 

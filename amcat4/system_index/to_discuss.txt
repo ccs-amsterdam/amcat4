@@ -23,3 +23,13 @@ options:
 - define pydantic model and infer elastic mapping from that. Typesafe, but don't like that elastic mapping is inferred and not explicit. Also, syncing with models.py gets messy
 
 ... we can infer the pydantic model from elastic (already did this), but doesn't work with type hints, so not sure if its of any use then.
+
+
+main problematic things:
+- cannot make pydantic models partial
+- elastic mappings should not be inferred from pydantic models. Too implicit, and to easy to accidentally make changes that can lead to inconsistent system index versions
+   - i.e. the system index should be concretely defined, and devs should understand that you can only add fields (or decide to ignore them). Otherwise requires migration
+
+Potential approach:
+- we hardcode the elastic mapping (using helper functions in mapping.py)
+-

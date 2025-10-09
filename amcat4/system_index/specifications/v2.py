@@ -1,15 +1,8 @@
 
 # Version 2 splits the system index V1 into multiple indices.
 
-from typing_extensions import Annotated
-import pydantic
-from pydantic import BaseModel
-from typing import Literal, Optional, Union
-from amcat4.system_index.mapping import SI_ElasticMapping, create_pydantic_model_from_mapping
+from amcat4.system_index.mapping import eMapping, eObject, eObjectArray
 from amcat4.system_index.util import SystemIndexSpec, Table
-from amcat4.models import Branding, ContactInfo, Field, Links, LinksGroup, PermissionRequest
-from datetime import datetime
-
 
 # SETTINGS TABLE ----------------------------------------------------
 
@@ -32,10 +25,18 @@ SI_Settings_mapping: SI_ElasticMapping = {
     "icon": {"type": "keyword"},
 }
 
-SI_Settings = create_pydantic_model_from_mapping("SI_Settings", SI_Settings_mapping)
+settings_mapping = eMapping(
+    name='keyword',
+    description='text',
+    contact=eObject(
+        name='keyword',
+        email='keyword',
+        url='keyword',
+    ),
+
+)
 
 
-# USERS TABLE ------------------------------------------------------------
 
 SI_Users_mapping: SI_ElasticMapping = {
     "email": {"type": "keyword"},
@@ -44,10 +45,8 @@ SI_Users_mapping: SI_ElasticMapping = {
 }
 
 
-SI_Users = create_pydantic_model_from_mapping("SI_Users", SI_Users_mapping)
 
 
-# REQUESTS TABLE ----------------------------------------------------------
 
 SI_Requests_mapping: SI_ElasticMapping = {
     "request_type": {"type": "keyword"},
@@ -62,7 +61,6 @@ SI_Requests_mapping: SI_ElasticMapping = {
     "folder": {"type": "keyword"},
 }
 
-SI_Requests = create_pydantic_model_from_mapping("SI_Requests", SI_Requests_mapping)
 
 
 SPEC = SystemIndexSpec(

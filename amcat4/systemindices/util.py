@@ -2,8 +2,7 @@
 import logging
 import json
 import elasticsearch.helpers
-from pydantic import BaseModel, create_model
-from pydantic.fields import FieldInfo
+from pydantic import BaseModel
 from amcat4.config import get_settings
 from typing import Type, Literal
 from amcat4.elastic_connection import _elastic_connection
@@ -16,14 +15,8 @@ class InvalidSystemIndex(Exception):
 
 class Table(BaseModel):
     path: str
-    model: Type[BaseModel]
     es_mapping: SI_ElasticMapping
 
-
-class SystemIndexSpec(BaseModel):
-    version: int
-    tables: list[Table]
-    types: dict[str, Type[BaseModel]] | None = None
 
 
 def get_system_index_name(version: int, table: str | None = None):
@@ -41,36 +34,6 @@ def current_system_index(max_version: int):
         if _elastic_connection().indices.exists(index=index_name):
             return i
     return None
-
-
-def create_partial_model(model: Type[BaseModel], keys: list[str]) -> Type[BaseModel]:
-    """
-    Creates a new Pydantic model from an existing one,
-    making all fields optional.
-    """
-    # Get the fields and their type hints from the original model
-    fields = model.model_fields
-
-    # Create a new dictionary of fields with Optional type hints and a default of None
-    fields = {}
-    for name, field_info in model.model_fields.items():
-        if name not in keys:
-            continue
-        fields[name] = (
-            field_info.rebuild_annotation(),
-            FieldInfo.merge_field_infos(
-                field_info,
-                default=None,
-                annotation=None,
-                metadata=[],
-            ),
-        )
-
-    return create_model(
-        model.__name__ + '_partial',
-        __base__=model,
-        **fields
-    )
 
 
 def create_or_refresh_system_index(spec: SystemIndexSpec) -> None:
@@ -106,31 +69,6 @@ def create_or_refresh_system_index(spec: SystemIndexSpec) -> None:
         logging.warning(e)
 
 
-def validate_system_index_input(spec: SystemIndexSpec, path: str, doc: dict, partial: bool = True) -> dict:
-    """
-    Given a system index specification for a particular version, validate whether input for a
-    particular path is valid, and return the validated (and possibly normalized) document.
-    This is used in system_index.py to validate input before writing to the system index.
-    """
-    table = next(
-        (t for t in spec.tables if t.path == path),
-        None
-    )
-
-    if table is None:
-        raise InvalidSystemIndex(f"Path {path} not in system index specification")
-
-    for key in doc.keys():
-        if key not in table.es_mapping and key != "id":
-            raise ValueError(f"Key '{key}' not in Elasticsearch mapping for path {path}")
-
-    model = table.model if not partial else create_partial_model(table.model, list(doc.keys()))
-    try:
-        return model.model_validate(doc).model_dump()
-    except Exception:
-        pass
-
-    raise ValueError(f"Document does not conform to any model for path {path}")
 
 
 def safe_write_to_system_index(spec: SystemIndexSpec, path: str, docs: list[dict] | dict, op_type: Literal["index", "update"] = "index", refresh: bool = True) -> None:

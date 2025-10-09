@@ -1,9 +1,8 @@
 
-from pydantic import BaseModel
 from typing import Iterable
 import elasticsearch.helpers
 from amcat4.elastic_connection import _elastic_connection
-from amcat4.system_index.util import SINGLE_DOC_INDEX_ID, SystemIndexSpec, Table, create_or_refresh_system_index, get_system_index_name
+from amcat4.system_index.util import  create_or_refresh_system_index, get_system_index_name
 import json
 from amcat4.system_index.specifications import v1, v2
 
@@ -131,3 +130,7 @@ def import_v2_requests(v1_global: v1.SI_IndexList):
 
     if len(actions) > 0:
         elasticsearch.helpers.bulk(_elastic_connection(), actions)
+
+
+
+##
