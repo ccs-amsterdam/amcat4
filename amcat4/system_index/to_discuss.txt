@@ -14,3 +14,12 @@ maybe we don't need 'flattened'. the normal 'object' is better for searching. Bu
 ... need to rething a lot of stuff, because pydantic models are not as powerfull as I thought.
 
 Maybe just make the validation for the system index always partial by making all fields optional. It's the responsibility of the helper functions to make sure that the right fields are set. The models are just there to make sure that the fields that are set are of the right type.
+
+
+
+options:
+- Raw define elastic mapping. No type hints, but typesafety on index. Need to set strict manually
+- define elastic mapping with base model. Auto set strict, but still no typesafety
+- define pydantic model and infer elastic mapping from that. Typesafe, but don't like that elastic mapping is inferred and not explicit. Also, syncing with models.py gets messy
+
+... we can infer the pydantic model from elastic (already did this), but doesn't work with type hints, so not sure if its of any use then.
