@@ -13,7 +13,7 @@ from elasticsearch import Elasticsearch
 
 from amcat4.config import get_settings
 from amcat4.elastic_connection import _elastic_connection
-from amcat4.system_index.system_index import setup_system_index
+from amcat4.systemindices.migrate import create_or_update_system_index
 
 
 @functools.lru_cache()

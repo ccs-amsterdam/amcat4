@@ -1,67 +1,63 @@
+import elasticsearch.helpers
 from amcat4.config import get_settings
 from pydantic import BaseModel
+from typing import Iterable
+from amcat4.elastic_mapping import ElasticMapping
 from amcat4.elastic_connection import _elastic_connection
-from amcat4.elastic_mapping import ElasticMappingProperties
 
 
 class SystemIndex(BaseModel):
     name: str
-    mapping: ElasticMappingProperties
-    migrate: callable[[str], None] | None
+    mapping: ElasticMapping
 
 
-def system_index_prefix(version: int, migration: bool = False):
+def system_index_name(version: int, path: str) -> str:
     """
-    Get the prefix for the system index, based on the version.
-    If migration is True, the prefix for the (temporary) migration index is returned.
+    Get the full name for the system index, based on the version and path.
+    (version and path are optional because the first version
+    didn't have versions and only one path)
     """
     index = get_settings().system_index
-    if migration:
-        index = f"{index}_migrating"
     if version > 1:
         index = f"{index}_V{version}"
+    if path:
+        index = f"{index}_{path}"
     return index
 
 
-def system_index_name(version: int, path: str, migration: bool = False) -> str:
+class BulkInsertAction(BaseModel):
+    index: str
+    id: str | None
+    doc: dict
+
+
+def bulk_insert(generator: Iterable[BulkInsertAction], batchsize: int = 1000) -> None:
     """
-    Get the full name for the system index, based on the version and path.
-    If migration is True, the name for the (temporary) migration index is returned.
+    Insert documents into indices in bulk. Input is a generator
+    that yields BulkInsertDoc objects, which need to include the
+    index name, optional id (random if empty), and the document to insert.
     """
-    prefix = system_index_prefix(version, migration)
-    return f"{prefix}_{path}"
+    actions: list[dict] = []
+    for item in generator:
+        actions.append({"_index": item.index, "_id": item.id, "_source": item.doc})
+
+        if len(actions) >= batchsize:
+            elasticsearch.helpers.bulk(_elastic_connection(), actions)
+            actions = []
+
+    if len(actions) > 0:
+        elasticsearch.helpers.bulk(_elastic_connection(), actions)
 
 
-def create_index_alias(source_index: str, target_alias: str):
+
+def batched_index_scan(
+    index: str, batchsize: int = 1000, scroll: str = "5m"
+) -> Iterable[(int, dict)]:
     """
-    Creates an atomic alias, logically "moving" the index by making the
-    target_alias point to the source_index. The source index is NOT deleted.
+    Scan an index in batches of the given size.
+    Yields documents one by one.
     """
-
-    actions = {
-        "actions": [
-            {"add": {"index": source_index, "alias": target_alias}}
-        ]
-    }
-
-    _elastic_connection().indices.update_aliases(body=actions)
-
-
-# def delete_index_alias(alias: str) -> bool:
-#     """
-#     Deletes an index alias.
-#     """
-
-#     actions = {
-#         "actions": [
-#             {"remove": {"index": "*", "alias": alias}}
-#         ]
-#     }
-#     return _elastic_connection().indices.update_aliases(body=actions)
-
-
-# def delete_system_indices(version: int) -> None:
-#     """
-#     Deletes all system indices of the given version.
-#     """
-#     ...
+    for hit in elasticsearch.helpers.scan(
+        _elastic_connection(), index=index, scroll=scroll, size=batchsize, _source=True
+    ):
+        yield hit["_id"], hit["_source"]

@@ -43,14 +43,18 @@ class ElasticNestedField(TypedDict):
     properties: Dict[str, Union["ElasticField", "ElasticNestedField"]]
 
 
-ElasticMappingProperties = Dict[str, ElasticField | ElasticNestedField]
+ElasticMapping = Dict[str, ElasticField | ElasticNestedField]
 
 # Helper functions to create object and nested fields without too much boilerplate
 
 
-def object_field(**properties: Union[ElasticField, ElasticNestedField]) -> ElasticNestedField:
+def object_field(
+    **properties: Union[ElasticField, ElasticNestedField],
+) -> ElasticNestedField:
     return {"type": "object", "dynamic": "strict", "properties": properties}
 
 
-def nested_field(**properties: Union[ElasticField, ElasticNestedField]) -> ElasticNestedField:
+def nested_field(
+    **properties: Union[ElasticField, ElasticNestedField],
+) -> ElasticNestedField:
     return {"type": "nested", "dynamic": "strict", "properties": properties}
