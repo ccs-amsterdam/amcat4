@@ -1,0 +1,19 @@
+We used to have es() 'setup' the system indices, which is why I now decoupled es() and _elastic_connection() (due to circular import issues).
+
+But it would actually be better to just have create_or_update_system_indices() run on startup of the app (i.e. in main.py).
+In that case we can remove elastic.py, rename elastic_connection.py to elastic.py, and rename _elastic_connection() to es().
+
+
+
+
+Dilemmas:
+- We need to take into account that migrations can fail. ElasticSearch does not have transactions or rollback. So one solution is to first write a migration to a special migration index (e.g. "amcat4_system_migrate_v1_roles"). Once succeeded, we can create an alias for the actual name (i.e. the same minus the "_migrate" part). This is an instant switch (just need to make sure that when we at some point delete old indices, we need to delete both the migration index and the alias).
+- In the migrate function(s) for a version, we need to make sure to use the correct index name (i.e. the migration index, not the alias).
+- On startup we first check whether the current system index exists. We have two ways to do this:
+   - check whether the prefix for the version exists (e.g. "amcat4_system_v1")
+   - check whether each individual index exists (e.g. "amcat4_system_v1_roles", "amcat4_system_v1_users", etc)
+- the first is easier, but requires us to make sure that it's impossible to have a situation where one index is missing (e.g. due to accidental deletion, error during migration). We can also always do migration per table. That is more robust. Only less efficient if multiple table import from the same table in the previous version. But that is probably not a big issue.
+
+- I propose to do the migration per table. In create_or_update_system_indices we then loop over all indices
+
+- I'm in doubt about how to perform the simple 'create indices' if migration is not needed. Currently this is a script in migrate.py, but that requries importing the mappings from the version script. I would prefer to keep that script self contained. So one way is to always perform the migrate function on startup, and the migrate function checks whether it needs the migration or not (this could be a helper function to limit boilerplate)
