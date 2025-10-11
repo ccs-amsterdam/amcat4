@@ -61,4 +61,4 @@ mapping: ElasticMapping = dict(
     ),
 )
 
-SYSTEM_INDICES = [SystemIndex(name="", mapping=mapping, migrate=None)]
+SYSTEM_INDICES = [SystemIndex(name="", mapping=mapping)]

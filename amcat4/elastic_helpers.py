@@ -63,20 +63,3 @@ def batched_index_scan(
         scroll=scroll, size=batchsize, preserve_order=sort is not None
     ):
         yield hit["_id"], hit["_source"]
-
-
-
-def create_id(document: dict, identifiers: list[str]) -> str:
-    """
-    Create the _id for a document.
-    """
-
-    if len(identifiers) == 0:
-        raise ValueError("Can only create id if identifiers are specified")
-
-    id_keys = sorted(set(identifiers) & set(document.keys()))
-    id_fields = {k: document[k] for k in id_keys}
-    hash_str = json.dumps(id_fields, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
-    m = hashlib.sha224()
-    m.update(hash_str)
-    return m.hexdigest()

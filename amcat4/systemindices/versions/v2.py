@@ -93,14 +93,19 @@ requests_mapping: ElasticMapping = dict(
 
 
 def check_deprecated_version(index: str):
+    """
+    The v1 system has a deprecated form of versioning, where the version number was stored in the _global document.
+    The oldest versions should (pretty please...) no longer be used, so we don't support automatic migration from them.
+    """
     global_doc = _elastic_connection().get(index=index, id="_global", source_includes="version")
     version = global_doc["_source"].get("version", 0)
     if version != 2:
         raise ValueError(
             "Cannot automatically migrate from current system index, because its a very old version. "
             "So old that we would be surprised if you ever even see this message, but if you do, "
-            "and you really need to migrate, please contact us"
+            "and you really need to migrate, please contact us. Or may we recommend a fresh start...? :)"
         )
+
 
 def migrate_server_settings(doc: dict):
     settings_index = system_index_name(VERSION, "settings")
@@ -198,8 +203,9 @@ SYSTEM_INDICES = [
     SystemIndex(name="requests", mapping=requests_mapping)
 ]
 
-def migrate():
 
+def migrate():
+    # v1 had just one big, bad index that used (whats now) the system indices prefix without version or path
     v1_system_index = get_settings().system_index
     check_deprecated_version(v1_system_index)
 
