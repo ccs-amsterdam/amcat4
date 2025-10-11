@@ -1,29 +1,9 @@
 import elasticsearch.helpers
-from amcat4.config import get_settings
+import json
+import hashlib
 from pydantic import BaseModel
 from typing import Iterable
-from amcat4.elastic_mapping import ElasticMapping
 from amcat4.elastic_connection import _elastic_connection
-
-
-class SystemIndex(BaseModel):
-    name: str
-    mapping: ElasticMapping
-
-
-def system_index_name(version: int, path: str) -> str:
-    """
-    Get the full name for the system index, based on the version and path.
-    (version and path are optional because the first version
-    didn't have versions and only one path)
-    """
-    index = get_settings().system_index
-    if version > 1:
-        index = f"{index}_V{version}"
-    if path:
-        index = f"{index}_{path}"
-    return index
-
 
 class BulkInsertAction(BaseModel):
     index: str
@@ -37,7 +17,7 @@ def bulk_insert(generator: Iterable[BulkInsertAction], batchsize: int = 1000) ->
     that yields BulkInsertDoc objects, which need to include the
     index name, optional id (random if empty), and the document to insert.
 
-    Works nicely together with batched_index_scan for moving stuff around (e.g. in migrations),
+    Works nicely together with batched_index_scan for moving stuff around in migrations,
     because this automatically batches both the scan and the insert.
 
     def gen():
@@ -83,3 +63,20 @@ def batched_index_scan(
         scroll=scroll, size=batchsize, preserve_order=sort is not None
     ):
         yield hit["_id"], hit["_source"]
+
+
+
+def create_id(document: dict, identifiers: list[str]) -> str:
+    """
+    Create the _id for a document.
+    """
+
+    if len(identifiers) == 0:
+        raise ValueError("Can only create id if identifiers are specified")
+
+    id_keys = sorted(set(identifiers) & set(document.keys()))
+    id_fields = {k: document[k] for k in id_keys}
+    hash_str = json.dumps(id_fields, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
+    m = hashlib.sha224()
+    m.update(hash_str)
+    return m.hexdigest()

@@ -451,12 +451,11 @@ def delete_user(email: str) -> None:
         set_role(ix.id, email, None)
 
 
-def create_id(document: dict, field_settings: dict[str, Field]) -> str:
+def create_id(document: dict, identifiers: list[str]) -> str:
     """
     Create the _id for a document.
     """
 
-    identifiers = [k for k, v in field_settings.items() if v.identifier is True]
     if len(identifiers) == 0:
         raise ValueError("Can only create id if identifiers are specified")
 
@@ -507,7 +506,7 @@ def upload_documents(
 
 def upload_document_es_actions(index, documents, op_type):
     field_settings = get_fields(index)
-    has_identifiers = any(field.identifier for field in field_settings.values())
+    identifiers = [k for k, v in field_settings.items() if v.identifier is True]
     for document in documents:
         doc = dict()
         action = {"_op_type": op_type, "_index": index}
@@ -515,19 +514,16 @@ def upload_document_es_actions(index, documents, op_type):
         for key in document.keys():
             if key in field_settings:
                 doc[key] = coerce_type(document[key], field_settings[key].type)
+            elif key == "_id":
+                if len(identifiers) > 0:
+                    raise ValueError(f"This index uses identifiers ({identifiers}), so you cannot set the _id directly.")
+                action['_id'] = document[key]
             else:
-                if key != "_id":
-                    raise ValueError(f"Field '{key}' is not yet specified")
+                raise ValueError(f"Field '{key}' is not yet specified")
 
-            if key == "_id":
-                if has_identifiers:
-                    identifiers = ", ".join([name for name, field in field_settings.items() if field.identifier])
-                    raise ValueError(f"This index uses identifier ({identifiers}), so you cannot set the _id directly.")
-                action["_id"] = document["_id"]
-            else:
-                if has_identifiers:
-                    action["_id"] = create_id(document, field_settings)
-            # if no id is given, elasticsearch creates a cool unique one
+        if len(identifiers) > 0:
+            action["_id"] = create_id(document, identifiers)
+            # if no _id is given and no identifiers are used, elasticsearch creates a cool unique one
 
         # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         if op_type == "update":

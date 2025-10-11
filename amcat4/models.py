@@ -164,12 +164,12 @@ class Branding(BaseModel):
     information_links: list[LinksGroup] | None = None
     welcome_buttons: list[Links] | None = None
 
+
 class AbstractRequest(BaseModel):
     email: str
     timestamp: datetime | None = None
     message: str | None = None
-    reject: bool = False
-    cancel: bool = False
+    status: Literal["pending", "approved", "rejected"] = "pending"
 
 
 class RoleRequest(AbstractRequest):

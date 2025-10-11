@@ -1,34 +1,15 @@
 from typing import Literal, TypedDict, Union, Dict
 
-ElasticType = Literal[
-    "text",
-    "annotated_text",
-    "binary",
-    "match_only_text",
-    "date",
-    "boolean",
-    "keyword",
-    "constant_keyword",
-    "wildcard",
-    "integer",
-    "byte",
-    "short",
-    "long",
-    "unsigned_long",
-    "float",
-    "half_float",
-    "double",
-    "scaled_float",
-    "object",
-    "flattened",
-    "nested",
-    "dense_vector",
-    "geo_point",
-]
 
 
 class ElasticField(TypedDict):
-    type: ElasticType
+    """
+    Basic field types, excluding 'object' and 'nested' which are handled separately.
+    """
+    type: Literal["text", "annotated_text", "binary", "match_only_text", "date", "boolean",
+                  "keyword", "constant_keyword", "wildcard", "integer", "byte", "short", "long",
+                  "unsigned_long", "float", "half_float", "double", "scaled_float", "dense_vector", "geo_point"]
+
 
 
 class ElasticNestedField(TypedDict):
