@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 from amcat4.elastic_connection import _elastic_connection
 from amcat4.systemindices.util import (
     system_index_name,
@@ -17,25 +18,35 @@ class InvalidSystemIndex(Exception):
 
 class SystemIndexVersionStatus(BaseModel):
     version: int
-    uninitialized: bool = True           # has it been created at all?
+    broken: bool = False                 # True if some indices are missing or have pending migrations
+    does_not_exist: bool = True          # True if no indices for this version exist
     pending_migrations: list[str] = []   # list of indices with pending migrations
     missing_indices: list[str] = []      # list of indices that are missing
 
 
-def create_or_update_system_indices() -> None:
+def create_or_update_system_indices(
+    rm_pending_migrations: bool = True,
+    rm_broken_versions: bool = False
+) -> None:
     """
-    This is the main function. It should be called at startup,
-    and will automatically update the system indices mappings
-    and start a migration if needed.
-    """
-    # Check the current version of the system indices exists
-    active_systemindices = active_systemindices_status(force_delete_pending_migrations = True)
+    This is the main function. It should be called at startup, and will automatically
+    update the system indices mappings and start a migration if needed. This will
+    fail if there are pending migrations or if a version is broken (i.e. some indices missing).
+    You can override this behaviour by setting the force_rm_* flags to True.
 
-    if active_systemindices is None:
+    :param rm_pending_migrations: If True (default), pending migrations will be deleted automatically. This is
+
+    :param rm_broken_versions: If True, broken versions (with missing indices) will be deleted automatically.
+    """
+
+    # Check the current version of the system indices exists
+    active_version = active_systemindices_status(rm_pending_migrations, rm_broken_versions)
+
+    if active_version is None:
         # No active system indices version exists, so we don't need to migrate. Just create the mappings.
         create_or_update_system_indices_mappings(LATEST_VERSION)
 
-    elif active_systemindices.version == LATEST_VERSION:
+    elif active_version == LATEST_VERSION:
         logging.info(
             f"System index already at version {LATEST_VERSION}. Performing mapping update if needed."
         )
@@ -43,54 +54,69 @@ def create_or_update_system_indices() -> None:
 
     else:
         logging.info(
-            f"Syst index at version {active_systemindices.version}, migrating to version {LATEST_VERSION}"
+            f"Syst index at version {active_version}, migrating to version {LATEST_VERSION}"
         )
 
-        migrate(active_systemindices.version, LATEST_VERSION)
+        migrate(active_version, LATEST_VERSION)
 
 
 def active_systemindices_status(
-    force_delete_pending_migrations: bool = False,
-    force_delete_missing_indices: bool = False
-) -> SystemIndexVersionStatus | None:
+    rm_pending_migrations: bool = True,
+    rm_broken_versions: bool = False
+) -> int | None:
     """
+    Find which systemindices version is currently active, and return its version nr.
+    To migrate from this version to the latest version,there cannot be any broken
+    versions in between. A version is broken if some of its indices are missing,
+    or if some are still pending migration (i.e. have the migration_pending meta flag set).
+    The rm_* flags can be used to automatically delete broken versions or pending migrations.
 
+    Indices with pending migrations can safely be deleted, because they cannot have
+    been in use yet. This is also a more common problem, which occurs if a migration
+    script is stopped or fails halfway. So by default rm_pending_migrations is True.
+
+    Missing indices are trickier. This should only happen if there is a bug or if
+    someone manually deleted indices directly in elasticsearch. In this case the
+    remaining systemindices might contain important data, so by default
+    rm_broken_versions is False.
     """
     for i in range(LATEST_VERSION + 1, 1, -1):
         status = system_indices_version_status(i)
-        if status.uninitialized:
+
+        if status.broken:
+            if status.pending_migrations:
+                if rm_pending_migrations:
+                    delete_pending_migrations(status.version)
+                    status = system_indices_version_status(i)
+                else:
+                    raise InvalidSystemIndex(
+                        f"System index version {i} has pending migrations: {', '.join(status.pending_migrations)}. "
+                        "The migrations scripts assume that no data is present in the indices, so either delete "
+                        "them, unless you ."
+                    )
+
+            if status.missing_indices:
+                if rm_broken_versions:
+                    delete_systemindices_version(status.version)
+                    status = system_indices_version_status(i)
+                else:
+                    raise InvalidSystemIndex(
+                        f"System index version {i} is broken due to missing indices: {', '.join(status.missing_indices)} "
+                        "If this happens during development and you are certain these indices do not contain important data, "
+                        "you can call the migration script with rm_broken_versions = True. "
+                    )
+
+            # recheck status
+            if status.broken:
+                raise RuntimeError("The system indices version is still broken after trying to fix it.")
+
+
+        if status.does_not_exist:
+            # if the version does not exist (after rm operations), move on to prior versions
             continue
+        else:
+            return status.version
 
-        if len(status.missing_indices) > 0:
-            if not force_delete_missing_indices:
-                raise InvalidSystemIndex(
-                    f"System index version {i} exists but has missing indices: {', '.join(status.missing_indices)} "
-                    "This shouldnt ever happen without manually interacting with elastic directly. "
-                    "If this happens during development and you are certain these indices to not contain important data, "
-                    "you can call migration manually with force_delete_missing_indices = True. "
-                )
-
-            delete_systemindices_version(status.version)
-            if system_indices_version_status(i).uninitialized:
-                continue
-            else:
-                raise RuntimeError("The system indices version still exists after trying to delete it.")
-
-        if len(status.pending_migrations) > 0:
-            if not force_delete_pending_migrations:
-                raise InvalidSystemIndex(
-                    f"System index version {i} has pending migrations: {', '.join(status.pending_migrations)}. "
-                    "The migrations scripts assume that no data is present in the indices, so either delete "
-                    "the indices or complete the migrations manually (see documentation)."
-                )
-
-            delete_pending_migrations(status.version)
-            if system_indices_version_status(i).uninitialized:
-                continue
-            else:
-                raise RuntimeError("The system indices version still has pending migrations.")
-
-        return status
     return None
 
 
@@ -132,19 +158,20 @@ def system_indices_version_status(version: int) -> SystemIndexVersionStatus:
     for system_index in version_indices:
         index = system_index_name(version, system_index["name"])
 
-        try:
-            mapping = _elastic_connection().indices.get_mapping(index=index)
-            # If at least one index exists, it has been created at some point
-            status.uninitialized = False
+        index_status = check_index_status(index)
 
-            meta = mapping[index]["mappings"].get("_meta", {})
-            if not meta.get("migration_pending", True):
+        if index_status == 'missing':
+            status.missing_indices.append(index)
+        else:
+            status.does_not_exist = False
+            if index_status == 'migrating':
                 status.pending_migrations.append(index)
 
-        except Exception:
-            status.missing_indices.append(index)
+    if status.does_not_exist:
+        # If no indices exist, none are 'missing'
+        status.missing_indices = []
 
-
+    status.broken = len(status.missing_indices) > 0 or len(status.pending_migrations) > 0
 
     return status
 
@@ -178,3 +205,25 @@ def set_migration_successfull(version) -> None:
     for system_index in VERSIONS[version].SYSTEM_INDICES:
         index = system_index_name(version, system_index["name"])
         _elastic_connection().indices.put_mapping(index=index, body=update_meta_body)
+
+        # verify, because it's important
+        if check_index_status(index) != "ready":
+            raise RuntimeError(f"Failed to update migration_pending meta for system index {index}")
+
+
+def check_migration_flag(index: str) -> bool:
+    mapping = _elastic_connection().indices.get_mapping(index=index)
+    meta = mapping[index]["mappings"].get("_meta", {})
+    return meta.get("migration_pending", False)
+
+
+def check_index_status(index: str) -> Literal["missing", "migrating", "ready"]:
+    try:
+        mapping = _elastic_connection().indices.get_mapping(index=index)
+        meta = mapping[index]["mappings"].get("_meta", {})
+        if meta.get("migration_pending", False):
+            return "migrating"
+        else:
+            return "ready"
+    except Exception:
+        return "missing"
