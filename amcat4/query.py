@@ -6,7 +6,7 @@ import logging
 from math import ceil
 from typing import Any, Dict, Literal, Tuple, Union
 
-from amcat4.fields import create_fields, get_fields
+from amcat4.systemdata.fields import create_fields, get_fields
 from amcat4.index import delete_documents_by_query, update_documents_by_query, update_tag_by_query
 from amcat4.models import FieldSpec, FieldType, FilterSpec, SortSpec
 

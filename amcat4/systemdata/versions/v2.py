@@ -1,10 +1,43 @@
 from amcat4.elastic_connection import _elastic_connection
 from amcat4.elastic_mapping import ElasticMapping, nested_field, object_field
-from amcat4.systemindices.util import SystemIndex, system_index_name, bulk_insert, BulkInsertAction, batched_index_scan
+from amcat4.systemdata.util import SystemIndex, system_index_name, es_bulk_create_or_overwrite, BulkInsertAction, index_scan
 from amcat4.config import get_settings
 from typing import Iterable
 
 VERSION = 2
+
+SETTING_INDEX = system_index_name(VERSION, "settings")
+ROLES_INDEX = system_index_name(VERSION, "roles")
+FIELDS_INDEX = system_index_name(VERSION, "fields")
+REQUESTS_INDEX = system_index_name(VERSION, "requests")
+
+
+# UGHhhh...
+# We need to use the id field for specifying unique fields, and this needs to be imported
+# in the index code (e.g. fields.py) to be able to update the right document.
+# Is there a more elegant way to do this?
+#
+# !!! Is this injection safe? Should we hash or base64 encode email
+
+
+def settings_index_id(index: str | None = None) -> str:
+    return index if index else "_server"
+
+
+def roles_index_id(email: str, index: str | None = None) -> str:
+    where = index if index else "_server"
+    return f"{where}:{email}"
+
+
+def fields_index_id(index: str, name: str) -> str:
+    return f"{index}:{name}"
+
+
+def requests_index_id(type: str, email: str, index: str | None = None) -> str:
+    where = index if index else "_server"
+    if index:
+        return f"{type}:{where}:{email}"
+
 
 _contact_field = object_field(
     name={"type": "keyword"},
@@ -76,13 +109,26 @@ roles_mapping: ElasticMapping = dict(
     email={"type": "keyword"},
     index={"type": "keyword"},
     role={"type": "keyword"},
+    # API KEY PROPOSAL:
+    # Users can create an API key for their _server and index roles
+    # The API key is stored hashed in the roles document.
+    # The unhashed key is only shown once, when created.
+    # A bearer token header with the API key can be used instead of middlecat auth.
+    # a _server api key gives full user rights. An index api key gives rights only for that index
+    # the api_key_role is the role that the api key has been granted, which has to be equal or lower than the users role
+    api_key=object_field(
+        hash={"type": "keyword"},
+        expires={"type": "date"},
+        role={"type": "keyword"},
+        dpop_public_key={"type": "text"},  # for DPoP-bound API keys
+    ),
 )
 
 requests_mapping: ElasticMapping = dict(
     request_type={"type": "keyword"},
     email={"type": "keyword"},
     index={"type": "keyword"},
-    status={"type": "keyword"}, # "pending", "approved", "rejected"
+    status={"type": "keyword"},  # "pending", "approved", "rejected"
     message={"type": "text"},
     timestamp={"type": "date"},
     role={"type": "keyword"},
@@ -108,11 +154,9 @@ def check_deprecated_version(index: str):
 
 
 def migrate_server_settings(doc: dict):
-    settings_index = system_index_name(VERSION, "settings")
-
     return BulkInsertAction(
-        index=settings_index,
-        id="_server",
+        index=SETTING_INDEX,
+        id=settings_index_id(),
         doc={
             "server_settings": {
                 "name": doc.get("name"),
@@ -127,12 +171,11 @@ def migrate_server_settings(doc: dict):
         },
     )
 
-def migrate_index_settings(index: str, doc: dict):
-    settings_index = system_index_name(VERSION, "settings")
 
+def migrate_index_settings(index: str, doc: dict):
     return BulkInsertAction(
-        index=settings_index,
-        id=index,
+        index=SETTING_INDEX,
+        id=settings_index_id(index),
         doc={
             "index_settings": {
                 "name": doc.get("name"),
@@ -147,27 +190,19 @@ def migrate_index_settings(index: str, doc: dict):
     )
 
 
-def migrate_roles(role: dict, in_index: str):
-    roles_index = system_index_name(VERSION, "roles")
+def migrate_roles(role: dict, in_index: str | None):
+    doc = {
+        "index": in_index if in_index else "_server",
+        "email": role.get("email"),
+        "role": role.get("role"),
+    }
 
-    return BulkInsertAction(
-        index=roles_index,
-        id=None,
-        doc={
-            "index": in_index,
-            "email": role.get("email"),
-            "role": role.get("role"),
-        }
-    )
+    return BulkInsertAction(index=ROLES_INDEX, id=roles_index_id(doc["email"], doc=["index"]), doc=doc)
 
 
 def migrate_requests(request: dict):
-    requests_index = system_index_name(VERSION, "requests")
-
-    return BulkInsertAction(
-        index=requests_index,
-        id=None,
-        doc={
+    doc = (
+        {
             "request_type": request.get("request_type"),
             "email": request.get("email"),
             "index": request.get("index", "_server"),  # now use _server instead of None
@@ -181,26 +216,25 @@ def migrate_requests(request: dict):
         },
     )
 
+    return BulkInsertAction(
+        index=REQUESTS_INDEX, id=requests_index_id(doc["request_type"], doc["email"], doc["index"]), doc=doc
+    )
+
 
 def migrate_fields(index: str, field: dict):
-    fields_index = system_index_name(VERSION, "fields")
-
-    return BulkInsertAction(
-        index=fields_index,
-        id=None,
-        doc={
-            "index": index,
-            "field": field.get('field'),
-            "settings": field.get("settings", {}),
-        },
-    )
+    doc = {
+        "index": index,
+        "field": field.get("field"),
+        "settings": field.get("settings", {}),
+    }
+    return BulkInsertAction(index=FIELDS_INDEX, id=fields_index_id(index, doc["field"]), doc=doc)
 
 
 SYSTEM_INDICES = [
     SystemIndex(name="settings", mapping=settings_mapping),
     SystemIndex(name="fields", mapping=fields_mapping),
     SystemIndex(name="roles", mapping=roles_mapping),
-    SystemIndex(name="requests", mapping=requests_mapping)
+    SystemIndex(name="requests", mapping=requests_mapping),
 ]
 
 
@@ -210,18 +244,18 @@ def migrate():
     check_deprecated_version(v1_system_index)
 
     def bulk_generator() -> Iterable[BulkInsertAction]:
-        for id, doc in batched_index_scan(v1_system_index):
-            ## The _global document in the v1 index contained server settings, server roles and all requests
-            if id == '_global':
+        for id, doc in index_scan(v1_system_index):
+            # The _global document in the v1 index contained server settings, server roles and all requests
+            if id == "_global":
                 yield migrate_server_settings(doc)
 
                 for role in doc.get("roles", []):
-                    yield migrate_roles(role, "_server")
+                    yield migrate_roles(role, None)
 
                 for request in doc.get("requests", []):
                     yield migrate_requests(request)
 
-            ## The other documents had the index name as id, and contained index settings, index roles and fields
+            # The other documents had the index name as id, and contained index settings, index roles and fields
             else:
                 yield migrate_index_settings(id, doc)
 
@@ -231,5 +265,4 @@ def migrate():
                 for field in doc.get("fields", []):
                     yield migrate_fields(id, field)
 
-
-    bulk_insert(bulk_generator())
+    es_bulk_create_or_overwrite(bulk_generator())

@@ -51,6 +51,7 @@ ElasticType = Literal[
     "geo_point",
 ]
 
+
 class SnippetParams(BaseModel):
     """
     Snippet parameters for a specific field.
@@ -144,7 +145,6 @@ class ContactInfo(BaseModel):
     url: str | None = None
 
 
-
 class Links(BaseModel):
     label: str
     href: str
@@ -185,6 +185,7 @@ class CreateProjectRequest(AbstractRequest):
     description: str | None = None
     name: str | None = None
     folder: str | None = None
+
 
 PermissionRequest = Annotated[Union[RoleRequest, CreateProjectRequest], pydantic.Field(discriminator="request_type")]
 

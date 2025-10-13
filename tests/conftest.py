@@ -18,7 +18,7 @@ from amcat4.index import (
     upload_documents,
 )
 from amcat4.models import CreateField, FieldType
-from amcat4.requests import clear_requests
+from amcat4.systemdata.requests import clear_requests
 from tests.middlecat_keypair import PUBLIC_KEY
 
 UNITS = [
@@ -179,7 +179,6 @@ TEST_DOCUMENTS = [
 
 
 def populate_index(index):
-
     upload(
         index,
         TEST_DOCUMENTS,

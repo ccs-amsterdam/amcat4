@@ -2,7 +2,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 
 from amcat4.api.auth import authenticated_user, check_global_role
 from amcat4.index import GUEST_USER, Role, get_global_role, list_user_indices
-from amcat4.requests import (
+from amcat4.systemdata.requests import (
     PermissionRequest,
     create_request,
     list_admin_requests,

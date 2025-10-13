@@ -1,6 +1,7 @@
 from amcat4.elastic_mapping import nested_field, object_field, ElasticMapping
-from amcat4.systemindices.util import SystemIndex
+from amcat4.systemdata.util import SystemIndex, system_index_name
 
+VERSION = 1
 
 mapping: ElasticMapping = dict(
     archived={"type": "text"},
@@ -61,4 +62,4 @@ mapping: ElasticMapping = dict(
     ),
 )
 
-SYSTEM_INDICES = [SystemIndex(name="", mapping=mapping)]
+SYSTEM_INDICES = {"": SystemIndex(index=system_index_name(VERSION, ""), mapping=mapping)}

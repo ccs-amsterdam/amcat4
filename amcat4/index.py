@@ -35,9 +35,7 @@ Elasticsearch implementation
 import hashlib
 import json
 import logging
-from datetime import datetime
 from enum import IntEnum
-from multiprocessing import Value
 from typing import Any, Iterable, Literal, Mapping, NamedTuple, Optional
 
 import elasticsearch.helpers
@@ -46,8 +44,13 @@ from elasticsearch import NotFoundError
 # from amcat4.api.common import py2dict
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.fields import coerce_type, create_fields, create_or_verify_tag_field, get_fields
-from amcat4.models import ContactInfo, CreateField, Field, FieldType
+from amcat4.systemdata.fields import (
+    coerce_type,
+    create_fields,
+    create_or_verify_tag_field,
+    get_fields,
+)
+from amcat4.models import ContactInfo, CreateField, FieldType
 
 
 class Role(IntEnum):
@@ -56,6 +59,7 @@ class Role(IntEnum):
     READER = 20
     WRITER = 30
     ADMIN = 40
+
 
 class GuestRole(IntEnum):
     NONE = 0
@@ -90,13 +94,6 @@ def refresh_index(index: str):
     Refresh the elasticsearch index
     """
     es().indices.refresh(index=index)
-
-
-def refresh_system_index():
-    """
-    Refresh the elasticsearch index
-    """
-    es().indices.refresh(index=get_settings().system_index)
 
 
 def list_all_indices() -> Iterable[Index]:
@@ -298,7 +295,12 @@ def set_role(index: str, email: str, role: Optional[Role]):
             return  # Nothing to change
         del roles_dict[email]
 
-    es().update(index=system_index, id=index, doc=dict(roles=_roles_to_elastic(roles_dict)), refresh=True)
+    es().update(
+        index=system_index,
+        id=index,
+        doc=dict(roles=_roles_to_elastic(roles_dict)),
+        refresh=True,
+    )
 
 
 def set_global_role(email: str, role: Role | None):
@@ -480,7 +482,7 @@ def upload_documents(
     :param index: The name of the index (without prefix)
     :param documents: A sequence of article dictionaries
     :param fields: A mapping of fieldname:UpdateField for field types
-    :param op_type: Whether to 'index' new documents (default) or 'update' existing documents
+    :param op_type: Whether to 'index' new documents (create or overwrite), 'create' (only create) or 'update' existing documents
     """
     if fields:
         create_fields(index, fields)
@@ -517,7 +519,7 @@ def upload_document_es_actions(index, documents, op_type):
             elif key == "_id":
                 if len(identifiers) > 0:
                     raise ValueError(f"This index uses identifiers ({identifiers}), so you cannot set the _id directly.")
-                action['_id'] = document[key]
+                action["_id"] = document[key]
             else:
                 raise ValueError(f"Field '{key}' is not yet specified")
 
@@ -532,7 +534,7 @@ def upload_document_es_actions(index, documents, op_type):
             action["doc"] = doc
             action["doc_as_upsert"] = True
         else:
-            action.update(doc)
+            action = {**doc, **action}
 
         yield action
 
@@ -595,19 +597,35 @@ UPDATE_SCRIPTS = dict(
 )
 
 
-def update_tag_by_query(index: str | list[str], action: Literal["add", "remove"], query: dict, field: str, tag: str):
+def update_tag_by_query(
+    index: str | list[str],
+    action: Literal["add", "remove"],
+    query: dict,
+    field: str,
+    tag: str,
+):
     create_or_verify_tag_field(index, field)
-    script = dict(source=UPDATE_SCRIPTS[action], lang="painless", params=dict(field=field, tag=tag))
+    script = dict(
+        source=UPDATE_SCRIPTS[action],
+        lang="painless",
+        params=dict(field=field, tag=tag),
+    )
     result = es().update_by_query(index=index, script=script, **query, refresh=True)
     return dict(updated=result["updated"], total=result["total"])
 
 
 def update_documents_by_query(index: str | list[str], query: dict, field: str, value: Any):
     if value is None:
-        script = dict(source="ctx._source.remove(params.field)", lang="painless", params=dict(field=field))
+        script = dict(
+            source="ctx._source.remove(params.field)",
+            lang="painless",
+            params=dict(field=field),
+        )
     else:
         script = dict(
-            source="ctx._source[params.field] = params.value", lang="painless", params=dict(field=field, value=value)
+            source="ctx._source[params.field] = params.value",
+            lang="painless",
+            params=dict(field=field, value=value),
         )
     return es().update_by_query(index=index, query=query, script=script, refresh=True)
 

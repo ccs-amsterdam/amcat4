@@ -1,7 +1,7 @@
 import pytest
 
 from amcat4.index import IndexDoesNotExist, Role, get_index, get_role, set_global_role, set_role
-from amcat4.requests import (
+from amcat4.systemdata.requests import (
     CreateProjectRequest,
     PermissionRequest,
     RoleRequest,
@@ -55,7 +55,7 @@ def test_role_requests(clean_requests, index, user):
     assert r.role == "METAREADER"
 
     # Cancelling a request
-    create_request(RoleRequest(index=index, email=user, role='METAREADER', cancel=True))
+    create_request(RoleRequest(index=index, email=user, role="METAREADER", cancel=True))
     assert all_requests() == {}
 
 
@@ -174,7 +174,6 @@ def test_api_get_my_requests(clean_requests, client, index, user):
 
 
 def test_api_get_admin_requests(clean_requests, client, guest_index, index, index_name, user, reader):
-
     assert all_requests() == {}
     create_request(RoleRequest(index=index, email=user, role="ADMIN"))
     create_request(RoleRequest(index=guest_index, email=user, role="ADMIN"))
@@ -232,7 +231,7 @@ def test_api_post_admin_requests_auth(clean_requests, client, guest_index, index
         check(
             client.post("/permission_requests/admin", headers=build_headers(user=reader), json=body),
             expected=expected,
-            **kargs
+            **kargs,
         )
 
     check_resolve([])

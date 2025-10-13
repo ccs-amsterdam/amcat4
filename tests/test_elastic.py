@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from amcat4.fields import create_fields, field_values, get_fields
+from amcat4.systemdata.fields import create_fields, field_values, get_fields
 from amcat4.index import (
     delete_documents_by_query,
     get_document,

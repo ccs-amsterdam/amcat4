@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple,
 
 from amcat4.date_mappings import interval_mapping
 from amcat4.elastic import es
-from amcat4.fields import get_fields
+from amcat4.systemdata.fields import get_fields
 from amcat4.models import Field, FilterSpec, SortSpec
 from amcat4.query import build_body
 
@@ -245,7 +245,6 @@ def _aggregate_results(
     aggregations: List[Aggregation | TopHitsAggregation],
     after: dict[str, Any] | None = None,
 ):
-
     if not axes or len(axes) == 0:
         # Path 1
         # No axes, so return aggregations (or total count) only
@@ -260,7 +259,6 @@ def _aggregate_results(
         yield rows, None
 
     elif any(ax.field == "_query" for ax in axes):
-
         # Path 2
         # We cannot run the aggregation for multiple queries at once, so we loop over queries
         # and recursively call _aggregate_results with one query at a time (which then uses path 3).
@@ -268,7 +266,7 @@ def _aggregate_results(
             raise ValueError("Queries must be specified when aggregating by query")
         # Strip off _query axis and run separate aggregation for each query
         i = [ax.field for ax in axes].index("_query")
-        _axes = axes[:i] + axes[(i + 1):]
+        _axes = axes[:i] + axes[(i + 1) :]
 
         query_items = list(queries.items())
         for label, query in query_items:

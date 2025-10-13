@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Iterable
 
-from amcat4.api.index import RoleType
 from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.models import PermissionRequest, RoleRequest, CreateProjectRequest
@@ -39,11 +38,14 @@ def list_admin_requests(email: str) -> Iterable[PermissionRequest]:
     u = get_global_role(email)
     if u == Role.ADMIN:
         return list_all_requests()
-    admin_indices = {ix.id for (ix, role) in list_user_indices(email) if role == Role.ADMIN}
+    admin_indices = {
+        ix.id for (ix, role) in list_user_indices(email) if role == Role.ADMIN
+    }
     return (
         r
         for r in list_all_requests()
-        if (r.request_type == "create_project" and u == Role.WRITER) or (r.request_type == "role" and r.index in admin_indices)
+        if (r.request_type == "create_project" and u == Role.WRITER)
+        or (r.request_type == "role" and r.index in admin_indices)
     )
 
 
@@ -70,7 +72,12 @@ def create_request(request: PermissionRequest):
         # Overwrite existing or add new request on key
         requests[request.request_type, request.email, request.index] = request
     request_list = [r.model_dump() for r in requests.values()]
-    es().update(index=get_settings().system_index, id=GLOBAL_ROLES, doc={"requests": request_list}, refresh=True)
+    es().update(
+        index=get_settings().system_index,
+        id=GLOBAL_ROLES,
+        doc={"requests": request_list},
+        refresh=True,
+    )
 
 
 def process_requests(requests: list[PermissionRequest]):
@@ -90,7 +97,12 @@ def process_requests(requests: list[PermissionRequest]):
         all_requests.pop((r.request_type, r.email, r.index), None)
     # Update requests list in elastic
     request_list = [r.model_dump() for r in all_requests.values()]
-    es().update(index=get_settings().system_index, id=GLOBAL_ROLES, doc={"requests": request_list}, refresh=True)
+    es().update(
+        index=get_settings().system_index,
+        id=GLOBAL_ROLES,
+        doc={"requests": request_list},
+        refresh=True,
+    )
 
 
 def process_role_request(r: RoleRequest):
@@ -102,8 +114,15 @@ def process_role_request(r: RoleRequest):
 
 
 def process_project_request(r: CreateProjectRequest):
-    create_index(r.index, admin=r.email, name=r.name, description=r.description, folder=r.folder)
+    create_index(
+        r.index, admin=r.email, name=r.name, description=r.description, folder=r.folder
+    )
 
 
 def clear_requests():
-    es().update(index=get_settings().system_index, id=GLOBAL_ROLES, doc={"requests": []}, refresh=True)
+    es().update(
+        index=get_settings().system_index,
+        id=GLOBAL_ROLES,
+        doc={"requests": []},
+        refresh=True,
+    )

@@ -10,6 +10,7 @@ from amcat4.api.info import app_info
 from amcat4.api.query import app_query
 from amcat4.api.requests import app_requests
 from amcat4.api.users import app_users
+from amcat4.systemdata.create_or_update import create_or_update_systemdata
 
 app = FastAPI(
     title="AmCAT4",
@@ -50,3 +51,8 @@ async def value_error_exception_handler(request: Request, exc: ValueError):
         status_code=400,
         content={"message": str(exc)},
     )
+
+
+@app.on_event("startup")
+def startup_script():
+    create_or_update_systemdata()

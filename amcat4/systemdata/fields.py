@@ -5,7 +5,7 @@ We have two types of fields:
   These are stored in the Mapping of an index
 - Amcat fields (Field) are the fields are seen by the amcat user. They use a simplified type, and contain additional
   information such as metareader access
-  These are stored in the system index.
+  These are stored in the "fields" system index
 
 We need to make sure that:
 - When a user sets a field, it needs to be changed in both types: the system index and the mapping
@@ -20,10 +20,26 @@ from typing import Any, Iterable, Iterator, Mapping, cast, get_args
 
 from elasticsearch import NotFoundError
 
-# from amcat4.api.common import py2dict
-from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.models import CreateField, ElasticType, Field, FieldMetareaderAccess, FieldType, UpdateField
+from amcat4.systemdata.versions.v2 import FIELDS_INDEX, fields_index_id
+from amcat4.systemdata.util import BulkInsertAction, es_bulk_upsert, index_scan
+
+
+def elastic_update_fields(index: str, fields: dict[str, Field]) -> list[dict]:
+    def insert_fields():
+        for field, settings in fields.items():
+            id = fields_index_id(index, field)
+            field_doc = {"field": field, "settings": settings.model_dump()}
+            yield BulkInsertAction(index=FIELDS_INDEX, id=id, doc=field_doc)
+
+    es_bulk_upsert(insert_fields())
+
+
+def elastic_list_fields(index: str) -> dict[str, Field]:
+    docs = index_scan(FIELDS_INDEX, query={"term": {"index": index}})
+    return {doc["field"]: Field.model_validate(doc["settings"]) for id, doc in docs}
+
 
 # given an elastic field type, Check if it is supported by AmCAT.
 # this is not just the inverse of TYPEMAP_AMCAT_TO_ES because some AmCAT types map to multiple elastic
@@ -209,25 +225,8 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
             raise ValueError("Cannot add identifiers. Index already has documents with no identifiers.")
 
     if len(mapping) > 0:
-        # if there are new identifiers, check whether this is allowed first
         es().indices.put_mapping(index=index, properties=mapping)
-
-        es().update(
-            index=get_settings().system_index,
-            id=index,
-            doc=dict(fields=_fields_to_elastic(current_fields)),
-        )
-
-
-def _fields_to_elastic(fields: dict[str, Field]) -> list[dict]:
-    # some additional validation
-    return [{"field": field, "settings": settings.model_dump()} for field, settings in fields.items()]
-
-
-def _fields_from_elastic(
-    fields: list[dict],
-) -> dict[str, Field]:
-    return {fs["field"]: Field.model_validate(fs["settings"]) for fs in fields}
+        elastic_update_fields(index, current_fields)
 
 
 def update_fields(index: str, fields: dict[str, UpdateField]):
@@ -264,11 +263,7 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
         if new_settings.client_settings is not None:
             current_fields[field].client_settings = new_settings.client_settings
 
-    es().update(
-        index=get_settings().system_index,
-        id=index,
-        doc=dict(fields=_fields_to_elastic(current_fields)),
-    )
+    elastic_update_fields(index, current_fields)
 
 
 def _get_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:
@@ -286,15 +281,9 @@ def get_fields(index: str) -> dict[str, Field]:
     default settings for that field type and add it to the system index. This way, any elastic index can be imported
     """
     fields: dict[str, Field] = {}
-    system_index = get_settings().system_index
 
     try:
-        d = es().get(
-            index=system_index,
-            id=index,
-            source_includes="fields",
-        )
-        system_index_fields = _fields_from_elastic(d["_source"].get("fields", {}))
+        system_index_fields = elastic_list_fields(index)
     except NotFoundError:
         system_index_fields = {}
 
@@ -314,11 +303,7 @@ def get_fields(index: str) -> dict[str, Field]:
             fields[field] = system_index_fields[field]
 
     if update_system_index:
-        es().update(
-            index=system_index,
-            id=index,
-            doc=dict(fields=_fields_to_elastic(fields)),
-        )
+        elastic_update_fields(index, fields)
 
     return fields
 
@@ -340,11 +325,7 @@ def create_or_verify_tag_field(index: str | list[str], field: str):
     for i in add_to_indices:
         current_fields[field] = get_default_field("tag")
         es().indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
-        es().update(
-            index=get_settings().system_index,
-            id=i,
-            doc=dict(fields=_fields_to_elastic(current_fields)),
-        )
+        elastic_update_fields(i, current_fields)
 
 
 def field_values(index: str, field: str, size: int) -> list[str]:

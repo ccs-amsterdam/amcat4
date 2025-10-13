@@ -13,15 +13,24 @@ from pydantic import BaseModel
 from amcat4 import fields as index_fields
 from amcat4 import index
 from amcat4.api.auth import authenticated_user, authenticated_writer, check_fields_access, check_role
-from amcat4.fields import field_stats, field_values
-from amcat4.index import get_index_user_role, refresh_system_index, remove_role, set_role
-from amcat4.models import ContactInfo, CreateField, FieldSpec, FieldType, FilterSpec, FilterValue, UpdateField, RoleType, GuestRoleType
+from amcat4.systemdata.fields import field_stats, field_values
+from amcat4.index import get_index_user_role, remove_role, set_role
+from amcat4.models import (
+    ContactInfo,
+    CreateField,
+    FieldSpec,
+    FieldType,
+    FilterSpec,
+    FilterValue,
+    UpdateField,
+    RoleType,
+    GuestRoleType,
+)
 from amcat4.query import reindex
 
 from .query import _standardize_filters, _standardize_queries
 
 app_index = APIRouter(prefix="/index", tags=["index"])
-
 
 
 @app_index.get("/")
@@ -131,7 +140,6 @@ def modify_index(ix: str, data: ChangeIndex, user: str = Depends(authenticated_u
         contact=data.contact,
         # unarchive=unarchive,
     )
-    refresh_system_index()
 
 
 @app_index.get("/{ix}")

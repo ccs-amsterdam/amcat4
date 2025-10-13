@@ -6,7 +6,7 @@ from pytest import raises
 
 from amcat4 import query
 from amcat4.api.query import _standardize_filters, _standardize_queries
-from amcat4.fields import get_fields
+from amcat4.systemdata.fields import get_fields
 from amcat4.index import create_index, delete_index, refresh_index
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SnippetParams
 from tests.conftest import upload

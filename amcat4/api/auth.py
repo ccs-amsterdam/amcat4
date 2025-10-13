@@ -12,7 +12,7 @@ from fastapi.security import OAuth2PasswordBearer
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 from amcat4.config import AuthOptions, get_settings
-from amcat4.fields import get_fields
+from amcat4.systemdata.fields import get_fields
 from amcat4.index import ADMIN_USER, GUEST_USER, Role, get_global_role, get_role
 from amcat4.models import FieldSpec
 
@@ -80,7 +80,7 @@ def check_global_role(user: str, required_role: Role, raise_error=True):
     if raise_error:
         raise HTTPException(
             status_code=401,
-            detail=f"User {user} does not have global " f"{required_role.name.title()} permissions on this instance",
+            detail=f"User {user} does not have global {required_role.name.title()} permissions on this instance",
         )
     else:
         return False
@@ -112,7 +112,7 @@ def check_role(user: str, required_role: Role, index: str, always_allow_admin=Tr
     else:
         raise HTTPException(
             status_code=401,
-            detail=f"User {user} does not have " f"{required_role.name.title()} permissions on index {index}",
+            detail=f"User {user} does not have {required_role.name.title()} permissions on index {index}",
         )
 
 
