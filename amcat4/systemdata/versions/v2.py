@@ -1,6 +1,12 @@
-from amcat4.elastic_connection import _elastic_connection
+from amcat4.elastic_connection import elastic_connection
 from amcat4.elastic_mapping import ElasticMapping, nested_field, object_field
-from amcat4.systemdata.util import SystemIndex, system_index_name, es_bulk_create_or_overwrite, BulkInsertAction, index_scan
+from amcat4.systemdata.util import (
+    SystemIndexMapping,
+    system_index_name,
+    es_bulk_create_or_overwrite,
+    BulkInsertAction,
+    index_scan,
+)
 from amcat4.config import get_settings
 from typing import Iterable
 
@@ -16,8 +22,6 @@ REQUESTS_INDEX = system_index_name(VERSION, "requests")
 # We need to use the id field for specifying unique fields, and this needs to be imported
 # in the index code (e.g. fields.py) to be able to update the right document.
 # Is there a more elegant way to do this?
-#
-# !!! Is this injection safe? Should we hash or base64 encode email
 
 
 def settings_index_id(index: str | None = None) -> str:
@@ -35,8 +39,7 @@ def fields_index_id(index: str, name: str) -> str:
 
 def requests_index_id(type: str, email: str, index: str | None = None) -> str:
     where = index if index else "_server"
-    if index:
-        return f"{type}:{where}:{email}"
+    return f"{type}:{where}:{email}"
 
 
 _contact_field = object_field(
@@ -143,7 +146,7 @@ def check_deprecated_version(index: str):
     The v1 system has a deprecated form of versioning, where the version number was stored in the _global document.
     The oldest versions should (pretty please...) no longer be used, so we don't support automatic migration from them.
     """
-    global_doc = _elastic_connection().get(index=index, id="_global", source_includes="version")
+    global_doc = elastic_connection().get(index=index, id="_global", source_includes="version")
     version = global_doc["_source"].get("version", 0)
     if version != 2:
         raise ValueError(
@@ -197,27 +200,27 @@ def migrate_roles(role: dict, in_index: str | None):
         "role": role.get("role"),
     }
 
-    return BulkInsertAction(index=ROLES_INDEX, id=roles_index_id(doc["email"], doc=["index"]), doc=doc)
+    return BulkInsertAction(index=ROLES_INDEX, id=roles_index_id(doc["email"], doc["index"]), doc=doc)
 
 
 def migrate_requests(request: dict):
-    doc = (
-        {
-            "request_type": request.get("request_type"),
-            "email": request.get("email"),
-            "index": request.get("index", "_server"),  # now use _server instead of None
-            "status": "pending",  # before approved and rejected requests were removed
-            "message": request.get("message"),
-            "timestamp": request.get("timestamp"),
-            "role": request.get("role"),
-            "name": request.get("name"),
-            "description": request.get("description"),
-            "folder": request.get("folder"),
-        },
-    )
+    doc = {
+        "request_type": request.get("request_type"),
+        "email": request.get("email"),
+        "index": request.get("index", "_server"),  # now use _server instead of None
+        "status": "pending",  # before approved and rejected requests were removed
+        "message": request.get("message"),
+        "timestamp": request.get("timestamp"),
+        "role": request.get("role"),
+        "name": request.get("name"),
+        "description": request.get("description"),
+        "folder": request.get("folder"),
+    }
 
     return BulkInsertAction(
-        index=REQUESTS_INDEX, id=requests_index_id(doc["request_type"], doc["email"], doc["index"]), doc=doc
+        index=REQUESTS_INDEX,
+        id=requests_index_id(doc["request_type"], doc["email"], doc["index"]),
+        doc=doc,
     )
 
 
@@ -231,10 +234,10 @@ def migrate_fields(index: str, field: dict):
 
 
 SYSTEM_INDICES = [
-    SystemIndex(name="settings", mapping=settings_mapping),
-    SystemIndex(name="fields", mapping=fields_mapping),
-    SystemIndex(name="roles", mapping=roles_mapping),
-    SystemIndex(name="requests", mapping=requests_mapping),
+    SystemIndexMapping(name="settings", mapping=settings_mapping),
+    SystemIndexMapping(name="fields", mapping=fields_mapping),
+    SystemIndexMapping(name="roles", mapping=roles_mapping),
+    SystemIndexMapping(name="requests", mapping=requests_mapping),
 ]
 
 

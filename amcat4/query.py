@@ -170,6 +170,7 @@ def query_documents(
         result = es().scroll(scroll_id=scroll_id, **kwargs)
         if not result["hits"]["hits"]:
             return None
+        n = result["hits"]["total"]["value"]
     else:
         h = query_highlight(fields, highlight) if fields is not None else None
         body = build_body(queries, filters, h)
@@ -181,6 +182,14 @@ def query_documents(
             kwargs["from_"] = page * per_page
         result = es().search(index=index, size=per_page, **body, **kwargs)
 
+        n = result["hits"]["total"]["value"]
+        if n == 10000 and not scroll:
+            # Default elastic max on non-scrolled values. I think we should return the actual count,
+            # even if elastic will error (I think) if the user ever retrieves a page > 1000
+            # TODO: can we not hard-code the 10k limit?
+            res = es().count(index=index, query=body["query"])
+            n = res["count"]
+
     data = []
     for hit in result["hits"]["hits"]:
         hitdict = dict(_id=hit["_id"], **hit["_source"])
@@ -190,24 +199,12 @@ def query_documents(
                 if hit["highlight"][key]:
                     hitdict[key] = " ... ".join(hit["highlight"][key])
         data.append(hitdict)
-    if scroll_id:
-        return QueryResult(data, n=result["hits"]["total"]["value"], scroll_id=result["_scroll_id"])
-    elif scroll:
-        return QueryResult(
-            data,
-            n=result["hits"]["total"]["value"],
-            per_page=per_page,
-            scroll_id=result["_scroll_id"],
-        )
-    else:
-        n = result["hits"]["total"]["value"]
-        if n == 10000:
-            # Default elastic max on non-scrolled values. I think we should return the actual count,
-            # even if elastic will error (I think) if the user ever retrieves a page > 1000
-            # TODO: can we not hard-code the 10k limit?
-            res = es().count(index=index, query=body["query"])
-            n = res["count"]
 
+    if scroll_id:
+        return QueryResult(data, n=n, scroll_id=result["_scroll_id"])
+    elif scroll:
+        return QueryResult(data, n=n, per_page=per_page, scroll_id=result["_scroll_id"])
+    else:
         return QueryResult(data, n=n, per_page=per_page, page=page)
 
 
@@ -323,7 +320,6 @@ def reindex(
     source: dict = {"index": source_index}
     if queries or filters:
         source.update(build_body(queries, filters))
-    import json
 
     return es().reindex(dest=dict(index=destination_index), source=source, wait_for_completion=wait_for_completion)
 

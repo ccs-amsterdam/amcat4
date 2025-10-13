@@ -15,7 +15,6 @@ from amcat4.index import (
 from amcat4.models import CreateField, FieldSpec
 from amcat4.query import query_documents
 from tests.conftest import upload
-from tests.tools import refresh
 
 
 def test_upload_retrieve_document(index):

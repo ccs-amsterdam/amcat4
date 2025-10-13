@@ -16,11 +16,11 @@ in scripts that need it, instead of doing it implicitly here.
 import functools
 from elasticsearch import Elasticsearch
 
-from amcat4.elastic_connection import _elastic_connection
+from amcat4.elastic_connection import elastic_connection
 from amcat4.systemdata.create_or_update import create_or_update_systemdata
 
 
 @functools.lru_cache()
 def es() -> Elasticsearch:
     create_or_update_systemdata()
-    return _elastic_connection()
+    return elastic_connection()

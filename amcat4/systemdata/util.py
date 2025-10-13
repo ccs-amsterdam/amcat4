@@ -3,11 +3,11 @@ from amcat4.config import get_settings
 from pydantic import BaseModel
 from typing import Iterable, Literal
 from amcat4.elastic_mapping import ElasticMapping
-from amcat4.elastic_connection import _elastic_connection
+from amcat4.elastic_connection import elastic_connection
 
 
-class SystemIndex(BaseModel):
-    index: str
+class SystemIndexMapping(BaseModel):
+    name: str
     mapping: ElasticMapping
 
 
@@ -32,11 +32,11 @@ class BulkInsertAction(BaseModel):
 
 
 def es_get(index: str, id: str) -> dict | None:
-    return _elastic_connection().get(index=index, id=id)["_source"]
+    return elastic_connection().get(index=index, id=id)["_source"]
 
 
-def es_upsert(index: str, id: str | None, doc: dict, refresh: bool = True) -> None:
-    return _elastic_connection().update(index=index, id=id, document=doc, doc_as_upsert=True, refresh=refresh)
+def es_upsert(index: str, id: str, doc: dict, refresh: bool = True) -> None:
+    elastic_connection().update(index=index, id=id, doc=doc, doc_as_upsert=True, refresh=refresh)
 
 
 def es_bulk_create_or_overwrite(generator: Iterable[BulkInsertAction], batchsize: int = 1000) -> None:
@@ -78,7 +78,7 @@ def es_bulk_action(
     """
     actions: list[dict] = []
     for item in generator:
-        action = {"_op_type": op_type, "_index": item.index, "_id": item.id}
+        action: dict = {"_op_type": op_type, "_index": item.index, "_id": item.id}
 
         if op_type == "update":
             action["doc"] = item.doc
@@ -88,11 +88,11 @@ def es_bulk_action(
         actions.append(action)
 
         if len(actions) >= batchsize:
-            elasticsearch.helpers.bulk(_elastic_connection(), actions, refresh=refresh)
+            elasticsearch.helpers.bulk(elastic_connection(), actions, refresh=refresh)
             actions = []
 
     if len(actions) > 0:
-        elasticsearch.helpers.bulk(_elastic_connection(), actions, refresh=refresh)
+        elasticsearch.helpers.bulk(elastic_connection(), actions, refresh=refresh)
 
 
 def index_scan(
@@ -117,6 +117,11 @@ def index_scan(
         query_body["_source"] = source
 
     for hit in elasticsearch.helpers.scan(
-        _elastic_connection(), index=index, query=query_body, scroll=scroll, size=batchsize, preserve_order=sort is not None
+        elastic_connection(),
+        index=index,
+        query=query_body,
+        scroll=scroll,
+        size=batchsize,
+        preserve_order=sort is not None,
     ):
         yield hit["_id"], hit["_source"]

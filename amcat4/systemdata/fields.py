@@ -26,7 +26,7 @@ from amcat4.systemdata.versions.v2 import FIELDS_INDEX, fields_index_id
 from amcat4.systemdata.util import BulkInsertAction, es_bulk_upsert, index_scan
 
 
-def elastic_update_fields(index: str, fields: dict[str, Field]) -> list[dict]:
+def elastic_update_fields(index: str, fields: dict[str, Field]):
     def insert_fields():
         for field, settings in fields.items():
             id = fields_index_id(index, field)
@@ -318,11 +318,11 @@ def create_or_verify_tag_field(index: str | list[str], field: str):
         if field in current_fields:
             if current_fields[field].type != "tag":
                 raise ValueError(f"Field '{field}' already exists in index '{i}' and is not a tag field")
-
-    else:
-        add_to_indices.append(i)
+        else:
+            add_to_indices.append(i)
 
     for i in add_to_indices:
+        current_fields = get_fields(i)
         current_fields[field] = get_default_field("tag")
         es().indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
         elastic_update_fields(i, current_fields)

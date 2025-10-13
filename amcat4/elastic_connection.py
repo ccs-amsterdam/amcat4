@@ -1,10 +1,10 @@
-
 """
 Sets up the connection to the Elastic server.
 In most cases you should use the es() function from elastic.py instead,
 because this also sets up the system index. Only use _elastic_connection()
 directly in the system_index folder to avoid circular imports.
 """
+
 import functools
 import logging
 from elasticsearch import Elasticsearch
@@ -16,7 +16,7 @@ class CannotConnectElastic(Exception):
 
 
 @functools.lru_cache()
-def _elastic_connection() -> Elasticsearch:
+def elastic_connection() -> Elasticsearch:
     try:
         return _setup_elastic()
     except Exception as e:
@@ -50,8 +50,7 @@ def _setup_elastic():
     """
     settings = get_settings()
     logging.debug(
-        f"Connecting with elasticsearch at {settings.elastic_host}, "
-        f"password? {'yes' if settings.elastic_password else 'no'} "
+        f"Connecting with elasticsearch at {settings.elastic_host}, password? {'yes' if settings.elastic_password else 'no'} "
     )
     elastic = _connect_elastic()
     if not elastic.ping():

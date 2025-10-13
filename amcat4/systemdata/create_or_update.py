@@ -1,6 +1,6 @@
 import logging
 from typing import Literal
-from amcat4.elastic_connection import _elastic_connection
+from amcat4.elastic_connection import elastic_connection
 from amcat4.systemdata.util import (
     system_index_name,
 )
@@ -133,7 +133,7 @@ def create_or_update_systemdata_mappings(version: int, migration_pending: bool =
             }
 
         index = system_index_name(version, index.name)
-        _elastic_connection().indices.put_mapping(index=index, body=body)
+        elastic_connection().indices.put_mapping(index=index, body=body)
 
 
 def systemdata_version_status(version: int) -> SystemIndexVersionStatus:
@@ -168,7 +168,7 @@ def delete_pending_migrations(version: int) -> None:
     for index in indices:
         index_name = system_index_name(version, index.name)
 
-        mapping = _elastic_connection().indices.get_mapping(index=index_name)
+        mapping = elastic_connection().indices.get_mapping(index=index_name)
         if not mapping:
             raise InvalidSystemIndex(
                 f"delete_pending_migrations called for system indices version {version} "
@@ -177,14 +177,14 @@ def delete_pending_migrations(version: int) -> None:
 
         meta = mapping[index]["mappings"].get("_meta", {})
         if meta.get("migration_pending", True):
-            _elastic_connection().indices.delete(index=index_name)
+            elastic_connection().indices.delete(index=index_name)
 
 
 def delete_systemdata_version(version: int) -> None:
     indices = VERSIONS[version].SYSTEM_INDICES
     for index in indices:
         index_name = system_index_name(version, index.name)
-        _elastic_connection().indices.delete(index=index_name, ignore_unavailable=True)
+        elastic_connection().indices.delete(index=index_name, ignore_unavailable=True)
 
 
 def set_migration_successfull(version) -> None:
@@ -192,7 +192,7 @@ def set_migration_successfull(version) -> None:
 
     for system_index in VERSIONS[version].SYSTEM_INDICES:
         index = system_index_name(version, system_index["name"])
-        _elastic_connection().indices.put_mapping(index=index, body=update_meta_body)
+        elastic_connection().indices.put_mapping(index=index, body=update_meta_body)
 
         # verify, because it's important
         if check_index_status(index) != "ready":
@@ -200,14 +200,14 @@ def set_migration_successfull(version) -> None:
 
 
 def check_migration_flag(index: str) -> bool:
-    mapping = _elastic_connection().indices.get_mapping(index=index)
+    mapping = elastic_connection().indices.get_mapping(index=index)
     meta = mapping[index]["mappings"].get("_meta", {})
     return meta.get("migration_pending", False)
 
 
 def check_index_status(index: str) -> Literal["missing", "migrating", "ready"]:
     try:
-        mapping = _elastic_connection().indices.get_mapping(index=index)
+        mapping = elastic_connection().indices.get_mapping(index=index)
         meta = mapping[index]["mappings"].get("_meta", {})
         if meta.get("migration_pending", False):
             return "migrating"
