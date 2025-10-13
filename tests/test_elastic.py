@@ -160,7 +160,8 @@ def test_upload_with_identifiers(index):
     res = upload_documents(index, [doc2])
     assert res["successes"] == 1
     _assert_n(index, 1)
-    assert {doc["text"] for doc in query_documents(index, fields=[FieldSpec(name="text")]).data} == {"text2"}
+    res = query_documents(index, fields=[FieldSpec(name="text")])
+    assert {doc["text"] for doc in (res.data if res else [])} == {"text2"}
 
     doc3 = {"url": "http://2", "text": "text"}
     res = upload_documents(index, [doc3])

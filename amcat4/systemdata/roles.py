@@ -19,7 +19,7 @@ class GuestRole(IntEnum):
     WRITER = 30
 
 
-def elastic_set_role(email: str, index: str | None, role: RoleType | None) -> list[dict]:
+def elastic_create_or_update_role(email: str, index: str | None, role: RoleType | None):
     id = roles_index_id(email, index)
     doc = {"index": index, "email": email, "role": role}
 

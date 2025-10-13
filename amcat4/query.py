@@ -168,6 +168,7 @@ def query_documents(
 
     if scroll_id:
         result = es().scroll(scroll_id=scroll_id, **kwargs)
+        # TODO: check why we return None here instead of just an empty result
         if not result["hits"]["hits"]:
             return None
         n = result["hits"]["total"]["value"]

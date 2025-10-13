@@ -26,7 +26,7 @@ from amcat4.systemdata.versions.v2 import FIELDS_INDEX, fields_index_id
 from amcat4.systemdata.util import BulkInsertAction, es_bulk_upsert, index_scan
 
 
-def elastic_update_fields(index: str, fields: dict[str, Field]):
+def elastic_create_or_update_fields(index: str, fields: dict[str, Field]):
     def insert_fields():
         for field, settings in fields.items():
             id = fields_index_id(index, field)
@@ -226,7 +226,7 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
 
     if len(mapping) > 0:
         es().indices.put_mapping(index=index, properties=mapping)
-        elastic_update_fields(index, current_fields)
+        elastic_create_or_update_fields(index, current_fields)
 
 
 def update_fields(index: str, fields: dict[str, UpdateField]):
@@ -263,7 +263,7 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
         if new_settings.client_settings is not None:
             current_fields[field].client_settings = new_settings.client_settings
 
-    elastic_update_fields(index, current_fields)
+    elastic_create_or_update_fields(index, current_fields)
 
 
 def _get_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:
@@ -303,7 +303,7 @@ def get_fields(index: str) -> dict[str, Field]:
             fields[field] = system_index_fields[field]
 
     if update_system_index:
-        elastic_update_fields(index, fields)
+        elastic_create_or_update_fields(index, fields)
 
     return fields
 
@@ -325,7 +325,7 @@ def create_or_verify_tag_field(index: str | list[str], field: str):
         current_fields = get_fields(i)
         current_fields[field] = get_default_field("tag")
         es().indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
-        elastic_update_fields(i, current_fields)
+        elastic_create_or_update_fields(i, current_fields)
 
 
 def field_values(index: str, field: str, size: int) -> list[str]:

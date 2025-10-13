@@ -190,9 +190,7 @@ class CreateProjectRequest(AbstractRequest):
 PermissionRequest = Annotated[Union[RoleRequest, CreateProjectRequest], pydantic.Field(discriminator="request_type")]
 
 
-class NewIndex(BaseModel):
-    """Form to create a new index."""
-
+class IndexSettings(BaseModel):
     id: str
     name: str | None = None
     guest_role: GuestRoleType | None = None
@@ -200,3 +198,15 @@ class NewIndex(BaseModel):
     folder: str | None = None
     image_url: str | None = None
     contact: list[ContactInfo] | None = None
+
+
+class ServerSettings(BaseModel):
+    id: str
+    name: str | None = None
+    description: str | None = None
+    contact: list[ContactInfo] | None = None
+    external_url: str | None = None
+    welcome_text: str | None = None
+    icon: str | None = None
+    information_links: list[LinksGroup] | None = None
+    welcome_buttons: list[Links] | None = None

@@ -192,7 +192,7 @@ def create_index(
     except IndexDoesNotExist:
         pass
 
-    es().indices.create(index=index, mappings={"properties": {}})
+    es().indices.create(index=index, mappings={"dynamic": "strict", "properties": {}})
     register_index(
         index,
         guest_role=guest_role or GuestRole.NONE,

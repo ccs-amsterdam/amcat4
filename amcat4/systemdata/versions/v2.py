@@ -8,11 +8,11 @@ from amcat4.systemdata.util import (
     index_scan,
 )
 from amcat4.config import get_settings
-from typing import Iterable
+from typing import Iterable, Literal
 
 VERSION = 2
 
-SETTING_INDEX = system_index_name(VERSION, "settings")
+SETTINGS_INDEX = system_index_name(VERSION, "settings")
 ROLES_INDEX = system_index_name(VERSION, "roles")
 FIELDS_INDEX = system_index_name(VERSION, "fields")
 REQUESTS_INDEX = system_index_name(VERSION, "requests")
@@ -24,22 +24,20 @@ REQUESTS_INDEX = system_index_name(VERSION, "requests")
 # Is there a more elegant way to do this?
 
 
-def settings_index_id(index: str | None = None) -> str:
-    return index if index else "_server"
+def settings_index_id(index: str | Literal["_server"]) -> str:
+    return index
 
 
-def roles_index_id(email: str, index: str | None = None) -> str:
-    where = index if index else "_server"
-    return f"{where}:{email}"
+def roles_index_id(email: str, index: str | Literal["_server"]) -> str:
+    return f"{index}:{email}"
 
 
 def fields_index_id(index: str, name: str) -> str:
     return f"{index}:{name}"
 
 
-def requests_index_id(type: str, email: str, index: str | None = None) -> str:
-    where = index if index else "_server"
-    return f"{type}:{where}:{email}"
+def requests_index_id(type: str, email: str, index: str | Literal["_server"]) -> str:
+    return f"{type}:{index}:{email}"
 
 
 _contact_field = object_field(
@@ -158,8 +156,8 @@ def check_deprecated_version(index: str):
 
 def migrate_server_settings(doc: dict):
     return BulkInsertAction(
-        index=SETTING_INDEX,
-        id=settings_index_id(),
+        index=SETTINGS_INDEX,
+        id=settings_index_id("_server"),
         doc={
             "server_settings": {
                 "name": doc.get("name"),
@@ -177,7 +175,7 @@ def migrate_server_settings(doc: dict):
 
 def migrate_index_settings(index: str, doc: dict):
     return BulkInsertAction(
-        index=SETTING_INDEX,
+        index=SETTINGS_INDEX,
         id=settings_index_id(index),
         doc={
             "index_settings": {
