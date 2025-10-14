@@ -44,6 +44,7 @@ from elasticsearch import NotFoundError
 # from amcat4.api.common import py2dict
 from amcat4.config import get_settings
 from amcat4.elastic import es
+from amcat4.projectdata import list_user_project_indices
 from amcat4.systemdata.fields import (
     coerce_type,
     create_fields,
@@ -104,24 +105,6 @@ def list_all_indices() -> Iterable[Index]:
         ix = _index_from_elastic(index)
         if ix.id != GLOBAL_ROLES:
             yield ix
-
-
-def list_user_indices(email: str) -> Iterable[tuple[Index, Role]]:
-    """
-    List all indices this user has access to, and add the user roles to the index
-    """
-
-    check_role = get_global_role(email) != Role.ADMIN and get_settings().auth != "no_auth"
-
-    # TODO: replace list_all_indices with a more efficient ES query
-
-    for index in list_all_indices():
-        user_role = get_index_user_role(index.guest_role, index.roles, email)
-
-        if check_role and user_role == Role.NONE and index.guest_role == GuestRole.NONE:
-            continue
-
-        yield index, user_role
 
 
 def _index_from_elastic(index):
@@ -449,7 +432,7 @@ def list_global_users() -> dict[str, Role]:
 def delete_user(email: str) -> None:
     """Delete this user from all indices"""
     set_global_role(email, None)
-    for ix, role in list_user_indices(email):
+    for ix, role in list_user_project_indices(email):
         set_role(ix.id, email, None)
 
 

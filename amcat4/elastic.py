@@ -17,7 +17,7 @@ import functools
 from elasticsearch import Elasticsearch
 
 from amcat4.elastic_connection import elastic_connection
-from amcat4.systemdata.create_or_update import create_or_update_systemdata
+from amcat4.systemdata.manage import create_or_update_systemdata
 
 
 @functools.lru_cache()

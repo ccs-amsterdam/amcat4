@@ -7,8 +7,8 @@ from amcat4 import elastic
 from amcat4.api.auth import authenticated_admin, authenticated_user, get_middlecat_config
 from amcat4.config import get_settings, validate_settings
 from amcat4.query import get_task_status
-from amcat4.system_index  import get_from_system_index, insert_to_system_index, update_system_index
-from amcat4.models import Branding
+from amcat4.models import Branding, ServerSettings
+from amcat4.systemdata.settings import elastic_create_or_update_server_settings, elastic_get_server_settings
 
 templates = Jinja2Templates(directory="templates")
 
@@ -50,19 +50,14 @@ def get_auth_config():
 
 @app_info.get("/config/branding")
 def read_branding():
-    return get_from_system_index("server_settings")
+    return elastic_get_server_settings()
 
 
 @app_info.put("/config/branding")
-def change_branding(data: Branding, _user: str = Depends(authenticated_admin)):
+def change_branding(data: ServerSettings, _user: str = Depends(authenticated_admin)):
     ## This doesn't yet make sense. The problem is that if we have a separate branding endpoint,
     ## we need to make sure that the server_settings document exists.
-    has_branding = get_from_system_index("server_settings", sources=[])
-    if has_branding:
-        update_system_index("server_settings", data.model_dump())
-    else:
-        insert_to_system_index("server_settings", data.model_dump())
-
+    elastic_create_or_update_server_settings(data)
 
 
 @app_info.get("/task/{taskId}")

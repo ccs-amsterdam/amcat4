@@ -28,16 +28,18 @@ def settings_index_id(index: str | Literal["_server"]) -> str:
     return index
 
 
-def roles_index_id(email: str, index: str | Literal["_server"]) -> str:
-    return f"{index}:{email}"
+def roles_index_id(email: str, permission_context: str | Literal["_server"]) -> str:
+    return f"{permission_context}:{email}"
 
 
 def fields_index_id(index: str, name: str) -> str:
     return f"{index}:{name}"
 
 
-def requests_index_id(type: str, email: str, index: str | Literal["_server"]) -> str:
-    return f"{type}:{index}:{email}"
+def requests_index_id(type: str, email: str, permission_context: str | Literal["_server"]) -> str:
+    if type == "create_project" and permission_context == "_server":
+        raise ValueError("permission_context must not be _server for create_project requests")
+    return f"{type}:{permission_context}:{email}"
 
 
 _contact_field = object_field(
@@ -108,7 +110,7 @@ fields_mapping: ElasticMapping = dict(
 
 roles_mapping: ElasticMapping = dict(
     email={"type": "keyword"},
-    index={"type": "keyword"},
+    permission_context={"type": "keyword"},  # either _server or an index name
     role={"type": "keyword"},
     # API KEY PROPOSAL:
     # Users can create an API key for their _server and index roles
@@ -128,6 +130,7 @@ roles_mapping: ElasticMapping = dict(
 requests_mapping: ElasticMapping = dict(
     request_type={"type": "keyword"},
     email={"type": "keyword"},
+    permission_context={"type": "keyword"},  # either _server or an index name
     index={"type": "keyword"},
     status={"type": "keyword"},  # "pending", "approved", "rejected"
     message={"type": "text"},
@@ -205,7 +208,7 @@ def migrate_requests(request: dict):
     doc = {
         "request_type": request.get("request_type"),
         "email": request.get("email"),
-        "index": request.get("index", "_server"),  # now use _server instead of None
+        "permission_context": request.get("index", "_server"),
         "status": "pending",  # before approved and rejected requests were removed
         "message": request.get("message"),
         "timestamp": request.get("timestamp"),
@@ -217,7 +220,7 @@ def migrate_requests(request: dict):
 
     return BulkInsertAction(
         index=REQUESTS_INDEX,
-        id=requests_index_id(doc["request_type"], doc["email"], doc["index"]),
+        id=requests_index_id(doc["request_type"], doc["email"], doc["permission_context"]),
         doc=doc,
     )
 

@@ -12,8 +12,9 @@ from pydantic import BaseModel
 from pydantic.networks import EmailStr
 
 from amcat4 import index
-from amcat4.api.auth import authenticated_admin, authenticated_user, check_global_role
-from amcat4.index import ADMIN_USER, GUEST_USER, Role, get_global_role, set_global_role, user_exists
+from amcat4.api.auth import authenticated_admin, authenticated_user
+from amcat4.index import Role, set_global_role, user_exists
+from amcat4.systemdata.roles import ADMIN_USER, GUEST_USER, elastic_get_role, raise_if_not_has_role
 
 app_users = APIRouter(tags=["users"])
 
@@ -70,12 +71,13 @@ def get_user(email: EmailStr, current_user: str = Depends(authenticated_user)):
 
 def _get_user(email, current_user):
     if current_user != email:
-        check_global_role(current_user, Role.WRITER)
-    global_role = get_global_role(email)
+        raise_if_not_has_role(current_user, "_server", "WRITER")
+
     if email in (ADMIN_USER, GUEST_USER):
         raise HTTPException(404, detail=f"User {email} unknown")
     else:
-        return {"email": email, "role": global_role.name}
+        global_role = elastic_get_role(email, "_server")
+        return {"email": email, "role": global_role}
 
 
 @app_users.get("/users", dependencies=[Depends(authenticated_admin)])

@@ -12,9 +12,7 @@ from fastapi.security import OAuth2PasswordBearer
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 from amcat4.config import AuthOptions, get_settings
-from amcat4.systemdata.fields import get_fields
-from amcat4.index import ADMIN_USER, GUEST_USER, Role, get_global_role, get_role
-from amcat4.models import FieldSpec
+from amcat4.systemdata.roles import ADMIN_USER, GUEST_USER, raise_if_not_has_role
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
@@ -61,128 +59,7 @@ def decode_middlecat_token(token: str) -> dict:
         raise InvalidToken(e)
 
 
-def check_global_role(user: str, required_role: Role, raise_error=True):
-    """
-    Check if the given user has at least the required role
-    :param user: The email address of the authenticated user
-    :param required_role: The minimum global role of the user
-    :param raise_error: If true, raise an error when not authorized, otherwise return False
-                        (will always raise an error if user is not authenticated)
-    """
-    if not user:
-        raise HTTPException(status_code=401, detail="No authenticated user")
-    try:
-        global_role = get_global_role(user)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error on retrieving user {user}: {e}")
-    if global_role and global_role >= required_role:
-        return global_role
-    if raise_error:
-        raise HTTPException(
-            status_code=401,
-            detail=f"User {user} does not have global {required_role.name.title()} permissions on this instance",
-        )
-    else:
-        return False
-
-
-def check_role(user: str, required_role: Role, index: str, always_allow_admin=True) -> None:
-    """Check if the given user has the required role in an index. Raise Exception if not.
-    Server admin always has access, unless always_allow_admin is False.
-
-    :param user: The email address of the authenticated user
-    :param required_role: The minimum role of the user on the given index
-    :param index: The index to check the role on
-    :param always_allow_admin: If True, server admin always has access
-    :return: the actual role of the user on this index
-    """
-    # Skip all checks if auth is disabled
-    if get_settings().auth == AuthOptions.no_auth:
-        return None
-
-    # Check global role.
-    if always_allow_admin:
-        if check_global_role(user, Role.ADMIN, raise_error=False):
-            return None
-
-    # Check index role
-    index_role = get_role(index, user)
-    if index_role and index_role >= required_role:
-        return None
-    else:
-        raise HTTPException(
-            status_code=401,
-            detail=f"User {user} does not have {required_role.name.title()} permissions on index {index}",
-        )
-
-
-def check_fields_access(index: str, user: str, fields: list[FieldSpec]) -> None:
-    """Check if the given user is allowed to query the given fields and snippets on the given index.
-
-    :param index: The index to check the role on
-    :param user: The email address of the authenticated user
-    :param fields: The fields to check
-    :param snippets: The snippets to check
-    :return: Nothing. Throws HTTPException if the user is not allowed to query the given fields and snippets.
-    """
-    if get_settings().auth == AuthOptions.no_auth:
-        return None
-
-    role = get_role(index, user)
-    if role is None:
-        raise HTTPException(
-            status_code=401,
-            detail=f"User {user} does not have a role on index {index}",
-        )
-    if role >= Role.READER:
-        return None
-    if fields is None:
-        return None
-
-    # after this, we know the user is a metareader, so we need to check metareader_access
-    index_fields = get_fields(index)
-    for field in fields:
-        if field.name not in index_fields:
-            # might be better to raise an error here, but since we want to support querying multiple
-            # indices at once, this allows the user to query fields that do not exist on all indices
-            continue
-        metareader = index_fields[field.name].metareader
-
-        if metareader.access == "read":
-            continue
-        elif metareader.access == "snippet" and metareader.max_snippet is not None:
-            if metareader.max_snippet is None:
-                max_params_msg = ""
-            else:
-                max_params_msg = (
-                    "Can only read snippet with max parameters:"
-                    f" nomatch_chars={metareader.max_snippet.nomatch_chars}"
-                    f", max_matches={metareader.max_snippet.max_matches}"
-                    f", match_chars={metareader.max_snippet.match_chars}"
-                )
-            if field.snippet is None:
-                # if snippet is not specified, the whole field is requested
-                raise HTTPException(
-                    status_code=401, detail=f"METAREADER cannot read {field} on index {index}. {max_params_msg}"
-                )
-
-            valid_nomatch_chars = field.snippet.nomatch_chars <= metareader.max_snippet.nomatch_chars
-            valid_max_matches = field.snippet.max_matches <= metareader.max_snippet.max_matches
-            valid_match_chars = field.snippet.match_chars <= metareader.max_snippet.match_chars
-            valid = valid_nomatch_chars and valid_max_matches and valid_match_chars
-            if not valid:
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"The requested snippet of {field.name} on index {index} is too long. {max_params_msg}",
-                )
-        else:
-            raise HTTPException(
-                status_code=401,
-                detail=f"METAREADER cannot read {field.name} on index {index}",
-            )
-
-
-async def authenticated_user(token: str = Depends(oauth2_scheme)) -> str:
+async def authenticated_user(token: str | None = Depends(oauth2_scheme)) -> str:
     """Dependency to verify and return a user based on a token."""
     auth = get_settings().auth
     if token is None:
@@ -196,30 +73,21 @@ async def authenticated_user(token: str = Depends(oauth2_scheme)) -> str:
                 detail="This instance has no guest access, please provide a valid bearer token",
             )
     try:
-        user = verify_token(token)["email"]
+        email = verify_token(token)["email"]
     except Exception:
         logging.exception("Login failed")
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    if auth == AuthOptions.authorized_users_only:
-        print(get_global_role(user))
-        if get_global_role(user) is Role.NONE:
-            raise HTTPException(
-                status_code=401,
-                detail=f"The user {user} is not authorized to access this AmCAT instance",
-            )
-    return user
+    return email
 
 
 async def authenticated_writer(user: str = Depends(authenticated_user)):
     """Dependency to verify and return a global writer user based on a token."""
-    if get_settings().auth != AuthOptions.no_auth:
-        check_global_role(user, Role.WRITER)
+    raise_if_not_has_role(user, "_server", "WRITER")
     return user
 
 
 async def authenticated_admin(user: str = Depends(authenticated_user)):
     """Dependency to verify and return a global writer user based on a token."""
-    if get_settings().auth != AuthOptions.no_auth:
-        check_global_role(user, Role.ADMIN)
+    raise_if_not_has_role(user, "_server", "ADMIN")
     return user

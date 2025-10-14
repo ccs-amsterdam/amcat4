@@ -1,11 +1,20 @@
 from elasticsearch import NotFoundError
-from amcat4.systemdata.roles import elastic_create_or_update_role
+from amcat4.systemdata.roles import elastic_create_or_update_role, elastic_list_roles
+from amcat4.systemdata.util import index_scan
 from amcat4.systemdata.versions.v2 import SETTINGS_INDEX, settings_index_id
 from amcat4.elastic import es
 from amcat4.models import IndexSettings, ServerSettings
 
-
 ## INDEX SETTINGS
+
+
+class IndexDoesNotExist(ValueError):
+    pass
+
+
+def elastic_index_exists(index_id: str) -> bool:
+    return bool(es().exists(index=SETTINGS_INDEX, id=settings_index_id(index_id)))
+
 
 def elastic_get_index_settings(index_id: str) -> IndexSettings:
     id = settings_index_id(index_id)

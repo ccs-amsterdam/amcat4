@@ -18,12 +18,12 @@ class CannotConnectElastic(Exception):
 @functools.lru_cache()
 def elastic_connection() -> Elasticsearch:
     try:
-        return _setup_elastic()
+        return setup_elastic()
     except Exception as e:
         raise Exception(f"Cannot connect to elastic {get_settings().elastic_host!r}: {e}")
 
 
-def _connect_elastic() -> Elasticsearch:
+def connect_elastic() -> Elasticsearch:
     """
     Connect to the elastic server using the system settings
     """
@@ -44,7 +44,7 @@ def _connect_elastic() -> Elasticsearch:
         return Elasticsearch(settings.elastic_host or None)
 
 
-def _setup_elastic():
+def setup_elastic():
     """
     Check whether we can connect with elastic
     """
@@ -52,7 +52,7 @@ def _setup_elastic():
     logging.debug(
         f"Connecting with elasticsearch at {settings.elastic_host}, password? {'yes' if settings.elastic_password else 'no'} "
     )
-    elastic = _connect_elastic()
+    elastic = connect_elastic()
     if not elastic.ping():
         raise CannotConnectElastic(f"Cannot connect to elasticsearch server {settings.elastic_host}")
     return elastic

@@ -5,29 +5,26 @@ AmCAT4 REST API
 import argparse
 import csv
 import io
-import json
 import logging
 import os
-from pathlib import Path
 import secrets
 import sys
-from typing import Any, get_args
 import urllib.request
 from enum import Enum
-from collections import defaultdict
-import elasticsearch.helpers
+from pathlib import Path
+from typing import Any, get_args
 
 import uvicorn
 from pydantic.fields import FieldInfo
 from uvicorn.config import LOGGING_CONFIG
 
-
 from amcat4 import index
-from amcat4.config import get_settings, AuthOptions, validate_settings
-from amcat4.elastic import connect_elastic, ping
-from amcat4.index import GLOBAL_ROLES, create_index, set_global_role, Role, list_global_users, upload_documents
-from amcat4.system_index.system_index import migrate
+from amcat4.config import AuthOptions, get_settings, validate_settings
+from amcat4.elastic_connection import connect_elastic
+from amcat4.index import create_index, list_global_users, upload_documents
 from amcat4.models import FieldType
+from amcat4.systemdata.manage import create_or_update_systemdata
+from amcat4.systemdata.roles import elastic_create_or_update_role
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -69,16 +66,18 @@ def run(args):
     logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}, auth={auth}")
     if auth == AuthOptions.no_auth:
         logging.warning(
-            "Warning: No authentication is set up - " "everyone who can access this service can view and change all data"
+            "Warning: No authentication is set up - everyone who can access this service can view and change all data"
         )
     if validate_settings():
         logging.warning(validate_settings())
     logging.info(
         "To change server config, create an .env file and/or set environment parameters,\n"
-        f"{' '*26}see README.md, amcat4/config.py or .env.example for more information.\n"
-        f"{' '*26}You can also run `python -m amcat4 config` to create the .env settings file interactively\n"
+        f"{' ' * 26}see README.md, amcat4/config.py or .env.example for more information.\n"
+        f"{' ' * 26}You can also run `python -m amcat4 config` to create the .env settings file interactively\n"
     )
-    if ping():
+
+    elastic = connect_elastic()
+    if elastic.ping():
         logging.info(f"Connect to elasticsearch {get_settings().elastic_host}")
     log_config = "logging.yml" if Path("logging.yml").exists() else LOGGING_CONFIG
     uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port, log_config=log_config)
@@ -92,17 +91,14 @@ def val(val_or_list):
     return val_or_list
 
 
-def migrate_index(_args) -> None:
+def migrate_systemdata(args) -> None:
     settings = get_settings()
     elastic = connect_elastic()
     if not elastic.ping():
         logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
         sys.exit(1)
-    if not elastic.indices.exists(index=settings.system_index):
-        logging.info("System index does not exist yet. It will be created automatically if you run the server")
-        sys.exit(1)
 
-    migrate()
+    create_or_update_systemdata(rm_pending_migrations=args.rm_pending, rm_broken_versions=args.rm_broken)
 
 
 def base_env():
@@ -135,7 +131,7 @@ def create_test_index(_args):
 
 def add_admin(args):
     logging.info(f"**** Setting {args.email} to ADMIN ****")
-    set_global_role(args.email, Role.ADMIN)
+    elastic_create_or_update_role(args.email, "_server", "ADMIN")
 
 
 def list_users(_args):
@@ -253,7 +249,9 @@ def main():
     p.set_defaults(func=create_test_index)
 
     p = subparsers.add_parser("migrate", help="Migrate the system index to the current version")
-    p.set_defaults(func=migrate_index)
+    p.add_argument("rm_pending", help="Force remove pending migrations (see amcat4/systemdata/manage.py)", default=True)
+    p.add_argument("rm_broken", help="Force remove broken systemdata version (see amcat4/systemdata/manage.py)", default=False)
+    p.set_defaults(func=migrate_systemdata)
 
     args = parser.parse_args()
 

@@ -19,14 +19,16 @@ import json
 from typing import Any, Iterable, Iterator, Mapping, cast, get_args
 
 from elasticsearch import NotFoundError
+from fastapi import HTTPException
 
 from amcat4.elastic import es
-from amcat4.models import CreateField, ElasticType, Field, FieldMetareaderAccess, FieldType, UpdateField
+from amcat4.models import CreateField, ElasticType, Field, FieldMetareaderAccess, FieldSpec, FieldType, UpdateField
+from amcat4.systemdata.roles import has_role
 from amcat4.systemdata.versions.v2 import FIELDS_INDEX, fields_index_id
 from amcat4.systemdata.util import BulkInsertAction, es_bulk_upsert, index_scan
 
 
-def elastic_create_or_update_fields(index: str, fields: dict[str, Field]):
+def elastic_update_fields(index: str, fields: dict[str, Field]):
     def insert_fields():
         for field, settings in fields.items():
             id = fields_index_id(index, field)
@@ -226,13 +228,12 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
 
     if len(mapping) > 0:
         es().indices.put_mapping(index=index, properties=mapping)
-        elastic_create_or_update_fields(index, current_fields)
+        elastic_update_fields(index, current_fields)
 
 
 def update_fields(index: str, fields: dict[str, UpdateField]):
     """
-    Set the fields settings for this index. Only updates fields that
-    already exist. Only keys in UpdateField can be updated (not type or client_settings)
+    Update
     """
 
     current_fields = get_fields(index)
@@ -263,7 +264,7 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
         if new_settings.client_settings is not None:
             current_fields[field].client_settings = new_settings.client_settings
 
-    elastic_create_or_update_fields(index, current_fields)
+    elastic_update_fields(index, current_fields)
 
 
 def _get_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:
@@ -303,14 +304,17 @@ def get_fields(index: str) -> dict[str, Field]:
             fields[field] = system_index_fields[field]
 
     if update_system_index:
-        elastic_create_or_update_fields(index, fields)
+        elastic_update_fields(index, fields)
 
     return fields
 
 
 def create_or_verify_tag_field(index: str | list[str], field: str):
-    """Create a special type of field that can be used to tag documents.
-    Since adding/removing tags supports multiple indices, we first check whether the field name is valid for all indices"""
+    """
+    Create a special type of field that can be used to tag documents.
+    Since adding/removing tags supports multiple indices, we first check whether the field name is valid for all indices
+    TODO: double check, because this function looks weird
+    """
     indices = [index] if isinstance(index, str) else index
     add_to_indices = []
     for i in indices:
@@ -325,7 +329,7 @@ def create_or_verify_tag_field(index: str | list[str], field: str):
         current_fields = get_fields(i)
         current_fields[field] = get_default_field("tag")
         es().indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
-        elastic_create_or_update_fields(i, current_fields)
+        elastic_update_fields(i, current_fields)
 
 
 def field_values(index: str, field: str, size: int) -> list[str]:
@@ -353,3 +357,62 @@ def field_stats(index: str, field: str) -> list[str]:
     aggs = {"facets": {"stats": {"field": field}}}
     r = es().search(index=index, size=0, aggs=aggs)
     return r["aggregations"]["facets"]
+
+
+def check_fields_access(index: str, user: str, fields: list[FieldSpec]) -> None:
+    """Check if the given user is allowed to query the given fields and snippets on the given index.
+
+    :param index: The index to check the role on
+    :param user: The email address of the authenticated user
+    :param fields: The fields to check
+    :param snippets: The snippets to check
+    :return: Nothing. Throws HTTPException if the user is not allowed to query the given fields and snippets.
+    """
+    if has_role(user, index, "READER"):
+        return None
+
+    if fields is None or len(fields) == 0:
+        return None
+
+    # after this, we know the user is a metareader, so we need to check metareader_access
+    index_fields = get_fields(index)
+    for field in fields:
+        if field.name not in index_fields:
+            # Should we raise an error here? If we want to support querying multiple
+            # indices at once, not throwing an error allows the user to query fields
+            # that do not exist on all indices
+            continue
+        metareader = index_fields[field.name].metareader
+
+        if metareader.access == "read":
+            continue
+        elif metareader.access == "snippet" and metareader.max_snippet is not None:
+            if metareader.max_snippet is None:
+                max_params_msg = ""
+            else:
+                max_params_msg = (
+                    "Can only read snippet with max parameters:"
+                    f" nomatch_chars={metareader.max_snippet.nomatch_chars}"
+                    f", max_matches={metareader.max_snippet.max_matches}"
+                    f", match_chars={metareader.max_snippet.match_chars}"
+                )
+            if field.snippet is None:
+                # if snippet is not specified, the whole field is requested
+                raise HTTPException(
+                    status_code=401, detail=f"METAREADER cannot read {field} on index {index}. {max_params_msg}"
+                )
+
+            valid_nomatch_chars = field.snippet.nomatch_chars <= metareader.max_snippet.nomatch_chars
+            valid_max_matches = field.snippet.max_matches <= metareader.max_snippet.max_matches
+            valid_match_chars = field.snippet.match_chars <= metareader.max_snippet.match_chars
+            valid = valid_nomatch_chars and valid_max_matches and valid_match_chars
+            if not valid:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"The requested snippet of {field.name} on index {index} is too long. {max_params_msg}",
+                )
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail=f"METAREADER cannot read {field.name} on index {index}",
+            )

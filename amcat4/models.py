@@ -1,11 +1,29 @@
 import pydantic
 from datetime import datetime
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, Field as pydanticField
 from typing import Annotated, Any, Literal, Union
 from typing_extensions import Self
+from enum import IntEnum
 
-RoleType = Literal["ADMIN", "WRITER", "READER", "METAREADER"]
-GuestRoleType = Literal["WRITER", "READER", "METAREADER"]
+
+class GuestRoleHierarchy(IntEnum):
+    NONE = 0
+    METAREADER = 10
+    READER = 20
+    WRITER = 30
+
+
+Role = Literal["ADMIN", "WRITER", "READER", "METAREADER", "LISTER"]
+GuestRole = Literal["WRITER", "READER", "METAREADER", "LISTER", "NONE"]
+
+IndexId = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*$")]
+Context = IndexId | Literal["_server"]
+
+
+class UserRole(BaseModel):
+    email: str
+    permission_context: Context
+    role: Role
 
 
 FieldType = Literal[
@@ -155,16 +173,6 @@ class LinksGroup(BaseModel):
     links: list[Links]
 
 
-class Branding(BaseModel):
-    name: str | None = None
-    icon: str | None = None
-    external_url: str | None = None
-    description: str | None = None
-    welcome_text: str | None = None
-    information_links: list[LinksGroup] | None = None
-    welcome_buttons: list[Links] | None = None
-
-
 class AbstractRequest(BaseModel):
     email: str
     timestamp: datetime | None = None
@@ -174,13 +182,13 @@ class AbstractRequest(BaseModel):
 
 class RoleRequest(AbstractRequest):
     request_type: Literal["role"] = "role"
-    index: str | None = None
-    role: RoleType | Literal["NONE"]
+    permission_context: IndexId | Literal["_server"]
+    role: Role | Literal["NONE"]
 
 
 class CreateProjectRequest(AbstractRequest):
     request_type: Literal["create_project"] = "create_project"
-    index: str
+    permission_context: IndexId
     email: str
     description: str | None = None
     name: str | None = None
@@ -193,11 +201,12 @@ PermissionRequest = Annotated[Union[RoleRequest, CreateProjectRequest], pydantic
 class IndexSettings(BaseModel):
     id: str
     name: str | None = None
-    guest_role: GuestRoleType | None = None
+    guest_role: GuestRole | None = None
     description: str | None = None
     folder: str | None = None
     image_url: str | None = None
     contact: list[ContactInfo] | None = None
+    archived: str | None = None
 
 
 class ServerSettings(BaseModel):

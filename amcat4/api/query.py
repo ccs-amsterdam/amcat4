@@ -1,17 +1,20 @@
 """API Endpoints for querying."""
 
-from typing import Annotated, Any, Dict, Iterable, List, Literal, Mapping, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Mapping, Optional, Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic.main import BaseModel
 
 from amcat4 import aggregate, query
 from amcat4.aggregate import Aggregation, Axis, TopHitsAggregation
-from amcat4.api.auth import authenticated_user, check_fields_access, check_role
+from amcat4.api.auth import authenticated_user
 from amcat4.config import AuthOptions, get_settings
-from amcat4.index import Role, get_fields, get_role
+from amcat4.systemdata.fields import get_fields
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec
+from amcat4.systemdata.roles import elastic_get_role, role_is_required_role
 from amcat4.query import delete_query, update_query, update_tag_query
+from amcat4.systemdata.roles import raise_if_not_has_role
+from amcat4.systemdata.fields import check_fields_access
 
 app_query = APIRouter(prefix="/index", tags=["query"])
 
@@ -33,23 +36,15 @@ class QueryResult(BaseModel):
     meta: QueryMeta
 
 
-def get_or_validate_allowed_fields(
-    user: str, indices: Iterable[str], fields: list[FieldSpec] | None = None
-) -> list[FieldSpec]:
+def get_or_validate_allowed_fields(user: str, indices: list[str], fields: list[FieldSpec] | None = None) -> list[FieldSpec]:
     """
     For any endpoint that returns field values, make sure the user only gets fields that
     they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
     check whether the user can access the fields (If not, raise an error).
     """
-
-    if not isinstance(user, str):
-        raise ValueError("User should be a string")
-    if not isinstance(indices, list):
-        raise ValueError("Indices should be a list")
-    if fields is not None and not isinstance(fields, list):
-        raise ValueError("Fields should be a list or None")
-
     no_auth = get_settings().auth == AuthOptions.no_auth
+
+    ## if fields are not specified, return all allowed fields
     if fields is None:
         if len(indices) > 1:
             # this restrictions is needed, because otherwise we need to return all allowed fields taking
@@ -58,12 +53,14 @@ def get_or_validate_allowed_fields(
             # for multiple indices is probably not something we should support anyway
             raise ValueError("Fields should be specified if multiple indices are given")
         index_fields = get_fields(indices[0])
-        role = get_role(indices[0], user)
+
+        role = elastic_get_role(user, indices[0])
+
         allowed_fields: list[FieldSpec] = []
         for field in index_fields.keys():
-            if role >= Role.READER or no_auth:
+            if role_is_required_role(role, "READER") or no_auth:
                 allowed_fields.append(FieldSpec(name=field))
-            elif role == Role.METAREADER:
+            elif role_is_required_role(role, "METAREADER"):
                 metareader = index_fields[field].metareader
                 if metareader.access == "read":
                     allowed_fields.append(FieldSpec(name=field))
@@ -76,6 +73,7 @@ def get_or_validate_allowed_fields(
                 )
         return allowed_fields
 
+    ## if fields are specified, check access per field
     for index in indices:
         if not no_auth:
             check_fields_access(index, user, fields)
@@ -390,11 +388,7 @@ def query_update_tags(
     """
     indices = index.split(",")
     for i in indices:
-        if get_role(i, user) < Role.WRITER:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"User {user} does not have permission to update tags on index {i}",
-            )
+        raise_if_not_has_role(user, i, "WRITER")
 
     if isinstance(ids, (str, int)):
         ids = [ids]
@@ -431,7 +425,7 @@ def update_by_query(
 
     Select documents using queries and/or filters, and specify a field and new value.
     """
-    check_role(user, Role.WRITER, index)
+    raise_if_not_has_role(user, index, "WRITER")
     return update_query(index, field, value, _standardize_queries(queries), _standardize_filters(filters), ids)
 
 
@@ -460,5 +454,5 @@ def delete_by_query(
 
     Select documents using queries and/or filters, and specify a field and new value.
     """
-    check_role(user, Role.WRITER, index)
+    raise_if_not_has_role(user, index, "WRITER")
     return delete_query(index, _standardize_queries(queries), _standardize_filters(filters), ids)
