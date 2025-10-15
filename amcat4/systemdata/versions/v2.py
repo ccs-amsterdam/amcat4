@@ -28,18 +28,18 @@ def settings_index_id(index: str | Literal["_server"]) -> str:
     return index
 
 
-def roles_index_id(email: str, permission_context: str | Literal["_server"]) -> str:
-    return f"{permission_context}:{email}"
+def roles_index_id(email: str, role_context: str | Literal["_server"]) -> str:
+    return f"{role_context}:{email}"
 
 
 def fields_index_id(index: str, name: str) -> str:
     return f"{index}:{name}"
 
 
-def requests_index_id(type: str, email: str, permission_context: str | Literal["_server"]) -> str:
-    if type == "create_project" and permission_context == "_server":
-        raise ValueError("permission_context must not be _server for create_project requests")
-    return f"{type}:{permission_context}:{email}"
+def requests_index_id(type: str, email: str, role_context: str | Literal["_server"]) -> str:
+    if type == "create_project" and role_context == "_server":
+        raise ValueError("role_context must not be _server for create_project requests")
+    return f"{type}:{role_context}:{email}"
 
 
 _contact_field = object_field(
@@ -57,7 +57,6 @@ settings_mapping: ElasticMapping = dict(
         name={"type": "keyword"},
         description={"type": "text"},
         contact=_contact_field,
-        guest_role={"type": "keyword"},
         archived={"type": "date"},
         folder={"type": "keyword"},
         image_url={"type": "keyword"},
@@ -109,9 +108,10 @@ fields_mapping: ElasticMapping = dict(
 )
 
 roles_mapping: ElasticMapping = dict(
-    email={"type": "keyword"},
-    permission_context={"type": "keyword"},  # either _server or an index name
-    role={"type": "keyword"},
+    email_pattern={"type": "keyword"},  # can also be *@domain.com (domain match) or * (guest match)
+    role_context={"type": "keyword"},  # either _server or an index name
+    role_match={"type": "keyword"},  # "GUEST", "DOMAIN", "EXACT"
+    role={"type": "keyword"},  # "NONE", "LISTER", "METAREADER", "READER", "WRITER", "ADMIN"
     # API KEY PROPOSAL:
     # Users can create an API key for their _server and index roles
     # The API key is stored hashed in the roles document.
@@ -130,7 +130,7 @@ roles_mapping: ElasticMapping = dict(
 requests_mapping: ElasticMapping = dict(
     request_type={"type": "keyword"},
     email={"type": "keyword"},
-    permission_context={"type": "keyword"},  # either _server or an index name
+    role_context={"type": "keyword"},  # either _server or an index name
     index={"type": "keyword"},
     status={"type": "keyword"},  # "pending", "approved", "rejected"
     message={"type": "text"},
@@ -185,7 +185,6 @@ def migrate_index_settings(index: str, doc: dict):
                 "name": doc.get("name"),
                 "description": doc.get("description"),
                 "contact": doc.get("contact"),
-                "guest_role": doc.get("guest_role"),
                 "archived": doc.get("archived"),
                 "folder": doc.get("folder"),
                 "image_url": doc.get("image_url"),
@@ -195,10 +194,24 @@ def migrate_index_settings(index: str, doc: dict):
 
 
 def migrate_roles(role: dict, in_index: str | None):
+    email = role.get("email", "")
+    doc = {
+        "role_context": in_index if in_index else "_server",
+        "email_pattern": email,
+        "role": role.get("role"),
+        "role_match": "DOMAIN" if email.startswith("*@") else "EXACT",
+    }
+
+    return BulkInsertAction(index=ROLES_INDEX, id=roles_index_id(doc["email"], doc["index"]), doc=doc)
+
+
+def migrate_guest_roles(role: dict, in_index: str | None):
+    # these used to be index settings, but are now roles
     doc = {
         "index": in_index if in_index else "_server",
         "email": role.get("email"),
-        "role": role.get("role"),
+        "role": "*",
+        "role_match": "ANY",
     }
 
     return BulkInsertAction(index=ROLES_INDEX, id=roles_index_id(doc["email"], doc["index"]), doc=doc)
@@ -208,7 +221,7 @@ def migrate_requests(request: dict):
     doc = {
         "request_type": request.get("request_type"),
         "email": request.get("email"),
-        "permission_context": request.get("index", "_server"),
+        "role_context": request.get("index", "_server"),
         "status": "pending",  # before approved and rejected requests were removed
         "message": request.get("message"),
         "timestamp": request.get("timestamp"),
@@ -220,7 +233,7 @@ def migrate_requests(request: dict):
 
     return BulkInsertAction(
         index=REQUESTS_INDEX,
-        id=requests_index_id(doc["request_type"], doc["email"], doc["permission_context"]),
+        id=requests_index_id(doc["request_type"], doc["email"], doc["role_context"]),
         doc=doc,
     )
 

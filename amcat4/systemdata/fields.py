@@ -22,8 +22,8 @@ from elasticsearch import NotFoundError
 from fastapi import HTTPException
 
 from amcat4.elastic import es
-from amcat4.models import CreateField, ElasticType, Field, FieldMetareaderAccess, FieldSpec, FieldType, UpdateField
-from amcat4.systemdata.roles import has_role
+from amcat4.models import CreateField, ElasticType, Field, FieldMetareaderAccess, FieldSpec, FieldType, UpdateField, User
+from amcat4.systemdata.roles import get_project_index_role, role_is_at_least
 from amcat4.systemdata.versions.v2 import FIELDS_INDEX, fields_index_id
 from amcat4.systemdata.util import BulkInsertAction, es_bulk_upsert, index_scan
 
@@ -42,6 +42,16 @@ def elastic_list_fields(index: str) -> dict[str, Field]:
     docs = index_scan(FIELDS_INDEX, query={"term": {"index": index}})
     return {doc["field"]: Field.model_validate(doc["settings"]) for id, doc in docs}
 
+
+# TODO: there is now a lot of complexity because we allow querying multiple indices at once.
+# I think we should instead:
+# - Create a 'discovery' endpoint that given a query returns all public indices that match the query,
+#   with field access information (and possibly document counts).
+#   (This can then even be used to discover indices across servers!!)
+# - If users want data from multiple indices, they then just need to make multiple requests, one per index.
+#   With the discovery endpoint, we can provide UI / helper functions for this.
+#
+#
 
 # given an elastic field type, Check if it is supported by AmCAT.
 # this is not just the inverse of TYPEMAP_AMCAT_TO_ES because some AmCAT types map to multiple elastic
@@ -232,10 +242,6 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
 
 
 def update_fields(index: str, fields: dict[str, UpdateField]):
-    """
-    Update
-    """
-
     current_fields = get_fields(index)
 
     for field, new_settings in fields.items():
@@ -359,8 +365,10 @@ def field_stats(index: str, field: str) -> list[str]:
     return r["aggregations"]["facets"]
 
 
-def check_fields_access(index: str, user: str, fields: list[FieldSpec]) -> None:
-    """Check if the given user is allowed to query the given fields and snippets on the given index.
+def raise_if_field_not_allowed(index: str, user: User, fields: list[FieldSpec]) -> None:
+    """
+    If the current user is a metareader (!!needs to be confirmed by caller),
+    check if they are allowed to query the given fields and snippets on the given index.
 
     :param index: The index to check the role on
     :param user: The email address of the authenticated user
@@ -368,13 +376,18 @@ def check_fields_access(index: str, user: str, fields: list[FieldSpec]) -> None:
     :param snippets: The snippets to check
     :return: Nothing. Throws HTTPException if the user is not allowed to query the given fields and snippets.
     """
-    if has_role(user, index, "READER"):
-        return None
+    role = get_project_index_role(user.email, index)
+    if not role_is_at_least(role, "METAREADER"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"User {user.email} does not have permission to access index {index}",
+        )
+    if role_is_at_least(role, "READER"):
+        return
 
     if fields is None or len(fields) == 0:
         return None
 
-    # after this, we know the user is a metareader, so we need to check metareader_access
     index_fields = get_fields(index)
     for field in fields:
         if field.name not in index_fields:
@@ -416,3 +429,31 @@ def check_fields_access(index: str, user: str, fields: list[FieldSpec]) -> None:
                 status_code=401,
                 detail=f"METAREADER cannot read {field.name} on index {index}",
             )
+
+
+def get_allowed_fields(user: User, index: str) -> list[FieldSpec]:
+    """
+    For any endpoint that returns field values, make sure the user only gets fields that
+    they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
+    check whether the user can access the fields (If not, raise an error).
+    """
+    role = get_project_index_role(user.email, index)
+    if not role_is_at_least(role, "METAREADER"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"User {user.email} does not have permission to access index {index}",
+        )
+    is_reader = role_is_at_least(role, "READER")
+
+    allowed_fields: list[FieldSpec] = []
+    for name, field in get_fields(index).items():
+        if is_reader:
+            allowed_fields.append(FieldSpec(name=name))
+        else:
+            metareader = field.metareader
+            if metareader.access == "read":
+                allowed_fields.append(FieldSpec(name=name))
+            if metareader.access == "snippet":
+                allowed_fields.append(FieldSpec(name=name, snippet=metareader.max_snippet))
+
+    return allowed_fields

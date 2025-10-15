@@ -26,8 +26,9 @@ from amcat4.index import (
     set_guest_role,
     set_role,
 )
-from amcat4.projectdata import list_user_project_indices
 from tests.tools import refresh
+
+## TODO: replace all the functions from the removed amcat4.index with the new functions
 
 
 def list_es_indices() -> List[str]:
@@ -41,7 +42,7 @@ def list_index_names(email: str | None = None) -> List[str]:
     if email is None:
         return [ix.name for ix in list_all_indices()]
     else:
-        return [ix.name for ix, role in list_user_project_indices(email)]
+        return [ix.name for ix, role in list_user_indices(email)]
 
 
 def test_create_delete_index():

@@ -137,6 +137,7 @@ def query_documents(
     In case there are no more documents to scroll, it will return None
     :param index: The name of the index or indexes
     :param fields: List of fields using the FieldSpec syntax. If not specified, only return _id.
+                   !We require the fields to be specified for security reasons.
                    !Any logic for determining whether a user can see the field should be done in the API layer.
     :param queries: if not None, a dict with labels and queries {label1: query1, ...}
     :param filters: if not None, a dict where the key is the field and the value is a FilterSpec
@@ -173,7 +174,7 @@ def query_documents(
             return None
         n = result["hits"]["total"]["value"]
     else:
-        h = query_highlight(fields, highlight) if fields is not None else None
+        h = query_highlight_and_snippets(fields, highlight) if fields is not None else None
         body = build_body(queries, filters, h)
 
         fieldnames = [field.name for field in fields] if fields is not None else ["_id"]
@@ -209,7 +210,7 @@ def query_documents(
         return QueryResult(data, n=n, per_page=per_page, page=page)
 
 
-def query_highlight(fields: list[FieldSpec], highlight_queries: bool = False) -> dict[str, Any]:
+def query_highlight_and_snippets(fields: list[FieldSpec], highlight_queries: bool = False) -> dict[str, Any]:
     """
     The elastic "highlight" parameters works for both highlighting text fields and adding snippets.
     This function will return the highlight parameter to be added to the query body.

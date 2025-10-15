@@ -8,13 +8,10 @@ from pydantic.main import BaseModel
 from amcat4 import aggregate, query
 from amcat4.aggregate import Aggregation, Axis, TopHitsAggregation
 from amcat4.api.auth import authenticated_user
-from amcat4.config import AuthOptions, get_settings
-from amcat4.systemdata.fields import get_fields
-from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec
-from amcat4.systemdata.roles import elastic_get_role, role_is_required_role
+from amcat4.models import FieldSpec, FilterSpec, FilterValue, SortSpec, User
 from amcat4.query import delete_query, update_query, update_tag_query
-from amcat4.systemdata.roles import raise_if_not_has_role
-from amcat4.systemdata.fields import check_fields_access
+from amcat4.systemdata.fields import get_allowed_fields, raise_if_field_not_allowed
+from amcat4.systemdata.roles import raise_if_not_project_index_role
 
 app_query = APIRouter(prefix="/index", tags=["query"])
 
@@ -34,123 +31,6 @@ class QueryResult(BaseModel):
 
     results: List[Dict[str, Any]]
     meta: QueryMeta
-
-
-def get_or_validate_allowed_fields(user: str, indices: list[str], fields: list[FieldSpec] | None = None) -> list[FieldSpec]:
-    """
-    For any endpoint that returns field values, make sure the user only gets fields that
-    they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
-    check whether the user can access the fields (If not, raise an error).
-    """
-    no_auth = get_settings().auth == AuthOptions.no_auth
-
-    ## if fields are not specified, return all allowed fields
-    if fields is None:
-        if len(indices) > 1:
-            # this restrictions is needed, because otherwise we need to return all allowed fields taking
-            # into account the user's role for each index, and take the lowest possible access.
-            # this is error prone and complex, so best to just disallow it. Also, requesting all fields
-            # for multiple indices is probably not something we should support anyway
-            raise ValueError("Fields should be specified if multiple indices are given")
-        index_fields = get_fields(indices[0])
-
-        role = elastic_get_role(user, indices[0])
-
-        allowed_fields: list[FieldSpec] = []
-        for field in index_fields.keys():
-            if role_is_required_role(role, "READER") or no_auth:
-                allowed_fields.append(FieldSpec(name=field))
-            elif role_is_required_role(role, "METAREADER"):
-                metareader = index_fields[field].metareader
-                if metareader.access == "read":
-                    allowed_fields.append(FieldSpec(name=field))
-                if metareader.access == "snippet":
-                    allowed_fields.append(FieldSpec(name=field, snippet=metareader.max_snippet))
-            else:
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"User {user} does not have a role on index {indices[0]}",
-                )
-        return allowed_fields
-
-    ## if fields are specified, check access per field
-    for index in indices:
-        if not no_auth:
-            check_fields_access(index, user, fields)
-    return fields
-
-
-def _standardize_queries(queries: str | list[str] | dict[str, str] | None = None) -> dict[str, str] | None:
-    """Convert query json to dict format: {label1:query1, label2: query2} uses indices if no labels given."""
-
-    if queries:
-        # to dict format: {label1:query1, label2: query2}  uses indices if no labels given
-        if isinstance(queries, str):
-            return {"1": queries}
-        elif isinstance(queries, list):
-            return {str(i): q for i, q in enumerate(queries)}
-        elif isinstance(queries, dict):
-            return queries
-    return None
-
-
-def _standardize_filters(
-    filters: Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None = None,
-) -> dict[str, FilterSpec] | None:
-    """Convert filters to dict format: {field: {values: []}}."""
-    if not filters:
-        return None
-
-    f: dict[str, FilterSpec] = {}
-    for field, filter_ in filters.items():
-        if isinstance(filter_, str):
-            f[field] = FilterSpec(values=[filter_])
-        elif isinstance(filter_, list):
-            f[field] = FilterSpec(values=filter_)
-        elif isinstance(filter_, FilterSpec):
-            f[field] = filter_
-        else:
-            raise ValueError(f"Cannot parse filter: {filter_}")
-    return f
-
-
-def _standardize_fieldspecs(fields: list[str | FieldSpec] | None = None) -> list[FieldSpec] | None:
-    """Convert fields to list of FieldSpecs."""
-    if not fields:
-        return None
-
-    f = []
-    for field in fields:
-        if isinstance(field, str):
-            f.append(FieldSpec(name=field))
-        elif isinstance(field, FieldSpec):
-            f.append(field)
-        else:
-            raise ValueError(f"Cannot parse field: {field}")
-    return f
-
-
-def _standardize_sort(sort: str | list[str] | list[dict[str, SortSpec]] | None = None) -> list[dict[str, SortSpec]] | None:
-    """Convert sort to list of dicts."""
-
-    # TODO: sort cannot be right. that array around dict is useless
-
-    if not sort:
-        return None
-    if isinstance(sort, str):
-        return [{sort: SortSpec(order="asc")}]
-
-    sortspec: list[dict[str, SortSpec]] = []
-
-    for field in sort:
-        if isinstance(field, str):
-            sortspec.append({field: SortSpec(order="asc")})
-        elif isinstance(field, dict):
-            sortspec.append(field)
-        else:
-            raise ValueError(f"Cannot parse sort: {sort}")
-
-    return sortspec
 
 
 @app_query.post("/{index}/query", response_model=QueryResult)
@@ -223,7 +103,7 @@ def query_documents_post(
     ] = None,
     scroll_id: Annotated[str | None, Body(description="Scroll id from previous response to continue scrolling")] = None,
     highlight: Annotated[bool, Body(description="If true, highlight fields")] = False,
-    user: str = Depends(authenticated_user),
+    user: User = Depends(authenticated_user),
 ):
     """
     List or query documents in this index.
@@ -231,7 +111,15 @@ def query_documents_post(
     Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
     """
     indices = index.split(",")
-    fieldspecs = get_or_validate_allowed_fields(user, indices, _standardize_fieldspecs(fields))
+
+    fieldspecs = _standardize_fieldspecs(fields)
+    if fieldspecs:
+        raise_if_field_not_allowed(index, user, fieldspecs)
+    else:
+        if len(indices) > 1:
+            raise ValueError("Fields should be specified if multiple indices are given")
+        fieldspecs = get_allowed_fields(user, indices[0])
+
     r = query.query_documents(
         indices,
         queries=_standardize_queries(queries),
@@ -305,7 +193,7 @@ def query_aggregate_post(
         ),
     ] = None,
     after: Annotated[dict[str, Any] | None, Body(description="After cursor for pagination")] = None,
-    user: str = Depends(authenticated_user),
+    user: User = Depends(authenticated_user),
 ):
     """
     Construct an aggregate query.
@@ -337,7 +225,7 @@ def query_aggregate_post(
 
     for index_name in indices:
         if fields_to_check:
-            check_fields_access(index_name, user, fields_to_check)
+            raise_if_field_not_allowed(index_name, user, fields_to_check)
 
     _axes = [Axis(**x.model_dump()) for x in axes] if axes else []
     _aggregations = [a.instantiate() for a in aggregations] if aggregations else []
@@ -381,14 +269,14 @@ def query_update_tags(
         ),
     ] = None,
     ids: Optional[Union[str, List[str]]] = Body(None, description="Document IDs of documents to update"),
-    user: str = Depends(authenticated_user),
+    user: User = Depends(authenticated_user),
 ):
     """
     Add or remove tags by query or by id
     """
     indices = index.split(",")
     for i in indices:
-        raise_if_not_has_role(user, i, "WRITER")
+        raise_if_not_project_index_role(user, i, "WRITER")
 
     if isinstance(ids, (str, int)):
         ids = [ids]
@@ -418,14 +306,14 @@ def update_by_query(
         ),
     ] = None,
     ids: Optional[List[str]] = Body(None, description="Document IDs of documents to delete"),
-    user: str = Depends(authenticated_user),
+    user: User = Depends(authenticated_user),
 ):
     """
     Update documents by query.
 
     Select documents using queries and/or filters, and specify a field and new value.
     """
-    raise_if_not_has_role(user, index, "WRITER")
+    raise_if_not_project_index_role(user, index, "WRITER")
     return update_query(index, field, value, _standardize_queries(queries), _standardize_filters(filters), ids)
 
 
@@ -447,12 +335,85 @@ def delete_by_query(
         ),
     ] = None,
     ids: Optional[List[str]] = Body(None, description="Document IDs of documents to delete"),
-    user: str = Depends(authenticated_user),
+    user: User = Depends(authenticated_user),
 ):
     """
     Update documents by query.
 
     Select documents using queries and/or filters, and specify a field and new value.
     """
-    raise_if_not_has_role(user, index, "WRITER")
+    raise_if_not_project_index_role(user, index, "WRITER")
     return delete_query(index, _standardize_queries(queries), _standardize_filters(filters), ids)
+
+
+def _standardize_queries(queries: str | list[str] | dict[str, str] | None = None) -> dict[str, str] | None:
+    """Convert query json to dict format: {label1:query1, label2: query2} uses indices if no labels given."""
+
+    if queries:
+        # to dict format: {label1:query1, label2: query2}  uses indices if no labels given
+        if isinstance(queries, str):
+            return {"1": queries}
+        elif isinstance(queries, list):
+            return {str(i): q for i, q in enumerate(queries)}
+        elif isinstance(queries, dict):
+            return queries
+    return None
+
+
+def _standardize_filters(
+    filters: Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None = None,
+) -> dict[str, FilterSpec] | None:
+    """Convert filters to dict format: {field: {values: []}}."""
+    if not filters:
+        return None
+
+    f: dict[str, FilterSpec] = {}
+    for field, filter_ in filters.items():
+        if isinstance(filter_, str):
+            f[field] = FilterSpec(values=[filter_])
+        elif isinstance(filter_, list):
+            f[field] = FilterSpec(values=filter_)
+        elif isinstance(filter_, FilterSpec):
+            f[field] = filter_
+        else:
+            raise ValueError(f"Cannot parse filter: {filter_}")
+    return f
+
+
+def _standardize_fieldspecs(fields: list[str | FieldSpec] | None = None) -> list[FieldSpec] | None:
+    """Convert fields to list of FieldSpecs."""
+    if not fields:
+        return None
+
+    f = []
+    for field in fields:
+        if isinstance(field, str):
+            f.append(FieldSpec(name=field))
+        elif isinstance(field, FieldSpec):
+            f.append(field)
+        else:
+            raise ValueError(f"Cannot parse field: {field}")
+    return f
+
+
+def _standardize_sort(sort: str | list[str] | list[dict[str, SortSpec]] | None = None) -> list[dict[str, SortSpec]] | None:
+    """Convert sort to list of dicts."""
+
+    # TODO: sort cannot be right. that array around dict is useless
+
+    if not sort:
+        return None
+    if isinstance(sort, str):
+        return [{sort: SortSpec(order="asc")}]
+
+    sortspec: list[dict[str, SortSpec]] = []
+
+    for field in sort:
+        if isinstance(field, str):
+            sortspec.append({field: SortSpec(order="asc")})
+        elif isinstance(field, dict):
+            sortspec.append(field)
+        else:
+            raise ValueError(f"Cannot parse sort: {sort}")
+
+    return sortspec

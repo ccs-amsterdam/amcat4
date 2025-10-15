@@ -47,6 +47,9 @@ nosetests.xml
 # Vim cruft
 *.sw[op]
 
+# Weird zed thing?
+/tq
+
 # PyCharm meuk
 .idea
 

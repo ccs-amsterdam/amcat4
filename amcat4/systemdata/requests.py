@@ -2,10 +2,16 @@ from datetime import datetime
 from typing import Iterable
 import logging
 
+from fastapi import HTTPException
+
 from amcat4.elastic import es
-from amcat4.models import IndexSettings, PermissionRequest, RoleRequest, CreateProjectRequest
-from amcat4.projectdata import create_project_index
-from amcat4.systemdata.roles import elastic_create_or_update_role, elastic_delete_role, elastic_list_roles
+from amcat4.models import IndexSettings, PermissionRequest, RoleRequest, CreateProjectRequest, User
+from amcat4.project_index import create_project_index
+from amcat4.systemdata.roles import (
+    elastic_create_or_update_role,
+    elastic_delete_role,
+    list_user_roles,
+)
 from amcat4.systemdata.util import index_scan
 from amcat4.systemdata.versions.v2 import REQUESTS_INDEX, requests_index_id
 
@@ -13,7 +19,7 @@ from amcat4.systemdata.versions.v2 import REQUESTS_INDEX, requests_index_id
 def elastic_create_or_update_request(request: PermissionRequest):
     # TODO add timestamp=datetime.now().isoformat())
     # Index requests  by type+email+index
-    id = requests_index_id(request.request_type, request.email, request.permission_context)
+    id = requests_index_id(request.request_type, request.email, request.role_context)
 
     if not request.timestamp:
         request.timestamp = datetime.now()
@@ -28,24 +34,31 @@ def elastic_create_or_update_request(request: PermissionRequest):
 
 
 def elastic_delete_request(request: PermissionRequest):
-    id = requests_index_id(request.request_type, request.email, request.permission_context)
+    id = requests_index_id(request.request_type, request.email, request.role_context)
     es().delete(index=REQUESTS_INDEX, id=id, refresh=True)
 
 
-def elastic_list_user_requests(email: str) -> Iterable[PermissionRequest]:
+def elastic_list_user_requests(user: User) -> Iterable[PermissionRequest]:
     """List all requests for this user"""
-    docs = index_scan(REQUESTS_INDEX, query={"term": {"email": email}})
+    if user.email is None:
+        return []
+
+    docs = index_scan(REQUESTS_INDEX, query={"term": {"email": user.email}})
     for id, doc in docs:
         yield request_from_elastic(doc)
 
 
-def elastic_list_admin_requests(email: str) -> Iterable[PermissionRequest]:
-    """List all requests that this user can administrate"""
-    admin_indices: list[str] = []
-    for user_role in elastic_list_roles(email, "ADMIN"):
-        admin_indices.append(user_role.permission_context)
+def elastic_list_admin_requests(user: User) -> Iterable[PermissionRequest]:
+    """List all requests that this user can administrate (i.e. is admin on role_context)"""
+    if user.email is None:
+        return []
 
-    query = {"terms": {"permission_context": admin_indices}}
+    role_contexts: list[str] = []
+
+    for user_role in list_user_roles(user.email, required_role="ADMIN"):
+        role_contexts.append(user_role.role_context)
+
+    query = {"terms": {"role_context": role_contexts}}
 
     for id, doc in index_scan(REQUESTS_INDEX, query=query):
         yield request_from_elastic(doc)
@@ -61,35 +74,36 @@ def request_from_elastic(d) -> PermissionRequest:
             raise ValueError(f"Cannot parse request {d}")
 
 
-def process_requests(requests: list[PermissionRequest]):
-    for r in requests:
-        try:
-            if not r.status == "rejected":
-                match r.request_type:
-                    case "role":
-                        assert isinstance(r, RoleRequest)
-                        process_role_request(r)
-                    case "create_project":
-                        assert isinstance(r, CreateProjectRequest)
-                        process_project_request(r)
-                    case _:
-                        raise ValueError(f"Cannot process {r}")
-            elastic_create_or_update_request(r)
-        except Exception as e:
-            logging.error(f"Error processing request {r}: {e}")
+def process_request(request: PermissionRequest):
+    # TODO: we could do this in bulk, but then we should make sure that
+    # we only update the request if the processing was successful
+    try:
+        if not request.status == "rejected":
+            match request.request_type:
+                case "role":
+                    assert isinstance(request, RoleRequest)
+                    process_role_request(request)
+                case "create_project":
+                    assert isinstance(request, CreateProjectRequest)
+                    process_project_request(request)
+                case _:
+                    raise ValueError(f"Cannot process {request}")
+        elastic_create_or_update_request(request)
+    except Exception as e:
+        logging.error(f"Error processing request {request}: {e}")
 
 
 def process_role_request(r: RoleRequest):
     if r.role == "NONE":
-        elastic_delete_role(r.email, r.permission_context)
+        elastic_delete_role(r.email, r.role_context)
     else:
-        elastic_create_or_update_role(r.email, r.permission_context, r.role)
+        elastic_create_or_update_role(r.email, r.role_context, r.role)
 
 
 def process_project_request(r: CreateProjectRequest):
     # the permission context for a create_project request is the new index name
     new_index = IndexSettings(
-        id=r.permission_context,
+        id=r.role_context,
         name=r.name,
         description=r.description,
         folder=r.folder,

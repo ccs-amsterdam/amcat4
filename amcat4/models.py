@@ -1,6 +1,7 @@
+from pyexpat import model
 import pydantic
 from datetime import datetime
-from pydantic import BaseModel, model_validator, Field as pydanticField
+from pydantic import BaseModel, EmailStr, model_validator, Field as pydanticField
 from typing import Annotated, Any, Literal, Union
 from typing_extensions import Self
 from enum import IntEnum
@@ -13,17 +14,35 @@ class GuestRoleHierarchy(IntEnum):
     WRITER = 30
 
 
-Role = Literal["ADMIN", "WRITER", "READER", "METAREADER", "LISTER"]
-GuestRole = Literal["WRITER", "READER", "METAREADER", "LISTER", "NONE"]
+class User(BaseModel):
+    email: EmailStr | None
+    superadmin: bool = False
+
 
 IndexId = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*$")]
-Context = IndexId | Literal["_server"]
+RoleEmailPattern = EmailStr | Literal["*"]  # user@domain.com or *@domain.com or *
+RoleContext = IndexId | Literal["_server"]
+RoleMatch = Literal["EXACT", "DOMAIN", "ANY"]
+Role = Literal["ADMIN", "WRITER", "READER", "METAREADER", "LISTER"]
+
+
+class RoleRule(BaseModel):
+    email_pattern: RoleEmailPattern
+    role_context: RoleContext
+    role: Role
+    role_match: RoleMatch
+
+    @model_validator(mode="after")
+    def validate_role(self) -> Self:
+        if self.role == "ADMIN" and self.role_match != "EXACT":
+            raise ValueError("Only exact email matches can have ADMIN role")
+        return self
 
 
 class UserRole(BaseModel):
-    email: str
-    permission_context: Context
+    role_context: RoleContext
     role: Role
+    role_match: RoleMatch
 
 
 FieldType = Literal[
@@ -182,13 +201,13 @@ class AbstractRequest(BaseModel):
 
 class RoleRequest(AbstractRequest):
     request_type: Literal["role"] = "role"
-    permission_context: IndexId | Literal["_server"]
+    role_context: IndexId | Literal["_server"]
     role: Role | Literal["NONE"]
 
 
 class CreateProjectRequest(AbstractRequest):
     request_type: Literal["create_project"] = "create_project"
-    permission_context: IndexId
+    role_context: IndexId
     email: str
     description: str | None = None
     name: str | None = None
@@ -201,7 +220,6 @@ PermissionRequest = Annotated[Union[RoleRequest, CreateProjectRequest], pydantic
 class IndexSettings(BaseModel):
     id: str
     name: str | None = None
-    guest_role: GuestRole | None = None
     description: str | None = None
     folder: str | None = None
     image_url: str | None = None

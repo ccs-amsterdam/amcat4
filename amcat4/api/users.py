@@ -12,9 +12,10 @@ from pydantic import BaseModel
 from pydantic.networks import EmailStr
 
 from amcat4 import index
-from amcat4.api.auth import authenticated_admin, authenticated_user
+from amcat4.api.auth import authenticated_user
 from amcat4.index import Role, set_global_role, user_exists
-from amcat4.systemdata.roles import ADMIN_USER, GUEST_USER, elastic_get_role, raise_if_not_has_role
+from amcat4.models import User
+from amcat4.systemdata.roles import get_server_role, raise_if_not_project_index_role, raise_if_not_server_role
 
 app_users = APIRouter(tags=["users"])
 
@@ -36,8 +37,9 @@ class ChangeUserForm(BaseModel):
 
 
 @app_users.post("/users", status_code=status.HTTP_201_CREATED)
-def create_user(new_user: UserForm, _=Depends(authenticated_admin)):
+def create_user(new_user: UserForm, user=Depends(authenticated_user)):
     """Create a new user."""
+    raise_if_not_project_index_role(user, "_server", "ADMIN")
     if user_exists(new_user.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -54,52 +56,51 @@ def create_user(new_user: UserForm, _=Depends(authenticated_admin)):
 
 
 @app_users.get("/users/me")
-def get_current_user(current_user: str = Depends(authenticated_user)):
+def get_current_user(user: User = Depends(authenticated_user)):
     """View the current user."""
-    return _get_user(current_user, current_user)
+    return _get_user(user.email)
 
 
 @app_users.get("/users/{email}")
-def get_user(email: EmailStr, current_user: str = Depends(authenticated_user)):
+def get_user(email: EmailStr, current_user: User = Depends(authenticated_user)):
     """
     View a specified current user.
 
-    Users can view themselves, writer can view others
+    Only WRITER and ADMIN can view other users.
     """
-    return _get_user(email, current_user)
+    raise_if_not_project_index_role(current_user, "_server", "WRITER")
+    return _get_user(email)
 
 
-def _get_user(email, current_user):
-    if current_user != email:
-        raise_if_not_has_role(current_user, "_server", "WRITER")
-
-    if email in (ADMIN_USER, GUEST_USER):
-        raise HTTPException(404, detail=f"User {email} unknown")
+def _get_user(email: EmailStr | None):
+    role = get_server_role(email)
+    if role:
+        return {"email": email, "role": role, "role_match": role.role_match}
     else:
-        global_role = elastic_get_role(email, "_server")
-        return {"email": email, "role": global_role}
+        return {"email": email, "role": None, "role_match": None}
 
 
-@app_users.get("/users", dependencies=[Depends(authenticated_admin)])
-def list_global_users():
+@app_users.get("/users")
+def list_global_users(user=Depends(authenticated_user)):
     """List all global users"""
+    raise_if_not_project_index_role(user, "_server", "WRITER")
     return [{"email": email, "role": role.name} for (email, role) in index.list_global_users().items()]
 
 
 @app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def delete_user(email: EmailStr, current_user: str = Depends(authenticated_user)):
+def delete_user(email: EmailStr, current_user: User = Depends(authenticated_user)):
     """
     Delete the given user.
 
     Users can delete themselves and admin can delete everyone
     """
     if current_user != email:
-        check_global_role(current_user, Role.ADMIN)
+        raise_if_not_server_role(current_user, "ADMIN")
     index.delete_user(email)
 
 
 @app_users.put("/users/{email}")
-def modify_user(email: EmailStr, data: ChangeUserForm, _user: str = Depends(authenticated_admin)):
+def modify_user(email: EmailStr, data: ChangeUserForm, user: User = Depends(authenticated_user)):
     """
     Modify the given user.
     Only admin can change users.

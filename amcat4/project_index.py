@@ -6,9 +6,9 @@ from typing import Any, Iterable, Literal, Mapping
 import elasticsearch.helpers
 
 from amcat4.elastic import es
-from amcat4.models import CreateField, FieldType, IndexSettings, Role
+from amcat4.models import CreateField, FieldType, IndexSettings, Role, User, RoleRule, UserRole
 from amcat4.systemdata.fields import coerce_type, create_fields, create_or_verify_tag_field, get_fields
-from amcat4.systemdata.roles import elastic_list_roles
+from amcat4.systemdata.roles import elastic_list_roles, list_user_roles, raise_if_not_server_role
 from amcat4.systemdata.settings import (
     create_index_settings,
     delete_index_settings,
@@ -56,21 +56,28 @@ def delete_project_index(index_id: str, ignore_missing: bool = False):
     delete_index_settings(index_id, ignore_missing)
 
 
-def list_user_project_indices(email: str) -> Iterable[tuple[IndexSettings, Role]]:
+def list_user_project_indices(user: User, show_all=False) -> Iterable[tuple[IndexSettings, UserRole | None]]:
     """
     List all indices that a user has any role on.
     TODO: add pagination and search here
     """
-    index_role_lookup: dict[str, Role] = {}
+    index_role_lookup: dict[str, UserRole] = {}
     user_indices: list[str] = []
-    for user_role in elastic_list_roles(email, "LISTER"):
-        index_role_lookup[user_role.permission_context] = user_role.role
-        user_indices.append(user_role.permission_context)
 
-    query = {"terms": {"permission_context": user_indices}}
-    for id, doc in index_scan(SETTINGS_INDEX, query=query):
+    for user_role in list_user_roles(user.email, required_role="LISTER"):
+        index_role_lookup[user_role.role_context] = user_role
+        user_indices.append(user_role.role_context)
+
+    if show_all:
+        raise_if_not_server_role(user, "ADMIN")
+        indices = index_scan(SETTINGS_INDEX)
+    else:
+        query = {"terms": {"role_context": user_indices}}
+        indices = index_scan(SETTINGS_INDEX, query=query)
+
+    for id, doc in indices:
         settings = IndexSettings(**doc)
-        yield settings, index_role_lookup[settings.id]
+        yield settings, index_role_lookup[id]
 
 
 def create_document_id(document: dict, identifiers: list[str]) -> str:

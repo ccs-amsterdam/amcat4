@@ -15,7 +15,7 @@ from tests.tools import build_headers, check, get_json, post_json
 
 
 def all_requests() -> dict[tuple[str, str, str | None], PermissionRequest]:
-    return {(r.request_type, r.email, r.permission_context): r for r in elastic_list_all_requests()}
+    return {(r.request_type, r.email, r.role_context): r for r in elastic_list_all_requests()}
 
 
 def keys(requests):
@@ -26,7 +26,7 @@ def test_role_requests(clean_requests, index, user):
     assert all_requests() == {}
 
     # Can we file a request?
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email=user, role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
     requests = all_requests()
     assert set(requests.keys()) == {("role", user, index)}
     r = requests["role", user, index]
@@ -36,7 +36,7 @@ def test_role_requests(clean_requests, index, user):
     t = r.timestamp
 
     # Does re-filing the request update the timestamp
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email=user, role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
     requests = all_requests()
     assert set(requests.keys()) == {("role", user, index)}
     r = requests["role", user, index]
@@ -46,7 +46,7 @@ def test_role_requests(clean_requests, index, user):
     assert r.timestamp > t
 
     # Updating a request
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email=user, role="METAREADER"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email=user, role="METAREADER"))
     requests = all_requests()
 
     assert set(requests.keys()) == {("role", user, index)}
@@ -55,31 +55,31 @@ def test_role_requests(clean_requests, index, user):
     assert r.role == "METAREADER"
 
     # Cancelling a request
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email=user, role="METAREADER", cancel=True))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email=user, role="METAREADER", cancel=True))
     assert all_requests() == {}
 
 
 def test_list_admin_requests(clean_requests, index, guest_index, index_name, user, admin):
     assert all_requests() == {}
-    requests = {(r.request_type, r.email, r.permission_context): r for r in elastic_list_admin_requests(user)}
+    requests = {(r.request_type, r.email, r.role_context): r for r in elastic_list_admin_requests(user)}
     assert requests == {}
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email="john@example.com", role="METAREADER"))
-    elastic_create_or_update_request(RoleRequest(permission_context=guest_index, email="jane@example.com", role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email="john@example.com", role="METAREADER"))
+    elastic_create_or_update_request(RoleRequest(role_context=guest_index, email="jane@example.com", role="ADMIN"))
     elastic_create_or_update_request(CreateProjectRequest(index=index_name, email="john@example.com"))
     # An admin on a specific index should see requests for that index
     set_role(index, user, Role.ADMIN)
-    requests = {(r.request_type, r.email, r.permission_context): r for r in elastic_list_admin_requests(user)}
+    requests = {(r.request_type, r.email, r.role_context): r for r in elastic_list_admin_requests(user)}
     assert set(requests.keys()) == {("role", "john@example.com", index)}
     set_role(guest_index, user, Role.ADMIN)
-    requests = {(r.request_type, r.email, r.permission_context): r for r in elastic_list_admin_requests(user)}
+    requests = {(r.request_type, r.email, r.role_context): r for r in elastic_list_admin_requests(user)}
     assert set(requests.keys()) == {("role", "john@example.com", index), ("role", "jane@example.com", guest_index)}
     # A global writer can see project creation requests (???)
     set_global_role(user, Role.WRITER)
     set_role(guest_index, user, role=None)
-    requests = {(r.request_type, r.email, r.permission_context): r for r in elastic_list_admin_requests(user)}
+    requests = {(r.request_type, r.email, r.role_context): r for r in elastic_list_admin_requests(user)}
     assert set(requests.keys()) == {("role", "john@example.com", index), ("create_project", "john@example.com", index_name)}
     # A global admin can see everything
-    requests = {(r.request_type, r.email, r.permission_context): r for r in elastic_list_admin_requests(admin)}
+    requests = {(r.request_type, r.email, r.role_context): r for r in elastic_list_admin_requests(admin)}
     assert set(requests.keys()) == {
         ("role", "john@example.com", index),
         ("role", "jane@example.com", guest_index),
@@ -89,14 +89,14 @@ def test_list_admin_requests(clean_requests, index, guest_index, index_name, use
 
 def test_list_my_requests(clean_requests, index, index_name, user):
     assert list(elastic_list_user_requests(user)) == []
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email="someoneelse@example.com", role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email="someoneelse@example.com", role="ADMIN"))
     assert list(elastic_list_user_requests(user)) == []
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email=user, role="ADMIN"))
-    requests = {(r.request_type, r.email, r.permission_context): r for r in elastic_list_user_requests(user)}
+    elastic_create_or_update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
+    requests = {(r.request_type, r.email, r.role_context): r for r in elastic_list_user_requests(user)}
     assert set(requests.keys()) == {("role", user, index)}
     assert requests[("role", user, index)].role == "ADMIN"
     elastic_create_or_update_request(CreateProjectRequest(index=index_name, email=user))
-    requests = {(r.request_type, r.email, r.permission_context): r for r in elastic_list_user_requests(user)}
+    requests = {(r.request_type, r.email, r.role_context): r for r in elastic_list_user_requests(user)}
     assert set(requests.keys()) == {("role", user, index), ("create_project", user, index_name)}
 
 
@@ -105,7 +105,7 @@ def test_resolve_requests(clean_requests, index, index_name, user, admin):
     assert get_role(index, user) == Role.NONE
     with pytest.raises(IndexDoesNotExist):
         get_index(index_name)
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email=user, role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
     elastic_create_or_update_request(CreateProjectRequest(index=index_name, email=user))
     requests = list(elastic_list_admin_requests(admin))
     assert len(requests) == 2
@@ -165,9 +165,9 @@ def test_api_get_my_requests(clean_requests, client, index, user):
     assert all_requests() == {}
     check(client.get("/permission_requests"), expected=401)
     assert get_json(client, "/permission_requests", user=user) == []
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email="someoneelse@example.com", role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email="someoneelse@example.com", role="ADMIN"))
     assert get_json(client, "/permission_requests", user=user) == []
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email=user, role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
     (req,) = get_json(client, "/permission_requests", user=user)
     assert req["request_type"] == "role"
     assert req["email"] == user
@@ -175,8 +175,8 @@ def test_api_get_my_requests(clean_requests, client, index, user):
 
 def test_api_get_admin_requests(clean_requests, client, guest_index, index, index_name, user, reader):
     assert all_requests() == {}
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email=user, role="ADMIN"))
-    elastic_create_or_update_request(RoleRequest(permission_context=guest_index, email=user, role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=guest_index, email=user, role="ADMIN"))
     elastic_create_or_update_request(CreateProjectRequest(index=index_name, email=user))
 
     # server WRITER can see no requests
@@ -203,8 +203,8 @@ def test_api_post_admin_requests(clean_requests, client, guest_index, index, ind
     with pytest.raises(IndexDoesNotExist):
         get_index(index_name)
     # Create and retrieve requests for making index, assigning role
-    elastic_create_or_update_request(RoleRequest(permission_context=guest_index, email=user, role="ADMIN"))
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email=user, role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=guest_index, email=user, role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
     elastic_create_or_update_request(CreateProjectRequest(index=index_name, email=user))
     requests = [
         r.model_dump() | {"timestamp": r.timestamp and r.timestamp.isoformat()} for r in elastic_list_admin_requests(admin)
@@ -214,7 +214,7 @@ def test_api_post_admin_requests(clean_requests, client, guest_index, index, ind
         if r["index"] == index:
             r["reject"] = True
     # Let's also create a request that we won't pass along
-    elastic_create_or_update_request(RoleRequest(permission_context=index, email=reader, role="ADMIN"))
+    elastic_create_or_update_request(RoleRequest(role_context=index, email=reader, role="ADMIN"))
     # Let's go :D
     post_json(client, "/permission_requests/admin", expected=204, user=admin, json=requests)
     # Now, the index should be made, the roles assigned, and the resolved requests disappeared
@@ -238,9 +238,9 @@ def test_api_post_admin_requests_auth(clean_requests, client, guest_index, index
 
     check_resolve([])
     # You can only resolve a request for an index on which you are ADMIN
-    check_resolve([RoleRequest(permission_context=index, email=user, role="ADMIN")], 401)
+    check_resolve([RoleRequest(role_context=index, email=user, role="ADMIN")], 401)
     set_role(index, reader, Role.ADMIN)
-    check_resolve([RoleRequest(permission_context=index, email=user, role="ADMIN")])
+    check_resolve([RoleRequest(role_context=index, email=user, role="ADMIN")])
 
     # You can only resolve a project creation request if you are server WRITER
     check_resolve([CreateProjectRequest(index=index_name, email=user)], 401)
@@ -250,8 +250,8 @@ def test_api_post_admin_requests_auth(clean_requests, client, guest_index, index
     # If there are multiple requests you need permission for all of them
     check_resolve(
         [
-            RoleRequest(permission_context=index, email=user, role="ADMIN"),
-            RoleRequest(permission_context=guest_index, email=user, role="ADMIN"),
+            RoleRequest(role_context=index, email=user, role="ADMIN"),
+            RoleRequest(role_context=guest_index, email=user, role="ADMIN"),
         ],
         401,
     )
@@ -259,7 +259,7 @@ def test_api_post_admin_requests_auth(clean_requests, client, guest_index, index
     set_global_role(reader, Role.ADMIN)
     check_resolve(
         [
-            RoleRequest(permission_context=index, email=user, role="ADMIN"),
-            RoleRequest(permission_context=guest_index, email=user, role="ADMIN"),
+            RoleRequest(role_context=index, email=user, role="ADMIN"),
+            RoleRequest(role_context=guest_index, email=user, role="ADMIN"),
         ]
     )

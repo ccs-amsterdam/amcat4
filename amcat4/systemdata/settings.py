@@ -1,6 +1,5 @@
 from elasticsearch import NotFoundError
-from amcat4.systemdata.roles import elastic_create_or_update_role, elastic_list_roles
-from amcat4.systemdata.util import index_scan
+from amcat4.systemdata.roles import elastic_create_or_update_role
 from amcat4.systemdata.versions.v2 import SETTINGS_INDEX, settings_index_id
 from amcat4.elastic import es
 from amcat4.models import IndexSettings, ServerSettings

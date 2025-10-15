@@ -12,7 +12,7 @@ from fastapi.security import OAuth2PasswordBearer
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 from amcat4.config import AuthOptions, get_settings
-from amcat4.systemdata.roles import ADMIN_USER, GUEST_USER, raise_if_not_has_role
+from amcat4.models import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
@@ -59,14 +59,14 @@ def decode_middlecat_token(token: str) -> dict:
         raise InvalidToken(e)
 
 
-async def authenticated_user(token: str | None = Depends(oauth2_scheme)) -> str:
+async def authenticated_user(token: str | None = Depends(oauth2_scheme)) -> User:
     """Dependency to verify and return a user based on a token."""
-    auth = get_settings().auth
+    settings = get_settings()
     if token is None:
-        if auth == AuthOptions.no_auth:
-            return ADMIN_USER
-        elif auth == AuthOptions.allow_guests:
-            return GUEST_USER
+        if settings.auth == AuthOptions.no_auth:
+            return User(email=None, superadmin=True)
+        elif settings.auth == AuthOptions.allow_authenticated_guests:
+            return User(email=None)
         else:
             raise HTTPException(
                 status_code=HTTP_401_UNAUTHORIZED,
@@ -78,16 +78,4 @@ async def authenticated_user(token: str | None = Depends(oauth2_scheme)) -> str:
         logging.exception("Login failed")
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    return email
-
-
-async def authenticated_writer(user: str = Depends(authenticated_user)):
-    """Dependency to verify and return a global writer user based on a token."""
-    raise_if_not_has_role(user, "_server", "WRITER")
-    return user
-
-
-async def authenticated_admin(user: str = Depends(authenticated_user)):
-    """Dependency to verify and return a global writer user based on a token."""
-    raise_if_not_has_role(user, "_server", "ADMIN")
-    return user
+    return User(email=email, superadmin=email == settings.admin_email)
