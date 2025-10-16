@@ -5,7 +5,7 @@ import logging
 from fastapi import HTTPException
 
 from amcat4.elastic import es
-from amcat4.models import IndexSettings, PermissionRequest, RoleRequest, CreateProjectRequest, User
+from amcat4.models import IndexSettings, PermissionRequest, Role, RoleRequest, CreateProjectRequest, User
 from amcat4.project_index import create_project_index
 from amcat4.systemdata.roles import (
     elastic_create_or_update_role,
@@ -55,8 +55,8 @@ def elastic_list_admin_requests(user: User) -> Iterable[PermissionRequest]:
 
     role_contexts: list[str] = []
 
-    for user_role in list_user_roles(user.email, required_role="ADMIN"):
-        role_contexts.append(user_role.role_context)
+    for role in list_user_roles(user.email, required_role=Role.ADMIN):
+        role_contexts.append(role.role_context)
 
     query = {"terms": {"role_context": role_contexts}}
 

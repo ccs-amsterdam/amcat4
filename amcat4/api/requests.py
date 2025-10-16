@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 
 from amcat4.api.auth import authenticated_user
-from amcat4.models import User
+from amcat4.models import Role, User
 from amcat4.systemdata.requests import (
     PermissionRequest,
     elastic_create_or_update_request,
@@ -28,9 +28,9 @@ def post_admin_requests(requests: list[PermissionRequest] = Body(...), user: Use
 
     for r in requests:
         if r.request_type == "create_project":
-            raise_if_not_project_index_role(user, "_server", "WRITER")
+            raise_if_not_project_index_role(user, "_server", Role.WRITER)
         if r.request_type == "role":
-            raise_if_not_project_index_role(user, r.role_context, "ADMIN")
+            raise_if_not_project_index_role(user, r.role_context, Role.ADMIN)
 
         process_request(r)
 

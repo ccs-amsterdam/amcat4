@@ -110,7 +110,6 @@ fields_mapping: ElasticMapping = dict(
 roles_mapping: ElasticMapping = dict(
     email_pattern={"type": "keyword"},  # can also be *@domain.com (domain match) or * (guest match)
     role_context={"type": "keyword"},  # either _server or an index name
-    role_match={"type": "keyword"},  # "GUEST", "DOMAIN", "EXACT"
     role={"type": "keyword"},  # "NONE", "LISTER", "METAREADER", "READER", "WRITER", "ADMIN"
     # API KEY PROPOSAL:
     # Users can create an API key for their _server and index roles

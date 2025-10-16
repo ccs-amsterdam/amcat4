@@ -10,6 +10,7 @@ from amcat4.api.auth import authenticated_user
 from amcat4.models import (
     CreateField,
     FieldType,
+    Role,
     User,
 )
 from amcat4.systemdata.roles import raise_if_not_project_index_role
@@ -44,7 +45,7 @@ def upload_documents(
     """
     Upload documents to this server. Returns a list of ids for the uploaded documents
     """
-    raise_if_not_project_index_role(user, ix, "WRITER")
+    raise_if_not_project_index_role(user, ix, Role.WRITER)
     return _projects.upload_documents(ix, documents, fields, operation)
 
 
@@ -61,7 +62,7 @@ def get_document(
     GET request parameters:
     fields - Comma separated list of fields to return (default: all fields)
     """
-    raise_if_not_project_index_role(user, ix, "READER")
+    raise_if_not_project_index_role(user, ix, Role.READER)
     kargs = {}
     if fields:
         kargs["_source"] = fields
@@ -90,7 +91,7 @@ def update_document(
 
     PUT request body should be a json {field: value} mapping of fields to update
     """
-    raise_if_not_project_index_role(user, ix, "WRITER")
+    raise_if_not_project_index_role(user, ix, Role.WRITER)
     try:
         _projects.update_document(ix, docid, update)
     except elasticsearch.exceptions.NotFoundError:
@@ -107,7 +108,7 @@ def update_document(
 )
 def delete_document(ix: str, docid: str, user: User = Depends(authenticated_user)):
     """Delete this document."""
-    raise_if_not_project_index_role(user, ix, "WRITER")
+    raise_if_not_project_index_role(user, ix, Role.WRITER)
     try:
         _projects.delete_document(ix, docid)
     except elasticsearch.exceptions.NotFoundError:

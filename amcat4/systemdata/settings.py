@@ -1,8 +1,10 @@
+from typing import Iterable
 from elasticsearch import NotFoundError
 from amcat4.systemdata.roles import elastic_create_or_update_role
+from amcat4.systemdata.util import index_scan
 from amcat4.systemdata.versions.v2 import SETTINGS_INDEX, settings_index_id
 from amcat4.elastic import es
-from amcat4.models import IndexSettings, ServerSettings
+from amcat4.models import IndexSettings, Role, ServerSettings
 
 ## INDEX SETTINGS
 
@@ -10,9 +12,6 @@ from amcat4.models import IndexSettings, ServerSettings
 class IndexDoesNotExist(ValueError):
     pass
 
-
-def elastic_index_exists(index_id: str) -> bool:
-    return bool(es().exists(index=SETTINGS_INDEX, id=settings_index_id(index_id)))
 
 
 def elastic_get_index_settings(index_id: str) -> IndexSettings:
@@ -33,6 +32,7 @@ def create_index_settings(index_settings: IndexSettings, admin_email: str | None
     """
     An index needs to exist in two places: as an elasticsearch index, and as a document in the settings index.
     This function creates the settings document, and optionally assigns an admin role to a user.
+    It is called when creating a new index, and can be used to register existing/imported indices.
     """
     index_id = index_settings.id
     if not es().indices.exists(index=index_id):
@@ -42,7 +42,7 @@ def create_index_settings(index_settings: IndexSettings, admin_email: str | None
 
     elastic_create_or_update_index_settings(index_settings)
     if admin_email:
-        elastic_create_or_update_role(admin_email, index_id, "ADMIN")
+        elastic_create_or_update_role(admin_email, index_id, Role.ADMIN)
 
 
 def update_index_settings(index_settings: IndexSettings):
@@ -50,6 +50,8 @@ def update_index_settings(index_settings: IndexSettings):
 
 
 def delete_index_settings(index_id: str, ignore_missing: bool = False):
+    if index_id.startswith("_"):  # _server
+        raise ValueError(f"{index_id} is not a project index")
     try:
         es().delete(index=SETTINGS_INDEX, id=index_id, refresh=True)
     except NotFoundError:
@@ -69,3 +71,17 @@ def elastic_get_server_settings() -> ServerSettings:
 def elastic_create_or_update_server_settings(server_settings: ServerSettings):
     id = settings_index_id("_server")
     es().update(index=SETTINGS_INDEX, id=id, doc=server_settings.model_dump(), doc_as_upsert=True, refresh=True)
+
+
+
+# ================================ USED IN TESTS ONLY =========================================
+
+
+def list_index_names() -> Iterable[str]:
+    """
+    TEST ONLY
+    """
+    for id, index in index_scan(SETTINGS_INDEX, source=['_id']):
+        if id == '_server':
+            continue
+        yield id

@@ -28,7 +28,7 @@ def list_index_users(ix: str, user: User = Depends(authenticated_user)) -> list[
     TODO: This used to be accessible to readers as well, but that doesn't seem
           right. Maybe we should even restrict to WRITERS (or READERS) that have an exact match?
     """
-    raise_if_not_project_index_role(user, ix, "WRITER")
+    raise_if_not_project_index_role(user, ix, Role.WRITER)
     return list(elastic_list_roles(role_contexts=[ix]))
 
 
@@ -44,7 +44,7 @@ def add_index_users(
 
     This requires ADMIN rights on the index or server
     """
-    raise_if_not_project_index_role(user, ix, "ADMIN")
+    raise_if_not_project_index_role(user, ix, Role.ADMIN)
     elastic_create_or_update_role(email, ix, role)
     return {"user": email, "index": ix, "role": role}
 
@@ -61,7 +61,7 @@ def modify_index_user(
 
     This requires ADMIN rights on the index or server
     """
-    raise_if_not_project_index_role(user, ix, "ADMIN")
+    raise_if_not_project_index_role(user, ix, Role.ADMIN)
     elastic_create_or_update_role(email, ix, role)
     return {"user": email, "index": ix, "role": role}
 
@@ -73,6 +73,6 @@ def remove_index_user(ix: str, email: str, user: User = Depends(authenticated_us
 
     This requires ADMIN rights on the index or server
     """
-    raise_if_not_project_index_role(user, ix, "ADMIN")
+    raise_if_not_project_index_role(user, ix, Role.ADMIN)
     elastic_delete_role(email, ix)
     return {"user": email, "index": ix, "role": None}

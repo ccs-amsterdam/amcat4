@@ -22,7 +22,7 @@ from amcat4 import index
 from amcat4.config import AuthOptions, get_settings, validate_settings
 from amcat4.elastic_connection import connect_elastic
 from amcat4.index import create_index, list_global_users, upload_documents
-from amcat4.models import FieldType
+from amcat4.models import FieldType, Role
 from amcat4.systemdata.manage import create_or_update_systemdata
 from amcat4.systemdata.roles import elastic_create_or_update_role
 
@@ -131,7 +131,7 @@ def create_test_index(_args):
 
 def add_admin(args):
     logging.info(f"**** Setting {args.email} to ADMIN ****")
-    elastic_create_or_update_role(args.email, "_server", "ADMIN")
+    elastic_create_or_update_role(args.email, "_server", Role.ADMIN)
 
 
 def list_users(_args):

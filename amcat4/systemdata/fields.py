@@ -22,7 +22,7 @@ from elasticsearch import NotFoundError
 from fastapi import HTTPException
 
 from amcat4.elastic import es
-from amcat4.models import CreateField, ElasticType, Field, FieldMetareaderAccess, FieldSpec, FieldType, UpdateField, User
+from amcat4.models import CreateField, ElasticType, Field, FieldMetareaderAccess, FieldSpec, FieldType, Role, UpdateField, User
 from amcat4.systemdata.roles import get_project_index_role, role_is_at_least
 from amcat4.systemdata.versions.v2 import FIELDS_INDEX, fields_index_id
 from amcat4.systemdata.util import BulkInsertAction, es_bulk_upsert, index_scan
@@ -377,12 +377,12 @@ def raise_if_field_not_allowed(index: str, user: User, fields: list[FieldSpec]) 
     :return: Nothing. Throws HTTPException if the user is not allowed to query the given fields and snippets.
     """
     role = get_project_index_role(user.email, index)
-    if not role_is_at_least(role, "METAREADER"):
+    if not role_is_at_least(role, Role.METAREADER):
         raise HTTPException(
             status_code=403,
             detail=f"User {user.email} does not have permission to access index {index}",
         )
-    if role_is_at_least(role, "READER"):
+    if role_is_at_least(role, Role.READER):
         return
 
     if fields is None or len(fields) == 0:
@@ -438,12 +438,12 @@ def get_allowed_fields(user: User, index: str) -> list[FieldSpec]:
     check whether the user can access the fields (If not, raise an error).
     """
     role = get_project_index_role(user.email, index)
-    if not role_is_at_least(role, "METAREADER"):
+    if not role_is_at_least(role, Role.METAREADER):
         raise HTTPException(
             status_code=403,
             detail=f"User {user.email} does not have permission to access index {index}",
         )
-    is_reader = role_is_at_least(role, "READER")
+    is_reader = role_is_at_least(role, Role.READER)
 
     allowed_fields: list[FieldSpec] = []
     for name, field in get_fields(index).items():

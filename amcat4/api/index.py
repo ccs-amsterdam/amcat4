@@ -23,6 +23,7 @@ from amcat4.models import (
     FilterSpec,
     FilterValue,
     IndexSettings,
+    Role,
     User,
 )
 from amcat4.query import reindex
@@ -53,7 +54,7 @@ def index_list(current_user: User = Depends(authenticated_user)):
                 id=ix.id,
                 name=ix.name,
                 user_role=role.role if role else None,
-                user_role_match=role.role_match if role else None,
+                user_role_match=role.email_pattern if role else None,
                 description=ix.description or "",
                 archived=ix.archived or "",
                 folder=ix.folder or "",
@@ -71,7 +72,7 @@ def create_index(new_index: IndexSettings, user: User = Depends(authenticated_us
 
     POST data should be json containing name and optional guest_role
     """
-    raise_if_not_server_role(user, "WRITER")
+    raise_if_not_server_role(user, Role.WRITER)
     try:
         create_project_index(new_index, user.email)
     except ApiError as e:
@@ -103,7 +104,7 @@ def modify_index(ix: str, data: ChangeIndex, user: User = Depends(authenticated_
     User needs admin rights on the index
     """
     raise_if_not_project_exists(ix)
-    raise_if_not_project_index_role(user, ix, "ADMIN")
+    raise_if_not_project_index_role(user, ix, Role.ADMIN)
 
     update_project_index(
         IndexSettings(
@@ -117,7 +118,7 @@ def modify_index(ix: str, data: ChangeIndex, user: User = Depends(authenticated_
     )
 
     if data.guest_role:
-        set_guest_role(ix, data.guest_role)
+        set_guest_role(ix, Role(data.guest_role))
 
 
 @app_index.get("/{ix}")
@@ -126,7 +127,7 @@ def view_index(ix: str, user: User = Depends(authenticated_user)):
     View the index.
     """
     try:
-        raise_if_not_project_index_role(user, ix, "LISTER")
+        raise_if_not_project_index_role(user, ix, Role.LISTER)
         d = elastic_get_index_settings(ix)
         role = get_project_index_role(email=user.email, project_index=ix)
 
@@ -134,7 +135,7 @@ def view_index(ix: str, user: User = Depends(authenticated_user)):
             id=d.id,
             name=d.name or "",
             user_role=role.role if role else None,
-            user_role_match=role.role_match if role else None,
+            user_role_match=role.email_pattern if role else None,
             guest_role=get_guest_role(d.id),
             description=d.description or "",
             archived=d.archived or "",
@@ -157,7 +158,7 @@ def archive_index(
     Archive or unarchive the index. When an index is archived, it restricts usage, and adds a timestamp for when
     it was archived.
     """
-    raise_if_not_project_index_role(user, ix, "ADMIN")
+    raise_if_not_project_index_role(user, ix, Role.ADMIN)
     try:
         d = elastic_get_index_settings(ix)
         is_archived = d.archived is not None
@@ -173,7 +174,7 @@ def archive_index(
 @app_index.delete("/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_index(ix: str, user: User = Depends(authenticated_user)):
     """Delete the index."""
-    raise_if_not_project_index_role(user, ix, "ADMIN")
+    raise_if_not_project_index_role(user, ix, Role.ADMIN)
     try:
         delete_project_index(ix)
     except IndexDoesNotExist:
@@ -209,8 +210,8 @@ def start_reindex(
     ] = None,
     user: User = Depends(authenticated_user),
 ):
-    raise_if_not_project_index_role(user, ix, "READER")
-    raise_if_not_project_index_role(user, destination, "WRITER")
+    raise_if_not_project_index_role(user, ix, Role.READER)
+    raise_if_not_project_index_role(user, destination, Role.WRITER)
     filters = _standardize_filters(filters)
     queries = _standardize_queries(queries)
     return reindex(source_index=ix, destination_index=destination, queries=queries, filters=filters)

@@ -1,17 +1,9 @@
-from pyexpat import model
+from enum import IntEnum
 import pydantic
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, model_validator, Field as pydanticField
 from typing import Annotated, Any, Literal, Union
 from typing_extensions import Self
-from enum import IntEnum
-
-
-class GuestRoleHierarchy(IntEnum):
-    NONE = 0
-    METAREADER = 10
-    READER = 20
-    WRITER = 30
 
 
 class User(BaseModel):
@@ -22,27 +14,27 @@ class User(BaseModel):
 IndexId = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*$")]
 RoleEmailPattern = EmailStr | Literal["*"]  # user@domain.com or *@domain.com or *
 RoleContext = IndexId | Literal["_server"]
-RoleMatch = Literal["EXACT", "DOMAIN", "ANY"]
-Role = Literal["ADMIN", "WRITER", "READER", "METAREADER", "LISTER"]
+
+
+class Role(IntEnum):
+    LISTER = 10
+    METAREADER = 20
+    READER = 30
+    WRITER = 40
+    ADMIN = 50
 
 
 class RoleRule(BaseModel):
     email_pattern: RoleEmailPattern
     role_context: RoleContext
     role: Role
-    role_match: RoleMatch
 
     @model_validator(mode="after")
     def validate_role(self) -> Self:
-        if self.role == "ADMIN" and self.role_match != "EXACT":
+        uses_wildcard = "*" in self.email_pattern
+        if self.role == Role.ADMIN and uses_wildcard:
             raise ValueError("Only exact email matches can have ADMIN role")
         return self
-
-
-class UserRole(BaseModel):
-    role_context: RoleContext
-    role: Role
-    role_match: RoleMatch
 
 
 FieldType = Literal[
