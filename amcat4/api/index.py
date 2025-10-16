@@ -29,7 +29,7 @@ from amcat4.models import (
 from amcat4.query import reindex
 from amcat4.systemdata.roles import (
     get_guest_role,
-    get_project_index_role,
+    get_project_role,
     raise_if_not_project_index_role,
     raise_if_not_server_role,
     set_guest_role,
@@ -129,7 +129,7 @@ def view_index(ix: str, user: User = Depends(authenticated_user)):
     try:
         raise_if_not_project_index_role(user, ix, Role.LISTER)
         d = elastic_get_index_settings(ix)
-        role = get_project_index_role(email=user.email, project_index=ix)
+        role = get_project_role(email=user.email, project_index=ix)
 
         return dict(
             id=d.id,

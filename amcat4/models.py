@@ -17,6 +17,7 @@ RoleContext = IndexId | Literal["_server"]
 
 
 class Role(IntEnum):
+    NONE = 0
     LISTER = 10
     METAREADER = 20
     READER = 30

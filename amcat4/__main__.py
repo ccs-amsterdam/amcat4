@@ -18,13 +18,12 @@ import uvicorn
 from pydantic.fields import FieldInfo
 from uvicorn.config import LOGGING_CONFIG
 
-from amcat4 import index
 from amcat4.config import AuthOptions, get_settings, validate_settings
 from amcat4.elastic_connection import connect_elastic
-from amcat4.index import create_index, list_global_users, upload_documents
-from amcat4.models import FieldType, Role
+from amcat4.models import FieldType, IndexSettings, Role
+from amcat4.project_index import create_project_index, upload_documents
 from amcat4.systemdata.manage import create_or_update_systemdata
-from amcat4.systemdata.roles import elastic_create_or_update_role
+from amcat4.systemdata.roles import elastic_create_or_update_role, elastic_list_roles, list_user_roles, set_server_role
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -36,7 +35,7 @@ def upload_test_data() -> str:
     csvfile = csv.DictReader(io.TextIOWrapper(url_open, encoding="utf-8"))
 
     # creates the index info on the sqlite db
-    create_index(SOTU_INDEX)
+    create_project_index(IndexSettings(id=SOTU_INDEX))
 
     docs = [
         dict(
@@ -131,18 +130,16 @@ def create_test_index(_args):
 
 def add_admin(args):
     logging.info(f"**** Setting {args.email} to ADMIN ****")
-    elastic_create_or_update_role(args.email, "_server", Role.ADMIN)
+    set_server_role(args.email, Role.ADMIN)
 
 
 def list_users(_args):
-    users = list_global_users()
+    roles = elastic_list_roles(role_contexts=["_server"])
 
-    # sorted changes the output type of list_global_users?
-    # users = sorted(list_global_users(), key=lambda ur: (ur[1], ur[0]))
-    if users:
-        for user, role in users.items():
-            print(f"{role.name:10}: {user}")
-    if not users:
+    if roles:
+        for role in roles:
+            print(f"{role.role.name:10}: {role.email_pattern}")
+    if not roles:
         print("(No users defined yet, use add-admin to add users by email)")
 
 

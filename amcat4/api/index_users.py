@@ -9,10 +9,10 @@ from amcat4.models import (
     RoleRule,
 )
 from amcat4.systemdata.roles import (
-    elastic_create_or_update_role,
     elastic_delete_role,
     elastic_list_roles,
     raise_if_not_project_index_role,
+    set_project_role,
 )
 
 app_index = APIRouter(prefix="/index", tags=["index"])
@@ -45,7 +45,7 @@ def add_index_users(
     This requires ADMIN rights on the index or server
     """
     raise_if_not_project_index_role(user, ix, Role.ADMIN)
-    elastic_create_or_update_role(email, ix, role)
+    set_project_role(email, ix, role)
     return {"user": email, "index": ix, "role": role}
 
 
@@ -61,8 +61,11 @@ def modify_index_user(
 
     This requires ADMIN rights on the index or server
     """
+    # TODO: this is now identical to add_index_user. Should we merge,
+    # keep separate for clarity, or add errors for existing/non-existing users?
+    # also, should we add support for upserting list of users?
     raise_if_not_project_index_role(user, ix, Role.ADMIN)
-    elastic_create_or_update_role(email, ix, role)
+    set_project_role(email, ix, role)
     return {"user": email, "index": ix, "role": role}
 
 

@@ -5,8 +5,6 @@ AmCAT4 can use either Basic or Token-based authentication.
 A client can request a token with basic authentication and store that token for future requests.
 """
 
-from typing import Literal, Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 from pydantic.networks import EmailStr

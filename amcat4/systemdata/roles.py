@@ -1,6 +1,4 @@
-from cmath import e
 from typing import Iterable, Literal
-from typing_extensions import Required
 
 from fastapi import HTTPException
 from pydantic import EmailStr
@@ -15,7 +13,6 @@ from amcat4.models import (
     Role,
 )
 from amcat4.systemdata.util import index_scan
-from enum import IntEnum
 
 
 class InvalidRoleError(ValueError):
@@ -64,7 +61,9 @@ def elastic_list_roles(
 
 
 def list_user_roles(
-    email: EmailStr | None, role_contexts: list[RoleContext] | None = None, required_role: Role | None = None
+    user: User,
+    role_contexts: list[RoleContext] | None = None,
+    required_role: Role | None = None,
 ) -> list[RoleRule]:
     """
     For a given user, get the most exact matching role for each role context (index or _server)
@@ -72,28 +71,23 @@ def list_user_roles(
 
     if email is None, only the guest role (email="*") will be considered.
     """
-    # use tuples of (strength, RoleRule) for each role context to sort out the strongest matches
-    strongest_matches: dict[RoleContext, tuple[int, RoleRule]] = {}
 
     all_matches = elastic_list_roles(
-        email_patterns=email_to_role_emails(email), role_contexts=role_contexts, min_role=required_role
+        email_patterns=user_to_role_emails(user), role_contexts=role_contexts, min_role=required_role
     )
 
-    for match in all_matches:
-        context = match.role_context
-        strength = match_strength(match.email_pattern)
-
-        if context in strongest_matches:
-            current_strength = strongest_matches[context][0]
-            if strength > current_strength:
-                strongest_matches[context] = (strength, match)
-        else:
-            strongest_matches[context] = (strength, match)
-
-    return [match for strength, match in strongest_matches.values()]
+    return get_strongest_matches(all_matches)
 
 
-def get_project_index_role(email: EmailStr | None, project_index: IndexId, global_admin: bool = True) -> RoleRule | None:
+def set_project_role(email: RoleEmailPattern, project_index: IndexId, role: Role):
+    """Create or update a project role. Delete if role is Role.NONE"""
+    if role == Role.NONE:
+        elastic_delete_role(email_pattern=email, role_context=project_index)
+    else:
+        elastic_create_or_update_role(email_pattern=email, role_context=project_index, role=role)
+
+
+def get_project_role(user: User, project_index: IndexId, global_admin: bool = True) -> RoleRule | None:
     """
     Get the role for the given user and context, or None if no role exists.
     This gives the most exact matching role on the given context.
@@ -102,18 +96,33 @@ def get_project_index_role(email: EmailStr | None, project_index: IndexId, globa
     By default, a server admin will get ADMIN role on all contexts.
     Set global_admin to False to disable this.
     """
-    user_roles = list_user_roles(email, role_contexts=[project_index, "_server"])
-    target_role = next((ur for ur in user_roles if ur.role_context == project_index), None)
+    # If we just need the project role, its a simple lookup
+    if not global_admin:
+        project_role = list_user_roles(user, role_contexts=[project_index])
+        return project_role[0] if project_role else None
+
+    # If we need to consider global admin, we can fetch both roles in one go
+    user_roles = list_user_roles(user, role_contexts=[project_index, "_server"])
+    project_role = next((ur for ur in user_roles if ur.role_context == project_index), None)
     server_role = next((ur for ur in user_roles if ur.role_context == "_server"), None)
 
-    if global_admin and server_role and server_role.role == Role.ADMIN:
-        server_role.role_context = project_index
-        return server_role
-    return target_role
+    if server_role and server_role.role == Role.ADMIN:
+        project_role = server_role
+        project_role.role_context = project_index
+
+    return project_role
 
 
-def get_server_role(email: EmailStr | None) -> RoleRule | None:
-    user_roles = list_user_roles(email, role_contexts=["_server"])
+def set_server_role(email: RoleEmailPattern, role: Role):
+    """Create or update a server role. Delete if role is Role.NONE"""
+    if role == Role.NONE:
+        elastic_delete_role(email_pattern=email, role_context="_server")
+    else:
+        elastic_create_or_update_role(email_pattern=email, role_context="_server", role=role)
+
+
+def get_server_role(user: User) -> RoleRule | None:
+    user_roles = list_user_roles(user, role_contexts=["_server"])
     return user_roles[0] if user_roles else None
 
 
@@ -123,7 +132,7 @@ def raise_if_not_project_index_role(
     """
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
-    role = get_project_index_role(user.email, role_context, global_admin=global_admin)
+    role = get_project_role(user, role_context, global_admin=global_admin)
     if not role_is_at_least(role, required_role):
         detail = message or f"User {user.email} does not have {required_role} role for {role_context}"
         raise HTTPException(status_code=401, detail=detail)
@@ -133,7 +142,7 @@ def raise_if_not_server_role(user: User, required_role: Role, message: str | Non
     """
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
-    role = get_server_role(user.email)
+    role = get_server_role(user)
     if not role_is_at_least(role, required_role):
         detail = message or f"User {user.email} does not have the {required_role} server role"
         raise HTTPException(status_code=401, detail=detail)
@@ -147,7 +156,7 @@ def set_guest_role(index_id: IndexId, role: Role | Literal["NONE"]):
 
 
 def get_guest_role(index_id: IndexId) -> RoleRule | None:
-    get_project_index_role(email=None, project_index=index_id)
+    get_project_role(user=User(email=None), project_index=index_id)
 
 
 def role_is_at_least(user_role: RoleRule | None, required_role: Role) -> bool:
@@ -156,13 +165,15 @@ def role_is_at_least(user_role: RoleRule | None, required_role: Role) -> bool:
     return user_role.role >= required_role
 
 
-def email_to_role_emails(email: EmailStr | None):
+def user_to_role_emails(user: User):
     """
     Given a user, return a list of email patterns that should be checked for roles.
     """
-    if email is None:
+    # If no email is given, only the guest role (*) applies
+    if user.email is None:
         return ["*"]
-    return [email, "*@" + email.split("@")[-1], "*"]
+    # Otherwise, check exact email, domain wildcard, and guest role
+    return [user.email, "*@" + user.email.split("@")[-1], "*"]
 
 
 def min_role_query(min_role: Role):
@@ -177,3 +188,24 @@ def match_strength(email_pattern: RoleEmailPattern) -> int:
         return 2
     else:
         return 3
+
+
+def get_strongest_matches(role_matches: Iterable[RoleRule]) -> list[RoleRule]:
+    """
+    From a list of roles, return the strongest match for each role context.
+    """
+    # use tuples of (strength, RoleRule) for each role context to sort out the strongest matches
+    strongest_matches: dict[RoleContext, tuple[int, RoleRule]] = {}
+
+    for match in role_matches:
+        context = match.role_context
+        strength = match_strength(match.email_pattern)
+
+        if context in strongest_matches:
+            current_strength = strongest_matches[context][0]
+            if strength > current_strength:
+                strongest_matches[context] = (strength, match)
+        else:
+            strongest_matches[context] = (strength, match)
+
+    return [match for strength, match in strongest_matches.values()]

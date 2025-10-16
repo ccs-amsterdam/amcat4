@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Iterable
 import logging
 
-from fastapi import HTTPException
 
 from amcat4.elastic import es
 from amcat4.models import IndexSettings, PermissionRequest, Role, RoleRequest, CreateProjectRequest, User

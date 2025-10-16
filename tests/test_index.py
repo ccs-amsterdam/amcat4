@@ -4,7 +4,7 @@ import pytest
 
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import IndexSettings, User
+from amcat4.models import IndexSettings, Role, User
 from amcat4.project_index import (
     create_project_index,
     delete_project_index,
@@ -13,7 +13,7 @@ from amcat4.project_index import (
     list_user_project_indices,
     register_project_index,
 )
-from amcat4.systemdata.roles import elastic_create_or_update_role
+from amcat4.systemdata.roles import elastic_create_or_update_role, get_server_role, set_server_role
 from tests.tools import refresh
 
 ## TODO: replace all the functions from the removed amcat4.index with the new functions
@@ -76,18 +76,18 @@ def test_list_indices(index, guest_index, admin):
     user = "user@example.com"
     assert index not in list_index_ids(user)
     assert guest_index in list_index_ids(user)
-    elastic_create_or_update_role(index, user, "WRITER")
-    refresh_index(get_settings().system_index)
-    assert index in list_index_ids(user)
-    remove_role(index, user)
-    refresh_index(get_settings().system_index)
-    assert index not in list_index_ids(user)
+    elastic_create_or_update_role(index, user, Role.WRITER)
+    # refresh_index(get_settings().system_index)
+    assert index in list_user_project_indices(User(email=user))
+    delete_project_index(index)
+    # refresh_index(get_settings().system_index)
+    assert index not in list_user_project_indices(User(email=user))
 
 
 def test_global_roles():
     user = "user@example.com"
-    assert get_global_role(user) == Role.NONE
-    set_global_role(user, Role.ADMIN)
+    assert get_server_role(user) == Role.NONE
+    set_server_role(user, Role.ADMIN)
     refresh_index(get_settings().system_index)
     assert get_global_role(user) == Role.ADMIN
     set_global_role(user, Role.WRITER)

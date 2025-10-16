@@ -23,7 +23,7 @@ from fastapi import HTTPException
 
 from amcat4.elastic import es
 from amcat4.models import CreateField, ElasticType, Field, FieldMetareaderAccess, FieldSpec, FieldType, Role, UpdateField, User
-from amcat4.systemdata.roles import get_project_index_role, role_is_at_least
+from amcat4.systemdata.roles import get_project_role, role_is_at_least
 from amcat4.systemdata.versions.v2 import FIELDS_INDEX, fields_index_id
 from amcat4.systemdata.util import BulkInsertAction, es_bulk_upsert, index_scan
 
@@ -376,7 +376,7 @@ def raise_if_field_not_allowed(index: str, user: User, fields: list[FieldSpec]) 
     :param snippets: The snippets to check
     :return: Nothing. Throws HTTPException if the user is not allowed to query the given fields and snippets.
     """
-    role = get_project_index_role(user.email, index)
+    role = get_project_role(user.email, index)
     if not role_is_at_least(role, Role.METAREADER):
         raise HTTPException(
             status_code=403,
@@ -437,7 +437,7 @@ def get_allowed_fields(user: User, index: str) -> list[FieldSpec]:
     they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
     check whether the user can access the fields (If not, raise an error).
     """
-    role = get_project_index_role(user.email, index)
+    role = get_project_role(user.email, index)
     if not role_is_at_least(role, Role.METAREADER):
         raise HTTPException(
             status_code=403,

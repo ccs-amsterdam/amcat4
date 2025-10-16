@@ -15,7 +15,7 @@ from amcat4.models import (
     User,
 )
 from amcat4.systemdata import fields as _fields
-from amcat4.systemdata.roles import get_project_index_role, raise_if_not_project_index_role, role_is_at_least
+from amcat4.systemdata.roles import get_project_role, raise_if_not_project_index_role, role_is_at_least
 
 app_index = APIRouter(prefix="/index", tags=["index"])
 
@@ -90,7 +90,7 @@ def get_field_values(ix: str, field: str, user: User = Depends(authenticated_use
 @app_index.get("/{ix}/fields/{field}/stats")
 def get_field_stats(ix: str, field: str, user: User = Depends(authenticated_user)):
     """Get statistics for a specific value. Only works for numeric (incl date) fields."""
-    role = get_project_index_role(user.email, ix)
+    role = get_project_role(user.email, ix)
     if role_is_at_least(role, Role.READER):
         return _fields.field_stats(ix, field)
     elif role_is_at_least(role, Role.METAREADER):

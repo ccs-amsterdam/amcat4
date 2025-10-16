@@ -5,11 +5,10 @@ from typing import Any, Iterable, Literal, Mapping
 
 import elasticsearch.helpers
 
-from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.models import CreateField, FieldType, IndexSettings, Role, RoleRule, User
 from amcat4.systemdata.fields import coerce_type, create_fields, create_or_verify_tag_field, get_fields
-from amcat4.systemdata.roles import elastic_list_roles, list_user_roles, raise_if_not_server_role
+from amcat4.systemdata.roles import list_user_roles, raise_if_not_server_role
 from amcat4.systemdata.settings import (
     create_index_settings,
     delete_index_settings,

@@ -6,12 +6,11 @@ from amcat4.systemdata.versions.v2 import SETTINGS_INDEX, settings_index_id
 from amcat4.elastic import es
 from amcat4.models import IndexSettings, Role, ServerSettings
 
-## INDEX SETTINGS
+## PROJECT INDEX SETTINGS
 
 
 class IndexDoesNotExist(ValueError):
     pass
-
 
 
 def elastic_get_index_settings(index_id: str) -> IndexSettings:
@@ -54,16 +53,17 @@ def delete_index_settings(index_id: str, ignore_missing: bool = False):
         raise ValueError(f"{index_id} is not a project index")
     try:
         es().delete(index=SETTINGS_INDEX, id=index_id, refresh=True)
-    except NotFoundError:
-        if not ignore_missing
-            raise
 
+    except NotFoundError:
+        if not ignore_missing:
+            raise
 
 
 ## SERVER SETTINGS
 
+
 def elastic_get_server_settings() -> ServerSettings:
-    id = settings_index_id('_server')
+    id = settings_index_id("_server")
     doc = es().get(index=SETTINGS_INDEX, id=id)["_source"]
     return ServerSettings.model_validate(doc)
 
@@ -71,17 +71,3 @@ def elastic_get_server_settings() -> ServerSettings:
 def elastic_create_or_update_server_settings(server_settings: ServerSettings):
     id = settings_index_id("_server")
     es().update(index=SETTINGS_INDEX, id=id, doc=server_settings.model_dump(), doc_as_upsert=True, refresh=True)
-
-
-
-# ================================ USED IN TESTS ONLY =========================================
-
-
-def list_index_names() -> Iterable[str]:
-    """
-    TEST ONLY
-    """
-    for id, index in index_scan(SETTINGS_INDEX, source=['_id']):
-        if id == '_server':
-            continue
-        yield id
