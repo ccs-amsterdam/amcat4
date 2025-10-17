@@ -7,7 +7,7 @@ from elastic_transport import ApiError
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 
-from amcat4.project_index import (
+from amcat4.projects.index import (
     IndexDoesNotExist,
     create_project_index,
     delete_project_index,
@@ -26,17 +26,23 @@ from amcat4.models import (
     Role,
     User,
 )
-from amcat4.query import reindex
+from amcat4.projects.query import reindex
 from amcat4.systemdata.roles import (
     get_guest_role,
-    get_project_role,
+    get_user_project_role,
     raise_if_not_project_index_role,
     raise_if_not_server_role,
     set_guest_role,
 )
-from amcat4.systemdata.settings import elastic_get_index_settings
+from amcat4.systemdata.settings import get_project_settings
 
 app_index = APIRouter(prefix="/index", tags=["index"])
+
+# TODO: rename to projects and add deprecated index route
+# app_projects = APIRouter(prefix="/projects", tags=["projects"])
+# app_index_deprecated = APIRouter(prefix="/projects", tags=["projects"], deprecated=True)
+#
+# add both decorators to all functions, and register both routers
 
 
 @app_index.get("/")
@@ -128,8 +134,8 @@ def view_index(ix: str, user: User = Depends(authenticated_user)):
     """
     try:
         raise_if_not_project_index_role(user, ix, Role.LISTER)
-        d = elastic_get_index_settings(ix)
-        role = get_project_role(email=user.email, project_index=ix)
+        d = get_project_settings(ix)
+        role = get_user_project_role(user, project_index=ix)
 
         return dict(
             id=d.id,
@@ -160,7 +166,7 @@ def archive_index(
     """
     raise_if_not_project_index_role(user, ix, Role.ADMIN)
     try:
-        d = elastic_get_index_settings(ix)
+        d = get_project_settings(ix)
         is_archived = d.archived is not None
         if is_archived == archived:
             return

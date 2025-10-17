@@ -6,7 +6,7 @@ from pytest import raises
 
 from amcat4 import query
 from amcat4.api.query import _standardize_filters, _standardize_queries
-from amcat4.systemdata.fields import get_fields
+from amcat4.systemdata.fields import list_fields
 from amcat4.index import create_index, delete_index, refresh_index
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, SnippetParams
 from tests.conftest import upload
@@ -125,7 +125,7 @@ def test_reindex(index_docs, index_name):
         sleep(0.1)
     refresh_index(index_name)
     assert query_ids(index_docs) == query_ids(index_name)
-    assert get_fields(index_docs) == get_fields(index_name)
+    assert list_fields(index_docs) == list_fields(index_name)
 
     delete_index(index_name)
     create_index(index_name)

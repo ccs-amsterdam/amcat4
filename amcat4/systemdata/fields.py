@@ -23,24 +23,9 @@ from fastapi import HTTPException
 
 from amcat4.elastic import es
 from amcat4.models import CreateField, ElasticType, Field, FieldMetareaderAccess, FieldSpec, FieldType, Role, UpdateField, User
-from amcat4.systemdata.roles import get_project_role, role_is_at_least
+from amcat4.systemdata.roles import get_user_project_role, role_is_at_least
 from amcat4.systemdata.versions.v2 import FIELDS_INDEX, fields_index_id
-from amcat4.systemdata.util import BulkInsertAction, es_bulk_upsert, index_scan
-
-
-def elastic_update_fields(index: str, fields: dict[str, Field]):
-    def insert_fields():
-        for field, settings in fields.items():
-            id = fields_index_id(index, field)
-            field_doc = {"field": field, "settings": settings.model_dump()}
-            yield BulkInsertAction(index=FIELDS_INDEX, id=id, doc=field_doc)
-
-    es_bulk_upsert(insert_fields())
-
-
-def elastic_list_fields(index: str) -> dict[str, Field]:
-    docs = index_scan(FIELDS_INDEX, query={"term": {"index": index}})
-    return {doc["field"]: Field.model_validate(doc["settings"]) for id, doc in docs}
+from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, index_scan
 
 
 # TODO: there is now a lot of complexity because we allow querying multiple indices at once.
@@ -186,7 +171,7 @@ def coerce_type(value: Any, type: FieldType):
 
 def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
     mapping: dict[str, Any] = {}
-    current_fields = get_fields(index)
+    current_fields = list_fields(index)
 
     sfields = _standardize_createfields(fields)
     old_identifiers = any(f.identifier for f in current_fields.values())
@@ -238,11 +223,11 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
 
     if len(mapping) > 0:
         es().indices.put_mapping(index=index, properties=mapping)
-        elastic_update_fields(index, current_fields)
+        _update_fields(index, current_fields)
 
 
 def update_fields(index: str, fields: dict[str, UpdateField]):
-    current_fields = get_fields(index)
+    current_fields = list_fields(index)
 
     for field, new_settings in fields.items():
         current = current_fields.get(field)
@@ -270,18 +255,10 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
         if new_settings.client_settings is not None:
             current_fields[field].client_settings = new_settings.client_settings
 
-    elastic_update_fields(index, current_fields)
+    _update_fields(index, current_fields)
 
 
-def _get_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:
-    r = es().indices.get_mapping(index=index)
-
-    if len(r[index]["mappings"]) > 0:
-        for k, v in r[index]["mappings"]["properties"].items():
-            yield k, v.get("type", "object")
-
-
-def get_fields(index: str) -> dict[str, Field]:
+def list_fields(index: str) -> dict[str, Field]:
     """
     Retrieve the fields settings for this index. Look for both the field settings in the system index,
     and the field mappings in the index itself. If a field is not defined in the system index, return the
@@ -290,7 +267,7 @@ def get_fields(index: str) -> dict[str, Field]:
     fields: dict[str, Field] = {}
 
     try:
-        system_index_fields = elastic_list_fields(index)
+        system_index_fields = _list_fields(index)
     except NotFoundError:
         system_index_fields = {}
 
@@ -310,9 +287,32 @@ def get_fields(index: str) -> dict[str, Field]:
             fields[field] = system_index_fields[field]
 
     if update_system_index:
-        elastic_update_fields(index, fields)
+        _update_fields(index, fields)
 
     return fields
+
+
+def _update_fields(index: str, fields: dict[str, Field]):
+    def insert_fields():
+        for field, settings in fields.items():
+            id = fields_index_id(index, field)
+            field_doc = {"field": field, "settings": settings.model_dump()}
+            yield BulkInsertAction(index=FIELDS_INDEX, id=id, doc=field_doc)
+
+    es_bulk_upsert(insert_fields())
+
+
+def _list_fields(index: str) -> dict[str, Field]:
+    docs = index_scan(FIELDS_INDEX, query={"term": {"index": index}})
+    return {doc["field"]: Field.model_validate(doc["settings"]) for id, doc in docs}
+
+
+def _get_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:
+    r = es().indices.get_mapping(index=index)
+
+    if len(r[index]["mappings"]) > 0:
+        for k, v in r[index]["mappings"]["properties"].items():
+            yield k, v.get("type", "object")
 
 
 def create_or_verify_tag_field(index: str | list[str], field: str):
@@ -324,7 +324,7 @@ def create_or_verify_tag_field(index: str | list[str], field: str):
     indices = [index] if isinstance(index, str) else index
     add_to_indices = []
     for i in indices:
-        current_fields = get_fields(i)
+        current_fields = list_fields(i)
         if field in current_fields:
             if current_fields[field].type != "tag":
                 raise ValueError(f"Field '{field}' already exists in index '{i}' and is not a tag field")
@@ -332,10 +332,10 @@ def create_or_verify_tag_field(index: str | list[str], field: str):
             add_to_indices.append(i)
 
     for i in add_to_indices:
-        current_fields = get_fields(i)
+        current_fields = list_fields(i)
         current_fields[field] = get_default_field("tag")
         es().indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
-        elastic_update_fields(i, current_fields)
+        _update_fields(i, current_fields)
 
 
 def field_values(index: str, field: str, size: int) -> list[str]:
@@ -376,7 +376,7 @@ def raise_if_field_not_allowed(index: str, user: User, fields: list[FieldSpec]) 
     :param snippets: The snippets to check
     :return: Nothing. Throws HTTPException if the user is not allowed to query the given fields and snippets.
     """
-    role = get_project_role(user.email, index)
+    role = get_user_project_role(user, index)
     if not role_is_at_least(role, Role.METAREADER):
         raise HTTPException(
             status_code=403,
@@ -388,7 +388,7 @@ def raise_if_field_not_allowed(index: str, user: User, fields: list[FieldSpec]) 
     if fields is None or len(fields) == 0:
         return None
 
-    index_fields = get_fields(index)
+    index_fields = list_fields(index)
     for field in fields:
         if field.name not in index_fields:
             # Should we raise an error here? If we want to support querying multiple
@@ -437,7 +437,7 @@ def get_allowed_fields(user: User, index: str) -> list[FieldSpec]:
     they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
     check whether the user can access the fields (If not, raise an error).
     """
-    role = get_project_role(user.email, index)
+    role = get_user_project_role(user, index)
     if not role_is_at_least(role, Role.METAREADER):
         raise HTTPException(
             status_code=403,
@@ -446,7 +446,7 @@ def get_allowed_fields(user: User, index: str) -> list[FieldSpec]:
     is_reader = role_is_at_least(role, Role.READER)
 
     allowed_fields: list[FieldSpec] = []
-    for name, field in get_fields(index).items():
+    for name, field in list_fields(index).items():
         if is_reader:
             allowed_fields.append(FieldSpec(name=name))
         else:

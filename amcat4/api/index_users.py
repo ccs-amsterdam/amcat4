@@ -3,19 +3,18 @@
 from fastapi import APIRouter, Body, Depends, status
 
 from amcat4.api.auth import authenticated_user
+from amcat4.api.index import app_index
 from amcat4.models import (
     Role,
     User,
     RoleRule,
 )
 from amcat4.systemdata.roles import (
-    elastic_delete_role,
-    elastic_list_roles,
+    delete_role,
+    list_roles,
     raise_if_not_project_index_role,
-    set_project_role,
+    set_role,
 )
-
-app_index = APIRouter(prefix="/index", tags=["index"])
 
 
 @app_index.get("/{ix}/users")
@@ -29,7 +28,7 @@ def list_index_users(ix: str, user: User = Depends(authenticated_user)) -> list[
           right. Maybe we should even restrict to WRITERS (or READERS) that have an exact match?
     """
     raise_if_not_project_index_role(user, ix, Role.WRITER)
-    return list(elastic_list_roles(role_contexts=[ix]))
+    return list(list_roles(role_contexts=[ix]))
 
 
 @app_index.post("/{ix}/users", status_code=status.HTTP_201_CREATED)
@@ -45,7 +44,7 @@ def add_index_users(
     This requires ADMIN rights on the index or server
     """
     raise_if_not_project_index_role(user, ix, Role.ADMIN)
-    set_project_role(email, ix, role)
+    set_role(email, ix, role)
     return {"user": email, "index": ix, "role": role}
 
 
@@ -65,7 +64,7 @@ def modify_index_user(
     # keep separate for clarity, or add errors for existing/non-existing users?
     # also, should we add support for upserting list of users?
     raise_if_not_project_index_role(user, ix, Role.ADMIN)
-    set_project_role(email, ix, role)
+    set_role(email, ix, role)
     return {"user": email, "index": ix, "role": role}
 
 
@@ -77,5 +76,5 @@ def remove_index_user(ix: str, email: str, user: User = Depends(authenticated_us
     This requires ADMIN rights on the index or server
     """
     raise_if_not_project_index_role(user, ix, Role.ADMIN)
-    elastic_delete_role(email, ix)
+    delete_role(email, ix)
     return {"user": email, "index": ix, "role": None}

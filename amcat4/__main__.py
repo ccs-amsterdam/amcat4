@@ -19,11 +19,12 @@ from pydantic.fields import FieldInfo
 from uvicorn.config import LOGGING_CONFIG
 
 from amcat4.config import AuthOptions, get_settings, validate_settings
-from amcat4.elastic_connection import connect_elastic
+from amcat4.elastic.connection import connect_elastic
 from amcat4.models import FieldType, IndexSettings, Role
-from amcat4.project_index import create_project_index, upload_documents
+from amcat4.projects.index import create_project_index, delete_project_index
+from amcat4.projects.documents import upload_documents
 from amcat4.systemdata.manage import create_or_update_systemdata
-from amcat4.systemdata.roles import elastic_create_or_update_role, elastic_list_roles, list_user_roles, set_server_role
+from amcat4.systemdata.roles import update_role, list_roles
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -124,17 +125,17 @@ def create_env(args):
 
 def create_test_index(_args):
     logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
-    index.delete_index(SOTU_INDEX, ignore_missing=True)
+    delete_project_index(SOTU_INDEX, ignore_missing=True)
     upload_test_data()
 
 
 def add_admin(args):
     logging.info(f"**** Setting {args.email} to ADMIN ****")
-    set_server_role(args.email, Role.ADMIN)
+    update_role(args.email, role_context="_server", role=Role.ADMIN)
 
 
 def list_users(_args):
-    roles = elastic_list_roles(role_contexts=["_server"])
+    roles = list_roles(role_contexts=["_server"])
 
     if roles:
         for role in roles:

@@ -5,10 +5,10 @@ from fastapi.templating import Jinja2Templates
 
 from amcat4.api.auth import authenticated_user, get_middlecat_config
 from amcat4.config import get_settings, validate_settings
-from amcat4.query import get_task_status
+from amcat4.projects.query import get_task_status
 from amcat4.models import Role, ServerSettings, User
 from amcat4.systemdata.roles import raise_if_not_server_role
-from amcat4.systemdata.settings import elastic_create_or_update_server_settings, elastic_get_server_settings
+from amcat4.systemdata.settings import upsert_server_settings, get_server_settings
 
 templates = Jinja2Templates(directory="templates")
 
@@ -50,7 +50,7 @@ def get_auth_config():
 
 @app_info.get("/config/branding")
 def read_branding():
-    return elastic_get_server_settings()
+    return get_server_settings()
 
 
 @app_info.put("/config/branding")
@@ -58,7 +58,7 @@ def change_branding(data: ServerSettings, user: User = Depends(authenticated_use
     ## This doesn't yet make sense. The problem is that if we have a separate branding endpoint,
     ## we need to make sure that the server_settings document exists.
     raise_if_not_server_role(user, Role.ADMIN)
-    elastic_create_or_update_server_settings(data)
+    upsert_server_settings(data)
 
 
 @app_info.get("/task/{taskId}")

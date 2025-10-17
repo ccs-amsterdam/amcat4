@@ -6,12 +6,12 @@ import logging
 from math import ceil
 from typing import Any, Dict, Literal, Tuple, Union
 
-from amcat4.systemdata.fields import create_fields, get_fields
-from amcat4.index import delete_documents_by_query, update_documents_by_query, update_tag_by_query
+from amcat4.systemdata.fields import create_fields, list_fields
+from amcat4.projects.documents import delete_documents_by_query, update_documents_by_query, update_document_tag_by_query
 from amcat4.models import FieldSpec, FieldType, FilterSpec, SortSpec
 
-from .date_mappings import mappings
-from .elastic import es
+from amcat4.projects.date_mappings import mappings
+from amcat4.elastic import es
 
 
 def build_body(
@@ -270,7 +270,7 @@ def update_tag_query(
     """Add or remove tags using a query"""
     body = build_body(queries, filters, ids=ids)
 
-    update_result = update_tag_by_query(index, action, body, field, tag)
+    update_result = update_document_tag_by_query(index, action, body, field, tag)
     return update_result
 
 
@@ -312,9 +312,9 @@ def reindex(
         #       name, roles, etc., so for now let client create first
         raise Exception("Please create index before re-indexing!")
 
-    dest_fields = get_fields(destination_index)
+    dest_fields = list_fields(destination_index)
     fields: dict[str, FieldType] = {
-        field: definition.type for (field, definition) in get_fields(source_index).items() if field not in dest_fields
+        field: definition.type for (field, definition) in list_fields(source_index).items() if field not in dest_fields
     }
     if fields:
         logging.info(f"Creating fields {fields}")

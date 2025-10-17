@@ -5,7 +5,7 @@ import pytest
 from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.models import IndexSettings, Role, User
-from amcat4.project_index import (
+from amcat4.projects.index import (
     create_project_index,
     delete_project_index,
     deregister_project_index,
@@ -13,7 +13,7 @@ from amcat4.project_index import (
     list_user_project_indices,
     register_project_index,
 )
-from amcat4.systemdata.roles import elastic_create_or_update_role, get_server_role, set_server_role
+from amcat4.systemdata.roles import delete_role, get_user_server_role, update_role
 from tests.tools import refresh
 
 ## TODO: replace all the functions from the removed amcat4.index with the new functions
@@ -76,7 +76,7 @@ def test_list_indices(index, guest_index, admin):
     user = "user@example.com"
     assert index not in list_index_ids(user)
     assert guest_index in list_index_ids(user)
-    elastic_create_or_update_role(index, user, Role.WRITER)
+    update_role(index, user, Role.WRITER)
     # refresh_index(get_settings().system_index)
     assert index in list_user_project_indices(User(email=user))
     delete_project_index(index)
@@ -85,17 +85,18 @@ def test_list_indices(index, guest_index, admin):
 
 
 def test_global_roles():
-    user = "user@example.com"
-    assert get_server_role(user) == Role.NONE
-    set_server_role(user, Role.ADMIN)
-    refresh_index(get_settings().system_index)
-    assert get_global_role(user) == Role.ADMIN
-    set_global_role(user, Role.WRITER)
-    refresh_index(get_settings().system_index)
-    assert get_global_role(user) == Role.WRITER
-    remove_global_role(user)
-    refresh_index(get_settings().system_index)
-    assert get_global_role(user) == Role.NONE
+    email = "user@example.com"
+    user = User(email=email)
+    assert get_user_server_role(user) == Role.NONE
+    update_role(email_pattern=email, role_context="_server", role=Role.ADMIN)
+    # refresh_index(get_settings().system_index)
+    assert get_user_server_role(user) == Role.ADMIN
+    update_role(email_pattern=email, role_context="_server", role=Role.WRITER)
+    # refresh_index(get_settings().system_index)
+    assert get_user_server_role(user) == Role.WRITER
+    delete_role(email_pattern=email, role_context="_server")
+    # refresh_index(get_settings().system_index)
+    assert get_user_server_role(user) is None
 
 
 def test_index_roles(index):

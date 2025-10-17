@@ -5,13 +5,13 @@ import logging
 
 from amcat4.elastic import es
 from amcat4.models import IndexSettings, PermissionRequest, Role, RoleRequest, CreateProjectRequest, User
-from amcat4.project_index import create_project_index
+from amcat4.projects.index import create_project_index
 from amcat4.systemdata.roles import (
-    elastic_create_or_update_role,
-    elastic_delete_role,
+    update_role,
+    delete_role,
     list_user_roles,
 )
-from amcat4.systemdata.util import index_scan
+from amcat4.elastic.util import index_scan
 from amcat4.systemdata.versions.v2 import REQUESTS_INDEX, requests_index_id
 
 
@@ -54,7 +54,7 @@ def elastic_list_admin_requests(user: User) -> Iterable[PermissionRequest]:
 
     role_contexts: list[str] = []
 
-    for role in list_user_roles(user.email, required_role=Role.ADMIN):
+    for role in list_user_roles(user, required_role=Role.ADMIN):
         role_contexts.append(role.role_context)
 
     query = {"terms": {"role_context": role_contexts}}
@@ -94,9 +94,9 @@ def process_request(request: PermissionRequest):
 
 def process_role_request(r: RoleRequest):
     if r.role == "NONE":
-        elastic_delete_role(r.email, r.role_context)
+        delete_role(r.email, r.role_context)
     else:
-        elastic_create_or_update_role(r.email, r.role_context, r.role)
+        update_role(r.email, r.role_context, r.role)
 
 
 def process_project_request(r: CreateProjectRequest):

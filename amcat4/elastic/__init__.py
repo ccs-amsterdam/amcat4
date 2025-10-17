@@ -16,7 +16,7 @@ in scripts that need it, instead of doing it implicitly here.
 import functools
 from elasticsearch import Elasticsearch
 
-from amcat4.elastic_connection import elastic_connection
+from amcat4.elastic.connection import elastic_connection
 from amcat4.systemdata.manage import create_or_update_systemdata
 
 

@@ -12,27 +12,27 @@ from amcat4.models import (
     User,
     Role,
 )
-from amcat4.systemdata.util import index_scan
+from amcat4.elastic.util import index_scan
 
 
 class InvalidRoleError(ValueError):
     pass
 
 
-def elastic_create_or_update_role(email_pattern: RoleEmailPattern, role_context: RoleContext, role: Role):
+def update_role(email_pattern: RoleEmailPattern, role_context: RoleContext, role: Role, upsert=True):
     user_role = RoleRule(email_pattern=email_pattern, role_context=role_context, role=role)
 
     id = roles_index_id(user_role.email_pattern, user_role.role_context)
     doc = {"email": user_role.email_pattern, "role_context": user_role.role_context, "role": user_role.role.name}
-    es().update(index=ROLES_INDEX, id=id, doc=doc, doc_as_upsert=True, refresh=True)
+    es().update(index=ROLES_INDEX, id=id, doc=doc, doc_as_upsert=upsert, refresh=True)
 
 
-def elastic_delete_role(email_pattern: RoleEmailPattern, role_context: RoleContext):
+def delete_role(email_pattern: RoleEmailPattern, role_context: RoleContext):
     id = roles_index_id(email_pattern, role_context)
     es().delete(index=ROLES_INDEX, id=id, refresh=True)
 
 
-def elastic_list_roles(
+def list_roles(
     email_patterns: list[RoleEmailPattern] | None = None,
     role_contexts: list[RoleContext] | None = None,
     min_role: Role | None = None,
@@ -72,22 +72,12 @@ def list_user_roles(
     if email is None, only the guest role (email="*") will be considered.
     """
 
-    all_matches = elastic_list_roles(
-        email_patterns=user_to_role_emails(user), role_contexts=role_contexts, min_role=required_role
-    )
+    all_matches = list_roles(email_patterns=user_to_role_emails(user), role_contexts=role_contexts, min_role=required_role)
 
     return get_strongest_matches(all_matches)
 
 
-def set_project_role(email: RoleEmailPattern, project_index: IndexId, role: Role):
-    """Create or update a project role. Delete if role is Role.NONE"""
-    if role == Role.NONE:
-        elastic_delete_role(email_pattern=email, role_context=project_index)
-    else:
-        elastic_create_or_update_role(email_pattern=email, role_context=project_index, role=role)
-
-
-def get_project_role(user: User, project_index: IndexId, global_admin: bool = True) -> RoleRule | None:
+def get_user_project_role(user: User, project_index: IndexId, global_admin: bool = True) -> RoleRule | None:
     """
     Get the role for the given user and context, or None if no role exists.
     This gives the most exact matching role on the given context.
@@ -116,12 +106,12 @@ def get_project_role(user: User, project_index: IndexId, global_admin: bool = Tr
 def set_server_role(email: RoleEmailPattern, role: Role):
     """Create or update a server role. Delete if role is Role.NONE"""
     if role == Role.NONE:
-        elastic_delete_role(email_pattern=email, role_context="_server")
+        delete_role(email_pattern=email, role_context="_server")
     else:
-        elastic_create_or_update_role(email_pattern=email, role_context="_server", role=role)
+        update_role(email_pattern=email, role_context="_server", role=role)
 
 
-def get_server_role(user: User) -> RoleRule | None:
+def get_user_server_role(user: User) -> RoleRule | None:
     user_roles = list_user_roles(user, role_contexts=["_server"])
     return user_roles[0] if user_roles else None
 
@@ -132,7 +122,7 @@ def raise_if_not_project_index_role(
     """
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
-    role = get_project_role(user, role_context, global_admin=global_admin)
+    role = get_user_project_role(user, role_context, global_admin=global_admin)
     if not role_is_at_least(role, required_role):
         detail = message or f"User {user.email} does not have {required_role} role for {role_context}"
         raise HTTPException(status_code=401, detail=detail)
@@ -142,7 +132,7 @@ def raise_if_not_server_role(user: User, required_role: Role, message: str | Non
     """
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
-    role = get_server_role(user)
+    role = get_user_server_role(user)
     if not role_is_at_least(role, required_role):
         detail = message or f"User {user.email} does not have the {required_role} server role"
         raise HTTPException(status_code=401, detail=detail)
@@ -150,13 +140,13 @@ def raise_if_not_server_role(user: User, required_role: Role, message: str | Non
 
 def set_guest_role(index_id: IndexId, role: Role | Literal["NONE"]):
     if role == "NONE":
-        elastic_delete_role(email_pattern="*", role_context=index_id)
+        delete_role(email_pattern="*", role_context=index_id)
     else:
-        elastic_create_or_update_role(email_pattern="*", role_context=index_id, role=role)
+        update_role(email_pattern="*", role_context=index_id, role=role)
 
 
 def get_guest_role(index_id: IndexId) -> RoleRule | None:
-    get_project_role(user=User(email=None), project_index=index_id)
+    get_user_project_role(user=User(email=None), project_index=index_id)
 
 
 def role_is_at_least(user_role: RoleRule | None, required_role: Role) -> bool:

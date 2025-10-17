@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 
 from amcat4.api.auth import authenticated_user
+from amcat4.api.index import app_index
 from amcat4.models import (
     CreateField,
     FieldSpec,
@@ -15,9 +16,7 @@ from amcat4.models import (
     User,
 )
 from amcat4.systemdata import fields as _fields
-from amcat4.systemdata.roles import get_project_role, raise_if_not_project_index_role, role_is_at_least
-
-app_index = APIRouter(prefix="/index", tags=["index"])
+from amcat4.systemdata.roles import get_user_project_role, raise_if_not_project_index_role, role_is_at_least
 
 
 @app_index.post("/{ix}/fields")
@@ -50,7 +49,7 @@ def get_fields(ix: str, user: User = Depends(authenticated_user)):
     Returns a json array of {name, type} objects
     """
     raise_if_not_project_index_role(user, ix, Role.METAREADER)
-    return _fields.get_fields(ix)
+    return _fields.list_fields(ix)
 
 
 @app_index.put("/{ix}/fields")
@@ -90,7 +89,7 @@ def get_field_values(ix: str, field: str, user: User = Depends(authenticated_use
 @app_index.get("/{ix}/fields/{field}/stats")
 def get_field_stats(ix: str, field: str, user: User = Depends(authenticated_user)):
     """Get statistics for a specific value. Only works for numeric (incl date) fields."""
-    role = get_project_role(user.email, ix)
+    role = get_user_project_role(user, ix)
     if role_is_at_least(role, Role.READER):
         return _fields.field_stats(ix, field)
     elif role_is_at_least(role, Role.METAREADER):

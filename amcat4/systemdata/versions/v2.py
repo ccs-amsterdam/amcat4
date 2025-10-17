@@ -1,6 +1,6 @@
-from amcat4.elastic_connection import elastic_connection
-from amcat4.elastic_mapping import ElasticMapping, nested_field, object_field
-from amcat4.systemdata.util import (
+from amcat4.elastic.connection import elastic_connection
+from amcat4.elastic.mapping import ElasticMapping, nested_field, object_field
+from amcat4.elastic.util import (
     SystemIndexMapping,
     system_index_name,
     es_bulk_create_or_overwrite,
@@ -48,12 +48,12 @@ _contact_field = object_field(
     url={"type": "keyword"},
 )
 
-# The settings system index contains both server-wide settings and per-index settings.
-# The index settings are stored in documents with id equal to the index name.
+# The settings system index contains both server-wide settings and project settings.
+# The project settings are stored in documents with id equal to the project index name.
 # The server settings are stored in the document with id "_server"
 # Indices in elastic cannot start with an underscore, so there is no risk of collision.
 settings_mapping: ElasticMapping = dict(
-    index_settings=object_field(
+    project_settings=object_field(
         name={"type": "keyword"},
         description={"type": "text"},
         contact=_contact_field,
@@ -175,12 +175,12 @@ def migrate_server_settings(doc: dict):
     )
 
 
-def migrate_index_settings(index: str, doc: dict):
+def migrate_project_settings(index: str, doc: dict):
     return BulkInsertAction(
         index=SETTINGS_INDEX,
         id=settings_index_id(index),
         doc={
-            "index_settings": {
+            "project_settings": {
                 "name": doc.get("name"),
                 "description": doc.get("description"),
                 "contact": doc.get("contact"),
@@ -273,7 +273,7 @@ def migrate():
 
             # The other documents had the index name as id, and contained index settings, index roles and fields
             else:
-                yield migrate_index_settings(id, doc)
+                yield migrate_project_settings(id, doc)
 
                 for role in doc.get("roles", []):
                     yield migrate_roles(role, id)

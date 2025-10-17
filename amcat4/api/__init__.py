@@ -15,9 +15,12 @@ app = FastAPI(
     title="AmCAT4",
     description=__doc__ if __doc__ else "",
     openapi_tags=[
-        dict(name="users", description="Endpoints for user management"),
+        dict(name="users", description="Endpoints for server user management"),
         dict(name="requests", description="Endpoints for authorization requests"),
-        dict(name="index", description="Endpoints to create, list, and delete indices; and to add or modify documents"),
+        dict(
+            name="index",
+            description="Endpoints to create, list, and delete indices; index user management; and to add or modify documents",
+        ),
         dict(name="query", description="Endpoints to list or query documents or run aggregate queries"),
         dict(name="middlecat", description="MiddleCat authentication"),
         dict(name="annotator users", description="Annotator module endpoints for user management"),

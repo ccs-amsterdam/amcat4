@@ -5,11 +5,10 @@ from typing import Annotated, Any, Dict, List, Literal, Mapping, Optional, Union
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic.main import BaseModel
 
-from amcat4 import aggregate, query
-from amcat4.aggregate import Aggregation, Axis, TopHitsAggregation
+from amcat4.projects.aggregate import Aggregation, Axis, TopHitsAggregation, query_aggregate
 from amcat4.api.auth import authenticated_user
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, Role, SortSpec, User
-from amcat4.query import delete_query, update_query, update_tag_query
+from amcat4.projects.query import delete_query, update_query, update_tag_query, query_documents
 from amcat4.systemdata.fields import get_allowed_fields, raise_if_field_not_allowed
 from amcat4.systemdata.roles import raise_if_not_project_index_role
 
@@ -120,7 +119,7 @@ def query_documents_post(
             raise ValueError("Fields should be specified if multiple indices are given")
         fieldspecs = get_allowed_fields(user, indices[0])
 
-    r = query.query_documents(
+    r = query_documents(
         indices,
         queries=_standardize_queries(queries),
         filters=_standardize_filters(filters),
@@ -229,7 +228,7 @@ def query_aggregate_post(
 
     _axes = [Axis(**x.model_dump()) for x in axes] if axes else []
     _aggregations = [a.instantiate() for a in aggregations] if aggregations else []
-    results = aggregate.query_aggregate(
+    results = query_aggregate(
         indices,
         _axes,
         _aggregations,

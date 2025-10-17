@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from amcat4.systemdata.fields import create_fields, field_values, get_fields
+from amcat4.systemdata.fields import create_fields, field_values, list_fields
 from amcat4.index import (
     delete_documents_by_query,
     get_document,
@@ -49,7 +49,7 @@ def test_data_coerced(index):
 def test_fields(index):
     """Can we get the fields from an index"""
     create_fields(index, {"title": "text", "date": "date", "text": "text", "url": "keyword"})
-    fields = get_fields(index)
+    fields = list_fields(index)
     assert set(fields.keys()) == {"title", "date", "text", "url"}
     assert fields["title"].type == "text"
     assert fields["date"].type == "date"

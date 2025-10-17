@@ -1,7 +1,7 @@
 import logging
 from typing import Literal
-from amcat4.elastic_connection import elastic_connection
-from amcat4.systemdata.util import (
+from amcat4.elastic.connection import elastic_connection
+from amcat4.elastic.util import (
     system_index_name,
 )
 from amcat4.systemdata.versions import VERSIONS, LATEST_VERSION

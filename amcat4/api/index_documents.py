@@ -5,7 +5,13 @@ from typing import Annotated, Any, Literal
 import elasticsearch
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 
-from amcat4 import project_index as _projects
+from amcat4.api.index import app_index
+from amcat4.projects.documents import (
+    upload_documents as _upload_documents,
+    get_document as _get_document,
+    update_document as _update_document,
+    delete_document as _delete_document,
+)
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
     CreateField,
@@ -14,8 +20,6 @@ from amcat4.models import (
     User,
 )
 from amcat4.systemdata.roles import raise_if_not_project_index_role
-
-app_index = APIRouter(prefix="/index", tags=["index"])
 
 
 @app_index.post("/{ix}/documents", status_code=status.HTTP_201_CREATED)
@@ -46,7 +50,7 @@ def upload_documents(
     Upload documents to this server. Returns a list of ids for the uploaded documents
     """
     raise_if_not_project_index_role(user, ix, Role.WRITER)
-    return _projects.upload_documents(ix, documents, fields, operation)
+    return _upload_documents(ix, documents, fields, operation)
 
 
 @app_index.get("/{ix}/documents/{docid}")
@@ -67,7 +71,7 @@ def get_document(
     if fields:
         kargs["_source"] = fields
     try:
-        return _projects.get_document(ix, docid, **kargs)
+        return _get_document(ix, docid, **kargs)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -93,7 +97,7 @@ def update_document(
     """
     raise_if_not_project_index_role(user, ix, Role.WRITER)
     try:
-        _projects.update_document(ix, docid, update)
+        _update_document(ix, docid, update)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -110,7 +114,7 @@ def delete_document(ix: str, docid: str, user: User = Depends(authenticated_user
     """Delete this document."""
     raise_if_not_project_index_role(user, ix, Role.WRITER)
     try:
-        _projects.delete_document(ix, docid)
+        _delete_document(ix, docid)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

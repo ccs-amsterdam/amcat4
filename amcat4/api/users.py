@@ -12,10 +12,10 @@ from pydantic.networks import EmailStr
 from amcat4.api.auth import authenticated_user
 from amcat4.models import Role, RoleEmailPattern, User
 from amcat4.systemdata.roles import (
-    elastic_create_or_update_role,
-    elastic_delete_role,
-    elastic_list_roles,
-    get_server_role,
+    set_role,
+    delete_role,
+    list_roles,
+    get_user_server_role,
     raise_if_not_project_index_role,
     raise_if_not_server_role,
 )
@@ -40,12 +40,12 @@ class ChangeUserForm(BaseModel):
 def create_user(new_user: UserForm, user=Depends(authenticated_user)):
     """Create a new user."""
     raise_if_not_project_index_role(user, "_server", Role.ADMIN)
-    if get_server_role(new_user.email):
+    if get_user_server_role(User(email=new_user.email)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"User {new_user.email} already exists",
         )
-    elastic_create_or_update_role(new_user.email, role_context="_server", role=new_user.role)
+    set_role(new_user.email, role_context="_server", role=new_user.role)
     return {"email": new_user.email, "global_role": new_user.role}
 
 
@@ -67,7 +67,7 @@ def get_user(email: EmailStr, current_user: User = Depends(authenticated_user)):
 
 
 def _get_user(email: EmailStr | None):
-    role = get_server_role(email)
+    role = get_user_server_role(User(email=email))
     if role:
         return {"email": email, "role": role, "role_match": role.email_pattern}
     else:
@@ -78,7 +78,7 @@ def _get_user(email: EmailStr | None):
 def list_global_users(user=Depends(authenticated_user)):
     """List all global users"""
     raise_if_not_project_index_role(user, "_server", Role.WRITER)
-    server_roles = elastic_list_roles(role_contexts=["_server"])
+    server_roles = list_roles(role_contexts=["_server"])
     return [{"email": role.email_pattern, "role": role.role.name} for role in server_roles]
 
 
@@ -91,7 +91,7 @@ def delete_user(email: EmailStr, current_user: User = Depends(authenticated_user
     if current_user != email:
         raise_if_not_server_role(current_user, Role.ADMIN)
 
-    elastic_delete_role(email_pattern=email, role_context="_server")
+    delete_role(email_pattern=email, role_context="_server")
 
 
 @app_users.put("/users/{email}")
@@ -100,5 +100,5 @@ def modify_user(email: EmailStr, data: ChangeUserForm, user: User = Depends(auth
     Modify the given user.
     Only admin can change users.
     """
-    elastic_create_or_update_role(email_pattern=email, role_context="_server", role=data.role)
+    set_role(email_pattern=email, role_context="_server", role=data.role)
     return {"email": email, "role": data.role.name}

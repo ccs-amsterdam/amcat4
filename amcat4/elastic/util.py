@@ -2,8 +2,8 @@ import elasticsearch.helpers
 from amcat4.config import get_settings
 from pydantic import BaseModel
 from typing import Iterable, Literal
-from amcat4.elastic_mapping import ElasticMapping
-from amcat4.elastic_connection import elastic_connection
+from amcat4.elastic.mapping import ElasticMapping
+from amcat4.elastic.connection import elastic_connection
 
 
 class SystemIndexMapping(BaseModel):

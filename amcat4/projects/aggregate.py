@@ -6,11 +6,11 @@ import copy
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
 
-from amcat4.date_mappings import interval_mapping
+from amcat4.projects.date_mappings import interval_mapping
 from amcat4.elastic import es
-from amcat4.systemdata.fields import get_fields
+from amcat4.systemdata.fields import list_fields
 from amcat4.models import Field, FilterSpec, SortSpec
-from amcat4.query import build_body
+from amcat4.projects.query import build_body
 
 
 def _combine_mappings(mappings):
@@ -342,14 +342,14 @@ def query_aggregate(
     all_fields: dict[str, Field] = dict()
     indices = index if isinstance(index, list) else [index]
     for index in indices:
-        index_fields = get_fields(index)
+        index_fields = list_fields(index)
         for field_name, field in index_fields.items():
             if field_name not in all_fields:
                 all_fields[field_name] = field
             else:
                 if field.type != all_fields[field_name].type:
                     raise ValueError(f"Type of {field_name} is not the same in all indices")
-        all_fields.update(get_fields(index))
+        all_fields.update(list_fields(index))
 
     if not axes:
         axes = []
