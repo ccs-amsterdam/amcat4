@@ -176,7 +176,7 @@ def delete_pending_migrations(version: int) -> None:
             )
 
         meta = mapping[index]["mappings"].get("_meta", {})
-        if meta.get("migration_pending", False):
+        if meta.get("migration_pending", True):
             elastic_connection().indices.delete(index=index_name)
 
 
