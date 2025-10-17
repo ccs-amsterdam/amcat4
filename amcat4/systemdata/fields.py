@@ -71,7 +71,7 @@ TYPEMAP_ES_TO_AMCAT: dict[ElasticType, FieldType] = {
     "object": "object",
     "flattened": "object",
     "nested": "object",
-    # VECTOR fields (exclude sparse vectors)
+    # VECTOR fields (exclude sparse vectors?)
     "dense_vector": "vector",
     # GEO fields
     "geo_point": "geo_point",

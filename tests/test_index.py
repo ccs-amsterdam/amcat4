@@ -13,7 +13,7 @@ from amcat4.projects.index import (
     list_user_project_indices,
     register_project_index,
 )
-from amcat4.systemdata.roles import delete_role, get_user_server_role, update_role
+from amcat4.systemdata.roles import get_guest_role, get_user_project_role, get_user_server_role, set_guest_role, update_role
 from tests.tools import refresh
 
 ## TODO: replace all the functions from the removed amcat4.index with the new functions
@@ -87,36 +87,37 @@ def test_list_indices(index, guest_index, admin):
 def test_global_roles():
     email = "user@example.com"
     user = User(email=email)
-    assert get_user_server_role(user) == Role.NONE
+    assert get_user_server_role(user).role == Role.NONE
     update_role(email_pattern=email, role_context="_server", role=Role.ADMIN)
     # refresh_index(get_settings().system_index)
-    assert get_user_server_role(user) == Role.ADMIN
+    assert get_user_server_role(user).role == Role.ADMIN
     update_role(email_pattern=email, role_context="_server", role=Role.WRITER)
     # refresh_index(get_settings().system_index)
-    assert get_user_server_role(user) == Role.WRITER
-    delete_role(email_pattern=email, role_context="_server")
+    assert get_user_server_role(user).role == Role.WRITER
+    update_role(email_pattern=email, role_context="_server", role=Role.NONE)
     # refresh_index(get_settings().system_index)
-    assert get_user_server_role(user) is None
+    assert get_user_server_role(user).role == Role.NONE
 
 
 def test_index_roles(index):
-    user = "user@example.com"
-    assert get_role(index, user) == Role.NONE
-    set_role(index, user, Role.METAREADER)
-    refresh_index(get_settings().system_index)
-    assert get_role(index, user) == Role.METAREADER
-    set_role(index, user, Role.ADMIN)
-    refresh_index(get_settings().system_index)
-    assert get_role(index, user) == Role.ADMIN
-    remove_role(index, user)
-    refresh_index(get_settings().system_index)
-    assert get_role(index, user) == Role.NONE
+    email = "user@example.com"
+    user = User(email=email)
+    assert get_user_project_role(user, index).role == Role.NONE
+    update_role(email_pattern=email, role_context=index, role=Role.WRITER)
+    # refresh_index(get_settings().system_index)
+    assert get_user_project_role(user, index).role == Role.METAREADER
+    update_role(email_pattern=email, role_context=index, role=Role.ADMIN)
+    # refresh_index(get_settings().system_index)
+    assert get_user_project_role(user, index).role == Role.ADMIN
+    update_role(email_pattern=email, role_context=index, role=Role.NONE)
+    # refresh_index(get_settings().system_index)
+    assert get_user_project_role(user, index).role == Role.NONE
 
 
 def test_guest_role(index):
     assert get_guest_role(index) == Role.NONE
-    set_guest_role(index, GuestRole.READER)
-    refresh()
+    set_guest_role(index, Role.READER)
+    # refresh()
     assert get_guest_role(index) == Role.READER
 
 

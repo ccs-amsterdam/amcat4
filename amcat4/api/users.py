@@ -12,12 +12,12 @@ from pydantic.networks import EmailStr
 from amcat4.api.auth import authenticated_user
 from amcat4.models import Role, RoleEmailPattern, User
 from amcat4.systemdata.roles import (
-    set_role,
-    delete_role,
+    create_role,
     list_roles,
     get_user_server_role,
     raise_if_not_project_index_role,
     raise_if_not_server_role,
+    update_role,
 )
 
 app_users = APIRouter(tags=["users"])
@@ -36,16 +36,14 @@ class ChangeUserForm(BaseModel):
     role: Role
 
 
+# TODO: should we also rename users, since it's actually roles now?
+
+
 @app_users.post("/users", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: UserForm, user=Depends(authenticated_user)):
     """Create a new user."""
     raise_if_not_project_index_role(user, "_server", Role.ADMIN)
-    if get_user_server_role(User(email=new_user.email)):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"User {new_user.email} already exists",
-        )
-    set_role(new_user.email, role_context="_server", role=new_user.role)
+    create_role(new_user.email, role_context="_server", role=new_user.role)
     return {"email": new_user.email, "global_role": new_user.role}
 
 
@@ -91,7 +89,7 @@ def delete_user(email: EmailStr, current_user: User = Depends(authenticated_user
     if current_user != email:
         raise_if_not_server_role(current_user, Role.ADMIN)
 
-    delete_role(email_pattern=email, role_context="_server")
+    update_role(email_pattern=email, role_context="_server", role=Role.NONE)
 
 
 @app_users.put("/users/{email}")
@@ -100,5 +98,5 @@ def modify_user(email: EmailStr, data: ChangeUserForm, user: User = Depends(auth
     Modify the given user.
     Only admin can change users.
     """
-    set_role(email_pattern=email, role_context="_server", role=data.role)
+    update_role(email_pattern=email, role_context="_server", role=data.role)
     return {"email": email, "role": data.role.name}

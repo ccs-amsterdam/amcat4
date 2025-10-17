@@ -1,7 +1,7 @@
 import functools
 from datetime import datetime, date, timezone
 
-from amcat4.aggregate import query_aggregate, Axis, Aggregation
+from amcat4.projects.aggregate import query_aggregate, Axis, Aggregation
 from amcat4.api.query import _standardize_queries
 from amcat4.models import CreateField
 from tests.conftest import upload

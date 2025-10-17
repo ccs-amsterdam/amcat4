@@ -1,6 +1,6 @@
 """API Endpoints for document and index management."""
 
-from fastapi import APIRouter, Body, Depends, status
+from fastapi import Body, Depends, status
 
 from amcat4.api.auth import authenticated_user
 from amcat4.api.index import app_index
@@ -10,10 +10,10 @@ from amcat4.models import (
     RoleRule,
 )
 from amcat4.systemdata.roles import (
-    delete_role,
+    create_role,
     list_roles,
     raise_if_not_project_index_role,
-    set_role,
+    update_role,
 )
 
 
@@ -44,7 +44,7 @@ def add_index_users(
     This requires ADMIN rights on the index or server
     """
     raise_if_not_project_index_role(user, ix, Role.ADMIN)
-    set_role(email, ix, role)
+    create_role(email, ix, role)
     return {"user": email, "index": ix, "role": role}
 
 
@@ -64,7 +64,7 @@ def modify_index_user(
     # keep separate for clarity, or add errors for existing/non-existing users?
     # also, should we add support for upserting list of users?
     raise_if_not_project_index_role(user, ix, Role.ADMIN)
-    set_role(email, ix, role)
+    update_role(email, ix, role)
     return {"user": email, "index": ix, "role": role}
 
 
@@ -76,5 +76,5 @@ def remove_index_user(ix: str, email: str, user: User = Depends(authenticated_us
     This requires ADMIN rights on the index or server
     """
     raise_if_not_project_index_role(user, ix, Role.ADMIN)
-    delete_role(email, ix)
+    update_role(email, ix, Role.NONE)
     return {"user": email, "index": ix, "role": None}

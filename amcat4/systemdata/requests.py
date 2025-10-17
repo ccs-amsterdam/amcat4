@@ -93,10 +93,7 @@ def process_request(request: PermissionRequest):
 
 
 def process_role_request(r: RoleRequest):
-    if r.role == "NONE":
-        delete_role(r.email, r.role_context)
-    else:
-        update_role(r.email, r.role_context, r.role)
+    update_role(r.email, r.role_context, r.role)
 
 
 def process_project_request(r: CreateProjectRequest):

@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 
 from amcat4.config import AuthOptions
-from amcat4.index import delete_user, get_global_role, set_guest_role, GuestRole
+from amcat4.models import Role, User
+from amcat4.systemdata.roles import delete_role, get_guest_role, get_user_server_role, set_guest_role, update_role
 from tests.tools import get_json, build_headers, post_json, check, refresh, set_auth
 
 
@@ -15,7 +16,7 @@ def test_auth(client: TestClient, user, admin, index):
     with set_auth(AuthOptions.allow_guests):
         # Allow guests - unauthenticated user can access projects with guest roles
         assert client.get(f"/index/{index}").status_code == 401
-        set_guest_role(index, GuestRole.READER)
+        set_guest_role(index, Role.READER)
         refresh()
         assert client.get(f"/index/{index}").status_code == 200
         assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
@@ -23,13 +24,13 @@ def test_auth(client: TestClient, user, admin, index):
         # Only use guest roles if user is authenticated
         assert client.get(f"/index/{index}").status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 200
-        set_guest_role(index, None)
+        set_guest_role(index, Role.NONE)
         refresh()
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
     with set_auth(AuthOptions.authorized_users_only):
         # Users MUST have a server-level role to access anything
-        set_guest_role(index, GuestRole.READER)
+        set_guest_role(index, Role.READER)
         refresh()
         assert client.get(f"/index/{index}").status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 401
@@ -48,7 +49,7 @@ def test_get_user(client: TestClient, writer, user):
     assert get_json(client, f"/users/{writer}", user=writer) == {"email": writer, "role": "WRITER"}
 
     # Retrieving a non-existing user as admin gives the NONE role
-    delete_user(user)
+    update_role(user, "_server", Role.NONE)
     assert get_json(client, f"/users/{user}", user=writer) == {"email": user, "role": "NONE"}
 
 
@@ -57,15 +58,15 @@ def test_create_user(client: TestClient, user, writer, admin, username):
     assert client.post("/users/").status_code == 401, "Creating user should require auth"
     assert client.post("/users/", headers=build_headers(writer)).status_code == 401, "Creating user should require admin"
     # users need global role
-    assert (
-        client.post("/users/", headers=build_headers(admin), json=dict(email=username)).status_code == 400
-    ), "Duplicate create should return 400"
+    assert client.post("/users/", headers=build_headers(admin), json=dict(email=username)).status_code == 400, (
+        "Duplicate create should return 400"
+    )
     # admin can add new users
     u = dict(email=username, role="WRITER")
     assert "email" in set((post_json(client, "/users/", user=admin, json=u) or {}).keys())
-    assert (
-        client.post("/users/", headers=build_headers(admin), json=u).status_code == 400
-    ), "Duplicate create should return 400"
+    assert client.post("/users/", headers=build_headers(admin), json=u).status_code == 400, (
+        "Duplicate create should return 400"
+    )
 
     # users can delete themselves, others cannot delete them
     assert client.delete(f"/users/{username}", headers=build_headers(writer)).status_code == 401
@@ -80,7 +81,8 @@ def test_modify_user(client: TestClient, user, writer, admin):
     # Only admin can change users
     check(client.put(f"/users/{user}", headers=build_headers(user), json={"role": "METAREADER"}), 401)
     check(client.put(f"/users/{user}", headers=build_headers(admin), json={"role": "ADMIN"}), 200)
-    assert get_global_role(user).name == "ADMIN"
+    server_role = get_user_server_role(User(email=user))
+    assert server_role and server_role.role == "ADMIN"
 
 
 def test_list_users(client: TestClient, index, admin, user):

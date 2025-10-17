@@ -1,5 +1,6 @@
 from typing import Iterable, Literal
 
+from elasticsearch.exceptions import ConflictError
 from fastapi import HTTPException
 from pydantic import EmailStr
 from amcat4.systemdata.versions.v2 import ROLES_INDEX, roles_index_id
@@ -19,17 +20,32 @@ class InvalidRoleError(ValueError):
     pass
 
 
-def update_role(email_pattern: RoleEmailPattern, role_context: RoleContext, role: Role, upsert=True):
-    user_role = RoleRule(email_pattern=email_pattern, role_context=role_context, role=role)
+def create_role(email_pattern: RoleEmailPattern, role_context: RoleContext, role: Role):
+    """
+    Creates a role for a given email pattern and role context.
+    Raises an error if a role for this email_pattern in this context already exists.
+    """
+    if role == Role.NONE:
+        raise InvalidRoleError("Cannot create a role with Role.NONE. Use update_role to delete roles.")
 
-    id = roles_index_id(user_role.email_pattern, user_role.role_context)
-    doc = {"email": user_role.email_pattern, "role_context": user_role.role_context, "role": user_role.role.name}
-    es().update(index=ROLES_INDEX, id=id, doc=doc, doc_as_upsert=upsert, refresh=True)
-
-
-def delete_role(email_pattern: RoleEmailPattern, role_context: RoleContext):
     id = roles_index_id(email_pattern, role_context)
-    es().delete(index=ROLES_INDEX, id=id, refresh=True)
+    user_role = RoleRule(email_pattern=email_pattern, role_context=role_context, role=role)
+    doc = {"email": user_role.email_pattern, "role_context": user_role.role_context, "role": user_role.role.name}
+    es().create(index=ROLES_INDEX, id=id, document=doc, refresh=True)
+
+
+def update_role(email_pattern: RoleEmailPattern, role_context: RoleContext, role: Role):
+    """
+    Updates (or creates) a role for a given email pattern and role context.
+    """
+    id = roles_index_id(email_pattern, role_context)
+    if role == Role.NONE:
+        es().delete(index=ROLES_INDEX, id=id, refresh=True)
+        return
+
+    user_role = RoleRule(email_pattern=email_pattern, role_context=role_context, role=role)
+    doc = {"email": user_role.email_pattern, "role_context": user_role.role_context, "role": user_role.role.name}
+    es().update(index=ROLES_INDEX, id=id, doc_as_upsert=True, doc=doc, refresh=True)
 
 
 def list_roles(
@@ -77,43 +93,49 @@ def list_user_roles(
     return get_strongest_matches(all_matches)
 
 
-def get_user_project_role(user: User, project_index: IndexId, global_admin: bool = True) -> RoleRule | None:
+def get_user_project_role(user: User, project_index: IndexId, global_admin: bool = True) -> RoleRule:
     """
-    Get the role for the given user and context, or None if no role exists.
+    Get the role for the given user and context.
     This gives the most exact matching role on the given context.
     If email is None, only the guest role (email="*") will be considered.
 
     By default, a server admin will get ADMIN role on all contexts.
     Set global_admin to False to disable this.
+
+    returns a RoleRule with Role.NONE if no role exists.
     """
     # If we just need the project role, its a simple lookup
     if not global_admin:
         project_role = list_user_roles(user, role_contexts=[project_index])
-        return project_role[0] if project_role else None
+        project_role = project_role[0] if project_role else None
 
-    # If we need to consider global admin, we can fetch both roles in one go
-    user_roles = list_user_roles(user, role_contexts=[project_index, "_server"])
-    project_role = next((ur for ur in user_roles if ur.role_context == project_index), None)
-    server_role = next((ur for ur in user_roles if ur.role_context == "_server"), None)
-
-    if server_role and server_role.role == Role.ADMIN:
-        project_role = server_role
-        project_role.role_context = project_index
-
-    return project_role
-
-
-def set_server_role(email: RoleEmailPattern, role: Role):
-    """Create or update a server role. Delete if role is Role.NONE"""
-    if role == Role.NONE:
-        delete_role(email_pattern=email, role_context="_server")
+    # If we need to consider global admin, we fetch both roles in one go
+    # and overwrite the project role if the server role is ADMIN
     else:
-        update_role(email_pattern=email, role_context="_server", role=role)
+        user_roles = list_user_roles(user, role_contexts=[project_index, "_server"])
+        project_role = next((ur for ur in user_roles if ur.role_context == project_index), None)
+        server_role = next((ur for ur in user_roles if ur.role_context == "_server"), None)
+
+        if server_role and server_role.role == Role.ADMIN:
+            project_role = server_role
+            project_role.role_context = project_index
+
+    if project_role:
+        return project_role
+    else:
+        return RoleRule(email_pattern="*", role_context=project_index, role=Role.NONE)
 
 
-def get_user_server_role(user: User) -> RoleRule | None:
+def get_user_server_role(user: User) -> RoleRule:
+    """
+    Get the most exact server role match for the given user.
+    returns a RoleRule with Role.NONE if no role exists.
+    """
     user_roles = list_user_roles(user, role_contexts=["_server"])
-    return user_roles[0] if user_roles else None
+    if user_roles:
+        return user_roles[0]
+    else:
+        return RoleRule(email_pattern="*", role_context="_server", role=Role.NONE)
 
 
 def raise_if_not_project_index_role(
@@ -138,19 +160,24 @@ def raise_if_not_server_role(user: User, required_role: Role, message: str | Non
         raise HTTPException(status_code=401, detail=detail)
 
 
-def set_guest_role(index_id: IndexId, role: Role | Literal["NONE"]):
-    if role == "NONE":
-        delete_role(email_pattern="*", role_context=index_id)
-    else:
-        update_role(email_pattern="*", role_context=index_id, role=role)
+def set_guest_role(index_id: IndexId, role: Role):
+    """
+    Helper to set the guest role for an index.
+    """
+    if role == Role.ADMIN:
+        raise InvalidRoleError("Cannot set guest role to ADMIN. Guests can at most be WRITER.")
+    update_role(email_pattern="*", role_context=index_id, role=role)
 
 
-def get_guest_role(index_id: IndexId) -> RoleRule | None:
-    get_user_project_role(user=User(email=None), project_index=index_id)
+def get_guest_role(index_id: IndexId) -> Role:
+    """Get the guest role for an index. Note that this returns the Role not RoleRule!"""
+    return get_user_project_role(user=User(email=None), project_index=index_id).role
 
 
 def role_is_at_least(user_role: RoleRule | None, required_role: Role) -> bool:
     if user_role is None:
+        if required_role == Role.NONE:
+            return True
         return False
     return user_role.role >= required_role
 

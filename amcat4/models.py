@@ -34,7 +34,9 @@ class RoleRule(BaseModel):
     def validate_role(self) -> Self:
         uses_wildcard = "*" in self.email_pattern
         if self.role == Role.ADMIN and uses_wildcard:
-            raise ValueError("Only exact email matches can have ADMIN role")
+            raise ValueError(
+                f"Cannot create ADMIN role for {self.email_pattern}. Only exact email matches can have ADMIN role"
+            )
         return self
 
 
@@ -195,7 +197,7 @@ class AbstractRequest(BaseModel):
 class RoleRequest(AbstractRequest):
     request_type: Literal["role"] = "role"
     role_context: IndexId | Literal["_server"]
-    role: Role | Literal["NONE"]
+    role: Role
 
 
 class CreateProjectRequest(AbstractRequest):
