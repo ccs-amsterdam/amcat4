@@ -15,6 +15,9 @@ class CannotConnectElastic(Exception):
     pass
 
 
+## TODO: use AsyncElasticsearch
+
+
 @functools.lru_cache()
 def elastic_connection() -> Elasticsearch:
     try:

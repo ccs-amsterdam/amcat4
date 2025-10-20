@@ -6,19 +6,15 @@ from fastapi.testclient import TestClient
 from amcat4 import api
 from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import es
-from amcat4.index import (
-    create_index,
-    delete_index,
-    Role,
-    GuestRole,
-    refresh_index,
-    delete_user,
-    remove_global_role,
-    set_global_role,
-    upload_documents,
-)
-from amcat4.models import CreateField, FieldType
+from amcat4.models import CreateField, FieldType, ProjectSettings, Roles
+from amcat4.projects.documents import upload_documents
+from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
 from amcat4.systemdata.requests import clear_requests
+from amcat4.systemdata.roles import (
+    delete_server_role,
+    set_project_guest_role,
+    update_server_role,
+)
 from tests.middlecat_keypair import PUBLIC_KEY
 
 UNITS = [
@@ -47,7 +43,7 @@ def my_setup():
 
     es.cache_clear()
     yield None
-    delete_index(UNITTEST_SYSTEM_INDEX, ignore_missing=True)
+    delete_project_index(UNITTEST_SYSTEM_INDEX, ignore_missing=True)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -64,78 +60,78 @@ def client():
 @pytest.fixture()
 def admin():
     email = "admin@amcat.nl"
-    set_global_role(email, Role.ADMIN)
+    update_server_role(email, Roles.ADMIN, ignore_missing=True)
     yield email
-    remove_global_role(email)
+    delete_server_role(email)
 
 
 @pytest.fixture()
 def writer():
     email = "writer@amcat.nl"
-    set_global_role(email, Role.WRITER)
+    update_server_role(email, Roles.WRITER, ignore_missing=True)
     yield email
-    remove_global_role(email)
+    delete_server_role(email)
 
 
 @pytest.fixture()
 def reader():
     email = "reader@amcat.nl"
-    set_global_role(email, Role.READER)
+    update_server_role(email, Roles.READER, ignore_missing=True)
     yield email
-    remove_global_role(email)
+    delete_server_role(email)
 
 
 @pytest.fixture()
 def writer2():
     email = "writer2@amcat.nl"
-    set_global_role(email, Role.WRITER)
+    update_server_role(email, Roles.WRITER, ignore_missing=True)
     yield email
-    remove_global_role(email)
+    delete_server_role(email)
 
 
 @pytest.fixture()
 def user():
     name = "test_user@amcat.nl"
-    delete_user(name)
-    set_global_role(name, Role.READER)
+    update_server_role(name, Roles.READER, ignore_missing=True)
     yield name
-    delete_user(name)
+    delete_server_role(name)
 
 
 @pytest.fixture()
 def username():
     """A name to create a user which will be deleted afterwards if needed"""
     name = "test_username@amcat.nl"
-    delete_user(name)
+    delete_server_role(name, ignore_missing=True)
     yield name
-    delete_user(name)
+    delete_server_role(name)
 
 
 @pytest.fixture()
 def index():
     index = "amcat4_unittest_index"
-    delete_index(index, ignore_missing=True)
-    create_index(index)
+    delete_project_index(index, ignore_missing=True)
+    create_project_index(ProjectSettings(id=index, name="Unittest Index"))
     yield index
-    delete_index(index, ignore_missing=True)
+    delete_project_index(index, ignore_missing=True)
 
 
 @pytest.fixture()
 def index_name():
     """An index name that is guaranteed not to exist and will be cleaned up after the test"""
     index = "amcat4_unittest_indexname"
-    delete_index(index, ignore_missing=True)
+    delete_project_index(index, ignore_missing=True)
     yield index
-    delete_index(index, ignore_missing=True)
+    delete_project_index(index, ignore_missing=True)
 
 
 @pytest.fixture()
 def guest_index():
     index = "amcat4_unittest_guest_index"
-    delete_index(index, ignore_missing=True)
-    create_index(index, guest_role=GuestRole.READER)
+    delete_project_index(index, ignore_missing=True)
+    create_project_index(ProjectSettings(id=index))
+    set_project_guest_role(index, Roles.READER)
     yield index
-    delete_index(index, ignore_missing=True)
+    delete_project_index(index, ignore_missing=True)
 
 
 @pytest.fixture()
@@ -197,25 +193,27 @@ def populate_index(index):
 @pytest.fixture()
 def index_docs():
     index = "amcat4_unittest_indexdocs"
-    delete_index(index, ignore_missing=True)
-    create_index(index, guest_role=GuestRole.READER)
+    delete_project_index(index, ignore_missing=True)
+    create_project_index(ProjectSettings(id=index))
+    set_project_guest_role(index, Roles.READER)
     populate_index(index)
     yield index
-    delete_index(index, ignore_missing=True)
+    delete_project_index(index, ignore_missing=True)
 
 
 @pytest.fixture()
 def index_many():
     index = "amcat4_unittest_indexmany"
-    delete_index(index, ignore_missing=True)
-    create_index(index, guest_role=GuestRole.READER)
+    delete_project_index(index, ignore_missing=True)
+    create_project_index(ProjectSettings(id=index))
+    set_project_guest_role(index, Roles.READER)
     upload(
         index,
         [dict(id=i, pagenr=abs(10 - i), text=text) for (i, text) in enumerate(["odd", "even"] * 10)],
         fields={"id": "integer", "pagenr": "integer", "text": "text"},
     )
     yield index
-    delete_index(index, ignore_missing=True)
+    delete_project_index(index, ignore_missing=True)
 
 
 @pytest.fixture()

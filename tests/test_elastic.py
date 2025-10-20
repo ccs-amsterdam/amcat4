@@ -2,18 +2,18 @@ from datetime import datetime
 
 import pytest
 
-from amcat4.systemdata.fields import create_fields, field_values, list_fields
-from amcat4.index import (
+from amcat4.projects.documents import (
     delete_documents_by_query,
     get_document,
-    refresh_index,
     update_document,
+    update_document_tag_by_query,
     update_documents_by_query,
-    update_tag_by_query,
     upload_documents,
 )
+from amcat4.projects.index import refresh_index
+from amcat4.systemdata.fields import create_fields, field_values, list_fields
 from amcat4.models import CreateField, FieldSpec
-from amcat4.query import query_documents
+from amcat4.projects.query import query_documents
 from tests.conftest import upload
 
 
@@ -109,16 +109,16 @@ def test_add_tag(index_docs):
         return {doc["_id"]: doc["tag"] for doc in (res.data if res else []) if "tag" in doc and doc["tag"] is not None}
 
     assert tags() == {}
-    update_tag_by_query(index_docs, "add", q("0", "1"), "tag", "x")
+    update_document_tag_by_query(index_docs, "add", q("0", "1"), "tag", "x")
     refresh_index(index_docs)
     assert tags() == {"0": ["x"], "1": ["x"]}
-    update_tag_by_query(index_docs, "add", q("1", "2"), "tag", "x")
+    update_document_tag_by_query(index_docs, "add", q("1", "2"), "tag", "x")
     refresh_index(index_docs)
     assert tags() == {"0": ["x"], "1": ["x"], "2": ["x"]}
-    update_tag_by_query(index_docs, "add", q("2", "3"), "tag", "y")
+    update_document_tag_by_query(index_docs, "add", q("2", "3"), "tag", "y")
     refresh_index(index_docs)
     assert tags() == {"0": ["x"], "1": ["x"], "2": ["x", "y"], "3": ["y"]}
-    update_tag_by_query(index_docs, "remove", q("0", "2", "3"), "tag", "x")
+    update_document_tag_by_query(index_docs, "remove", q("0", "2", "3"), "tag", "x")
     refresh_index(index_docs)
     assert tags() == {"1": ["x"], "2": ["y"], "3": ["y"]}
 

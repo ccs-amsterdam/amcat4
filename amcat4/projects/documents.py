@@ -10,22 +10,6 @@ from amcat4.models import CreateField, FieldType
 from amcat4.systemdata.fields import coerce_type, create_fields, create_or_verify_tag_field, list_fields
 
 
-def create_document_id(document: dict, identifiers: list[str]) -> str:
-    """
-    Create the _id for a document.
-    """
-
-    if len(identifiers) == 0:
-        raise ValueError("Can only create id if identifiers are specified")
-
-    id_keys = sorted(set(identifiers) & set(document.keys()))
-    id_fields = {k: document[k] for k in id_keys}
-    hash_str = json.dumps(id_fields, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
-    m = hashlib.sha224()
-    m.update(hash_str)
-    return m.hexdigest()
-
-
 def upload_documents(
     index: str,
     documents: list[dict[str, Any]],
@@ -81,7 +65,7 @@ def upload_document_es_actions(index, documents, op_type):
                 raise ValueError(f"Field '{key}' is not yet specified")
 
         if len(identifiers) > 0:
-            action["_id"] = create_document_id(document, identifiers)
+            action["_id"] = _create_document_id(document, identifiers)
             # if no _id is given and no identifiers are used, elasticsearch creates a cool unique one
 
         # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
@@ -189,3 +173,19 @@ def update_documents_by_query(index: str | list[str], query: dict, field: str, v
 
 def delete_documents_by_query(index: str | list[str], query: dict):
     return es().delete_by_query(index=index, query=query)
+
+
+def _create_document_id(document: dict, identifiers: list[str]) -> str:
+    """
+    Create the _id for a document.
+    """
+
+    if len(identifiers) == 0:
+        raise ValueError("Can only create id if identifiers are specified")
+
+    id_keys = sorted(set(identifiers) & set(document.keys()))
+    id_fields = {k: document[k] for k in id_keys}
+    hash_str = json.dumps(id_fields, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
+    m = hashlib.sha224()
+    m.update(hash_str)
+    return m.hexdigest()

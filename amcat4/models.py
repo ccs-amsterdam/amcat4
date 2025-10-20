@@ -11,18 +11,22 @@ class User(BaseModel):
     superadmin: bool = False
 
 
-IndexId = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*$")]
-RoleEmailPattern = EmailStr | Literal["*"]  # user@domain.com or *@domain.com or *
-RoleContext = IndexId | Literal["_server"]
-
-
-class Role(IntEnum):
+class Roles(IntEnum):
     NONE = 0
     LISTER = 10
     METAREADER = 20
     READER = 30
     WRITER = 40
     ADMIN = 50
+
+
+## Use the RoleValidator as a type in pydantic models to accept the name as input
+Role = Literal["NONE", "LISTER", "METAREADER", "READER", "WRITER", "ADMIN"]
+
+
+IndexId = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*$")]
+RoleEmailPattern = EmailStr | Literal["*"]  # user@domain.com or *@domain.com or *
+RoleContext = IndexId | Literal["_server"]
 
 
 class RoleRule(BaseModel):
@@ -33,7 +37,7 @@ class RoleRule(BaseModel):
     @model_validator(mode="after")
     def validate_role(self) -> Self:
         uses_wildcard = "*" in self.email_pattern
-        if self.role == Role.ADMIN and uses_wildcard:
+        if self.role == Roles.ADMIN and uses_wildcard:
             raise ValueError(
                 f"Cannot create ADMIN role for {self.email_pattern}. Only exact email matches can have ADMIN role"
             )
@@ -194,6 +198,11 @@ class AbstractRequest(BaseModel):
     status: Literal["pending", "approved", "rejected"] = "pending"
 
 
+# TODO: Wouter opinion on role_request. Bit weird in createprojectrequest,
+# but otherwise the id becomes more complex, and in a way it is still a
+# request for a role (ADMIN) on the new project.
+
+
 class RoleRequest(AbstractRequest):
     request_type: Literal["role"] = "role"
     role_context: IndexId | Literal["_server"]
@@ -212,7 +221,7 @@ class CreateProjectRequest(AbstractRequest):
 PermissionRequest = Annotated[Union[RoleRequest, CreateProjectRequest], pydantic.Field(discriminator="request_type")]
 
 
-class IndexSettings(BaseModel):
+class ProjectSettings(BaseModel):
     id: str
     name: str | None = None
     description: str | None = None

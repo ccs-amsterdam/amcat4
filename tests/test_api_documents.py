@@ -1,5 +1,5 @@
-from amcat4.models import Role
-from amcat4.systemdata.roles import update_role
+from amcat4.models import Roles, User
+from amcat4.systemdata.roles import get_user_project_role, update_project_role
 from tests.tools import post_json, build_headers, get_json, check
 
 
@@ -22,7 +22,7 @@ def test_documents_unauthorized(client, index, user):
 
 def test_documents(client, index, user):
     """Test uploading, modifying, deleting, and retrieving documents"""
-    update_role(user, index, Role.WRITER)
+    update_project_role(user, index, Roles.WRITER, ignore_missing=True)
     post_json(
         client,
         f"index/{index}/documents",

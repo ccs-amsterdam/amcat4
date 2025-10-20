@@ -59,18 +59,23 @@ def decode_middlecat_token(token: str) -> dict:
         raise InvalidToken(e)
 
 
+# TODO: inform wouter about change. No longer use authenticated_writer etc
+# because it mixed authentication and authorization, and to do authorization
+# in one place only (not 'sometimes' in the Depends)
+
+
 async def authenticated_user(token: str | None = Depends(oauth2_scheme)) -> User:
     """Dependency to verify and return a user based on a token."""
     settings = get_settings()
     if token is None:
         if settings.auth == AuthOptions.no_auth:
             return User(email=None, superadmin=True)
-        elif settings.auth == AuthOptions.allow_authenticated_guests:
+        elif settings.auth == AuthOptions.allow_guests:
             return User(email=None)
         else:
             raise HTTPException(
                 status_code=HTTP_401_UNAUTHORIZED,
-                detail="This instance has no guest access, please provide a valid bearer token",
+                detail="This instance requires guests to be authenticated. Please provide a valid bearer token",
             )
     try:
         email = verify_token(token)["email"]

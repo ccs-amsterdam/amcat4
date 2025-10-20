@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 
 from amcat4.config import AuthOptions
-from amcat4.models import Role, User
-from amcat4.systemdata.roles import delete_role, get_guest_role, get_user_server_role, set_guest_role, update_role
+from amcat4.models import Roles, User
+from amcat4.systemdata.roles import delete_server_role, get_user_server_role, set_project_guest_role
 from tests.tools import get_json, build_headers, post_json, check, refresh, set_auth
 
 
@@ -16,7 +16,7 @@ def test_auth(client: TestClient, user, admin, index):
     with set_auth(AuthOptions.allow_guests):
         # Allow guests - unauthenticated user can access projects with guest roles
         assert client.get(f"/index/{index}").status_code == 401
-        set_guest_role(index, Role.READER)
+        set_project_guest_role(index, Roles.READER)
         refresh()
         assert client.get(f"/index/{index}").status_code == 200
         assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
@@ -24,13 +24,13 @@ def test_auth(client: TestClient, user, admin, index):
         # Only use guest roles if user is authenticated
         assert client.get(f"/index/{index}").status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 200
-        set_guest_role(index, Role.NONE)
+        set_project_guest_role(index, Roles.NONE)
         refresh()
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(admin)).status_code == 200
     with set_auth(AuthOptions.authorized_users_only):
         # Users MUST have a server-level role to access anything
-        set_guest_role(index, Role.READER)
+        set_project_guest_role(index, Roles.READER)
         refresh()
         assert client.get(f"/index/{index}").status_code == 401
         assert client.get(f"/index/{index}", headers=build_headers(unknown_user)).status_code == 401
@@ -49,7 +49,7 @@ def test_get_user(client: TestClient, writer, user):
     assert get_json(client, f"/users/{writer}", user=writer) == {"email": writer, "role": "WRITER"}
 
     # Retrieving a non-existing user as admin gives the NONE role
-    update_role(user, "_server", Role.NONE)
+    delete_server_role(user)
     assert get_json(client, f"/users/{user}", user=writer) == {"email": user, "role": "NONE"}
 
 
@@ -82,7 +82,7 @@ def test_modify_user(client: TestClient, user, writer, admin):
     check(client.put(f"/users/{user}", headers=build_headers(user), json={"role": "METAREADER"}), 401)
     check(client.put(f"/users/{user}", headers=build_headers(admin), json={"role": "ADMIN"}), 200)
     server_role = get_user_server_role(User(email=user))
-    assert server_role and server_role.role == "ADMIN"
+    assert server_role and server_role.role == Roles.ADMIN.name
 
 
 def test_list_users(client: TestClient, index, admin, user):

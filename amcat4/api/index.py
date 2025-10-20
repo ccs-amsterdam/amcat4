@@ -22,17 +22,18 @@ from amcat4.models import (
     ContactInfo,
     FilterSpec,
     FilterValue,
-    IndexSettings,
-    Role,
+    ProjectSettings,
+    Roles,
     User,
 )
 from amcat4.projects.query import reindex
 from amcat4.systemdata.roles import (
-    get_guest_role,
+    get_project_guest_role,
     get_user_project_role,
     raise_if_not_project_index_role,
     raise_if_not_server_role,
-    set_guest_role,
+    role_is_at_least,
+    set_project_guest_role,
 )
 from amcat4.systemdata.settings import get_project_settings
 
@@ -72,13 +73,14 @@ def index_list(current_user: User = Depends(authenticated_user)):
 
 
 @app_index.post("/", status_code=status.HTTP_201_CREATED)
-def create_index(new_index: IndexSettings, user: User = Depends(authenticated_user)):
+def create_index(new_index: ProjectSettings, user: User = Depends(authenticated_user)):
     """
     Create a new index, setting the current user to admin (owner).
 
     POST data should be json containing name and optional guest_role
     """
-    raise_if_not_server_role(user, Role.WRITER)
+    raise_if_not_server_role(user, Roles.WRITER, message="Creating a new project requires WRITER permission on the server")
+
     try:
         create_project_index(new_index, user.email)
     except ApiError as e:
@@ -110,10 +112,10 @@ def modify_index(ix: str, data: ChangeIndex, user: User = Depends(authenticated_
     User needs admin rights on the index
     """
     raise_if_not_project_exists(ix)
-    raise_if_not_project_index_role(user, ix, Role.ADMIN)
+    raise_if_not_project_index_role(user, ix, Roles.ADMIN)
 
     update_project_index(
-        IndexSettings(
+        ProjectSettings(
             id=ix,
             name=data.name,
             description=data.description,
@@ -124,7 +126,7 @@ def modify_index(ix: str, data: ChangeIndex, user: User = Depends(authenticated_
     )
 
     if data.guest_role:
-        set_guest_role(ix, Role(data.guest_role))
+        set_project_guest_role(ix, Roles(data.guest_role))
 
 
 @app_index.get("/{ix}")
@@ -133,25 +135,28 @@ def view_index(ix: str, user: User = Depends(authenticated_user)):
     View the index.
     """
     try:
-        raise_if_not_project_index_role(user, ix, Role.LISTER)
         d = get_project_settings(ix)
-        role = get_user_project_role(user, project_index=ix)
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"Index {ix} does not exist")
 
-        return dict(
-            id=d.id,
-            name=d.name or "",
-            user_role=role.role if role else None,
-            user_role_match=role.email_pattern if role else None,
-            guest_role=get_guest_role(d.id),
-            description=d.description or "",
-            archived=d.archived or "",
-            folder=d.folder or "",
-            image_url=d.image_url or "",
-            contact=d.contact or [],
+    role = get_user_project_role(user, project_index=ix)
+    if not role_is_at_least(role, Roles.LISTER):
+        raise_if_not_project_index_role(
+            user, ix, Roles.READER, message="Viewing a project requires LISTER permission on the project"
         )
 
-    except IndexDoesNotExist:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
+    return dict(
+        id=d.id,
+        name=d.name or "",
+        user_role=role.role if role else None,
+        user_role_match=role.email_pattern if role else None,
+        guest_role=get_project_guest_role(d.id),
+        description=d.description or "",
+        archived=d.archived or "",
+        folder=d.folder or "",
+        image_url=d.image_url or "",
+        contact=d.contact or [],
+    )
 
 
 @app_index.post("/{ix}/archive", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
@@ -164,14 +169,14 @@ def archive_index(
     Archive or unarchive the index. When an index is archived, it restricts usage, and adds a timestamp for when
     it was archived.
     """
-    raise_if_not_project_index_role(user, ix, Role.ADMIN)
+    raise_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
         d = get_project_settings(ix)
         is_archived = d.archived is not None
         if is_archived == archived:
             return
         archived_date = str(datetime.now()) if archived else None
-        update_project_index(IndexSettings(id=ix, archived=archived_date))
+        update_project_index(ProjectSettings(id=ix, archived=archived_date))
 
     except IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
@@ -180,7 +185,7 @@ def archive_index(
 @app_index.delete("/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_index(ix: str, user: User = Depends(authenticated_user)):
     """Delete the index."""
-    raise_if_not_project_index_role(user, ix, Role.ADMIN)
+    raise_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
         delete_project_index(ix)
     except IndexDoesNotExist:
@@ -216,8 +221,8 @@ def start_reindex(
     ] = None,
     user: User = Depends(authenticated_user),
 ):
-    raise_if_not_project_index_role(user, ix, Role.READER)
-    raise_if_not_project_index_role(user, destination, Role.WRITER)
+    raise_if_not_project_index_role(user, ix, Roles.READER)
+    raise_if_not_project_index_role(user, destination, Roles.WRITER)
     filters = _standardize_filters(filters)
     queries = _standardize_queries(queries)
     return reindex(source_index=ix, destination_index=destination, queries=queries, filters=filters)

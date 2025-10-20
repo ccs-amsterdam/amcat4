@@ -1,13 +1,15 @@
 import elasticsearch.helpers
+from elasticsearch.helpers.errors import BulkIndexError
 from amcat4.config import get_settings
 from pydantic import BaseModel
 from typing import Iterable, Literal
 from amcat4.elastic.mapping import ElasticMapping
 from amcat4.elastic.connection import elastic_connection
+from amcat4.models import IndexId
 
 
 class SystemIndexMapping(BaseModel):
-    name: str
+    name: IndexId | Literal[""]
     mapping: ElasticMapping
 
 
@@ -19,7 +21,7 @@ def system_index_name(version: int, path: str) -> str:
     """
     index = get_settings().system_index
     if version > 1:
-        index = f"{index}_V{version}"
+        index = f"{index}_v{version}"
     if path != "":
         index = f"{index}_{path}"
     return index
@@ -88,11 +90,25 @@ def es_bulk_action(
         actions.append(action)
 
         if len(actions) >= batchsize:
-            elasticsearch.helpers.bulk(elastic_connection(), actions, refresh=refresh)
+            bulk_helper_with_errors(actions, refresh=refresh)
             actions = []
 
     if len(actions) > 0:
-        elasticsearch.helpers.bulk(elastic_connection(), actions, refresh=refresh)
+        bulk_helper_with_errors(actions, refresh=refresh)
+
+
+def bulk_helper_with_errors(actions: Iterable[dict], **kwargs) -> None:
+    """
+    elastic bulk but printing the reason for the first error if any
+    """
+    try:
+        elasticsearch.helpers.bulk(elastic_connection(), actions, **kwargs)
+    except BulkIndexError as e:
+        if e.errors:
+            _, error = list(e.errors[0].items())[0]
+            reason = error.get("error", {}).get("reason", error)
+            e.args = e.args + (f"First error: {reason}",)
+        raise
 
 
 def index_scan(

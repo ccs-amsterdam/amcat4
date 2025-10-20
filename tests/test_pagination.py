@@ -1,6 +1,6 @@
 from typing import List
 from amcat4.models import FieldSpec
-from amcat4.query import query_documents
+from amcat4.projects.query import query_documents
 
 
 def test_pagination(index_many):
@@ -20,7 +20,6 @@ def test_pagination(index_many):
 
 def test_sort(index_many):
     def q(key, per_page=5) -> List[int]:
-
         for i, k in enumerate(key):
             if isinstance(k, str):
                 key[i] = {k: {"order": "asc"}}

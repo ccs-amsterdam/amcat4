@@ -6,20 +6,21 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 
 from amcat4.api.auth import authenticated_user
-from amcat4.api.index import app_index
 from amcat4.models import (
     CreateField,
     FieldSpec,
     FieldType,
-    Role,
+    Roles,
     UpdateField,
     User,
 )
 from amcat4.systemdata import fields as _fields
 from amcat4.systemdata.roles import get_user_project_role, raise_if_not_project_index_role, role_is_at_least
 
+app_index_fields = APIRouter(prefix="/index/{ix}/fields", tags=["project index fields"])
 
-@app_index.post("/{ix}/fields")
+
+@app_index_fields.post("")
 def create_fields(
     ix: str,
     fields: Annotated[
@@ -35,37 +36,37 @@ def create_fields(
     """
     Create fields
     """
-    raise_if_not_project_index_role(user, ix, Role.WRITER)
+    raise_if_not_project_index_role(user, ix, Roles.WRITER)
 
     _fields.create_fields(ix, fields)
     return "", HTTPStatus.NO_CONTENT
 
 
-@app_index.get("/{ix}/fields")
+@app_index_fields.get("")
 def get_fields(ix: str, user: User = Depends(authenticated_user)):
     """
     Get the fields (columns) used in this index.
 
     Returns a json array of {name, type} objects
     """
-    raise_if_not_project_index_role(user, ix, Role.METAREADER)
+    raise_if_not_project_index_role(user, ix, Roles.METAREADER)
     return _fields.list_fields(ix)
 
 
-@app_index.put("/{ix}/fields")
+@app_index_fields.put("")
 def update_fields(
     ix: str, fields: Annotated[dict[str, UpdateField], Body(description="")], user: User = Depends(authenticated_user)
 ):
     """
     Update the field settings
     """
-    raise_if_not_project_index_role(user, ix, Role.WRITER)
+    raise_if_not_project_index_role(user, ix, Roles.WRITER)
 
     _fields.update_fields(ix, fields)
     return "", HTTPStatus.NO_CONTENT
 
 
-@app_index.get("/{ix}/fields/{field}/values")
+@app_index_fields.get("/{field}/values")
 def get_field_values(ix: str, field: str, user: User = Depends(authenticated_user)):
     """
     Get unique values for a specific field. Should mainly/only be used for tag fields.
@@ -76,7 +77,7 @@ def get_field_values(ix: str, field: str, user: User = Depends(authenticated_use
     there should be a limit. Querying could be an option, but not sure if that is
     efficient, since elastic has to aggregate all values first.
     """
-    raise_if_not_project_index_role(user, ix, Role.READER)
+    raise_if_not_project_index_role(user, ix, Roles.READER)
     values = _fields.field_values(ix, field, size=2001)
     if len(values) > 2000:
         raise HTTPException(
@@ -86,13 +87,13 @@ def get_field_values(ix: str, field: str, user: User = Depends(authenticated_use
     return values
 
 
-@app_index.get("/{ix}/fields/{field}/stats")
+@app_index_fields.get("/{field}/stats")
 def get_field_stats(ix: str, field: str, user: User = Depends(authenticated_user)):
     """Get statistics for a specific value. Only works for numeric (incl date) fields."""
     role = get_user_project_role(user, ix)
-    if role_is_at_least(role, Role.READER):
+    if role_is_at_least(role, Roles.READER):
         return _fields.field_stats(ix, field)
-    elif role_is_at_least(role, Role.METAREADER):
+    elif role_is_at_least(role, Roles.METAREADER):
         _fields.raise_if_field_not_allowed(ix, user, [FieldSpec(name=field)])
         return _fields.field_stats(ix, field)
     else:

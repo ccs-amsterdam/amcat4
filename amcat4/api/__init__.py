@@ -1,15 +1,29 @@
 """AmCAT4 API."""
 
+from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from amcat4.api.index import app_index
+from amcat4.api.index_documents import app_index_documents
+from amcat4.api.index_fields import app_index_fields
+from amcat4.api.index_users import app_index_users
 from amcat4.api.info import app_info
 from amcat4.api.query import app_query
 from amcat4.api.requests import app_requests
 from amcat4.api.users import app_users
+from amcat4.systemdata.manage import create_or_update_systemdata
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logging.info("Initializing system data...")
+    create_or_update_systemdata()
+    yield
+
 
 app = FastAPI(
     title="AmCAT4",
@@ -19,22 +33,22 @@ app = FastAPI(
         dict(name="requests", description="Endpoints for authorization requests"),
         dict(
             name="index",
-            description="Endpoints to create, list, and delete indices; index user management; and to add or modify documents",
+            description="Endpoints to create, list, and delete indices",
         ),
+        dict(name="documents", description="Endpoints to upload, retrieve, modify, and delete documents"),
+        dict(name="project users", description="Endpoints for project user management"),
+        dict(name="project fields", description="Endpoints to list, create, and modify project index fields"),
         dict(name="query", description="Endpoints to list or query documents or run aggregate queries"),
         dict(name="middlecat", description="MiddleCat authentication"),
-        dict(name="annotator users", description="Annotator module endpoints for user management"),
-        dict(
-            name="annotator codingjob",
-            description="Annotator module endpoints for creating and managing annotator codingjobs, "
-            "and the core process of getting units and posting annotations",
-        ),
-        dict(name="annotator guest", description="Annotator module endpoints for unregistered guests"),
     ],
+    lifespan=lifespan,
 )
 app.include_router(app_info)
 app.include_router(app_users)
 app.include_router(app_index)
+app.include_router(app_index_documents)
+app.include_router(app_index_fields)
+app.include_router(app_index_users)
 app.include_router(app_query)
 app.include_router(app_requests)
 app.add_middleware(

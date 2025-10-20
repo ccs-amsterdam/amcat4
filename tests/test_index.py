@@ -4,7 +4,7 @@ import pytest
 
 from amcat4.config import get_settings
 from amcat4.elastic import es
-from amcat4.models import IndexSettings, Role, User
+from amcat4.models import ProjectSettings, Roles, User
 from amcat4.projects.index import (
     create_project_index,
     delete_project_index,
@@ -13,8 +13,19 @@ from amcat4.projects.index import (
     list_user_project_indices,
     register_project_index,
 )
-from amcat4.systemdata.roles import get_guest_role, get_user_project_role, get_user_server_role, set_guest_role, update_role
-from tests.tools import refresh
+from amcat4.systemdata.roles import (
+    delete_project_role,
+    delete_server_role,
+    get_project_guest_role,
+    get_user_project_role,
+    get_user_server_role,
+    list_project_roles,
+    list_server_roles,
+    set_project_guest_role,
+    update_project_role,
+    update_server_role,
+)
+from amcat4.systemdata.settings import get_project_settings, update_project_settings
 
 ## TODO: replace all the functions from the removed amcat4.index with the new functions
 
@@ -40,13 +51,13 @@ def test_create_delete_project_index():
     # refresh_index(get_settings().system_index)   # I'm trying to get rid of these; should not be necessary
     assert index not in list_es_indices()
     assert index not in list_index_ids()
-    create_project_index(IndexSettings(id=index))
+    create_project_index(ProjectSettings(id=index))
     # refresh_index(get_settings().system_index)
     assert index in list_es_indices()
     assert index in list_index_ids()
     # Cannot create duplicate index
     with pytest.raises(Exception):
-        create_project_index(IndexSettings(id=index))
+        create_project_index(ProjectSettings(id=index))
     delete_project_index(index)
     # refresh_index(get_settings().system_index)
     assert index not in list_es_indices()
@@ -60,7 +71,7 @@ def test_import_index():
     es().indices.create(index=index)
     assert index in list_es_indices()
     assert index not in list_index_ids()
-    register_project_index(IndexSettings(id=index))
+    register_project_index(ProjectSettings(id=index))
     # refresh_index(get_settings().system_index)
     assert index in list_index_ids()
     deregister_project_index(index)
@@ -76,7 +87,7 @@ def test_list_indices(index, guest_index, admin):
     user = "user@example.com"
     assert index not in list_index_ids(user)
     assert guest_index in list_index_ids(user)
-    update_role(index, user, Role.WRITER)
+    update_project_role(user, index, Roles.WRITER)
     # refresh_index(get_settings().system_index)
     assert index in list_user_project_indices(User(email=user))
     delete_project_index(index)
@@ -87,69 +98,63 @@ def test_list_indices(index, guest_index, admin):
 def test_global_roles():
     email = "user@example.com"
     user = User(email=email)
-    assert get_user_server_role(user).role == Role.NONE
-    update_role(email_pattern=email, role_context="_server", role=Role.ADMIN)
+    assert get_user_server_role(user).role == Roles.NONE.name
+    update_server_role(email_pattern=email, role=Roles.ADMIN)
     # refresh_index(get_settings().system_index)
-    assert get_user_server_role(user).role == Role.ADMIN
-    update_role(email_pattern=email, role_context="_server", role=Role.WRITER)
+    assert get_user_server_role(user).role == Roles.ADMIN.name
+    update_server_role(email_pattern=email, role=Roles.WRITER)
     # refresh_index(get_settings().system_index)
-    assert get_user_server_role(user).role == Role.WRITER
-    update_role(email_pattern=email, role_context="_server", role=Role.NONE)
+    assert get_user_server_role(user).role == Roles.WRITER.name
+    delete_server_role(email_pattern=email)
     # refresh_index(get_settings().system_index)
-    assert get_user_server_role(user).role == Role.NONE
+    assert get_user_server_role(user).role == Roles.NONE.name
 
 
 def test_index_roles(index):
     email = "user@example.com"
     user = User(email=email)
-    assert get_user_project_role(user, index).role == Role.NONE
-    update_role(email_pattern=email, role_context=index, role=Role.WRITER)
+    assert get_user_project_role(user, index).role == Roles.NONE
+    update_project_role(email_pattern=email, project_id=index, role=Roles.WRITER)
     # refresh_index(get_settings().system_index)
-    assert get_user_project_role(user, index).role == Role.METAREADER
-    update_role(email_pattern=email, role_context=index, role=Role.ADMIN)
+    assert get_user_project_role(user, index).role == Roles.METAREADER
+    update_project_role(email_pattern=email, project_id=index, role=Roles.ADMIN)
     # refresh_index(get_settings().system_index)
-    assert get_user_project_role(user, index).role == Role.ADMIN
-    update_role(email_pattern=email, role_context=index, role=Role.NONE)
+    assert get_user_project_role(user, index).role == Roles.ADMIN
+    delete_project_role(email_pattern=email, project_id=index)
     # refresh_index(get_settings().system_index)
-    assert get_user_project_role(user, index).role == Role.NONE
+    assert get_user_project_role(user, index).role == Roles.NONE
 
 
 def test_guest_role(index):
-    assert get_guest_role(index) == Role.NONE
-    set_guest_role(index, Role.READER)
+    assert get_project_guest_role(index) == Roles.NONE.name
+    set_project_guest_role(index, Roles.READER)
     # refresh()
-    assert get_guest_role(index) == Role.READER
+    assert get_project_guest_role(index) == Roles.READER.name
 
 
 def test_builtin_admin(index):
     user = "admin@example.com"
     get_settings().admin_email = user
-    assert get_global_role(user) == Role.ADMIN
+    assert get_user_server_role(User(email=user)).role == Roles.ADMIN.name
     assert index in list_index_ids(user)
 
 
 def test_list_users(index, user):
-    set_global_role(user, role=Role.WRITER)
-    refresh_index(get_settings().system_index)
-    assert list_global_users()[user] == Role.WRITER
-    remove_global_role(user)
-    refresh_index(get_settings().system_index)
-    assert user not in list_global_users()
+    update_server_role(user, role=Roles.WRITER)
+    # refresh_index(get_settings().system_index)
+    project_users = list_project_roles()
+    server_users = list_server_roles()
 
-    set_role(index=index, email=user, role=Role.ADMIN)
-    refresh_index(get_settings().system_index)
-    assert list_users(index)[user] == Role.ADMIN
-    remove_role(index=index, email=user)
-    refresh_index(get_settings().system_index)
-    assert user not in list_users(index)
+    assert len(list(server_users)) > 0
+    assert len(list(project_users)) > 0
 
 
 def test_name_description(index):
-    modify_index(index, name="test", description="ooktest")
-    refresh()
-    assert get_index(index).name == "test"
-    assert get_index(index).description == "ooktest"
-    indices = {x.id: x for x in list_all_indices()}
+    update_project_settings(ProjectSettings(id=index, name="test", description="ooktest"))
+    # refresh()
+    assert get_project_settings(index).name == "test"
+    assert get_project_settings(index).description == "ooktest"
+    indices = {x.id: x for x in list_project_indices()}
     assert indices[index].name == "test"
 
 

@@ -5,24 +5,20 @@ from typing import Annotated, Any, Literal
 import elasticsearch
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 
-from amcat4.api.index import app_index
-from amcat4.projects.documents import (
-    upload_documents as _upload_documents,
-    get_document as _get_document,
-    update_document as _update_document,
-    delete_document as _delete_document,
-)
+from amcat4.projects import documents as _documents
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
     CreateField,
     FieldType,
-    Role,
+    Roles,
     User,
 )
 from amcat4.systemdata.roles import raise_if_not_project_index_role
 
+app_index_documents = APIRouter(prefix="/index/{ix}/documents", tags=["documents"])
 
-@app_index.post("/{ix}/documents", status_code=status.HTTP_201_CREATED)
+
+@app_index_documents.post("", status_code=status.HTTP_201_CREATED)
 def upload_documents(
     ix: str,
     documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
@@ -49,11 +45,11 @@ def upload_documents(
     """
     Upload documents to this server. Returns a list of ids for the uploaded documents
     """
-    raise_if_not_project_index_role(user, ix, Role.WRITER)
-    return _upload_documents(ix, documents, fields, operation)
+    raise_if_not_project_index_role(user, ix, Roles.WRITER)
+    return _documents.upload_documents(ix, documents, fields, operation)
 
 
-@app_index.get("/{ix}/documents/{docid}")
+@app_index_documents.get("/{docid}")
 def get_document(
     ix: str,
     docid: str,
@@ -66,12 +62,12 @@ def get_document(
     GET request parameters:
     fields - Comma separated list of fields to return (default: all fields)
     """
-    raise_if_not_project_index_role(user, ix, Role.READER)
+    raise_if_not_project_index_role(user, ix, Roles.READER)
     kargs = {}
     if fields:
         kargs["_source"] = fields
     try:
-        return _get_document(ix, docid, **kargs)
+        return _documents.get_document(ix, docid, **kargs)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -79,8 +75,8 @@ def get_document(
         )
 
 
-@app_index.put(
-    "/{ix}/documents/{docid}",
+@app_index_documents.put(
+    "/{docid}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
 )
@@ -95,9 +91,9 @@ def update_document(
 
     PUT request body should be a json {field: value} mapping of fields to update
     """
-    raise_if_not_project_index_role(user, ix, Role.WRITER)
+    raise_if_not_project_index_role(user, ix, Roles.WRITER)
     try:
-        _update_document(ix, docid, update)
+        _documents.update_document(ix, docid, update)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -105,16 +101,16 @@ def update_document(
         )
 
 
-@app_index.delete(
-    "/{ix}/documents/{docid}",
+@app_index_documents.delete(
+    "/{docid}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
 )
 def delete_document(ix: str, docid: str, user: User = Depends(authenticated_user)):
     """Delete this document."""
-    raise_if_not_project_index_role(user, ix, Role.WRITER)
+    raise_if_not_project_index_role(user, ix, Roles.WRITER)
     try:
-        _delete_document(ix, docid)
+        _documents.delete_document(ix, docid)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -1,24 +1,30 @@
 from starlette.testclient import TestClient
 
 from amcat4 import elastic
-from amcat4.models import Role
-from amcat4.systemdata.roles import get_guest_role, set_guest_role, update_role
-from tests.tools import build_headers, check, get_json, post_json, refresh
+from amcat4.models import Roles
+from amcat4.systemdata.roles import (
+    delete_project_role,
+    get_project_guest_role,
+    set_project_guest_role,
+    update_project_role,
+)
+from tests.tools import build_headers, check, get_json, post_json
 
 
 def test_create_list_delete_index(client, index_name, user, writer, writer2, admin):
     """Test API endpoints to create/list/delete index"""
+    new_index = dict(id=index_name, name=index_name)
+
     # Anonymous or Unprivileged users cannot create indices
-    check(client.post("/index/"), 401)
-    check(client.post("/index/", headers=build_headers(user=user)), 401)
+    check(client.post("/index/", json=new_index), 401)
+    check(client.post("/index/", json=new_index, headers=build_headers(user=user)), 401)
 
     # Authorized users should get 404 if index does not exist
     check(client.get(f"/index/{index_name}"), 404)
     check(client.get(f"/index/{index_name}", headers=build_headers(user=writer)), 404)
 
     # Writers can create indices
-    post_json(client, "/index/", user=writer, json=dict(id=index_name))
-    refresh()
+    post_json(client, "/index/", user=writer, json=new_index)
     assert index_name in {x["name"] for x in get_json(client, "/index/", user=writer) or []}
 
     # Users can GET their own index, admins can GET all indices, others cannot GET non-public indices
@@ -59,7 +65,7 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
         ),
         200,
     )
-    assert get_guest_role(index_name) == Role.READER
+    assert get_project_guest_role(index_name) == Roles.READER.name
 
     # Index should now be visible to non-authorized users
     assert index_name in {x["name"] for x in get_json(client, "/index/", user=writer) or []}
@@ -94,7 +100,7 @@ def test_fields_upload(client: TestClient, user: str, index: str):
         401,
     )
 
-    update_role(user, index, Role.METAREADER)
+    update_project_role(user, index, Roles.METAREADER)
 
     # can get fields
     fields = get_json(client, f"/index/{index}/fields", user=user) or {}
@@ -105,7 +111,7 @@ def test_fields_upload(client: TestClient, user: str, index: str):
         401,
     )
 
-    update_role(user, index, Role.WRITER)
+    update_project_role(user, index, Roles.WRITER)
     post_json(client, f"/index/{index}/documents", user=user, json=body)
     get_json(client, f"/index/{index}/refresh", expected=204)
     doc = get_json(client, f"/index/{index}/documents/0", user=user) or {}
@@ -132,12 +138,12 @@ def test_set_get_delete_roles(client: TestClient, admin: str, writer: str, user:
         client.post(f"/index/{index}/users", json=body, headers=build_headers(writer)),
         401,
     )
-    update_role(user, index, Role.READER)
+    update_project_role(user, index, Roles.READER)
     check(
         client.post(f"/index/{index}/users", json=body, headers=build_headers(writer)),
         401,
     )
-    update_role(user, index, Role.WRITER)
+    update_project_role(user, index, Roles.WRITER)
     check(
         client.post(f"/index/{index}/users", json=body, headers=build_headers(writer)),
         401,
@@ -210,7 +216,7 @@ def test_name_description(client, index, index_name, user, admin):
         client.put(f"/index/{index}", json=dict(name="test"), headers=build_headers(admin)),
         200,
     )
-    update_role(user, index, Role.ADMIN)
+    update_project_role(user, index, Roles.ADMIN)
     check(
         client.put(
             f"/index/{index}",
@@ -223,11 +229,11 @@ def test_name_description(client, index, index_name, user, admin):
     # global admin and index or guest metareader can read details
     assert (get_json(client, f"/index/{index}", user=admin) or {})["description"] == "ooktest"
     assert (get_json(client, f"/index/{index}", user=user) or {})["name"] == "test"
-    update_role(user, index, Role.METAREADER)
+    update_project_role(user, index, Roles.METAREADER)
     assert (get_json(client, f"/index/{index}", user=user) or {})["name"] == "test"
-    update_role(user, index, Role.NONE)
+    delete_project_role(user, index)
     check(client.get(f"/index/{index}", headers=build_headers(user)), 401)
-    set_guest_role(index, Role.METAREADER)
+    set_project_guest_role(index, Roles.METAREADER)
     assert (get_json(client, f"/index/{index}", user=user) or {})["name"] == "test"
 
     check(

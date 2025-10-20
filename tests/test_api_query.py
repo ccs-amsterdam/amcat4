@@ -1,5 +1,5 @@
-from amcat4.systemdata.roles import Role, update_role
-from amcat4.models import CreateField, FieldSpec
+from amcat4.systemdata.roles import update_project_role
+from amcat4.models import CreateField, FieldSpec, Roles
 from amcat4.projects.query import query_documents
 from amcat4.projects.index import refresh_index
 from tests.conftest import upload
@@ -119,7 +119,7 @@ def test_bare_aggregate(client, index_docs, user):
 
 
 def test_multiple_index(client, index_docs, index, user):
-    update_role(user, index, Role.READER)
+    update_project_role(user, index, Roles.READER)
     upload(
         index,
         [{"text": "also a text", "i": -1, "cat": "c"}],
@@ -187,7 +187,7 @@ def test_query_tags(client, index_docs, user):
     check(client.post(f"/index/{index_docs}/tags_update"), 401)
     check(client.post(f"/index/{index_docs}/tags_update", headers=build_headers(user=user)), 401)
 
-    update_role(user, index_docs, Role.WRITER)
+    update_project_role(user, index_docs, Roles.WRITER)
 
     assert tags() == {}
     res = post_json(
@@ -227,7 +227,7 @@ def test_api_update_by_query(client, index_docs, user):
         return {doc["_id"]: doc.get("subcat") for doc in (res.data if res else [])}
 
     # Delete requires WRITER privs
-    update_role(user, index_docs, Role.READER)
+    update_project_role(user, index_docs, Roles.READER)
     res = client.post(
         f"/index/{index_docs}/update_by_query",
         json=dict(field="subcat", value="z", filters=dict(cat="a")),
@@ -235,7 +235,7 @@ def test_api_update_by_query(client, index_docs, user):
     )
     assert res.status_code == 401
 
-    update_role(user, index_docs, Role.WRITER)
+    update_project_role(user, index_docs, Roles.WRITER)
     res = client.post(
         f"/index/{index_docs}/update_by_query",
         json=dict(field="subcat", value="z", filters=dict(cat="a")),
@@ -252,7 +252,7 @@ def test_api_delete_by_query(client, index_docs, user):
         return {doc["_id"] for doc in (res.data if res else [])}
 
     # Delete requires WRITER privs
-    update_role(user, index_docs, Role.READER)
+    update_project_role(user, index_docs, Roles.READER)
     res = client.post(
         f"/index/{index_docs}/delete_by_query",
         json=dict(filters=dict(cat="a")),
@@ -260,7 +260,7 @@ def test_api_delete_by_query(client, index_docs, user):
     )
     assert res.status_code == 401
 
-    update_role(user, index_docs, Role.WRITER)
+    update_project_role(user, index_docs, Roles.WRITER)
     res = client.post(
         f"/index/{index_docs}/delete_by_query",
         json=dict(filters=dict(cat="a")),

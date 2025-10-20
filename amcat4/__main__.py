@@ -20,11 +20,11 @@ from uvicorn.config import LOGGING_CONFIG
 
 from amcat4.config import AuthOptions, get_settings, validate_settings
 from amcat4.elastic.connection import connect_elastic
-from amcat4.models import FieldType, IndexSettings, Role
+from amcat4.models import FieldType, ProjectSettings, Roles
 from amcat4.projects.index import create_project_index, delete_project_index
 from amcat4.projects.documents import upload_documents
 from amcat4.systemdata.manage import create_or_update_systemdata
-from amcat4.systemdata.roles import update_role, list_roles
+from amcat4.systemdata.roles import list_server_roles, update_server_role
 
 SOTU_INDEX = "state_of_the_union"
 
@@ -36,7 +36,7 @@ def upload_test_data() -> str:
     csvfile = csv.DictReader(io.TextIOWrapper(url_open, encoding="utf-8"))
 
     # creates the index info on the sqlite db
-    create_project_index(IndexSettings(id=SOTU_INDEX))
+    create_project_index(ProjectSettings(id=SOTU_INDEX))
 
     docs = [
         dict(
@@ -131,15 +131,15 @@ def create_test_index(_args):
 
 def add_admin(args):
     logging.info(f"**** Setting {args.email} to ADMIN ****")
-    update_role(args.email, role_context="_server", role=Role.ADMIN)
+    update_server_role(args.email, role=Roles.ADMIN)
 
 
 def list_users(_args):
-    roles = list_roles(role_contexts=["_server"])
+    roles = list_server_roles()
 
     if roles:
         for role in roles:
-            print(f"{role.role.name:10}: {role.email_pattern}")
+            print(f"{role.role}: {role.email_pattern}")
     if not roles:
         print("(No users defined yet, use add-admin to add users by email)")
 
@@ -247,8 +247,18 @@ def main():
     p.set_defaults(func=create_test_index)
 
     p = subparsers.add_parser("migrate", help="Migrate the system index to the current version")
-    p.add_argument("rm_pending", help="Force remove pending migrations (see amcat4/systemdata/manage.py)", default=True)
-    p.add_argument("rm_broken", help="Force remove broken systemdata version (see amcat4/systemdata/manage.py)", default=False)
+    p.add_argument(
+        "rm_pending",
+        action="store_true",
+        help="Force remove pending migrations (see amcat4/systemdata/manage.py)",
+        default=True,
+    )
+    p.add_argument(
+        "rm_broken",
+        action="store_false",
+        help="Force remove broken systemdata version (see amcat4/systemdata/manage.py)",
+        default=False,
+    )
     p.set_defaults(func=migrate_systemdata)
 
     args = parser.parse_args()

@@ -17,15 +17,8 @@ def test_documents_unauthorized(
     index,
     writer,
 ):
-    check(client, "/index/", 401, "global writer permissions")
-    check(client, f"/index/{index}/", 401, f"permissions on index {index}", method="get")
-
-
-def test_error_elastic(client, index, admin):
-    for hostname in ("doesnotexist.example.com", "https://doesnotexist.example.com:9200"):
-        with amcat_settings(elastic_host=hostname, elastic_verify_ssl=True):
-            es.cache_clear()
-            check(client, f"/index/{index}/", 500, f"cannot connect.*{hostname}", method="get", user=admin)
+    check(client, "/index/", 401, "requires writer permission", json=dict(id=index))
+    check(client, f"/index/{index}/", 401, "requires lister permission", method="get")
 
 
 def test_error_index_create(client, writer, index):

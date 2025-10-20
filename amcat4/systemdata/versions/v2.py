@@ -54,6 +54,7 @@ _contact_field = object_field(
 # Indices in elastic cannot start with an underscore, so there is no risk of collision.
 settings_mapping: ElasticMapping = dict(
     project_settings=object_field(
+        id={"type": "keyword"},
         name={"type": "keyword"},
         description={"type": "text"},
         contact=_contact_field,
@@ -62,6 +63,7 @@ settings_mapping: ElasticMapping = dict(
         image_url={"type": "keyword"},
     ),
     server_settings=object_field(
+        id={"type": "keyword"},
         name={"type": "keyword"},
         description={"type": "text"},
         contact=_contact_field,

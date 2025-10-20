@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 
 from amcat4.api.auth import authenticated_user
-from amcat4.models import Role, User
+from amcat4.models import Roles, User
 from amcat4.systemdata.requests import (
     PermissionRequest,
-    elastic_create_or_update_request,
-    elastic_list_admin_requests,
-    elastic_list_user_requests,
+    update_request,
+    list_admin_requests,
+    list_user_requests,
     process_request,
 )
 from amcat4.systemdata.roles import raise_if_not_project_index_role
@@ -19,7 +19,7 @@ def get_admin_requests(user: User = Depends(authenticated_user)):
     # Not sure if guests should be banned, it might make sense in no_auth, but does it really?
     """Get all requests that this user can resolve"""
 
-    return elastic_list_admin_requests(user=user)
+    return list_admin_requests(user=user)
 
 
 @app_requests.post("/admin", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
@@ -28,9 +28,9 @@ def post_admin_requests(requests: list[PermissionRequest] = Body(...), user: Use
 
     for r in requests:
         if r.request_type == "create_project":
-            raise_if_not_project_index_role(user, "_server", Role.WRITER)
+            raise_if_not_project_index_role(user, "_server", Roles.WRITER)
         if r.request_type == "role":
-            raise_if_not_project_index_role(user, r.role_context, Role.ADMIN)
+            raise_if_not_project_index_role(user, r.role_context, Roles.ADMIN)
 
         process_request(r)
 
@@ -38,7 +38,7 @@ def post_admin_requests(requests: list[PermissionRequest] = Body(...), user: Use
 @app_requests.get("/")
 def get_requests(user: User = Depends(authenticated_user)):
     """Lists any active role request from this user"""
-    return elastic_list_user_requests(user=user)
+    return list_user_requests(user=user)
 
 
 @app_requests.post("/", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
@@ -54,4 +54,4 @@ def post_requests(request: PermissionRequest, user: User = Depends(authenticated
             status_code=401,
             detail="Request email does not match user",
         )
-    elastic_create_or_update_request(request)
+    update_request(request)

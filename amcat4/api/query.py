@@ -7,7 +7,7 @@ from pydantic.main import BaseModel
 
 from amcat4.projects.aggregate import Aggregation, Axis, TopHitsAggregation, query_aggregate
 from amcat4.api.auth import authenticated_user
-from amcat4.models import FieldSpec, FilterSpec, FilterValue, Role, SortSpec, User
+from amcat4.models import FieldSpec, FilterSpec, FilterValue, Roles, SortSpec, User
 from amcat4.projects.query import delete_query, update_query, update_tag_query, query_documents
 from amcat4.systemdata.fields import get_allowed_fields, raise_if_field_not_allowed
 from amcat4.systemdata.roles import raise_if_not_project_index_role
@@ -275,7 +275,7 @@ def query_update_tags(
     """
     indices = index.split(",")
     for i in indices:
-        raise_if_not_project_index_role(user, i, Role.WRITER)
+        raise_if_not_project_index_role(user, i, Roles.WRITER)
 
     if isinstance(ids, (str, int)):
         ids = [ids]
@@ -312,7 +312,7 @@ def update_by_query(
 
     Select documents using queries and/or filters, and specify a field and new value.
     """
-    raise_if_not_project_index_role(user, index, Role.WRITER)
+    raise_if_not_project_index_role(user, index, Roles.WRITER)
     return update_query(index, field, value, _standardize_queries(queries), _standardize_filters(filters), ids)
 
 
@@ -341,7 +341,7 @@ def delete_by_query(
 
     Select documents using queries and/or filters, and specify a field and new value.
     """
-    raise_if_not_project_index_role(user, index, Role.WRITER)
+    raise_if_not_project_index_role(user, index, Roles.WRITER)
     return delete_query(index, _standardize_queries(queries), _standardize_filters(filters), ids)
 
 

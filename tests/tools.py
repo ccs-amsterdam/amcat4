@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
 from amcat4.config import AuthOptions, get_settings
-from amcat4.index import refresh_index
+from amcat4.projects.index import refresh_index
 from tests.middlecat_keypair import PRIVATE_KEY
 
 
@@ -50,7 +50,7 @@ async def aget_json(client: AsyncClient, url: str, expected=200, headers=None, u
 def post_json(client: TestClient, url, expected=201, headers=None, user=None, **kargs):
     response = client.post(url, headers=build_headers(user, headers), **kargs)
     assert response.status_code == expected, (
-        f"POST {url} returned {response.status_code}, expected {expected}\n" f"{response.json()}"
+        f"POST {url} returned {response.status_code}, expected {expected}\n{response.json()}"
     )
     if expected == 204:
         return {}
@@ -101,7 +101,3 @@ def amcat_settings(**kargs):
     finally:
         for k, v in old_settings.items():
             setattr(settings, k, v)
-
-
-def refresh():
-    refresh_index(get_settings().system_index)

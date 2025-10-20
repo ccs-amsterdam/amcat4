@@ -1,17 +1,18 @@
-from typing import Iterable, Literal
+from typing import Iterable
 
-from elasticsearch.exceptions import ConflictError
+from elasticsearch import ConflictError, NotFoundError
 from fastapi import HTTPException
-from pydantic import EmailStr
+from pydantic import ValidationError
 from amcat4.systemdata.versions.v2 import ROLES_INDEX, roles_index_id
 from amcat4.elastic import es
 from amcat4.models import (
     IndexId,
+    Role,
     RoleContext,
     RoleEmailPattern,
     RoleRule,
     User,
-    Role,
+    Roles,
 )
 from amcat4.elastic.util import index_scan
 
@@ -20,77 +21,68 @@ class InvalidRoleError(ValueError):
     pass
 
 
-def create_role(email_pattern: RoleEmailPattern, role_context: RoleContext, role: Role):
-    """
-    Creates a role for a given email pattern and role context.
-    Raises an error if a role for this email_pattern in this context already exists.
-    """
-    if role == Role.NONE:
-        raise InvalidRoleError("Cannot create a role with Role.NONE. Use update_role to delete roles.")
-
-    id = roles_index_id(email_pattern, role_context)
-    user_role = RoleRule(email_pattern=email_pattern, role_context=role_context, role=role)
-    doc = {"email": user_role.email_pattern, "role_context": user_role.role_context, "role": user_role.role.name}
-    es().create(index=ROLES_INDEX, id=id, document=doc, refresh=True)
+def create_project_role(email_pattern: RoleEmailPattern, project_id: IndexId, role: Roles):
+    _create_role(email_pattern=email_pattern, role_context=project_id, role=role)
 
 
-def update_role(email_pattern: RoleEmailPattern, role_context: RoleContext, role: Role):
-    """
-    Updates (or creates) a role for a given email pattern and role context.
-    """
-    id = roles_index_id(email_pattern, role_context)
-    if role == Role.NONE:
-        es().delete(index=ROLES_INDEX, id=id, refresh=True)
-        return
-
-    user_role = RoleRule(email_pattern=email_pattern, role_context=role_context, role=role)
-    doc = {"email": user_role.email_pattern, "role_context": user_role.role_context, "role": user_role.role.name}
-    es().update(index=ROLES_INDEX, id=id, doc_as_upsert=True, doc=doc, refresh=True)
+def create_server_role(email_pattern: RoleEmailPattern, role: Roles):
+    _create_role(email_pattern=email_pattern, role_context="_server", role=role)
 
 
-def list_roles(
+def update_project_role(email_pattern: RoleEmailPattern, project_id: IndexId, role: Roles, ignore_missing: bool = False):
+    _update_role(email_pattern=email_pattern, role_context=project_id, role=role, ignore_missing=ignore_missing)
+
+
+def update_server_role(email_pattern: RoleEmailPattern, role: Roles, ignore_missing: bool = False):
+    _update_role(email_pattern=email_pattern, role_context="_server", role=role, ignore_missing=ignore_missing)
+
+
+def delete_project_role(email_pattern: RoleEmailPattern, project_id: IndexId, ignore_missing: bool = False):
+    _delete_role(email_pattern=email_pattern, role_context=project_id, ignore_missing=ignore_missing)
+
+
+def delete_server_role(email_pattern: RoleEmailPattern, ignore_missing: bool = False):
+    _delete_role(email_pattern=email_pattern, role_context="_server", ignore_missing=ignore_missing)
+
+
+def list_project_roles(
     email_patterns: list[RoleEmailPattern] | None = None,
-    role_contexts: list[RoleContext] | None = None,
-    min_role: Role | None = None,
+    project_ids: list[IndexId] | None = None,
+    min_role: Roles | None = None,
 ) -> Iterable[RoleRule]:
-    """
-    List roles, optionally filtered by user, minimum role, role contexts, and minimum match quality.
+    return _list_roles(email_patterns=email_patterns, role_contexts=project_ids, min_role=min_role, only_projects=True)
 
-    :param role_emails: List of email patterns to filter on (or None for all users)
-    :param min_role: The minimum global role of the user (or None for all roles)
-    :param role_contexts: List of role contexts to filter on (or None for all contexts)
-    :param min_match: The minimum match quality (or None for all matches)
-    """
-    query: dict = {"bool": {"must": []}}
 
-    if email_patterns is not None:
-        query["bool"]["must"].append({"terms": {"email": email_patterns}})
-
-    if role_contexts is not None:
-        query["bool"]["must"].append({"terms": {"role_context": role_contexts}})
-
-    if min_role is not None:
-        query["bool"]["must"].append(min_role_query(min_role))
-
-    for id, user_role in index_scan(ROLES_INDEX, query=query):
-        yield RoleRule.model_validate(user_role)
+def list_server_roles(
+    email_patterns: list[RoleEmailPattern] | None = None,
+    min_role: Roles | None = None,
+) -> Iterable[RoleRule]:
+    return _list_roles(email_patterns=email_patterns, role_contexts=["_server"], min_role=min_role)
 
 
 def list_user_roles(
     user: User,
     role_contexts: list[RoleContext] | None = None,
-    required_role: Role | None = None,
+    required_role: Roles | None = None,
+) -> list[RoleRule]:
+    all_matches = _list_roles(email_patterns=_user_to_role_emails(user), role_contexts=role_contexts, min_role=required_role)
+    return _get_strongest_matches(all_matches)
+
+
+def list_user_project_roles(
+    user: User,
+    project_ids: list[IndexId] | None = None,
+    required_role: Roles | None = None,
 ) -> list[RoleRule]:
     """
-    For a given user, get the most exact matching role for each role context (index or _server)
-    This does not account for global admin rights (see get_user_role for that).
-
-    if email is None, only the guest role (email="*") will be considered.
+    List all project roles for a given user.
+    This gives the most exact matching role for each project (guest, domain or full email).
+    This does not (!!) take server role into account (see get_user_project_role)
     """
-
-    all_matches = list_roles(email_patterns=user_to_role_emails(user), role_contexts=role_contexts, min_role=required_role)
-
-    return get_strongest_matches(all_matches)
+    all_matches = list(
+        list_project_roles(email_patterns=_user_to_role_emails(user), project_ids=project_ids, min_role=required_role)
+    )
+    return _get_strongest_matches(all_matches)
 
 
 def get_user_project_role(user: User, project_index: IndexId, global_admin: bool = True) -> RoleRule:
@@ -116,14 +108,14 @@ def get_user_project_role(user: User, project_index: IndexId, global_admin: bool
         project_role = next((ur for ur in user_roles if ur.role_context == project_index), None)
         server_role = next((ur for ur in user_roles if ur.role_context == "_server"), None)
 
-        if server_role and server_role.role == Role.ADMIN:
+        if server_role and server_role.role == Roles.ADMIN.name:
             project_role = server_role
             project_role.role_context = project_index
 
     if project_role:
         return project_role
     else:
-        return RoleRule(email_pattern="*", role_context=project_index, role=Role.NONE)
+        return RoleRule(email_pattern="*", role_context=project_index, role="NONE")
 
 
 def get_user_server_role(user: User) -> RoleRule:
@@ -135,54 +127,130 @@ def get_user_server_role(user: User) -> RoleRule:
     if user_roles:
         return user_roles[0]
     else:
-        return RoleRule(email_pattern="*", role_context="_server", role=Role.NONE)
+        return RoleRule(email_pattern="*", role_context="_server", role="NONE")
 
 
 def raise_if_not_project_index_role(
-    user: User, role_context: RoleContext, required_role: Role, global_admin: bool = True, message: str | None = None
+    user: User, role_context: RoleContext, required_role: Roles, global_admin: bool = True, message: str | None = None
 ):
     """
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
     role = get_user_project_role(user, role_context, global_admin=global_admin)
     if not role_is_at_least(role, required_role):
-        detail = message or f"User {user.email} does not have {required_role} role for {role_context}"
+        detail = message or f"{user.email or 'GUEST'} does not have {required_role.name} permissions on project {role_context}"
         raise HTTPException(status_code=401, detail=detail)
 
 
-def raise_if_not_server_role(user: User, required_role: Role, message: str | None = None):
+def raise_if_not_server_role(user: User, required_role: Roles, message: str | None = None):
     """
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
     role = get_user_server_role(user)
     if not role_is_at_least(role, required_role):
-        detail = message or f"User {user.email} does not have the {required_role} server role"
+        detail = message or f"{user.email or 'GUEST'} does not have {required_role.name} permissions on the server"
         raise HTTPException(status_code=401, detail=detail)
 
 
-def set_guest_role(index_id: IndexId, role: Role):
+def role_is_at_least(user_role: RoleRule | None, required_role: Roles) -> bool:
+    if user_role is None:
+        if required_role == Roles.NONE:
+            return True
+        return False
+    return Roles[user_role.role] >= required_role
+
+
+def set_project_guest_role(index_id: IndexId, role: Roles):
     """
     Helper to set the guest role for an index.
     """
-    if role == Role.ADMIN:
+    if role == Roles.ADMIN:
         raise InvalidRoleError("Cannot set guest role to ADMIN. Guests can at most be WRITER.")
-    update_role(email_pattern="*", role_context=index_id, role=role)
+    _update_role(email_pattern="*", role_context=index_id, role=role, ignore_missing=True)
 
 
-def get_guest_role(index_id: IndexId) -> Role:
+def get_project_guest_role(index_id: IndexId) -> Role:
     """Get the guest role for an index. Note that this returns the Role not RoleRule!"""
     return get_user_project_role(user=User(email=None), project_index=index_id).role
 
 
-def role_is_at_least(user_role: RoleRule | None, required_role: Role) -> bool:
-    if user_role is None:
-        if required_role == Role.NONE:
-            return True
-        return False
-    return user_role.role >= required_role
+def _create_role(email_pattern: RoleEmailPattern, role_context: RoleContext, role: Roles):
+    """
+    Creates a role for a given email pattern and role context.
+    Raises an error if a role for this email_pattern in this context already exists.
+    """
+    id = roles_index_id(email_pattern, role_context)
+    if role == Roles.NONE:
+        raise InvalidRoleError("Cannot create a role with Role.NONE.")
+
+    try:
+        user_role = RoleRule(email_pattern=email_pattern, role_context=role_context, role=role.name)
+        es().create(index=ROLES_INDEX, id=id, document=user_role.model_dump(), refresh=True)
+    except ValidationError:
+        raise InvalidRoleError(f"Invalid role {role} for {email_pattern} in context {role_context}.")
+    except ConflictError:
+        raise InvalidRoleError(f"Role for {email_pattern} in context {role_context} already exists.")
 
 
-def user_to_role_emails(user: User):
+def _update_role(email_pattern: RoleEmailPattern, role_context: RoleContext, role: Roles, ignore_missing: bool = False):
+    """
+    Updates (or creates) a role for a given email pattern and role context.
+    """
+    id = roles_index_id(email_pattern, role_context)
+    if role == Roles.NONE:
+        _delete_role(email_pattern, role_context, ignore_missing=ignore_missing)
+
+    try:
+        user_role = RoleRule(email_pattern=email_pattern, role_context=role_context, role=role.name)
+        es().update(index=ROLES_INDEX, id=id, doc=user_role.model_dump(), doc_as_upsert=ignore_missing, refresh=True)
+    except ValidationError:
+        raise InvalidRoleError(f"Invalid role {role} for {email_pattern} in context {role_context}.")
+    except NotFoundError:
+        if not ignore_missing:
+            raise InvalidRoleError(f"Role for {email_pattern} in context {role_context} does not exist.")
+
+
+def _delete_role(email_pattern: RoleEmailPattern, role_context: RoleContext, ignore_missing: bool = False):
+    try:
+        es().delete(index=ROLES_INDEX, id=roles_index_id(email_pattern, role_context), refresh=True)
+    except NotFoundError:
+        if not ignore_missing:
+            raise InvalidRoleError(f"Role for {email_pattern} in context {role_context} does not exist.")
+
+
+def _list_roles(
+    email_patterns: list[RoleEmailPattern] | None = None,
+    role_contexts: list[RoleContext] | None = None,
+    min_role: Roles | None = None,
+    only_projects: bool = False,
+) -> Iterable[RoleRule]:
+    """
+    List roles, optionally filtered by user, minimum role, role contexts, and minimum match quality.
+
+    :param role_emails: List of email patterns to filter on (or None for all users)
+    :param min_role: The minimum global role of the user (or None for all roles)
+    :param role_contexts: List of role contexts to filter on (or None for all contexts)
+    :param min_match: The minimum match quality (or None for all matches)
+    """
+    query: dict = {"bool": {"must": []}}
+
+    if email_patterns is not None:
+        query["bool"]["must"].append({"terms": {"email_pattern": email_patterns}})
+
+    if role_contexts is not None:
+        query["bool"]["must"].append({"terms": {"role_context": role_contexts}})
+
+    if min_role is not None:
+        query["bool"]["must"].append(_min_role_query(min_role))
+
+    if only_projects:
+        query["bool"]["must"].append({"bool": {"must_not": {"term": {"role_context": "_server"}}}})
+
+    for id, user_role in index_scan(ROLES_INDEX, query=query):
+        yield RoleRule.model_validate(user_role)
+
+
+def _user_to_role_emails(user: User):
     """
     Given a user, return a list of email patterns that should be checked for roles.
     """
@@ -193,12 +261,13 @@ def user_to_role_emails(user: User):
     return [user.email, "*@" + user.email.split("@")[-1], "*"]
 
 
-def min_role_query(min_role: Role):
-    roles = [role.name for role in Role if role > min_role]
+def _min_role_query(min_role: Roles):
+    roles = [role.name for role in Roles if role > min_role]
     return {"terms": {"role": roles}}
 
 
-def match_strength(email_pattern: RoleEmailPattern) -> int:
+def _match_strength(email_pattern: RoleEmailPattern) -> int:
+    """Could also just use len(email_pattern), but this is more explicit"""
     if email_pattern == "*":
         return 1
     elif email_pattern.startswith("*@"):
@@ -207,7 +276,7 @@ def match_strength(email_pattern: RoleEmailPattern) -> int:
         return 3
 
 
-def get_strongest_matches(role_matches: Iterable[RoleRule]) -> list[RoleRule]:
+def _get_strongest_matches(role_matches: Iterable[RoleRule]) -> list[RoleRule]:
     """
     From a list of roles, return the strongest match for each role context.
     """
@@ -216,7 +285,7 @@ def get_strongest_matches(role_matches: Iterable[RoleRule]) -> list[RoleRule]:
 
     for match in role_matches:
         context = match.role_context
-        strength = match_strength(match.email_pattern)
+        strength = _match_strength(match.email_pattern)
 
         if context in strongest_matches:
             current_strength = strongest_matches[context][0]

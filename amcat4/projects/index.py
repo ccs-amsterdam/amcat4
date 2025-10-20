@@ -2,9 +2,10 @@ from typing import Iterable, Mapping
 
 
 from amcat4.elastic import es
-from amcat4.models import CreateField, FieldType, IndexSettings, Role, RoleRule, User
+from amcat4.models import CreateField, FieldType, ProjectSettings, Roles, RoleRule, User
 from amcat4.systemdata.fields import create_fields, list_fields
-from amcat4.systemdata.roles import list_user_roles, raise_if_not_server_role
+
+from amcat4.systemdata.roles import list_user_project_roles, raise_if_not_server_role
 from amcat4.systemdata.settings import (
     create_project_settings,
     delete_project_settings,
@@ -23,21 +24,21 @@ def raise_if_not_project_exists(index_id: str):
         raise IndexDoesNotExist(f'Index "{index_id}" does not exist')
 
 
-def create_project_index(new_index: IndexSettings, admin_email: str | None = None):
+def create_project_index(new_index: ProjectSettings, admin_email: str | None = None):
     """
     An index needs to exist in two places: as an elasticsearch index, and as a document in the settings index.
     This function creates the elasticsearch index first, and then creates the settings document.
     """
     index_id = settings_index_id(new_index.id)
     if es().exists(index=SETTINGS_INDEX, id=index_id):
-        raise ValueError(f'Index "{id}" already exists')
+        raise ValueError(f'Index "{index_id}" already exists')
 
     create_es_index(new_index.id)
     register_project_index(new_index, admin_email)
 
 
 def register_project_index(
-    index: IndexSettings, admin_email: str | None = None, mappings: Mapping[str, FieldType | CreateField] | None = None
+    index: ProjectSettings, admin_email: str | None = None, mappings: Mapping[str, FieldType | CreateField] | None = None
 ):
     """
     Register an existing elasticsearch index in the settings index.
@@ -62,7 +63,7 @@ def deregister_project_index(index_id: str):
     delete_project_settings(index_id)
 
 
-def update_project_index(update_index: IndexSettings):
+def update_project_index(update_index: ProjectSettings):
     """
     Update index settings
     """
@@ -78,13 +79,14 @@ def delete_project_index(index_id: str, ignore_missing: bool = False):
     delete_project_settings(index_id, ignore_missing)
 
 
-def list_project_indices(ids: list[str] | None = None, source: list[str] | None = None) -> Iterable[IndexSettings]:
+def list_project_indices(ids: list[str] | None = None, source: list[str] | None = None) -> Iterable[ProjectSettings]:
     """
     List all project indices, or only those with the given ids.
     """
     query = {"terms": {"_id": ids}} if ids else None
     for id, ix in index_scan(SETTINGS_INDEX, query=query, source=source):
-        yield IndexSettings.model_validate(ix)
+        project_settings = ix["project_settings"]
+        yield ProjectSettings.model_validate(project_settings)
 
 
 def create_es_index(index_id: str):
@@ -98,23 +100,23 @@ def refresh_index(index: str):
     es().indices.refresh(index=index)
 
 
-def list_user_project_indices(user: User, show_all=False) -> Iterable[tuple[IndexSettings, RoleRule | None]]:
+def list_user_project_indices(user: User, show_all=False) -> Iterable[tuple[ProjectSettings, RoleRule | None]]:
     """
     List all indices that a user has any role on.
     Return both the index and RoleRule that the user matched for that index (can be None if show_all is True)
     TODO: add pagination and search here
     """
-    index_role_lookup: dict[str, RoleRule] = {}
+    project_role_lookup: dict[str, RoleRule] = {}
     user_indices: list[str] = []
-    for role in list_user_roles(user, required_role=Role.LISTER):
-        index_role_lookup[role.role_context] = role
+    for role in list_user_project_roles(user, required_role=Roles.LISTER):
+        project_role_lookup[role.role_context] = role
         user_indices.append(role.role_context)
 
     if show_all:
-        raise_if_not_server_role(user, Role.ADMIN)
+        raise_if_not_server_role(user, Roles.ADMIN)
         indices = list_project_indices()
     else:
         indices = list_project_indices(ids=user_indices)
 
     for index in indices:
-        yield index, index_role_lookup[index.id]
+        yield index, project_role_lookup[index.id]

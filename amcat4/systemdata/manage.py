@@ -2,6 +2,7 @@ import logging
 from typing import Literal
 from amcat4.elastic.connection import elastic_connection
 from amcat4.elastic.util import (
+    SystemIndexMapping,
     system_index_name,
 )
 from amcat4.systemdata.versions import VERSIONS, LATEST_VERSION
@@ -39,16 +40,16 @@ def create_or_update_systemdata(rm_pending_migrations: bool = True, rm_broken_ve
     active_version = active_systemdata_status(rm_pending_migrations, rm_broken_versions)
 
     if active_version is None:
+        logging.info("No active system index version exists. Creating latest version mappings.")
         # No active system indices version exists, so we don't need to migrate. Just create the mappings.
-        create_or_update_systemdata_mappings(LATEST_VERSION)
+        create_systemdata_mappings(LATEST_VERSION, migration_pending=False)
 
     elif active_version == LATEST_VERSION:
         logging.info(f"System index already at version {LATEST_VERSION}. Performing mapping update if needed.")
-        create_or_update_systemdata_mappings(LATEST_VERSION)
+        update_systemdata_mappings(LATEST_VERSION)
 
     else:
         logging.info(f"Syst index at version {active_version}, migrating to version {LATEST_VERSION}")
-
         migrate(active_version, LATEST_VERSION)
 
 
@@ -69,7 +70,7 @@ def active_systemdata_status(rm_pending_migrations: bool = True, rm_broken_versi
     remaining systemdata might contain important data, so by default
     rm_broken_versions is False.
     """
-    for i in range(LATEST_VERSION + 1, 1, -1):
+    for i in range(LATEST_VERSION, 1, -1):
         status = systemdata_version_status(i)
 
         if status.broken:
@@ -115,13 +116,13 @@ def migrate(active_version: int, latest_version: int) -> None:
 
 
 def migrate_to_version(version: int):
-    create_or_update_systemdata_mappings(version, migration_pending=True)
+    create_systemdata_mappings(version, migration_pending=True)
     VERSIONS[version].migrate()
     set_migration_successfull(version)
 
 
-def create_or_update_systemdata_mappings(version: int, migration_pending: bool = False) -> None:
-    indices = VERSIONS[version].SYSTEM_INDICES
+def create_systemdata_mappings(version: int, migration_pending: bool) -> None:
+    indices: list[SystemIndexMapping] = VERSIONS[version].SYSTEM_INDICES
     for index in indices:
         body = {
             "dynamic": "strict",
@@ -131,18 +132,24 @@ def create_or_update_systemdata_mappings(version: int, migration_pending: bool =
             body["_meta"] = {
                 "migration_pending": True,
             }
-
         index = system_index_name(version, index.name)
-        elastic_connection().indices.put_mapping(index=index, body=body)
+        elastic_connection().indices.create(index=index, mappings=body)
+
+
+def update_systemdata_mappings(version: int) -> None:
+    indices: list[SystemIndexMapping] = VERSIONS[version].SYSTEM_INDICES
+    for index in indices:
+        id = system_index_name(version, index.name)
+        elastic_connection().indices.put_mapping(index=id, properties=index.mapping)
 
 
 def systemdata_version_status(version: int) -> SystemIndexVersionStatus:
-    version_indices = VERSIONS[version].SYSTEM_INDICES
+    version_indices: list[SystemIndexMapping] = VERSIONS[version].SYSTEM_INDICES
 
     status = SystemIndexVersionStatus(version=version)
 
     for system_index in version_indices:
-        index = system_index_name(version, system_index["name"])
+        index = system_index_name(version, system_index.name)
 
         index_status = check_index_status(index)
 
@@ -163,7 +170,7 @@ def systemdata_version_status(version: int) -> SystemIndexVersionStatus:
 
 
 def delete_pending_migrations(version: int) -> None:
-    indices = VERSIONS[version].SYSTEM_INDICES
+    indices: list[SystemIndexMapping] = VERSIONS[version].SYSTEM_INDICES
 
     for index in indices:
         index_name = system_index_name(version, index.name)
@@ -175,13 +182,13 @@ def delete_pending_migrations(version: int) -> None:
                 "but index {index_name} does not exist"
             )
 
-        meta = mapping[index]["mappings"].get("_meta", {})
+        meta = mapping[index_name]["mappings"].get("_meta", {})
         if meta.get("migration_pending", True):
             elastic_connection().indices.delete(index=index_name)
 
 
 def delete_systemdata_version(version: int) -> None:
-    indices = VERSIONS[version].SYSTEM_INDICES
+    indices: list[SystemIndexMapping] = VERSIONS[version].SYSTEM_INDICES
     for index in indices:
         index_name = system_index_name(version, index.name)
         elastic_connection().indices.delete(index=index_name, ignore_unavailable=True)
