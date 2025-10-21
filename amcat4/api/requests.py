@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 
 from amcat4.api.auth import authenticated_user
-from amcat4.models import Roles, User
+from amcat4.models import PermissionRequest, Roles, User
 from amcat4.systemdata.requests import (
-    PermissionRequest,
     update_request,
     list_admin_requests,
     list_user_requests,

@@ -10,17 +10,18 @@ from amcat4.api.auth import authenticated_user
 from amcat4.models import (
     CreateField,
     FieldType,
+    IndexId,
     Roles,
     User,
 )
 from amcat4.systemdata.roles import raise_if_not_project_index_role
 
-app_index_documents = APIRouter(prefix="/index/{ix}/documents", tags=["documents"])
+app_index_documents = APIRouter(prefix="", tags=["documents"])
 
 
-@app_index_documents.post("", status_code=status.HTTP_201_CREATED)
+@app_index_documents.post("/index/{ix}/documents", status_code=status.HTTP_201_CREATED)
 def upload_documents(
-    ix: str,
+    ix: IndexId,
     documents: Annotated[list[dict[str, Any]], Body(description="The documents to upload")],
     fields: Annotated[
         dict[str, FieldType | CreateField] | None,
@@ -49,9 +50,9 @@ def upload_documents(
     return _documents.upload_documents(ix, documents, fields, operation)
 
 
-@app_index_documents.get("/{docid}")
+@app_index_documents.get("/index/{ix}/documents/{docid}")
 def get_document(
-    ix: str,
+    ix: IndexId,
     docid: str,
     fields: str | None = None,
     user: User = Depends(authenticated_user),
@@ -76,12 +77,12 @@ def get_document(
 
 
 @app_index_documents.put(
-    "/{docid}",
+    "/index/{ix}/documents/{docid}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
 )
 def update_document(
-    ix: str,
+    ix: IndexId,
     docid: str,
     update: dict = Body(...),
     user: User = Depends(authenticated_user),
@@ -102,11 +103,11 @@ def update_document(
 
 
 @app_index_documents.delete(
-    "/{docid}",
+    "/index/{ix}/documents/{docid}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
 )
-def delete_document(ix: str, docid: str, user: User = Depends(authenticated_user)):
+def delete_document(ix: IndexId, docid: str, user: User = Depends(authenticated_user)):
     """Delete this document."""
     raise_if_not_project_index_role(user, ix, Roles.WRITER)
     try:

@@ -17,8 +17,8 @@ def test_documents_unauthorized(
     index,
     writer,
 ):
-    check(client, "/index/", 401, "requires writer permission", json=dict(id=index))
-    check(client, f"/index/{index}/", 401, "requires lister permission", method="get")
+    check(client, "/index/", 403, "requires writer permission", json=dict(id=index))
+    check(client, f"/index/{index}/", 403, "requires lister permission", method="get")
 
 
 def test_error_index_create(client, writer, index):

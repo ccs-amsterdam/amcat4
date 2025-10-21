@@ -58,6 +58,17 @@ def post_json(client: TestClient, url, expected=201, headers=None, user=None, **
         return response.json()
 
 
+def put_json(client: TestClient, url, expected=200, headers=None, user=None, **kargs):
+    response = client.put(url, headers=build_headers(user, headers), **kargs)
+    assert response.status_code == expected, (
+        f"POST {url} returned {response.status_code}, expected {expected}\n{response.json()}"
+    )
+    if expected == 204:
+        return {}
+    else:
+        return response.json()
+
+
 class DateTimeEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, (datetime, date)):
@@ -82,7 +93,7 @@ def check(response, expected: int, msg: Optional[str] = None):
 
 
 @contextmanager
-def set_auth(level: AuthOptions = AuthOptions.authorized_users_only):
+def set_auth(level: AuthOptions = AuthOptions.allow_authenticated_guests):
     """Context manager to set auth option"""
     old_auth = get_settings().auth
     get_settings().auth = level

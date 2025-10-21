@@ -17,11 +17,13 @@ from amcat4.projects.index import (
     update_project_index,
 )
 from amcat4.api.auth import authenticated_user
-from amcat4.api.query import _standardize_filters, _standardize_queries
+from amcat4.api.index_query import _standardize_filters, _standardize_queries
 from amcat4.models import (
     ContactInfo,
     FilterSpec,
     FilterValue,
+    GuestRole,
+    IndexId,
     ProjectSettings,
     Roles,
     User,
@@ -37,7 +39,7 @@ from amcat4.systemdata.roles import (
 )
 from amcat4.systemdata.settings import get_project_settings
 
-app_index = APIRouter(prefix="/index", tags=["index"])
+app_index = APIRouter(prefix="", tags=["index"])
 
 # TODO: rename to projects and add deprecated index route
 # app_projects = APIRouter(prefix="/projects", tags=["projects"])
@@ -46,7 +48,7 @@ app_index = APIRouter(prefix="/index", tags=["index"])
 # add both decorators to all functions, and register both routers
 
 
-@app_index.get("/")
+@app_index.get("/index/")
 def index_list(current_user: User = Depends(authenticated_user)):
     """
     List indices from this server that the user has access to.
@@ -61,7 +63,7 @@ def index_list(current_user: User = Depends(authenticated_user)):
                 id=ix.id,
                 name=ix.name,
                 user_role=role.role if role else None,
-                user_role_match=role.email_pattern if role else None,
+                user_role_match=role.email if role else None,
                 description=ix.description or "",
                 archived=ix.archived or "",
                 folder=ix.folder or "",
@@ -72,8 +74,20 @@ def index_list(current_user: User = Depends(authenticated_user)):
     return ix_list
 
 
-@app_index.post("/", status_code=status.HTTP_201_CREATED)
-def create_index(new_index: ProjectSettings, user: User = Depends(authenticated_user)):
+class CreateIndexBody(BaseModel):
+    """Form to create a new index."""
+
+    id: IndexId
+    name: str | None = None
+    description: str | None = None
+    guest_role: GuestRole | None = None
+    folder: str | None = None
+    image_url: str | None = None
+    contact: list[ContactInfo] | None = None
+
+
+@app_index.post("/index/", status_code=status.HTTP_201_CREATED)
+def create_index(new_index: CreateIndexBody, user: User = Depends(authenticated_user)):
     """
     Create a new index, setting the current user to admin (owner).
 
@@ -82,28 +96,40 @@ def create_index(new_index: ProjectSettings, user: User = Depends(authenticated_
     raise_if_not_server_role(user, Roles.WRITER, message="Creating a new project requires WRITER permission on the server")
 
     try:
-        create_project_index(new_index, user.email)
+        create_project_index(
+            ProjectSettings(
+                id=new_index.id,
+                name=new_index.name,
+                description=new_index.description,
+                folder=new_index.folder,
+                image_url=new_index.image_url,
+                contact=new_index.contact,
+            ),
+            user.email,
+        )
     except ApiError as e:
         raise HTTPException(
             status_code=400,
             detail=dict(info=f"Error on creating index: {e}", message=e.message, body=e.body),
         )
 
+    if new_index.guest_role:
+        set_project_guest_role(new_index.id, Roles[new_index.guest_role])
 
-# TODO Yes, this should be linked to the actual roles enum
-class ChangeIndex(BaseModel):
+
+class ChangeIndexBody(BaseModel):
     """Form to update an existing index."""
 
     name: str | None = None
     description: str | None = None
-    guest_role: Literal["NONE", "READER", "WRITER"] | None = None
+    guest_role: GuestRole | None = None
     folder: str | None = None
     image_url: str | None = None
     contact: list[ContactInfo] | None = None
 
 
-@app_index.put("/{ix}")
-def modify_index(ix: str, data: ChangeIndex, user: User = Depends(authenticated_user)):
+@app_index.put("/index/{ix}")
+def modify_index(ix: IndexId, data: ChangeIndexBody, user: User = Depends(authenticated_user)):
     """
     Modify the index.
 
@@ -111,7 +137,6 @@ def modify_index(ix: str, data: ChangeIndex, user: User = Depends(authenticated_
 
     User needs admin rights on the index
     """
-    raise_if_not_project_exists(ix)
     raise_if_not_project_index_role(user, ix, Roles.ADMIN)
 
     update_project_index(
@@ -126,11 +151,11 @@ def modify_index(ix: str, data: ChangeIndex, user: User = Depends(authenticated_
     )
 
     if data.guest_role:
-        set_project_guest_role(ix, Roles(data.guest_role))
+        set_project_guest_role(ix, Roles[data.guest_role])
 
 
-@app_index.get("/{ix}")
-def view_index(ix: str, user: User = Depends(authenticated_user)):
+@app_index.get("/index/{ix}")
+def view_index(ix: IndexId, user: User = Depends(authenticated_user)):
     """
     View the index.
     """
@@ -141,15 +166,13 @@ def view_index(ix: str, user: User = Depends(authenticated_user)):
 
     role = get_user_project_role(user, project_index=ix)
     if not role_is_at_least(role, Roles.LISTER):
-        raise_if_not_project_index_role(
-            user, ix, Roles.READER, message="Viewing a project requires LISTER permission on the project"
-        )
+        raise HTTPException(403, "Viewing a project requires LISTER permission on the project")
 
     return dict(
         id=d.id,
         name=d.name or "",
         user_role=role.role if role else None,
-        user_role_match=role.email_pattern if role else None,
+        user_role_match=role.email if role else None,
         guest_role=get_project_guest_role(d.id),
         description=d.description or "",
         archived=d.archived or "",
@@ -159,9 +182,9 @@ def view_index(ix: str, user: User = Depends(authenticated_user)):
     )
 
 
-@app_index.post("/{ix}/archive", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+@app_index.post("/index/{ix}/archive", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def archive_index(
-    ix: str,
+    ix: IndexId,
     archived: Annotated[bool, Body(description="Boolean for setting archived to true or false")],
     user: User = Depends(authenticated_user),
 ):
@@ -182,8 +205,8 @@ def archive_index(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
 
-@app_index.delete("/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def delete_index(ix: str, user: User = Depends(authenticated_user)):
+@app_index.delete("/index/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def delete_index(ix: IndexId, user: User = Depends(authenticated_user)):
     """Delete the index."""
     raise_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
@@ -192,14 +215,14 @@ def delete_index(ix: str, user: User = Depends(authenticated_user)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
 
-@app_index.get("/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+@app_index.get("/index/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def refresh(ix: str):
     refresh_index(ix)
 
 
-@app_index.post("/{ix}/reindex")
+@app_index.post("/index/{ix}/reindex")
 def start_reindex(
-    ix: str,
+    ix: IndexId,
     destination: str = Body(..., description="Email address of the user to add"),
     queries: Annotated[
         str | list[str] | dict[str, str] | None,

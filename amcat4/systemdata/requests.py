@@ -2,6 +2,9 @@ from datetime import datetime
 from typing import Iterable
 import logging
 
+from elasticsearch import ConflictError
+from fastapi import HTTPException
+
 
 from amcat4.elastic import es
 from amcat4.models import ProjectSettings, PermissionRequest, Roles, RoleRequest, CreateProjectRequest, User
@@ -12,7 +15,7 @@ from amcat4.systemdata.roles import (
     update_server_role,
 )
 from amcat4.elastic.util import index_scan
-from amcat4.systemdata.versions.v2 import REQUESTS_INDEX, requests_index_id
+from amcat4.systemdata.versions.v2 import requests_index, requests_index_id
 
 
 def update_request(request: PermissionRequest):
@@ -24,9 +27,9 @@ def update_request(request: PermissionRequest):
         request.timestamp = datetime.now()
 
     es().update(
-        index=REQUESTS_INDEX,
+        index=requests_index(),
         id=id,
-        doc=request.model_dump(),
+        doc=request.model_dump(exclude_none=True),
         doc_as_upsert=True,
         refresh=True,
     )
@@ -34,7 +37,10 @@ def update_request(request: PermissionRequest):
 
 def delete_request(request: PermissionRequest):
     id = requests_index_id(request.request_type, request.email, request.role_context)
-    es().delete(index=REQUESTS_INDEX, id=id, refresh=True)
+    try:
+        es().delete(index=requests_index(), id=id, refresh=True)
+    except ConflictError:
+        raise HTTPException(404, "The request you tried to delete does not exist")
 
 
 def list_user_requests(user: User) -> Iterable[PermissionRequest]:
@@ -42,7 +48,7 @@ def list_user_requests(user: User) -> Iterable[PermissionRequest]:
     if user.email is None:
         return []
 
-    docs = index_scan(REQUESTS_INDEX, query={"term": {"email": user.email}})
+    docs = index_scan(requests_index(), query={"term": {"email": user.email}})
     for id, doc in docs:
         yield _request_from_elastic(doc)
 
@@ -59,7 +65,7 @@ def list_admin_requests(user: User) -> Iterable[PermissionRequest]:
 
     query = {"terms": {"role_context": role_contexts}}
 
-    for id, doc in index_scan(REQUESTS_INDEX, query=query):
+    for id, doc in index_scan(requests_index(), query=query):
         yield _request_from_elastic(doc)
 
 
@@ -117,7 +123,7 @@ def clear_requests():
     """
     TEST ONLY!!
     """
-    es().delete_by_query(index=REQUESTS_INDEX, query={"match_all": {}}, refresh=True)
+    es().delete_by_query(index=requests_index(), query={"match_all": {}}, refresh=True)
 
 
 def list_all_requests(statuses: list[str] | None = None) -> Iterable[PermissionRequest]:
@@ -126,5 +132,5 @@ def list_all_requests(statuses: list[str] | None = None) -> Iterable[PermissionR
     """
     query = {"terms": {"status": statuses}} if statuses else {"match_all": {}}
 
-    for id, doc in index_scan(REQUESTS_INDEX, query=query):
+    for id, doc in index_scan(requests_index(), query=query):
         yield _request_from_elastic(doc)

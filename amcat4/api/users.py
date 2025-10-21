@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from pydantic.networks import EmailStr
 
 from amcat4.api.auth import authenticated_user
-from amcat4.models import Roles, RoleEmailPattern, User
+from amcat4.models import Role, Roles, RoleEmailPattern, ServerRole, User
 from amcat4.systemdata.roles import (
     create_server_role,
     delete_server_role,
@@ -24,61 +24,60 @@ from amcat4.systemdata.roles import (
 app_users = APIRouter(tags=["users"])
 
 
-class UserForm(BaseModel):
+class ServerUserResponse(BaseModel):
+    email: RoleEmailPattern
+    role: Role
+
+
+class CreateUserBody(BaseModel):
     """Form to create a new global user."""
 
     email: RoleEmailPattern
-    role: Roles
+    role: ServerRole
 
 
-class ChangeUserForm(BaseModel):
+class ChangeUserBody(BaseModel):
     """Form to change a global user."""
 
-    role: Roles
+    role: ServerRole
 
 
 # TODO: should we also rename users, since it's actually roles now?
 
 
 @app_users.post("/users", status_code=status.HTTP_201_CREATED)
-def create_user(new_user: UserForm, user=Depends(authenticated_user)):
+def create_user(new_user: CreateUserBody, user=Depends(authenticated_user)):
     """Create a new user."""
-    raise_if_not_project_index_role(user, "_server", Roles.ADMIN)
-    create_server_role(new_user.email, role=new_user.role)
-    return {"email": new_user.email, "global_role": new_user.role}
+    raise_if_not_server_role(user, Roles.ADMIN)
+    create_server_role(new_user.email, role=Roles[new_user.role])
 
 
 @app_users.get("/users/me")
-def get_current_user(user: User = Depends(authenticated_user)):
+def get_current_user(user: User = Depends(authenticated_user)) -> ServerUserResponse:
     """View the current user."""
-    return _get_user(user.email)
+    role = get_user_server_role(user)
+    return ServerUserResponse(email=role.email, role=role.role)
 
 
 @app_users.get("/users/{email}")
-def get_user(email: EmailStr, current_user: User = Depends(authenticated_user)):
+def get_user(email: EmailStr, current_user: User = Depends(authenticated_user)) -> ServerUserResponse:
     """
     View a specified current user.
 
     Only WRITER and ADMIN can view other users.
     """
-    raise_if_not_project_index_role(current_user, "_server", Roles.WRITER)
-    return _get_user(email)
-
-
-def _get_user(email: EmailStr | None):
+    if current_user.email and current_user.email != email:
+        raise_if_not_server_role(current_user, Roles.WRITER)
     role = get_user_server_role(User(email=email))
-    if role:
-        return {"email": email, "role": role.role, "role_match": role.email_pattern}
-    else:
-        return {"email": email, "role": None, "role_match": None}
+    return ServerUserResponse(email=role.email, role=role.role)
 
 
 @app_users.get("/users")
 def list_global_users(user=Depends(authenticated_user)):
     """List all global users"""
-    raise_if_not_project_index_role(user, "_server", Roles.WRITER)
+    raise_if_not_server_role(user, Roles.WRITER)
     server_roles = list_server_roles()
-    return [{"email": role.email_pattern, "role": role.role} for role in server_roles]
+    return [{"email": role.email, "role": role.role} for role in server_roles]
 
 
 @app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
@@ -87,17 +86,17 @@ def delete_user(email: EmailStr, current_user: User = Depends(authenticated_user
     Delete the given user.
     Users can delete themselves and admin can delete everyone
     """
-    if current_user != email:
+    if current_user.email and current_user.email != email:
         raise_if_not_server_role(current_user, Roles.ADMIN)
 
-    delete_server_role(email_pattern=email)
+    delete_server_role(email=email)
 
 
 @app_users.put("/users/{email}")
-def modify_user(email: EmailStr, data: ChangeUserForm, user: User = Depends(authenticated_user)):
+def modify_user(email: EmailStr, data: ChangeUserBody, user: User = Depends(authenticated_user)):
     """
     Modify the given user.
     Only admin can change users.
     """
-    update_server_role(email_pattern=email, role=data.role)
-    return {"email": email, "role": data.role.name}
+    raise_if_not_server_role(user, Roles.ADMIN)
+    update_server_role(email=email, role=Roles[data.role])

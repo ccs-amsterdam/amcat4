@@ -30,9 +30,6 @@ class AuthOptions(str, Enum):
     #: and dependent on index-level guest_role authorization settings
     allow_authenticated_guests = "allow_authenticated_guests"
 
-    #: only people with a valid middlecat login and an explicit server role can use the server
-    authorized_users_only = "authorized_users_only"
-
     @classmethod
     def validate(cls, value: str):
         if value not in cls.__members__:
@@ -63,7 +60,7 @@ class Settings(BaseSettings):
         str | None,
         Field(
             description=(
-                "Elasticsearch password. " "This the password for the 'elastic' user when Elastic xpack security is enabled"
+                "Elasticsearch password. This the password for the 'elastic' user when Elastic xpack security is enabled"
             )
         ),
     ] = None
@@ -82,7 +79,7 @@ class Settings(BaseSettings):
         bool | None,
         Field(
             description=(
-                "Elasticsearch verify SSL (only used if elastic_password is set). " "Default: True unless host is localhost)"
+                "Elasticsearch verify SSL (only used if elastic_password is set). Default: True unless host is localhost)"
             ),
         ),
     ] = None

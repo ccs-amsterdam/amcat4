@@ -4,7 +4,7 @@ from typing import Optional, Set
 
 from pytest import raises
 
-from amcat4.api.query import _standardize_filters, _standardize_queries
+from amcat4.api.index_query import _standardize_filters, _standardize_queries
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
 from amcat4.projects.query import get_task_status, query_documents, reindex
 from amcat4.systemdata.fields import list_fields

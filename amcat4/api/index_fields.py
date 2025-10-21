@@ -10,6 +10,7 @@ from amcat4.models import (
     CreateField,
     FieldSpec,
     FieldType,
+    IndexId,
     Roles,
     UpdateField,
     User,
@@ -17,12 +18,12 @@ from amcat4.models import (
 from amcat4.systemdata import fields as _fields
 from amcat4.systemdata.roles import get_user_project_role, raise_if_not_project_index_role, role_is_at_least
 
-app_index_fields = APIRouter(prefix="/index/{ix}/fields", tags=["project index fields"])
+app_index_fields = APIRouter(prefix="", tags=["project index fields"])
 
 
-@app_index_fields.post("")
+@app_index_fields.post("/index/{ix}/fields")
 def create_fields(
-    ix: str,
+    ix: IndexId,
     fields: Annotated[
         dict[str, FieldType | CreateField],
         Body(
@@ -42,8 +43,8 @@ def create_fields(
     return "", HTTPStatus.NO_CONTENT
 
 
-@app_index_fields.get("")
-def get_fields(ix: str, user: User = Depends(authenticated_user)):
+@app_index_fields.get("/index/{ix}/fields")
+def get_fields(ix: IndexId, user: User = Depends(authenticated_user)):
     """
     Get the fields (columns) used in this index.
 
@@ -53,9 +54,9 @@ def get_fields(ix: str, user: User = Depends(authenticated_user)):
     return _fields.list_fields(ix)
 
 
-@app_index_fields.put("")
+@app_index_fields.put("/index/{ix}/fields")
 def update_fields(
-    ix: str, fields: Annotated[dict[str, UpdateField], Body(description="")], user: User = Depends(authenticated_user)
+    ix: IndexId, fields: Annotated[dict[str, UpdateField], Body(description="")], user: User = Depends(authenticated_user)
 ):
     """
     Update the field settings
@@ -66,8 +67,8 @@ def update_fields(
     return "", HTTPStatus.NO_CONTENT
 
 
-@app_index_fields.get("/{field}/values")
-def get_field_values(ix: str, field: str, user: User = Depends(authenticated_user)):
+@app_index_fields.get("/index/{ix}/fields/{field}/values")
+def get_field_values(ix: IndexId, field: str, user: User = Depends(authenticated_user)):
     """
     Get unique values for a specific field. Should mainly/only be used for tag fields.
     Main purpose is to provide a list of values for a dropdown menu.
@@ -87,8 +88,8 @@ def get_field_values(ix: str, field: str, user: User = Depends(authenticated_use
     return values
 
 
-@app_index_fields.get("/{field}/stats")
-def get_field_stats(ix: str, field: str, user: User = Depends(authenticated_user)):
+@app_index_fields.get("/index/{ix}/fields/{field}/stats")
+def get_field_stats(ix: IndexId, field: str, user: User = Depends(authenticated_user)):
     """Get statistics for a specific value. Only works for numeric (incl date) fields."""
     role = get_user_project_role(user, ix)
     if role_is_at_least(role, Roles.READER):

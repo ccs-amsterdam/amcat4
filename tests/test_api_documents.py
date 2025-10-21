@@ -6,18 +6,18 @@ from tests.tools import post_json, build_headers, get_json, check
 def test_documents_unauthorized(client, index, user):
     """Anonymous and unauthorized user cannot get, put, or post documents"""
     docs = {"documents": []}
-    check(client.post(f"index/{index}/documents", json=docs), 401)
+    check(client.post(f"index/{index}/documents", json=docs), 403)
     check(
         client.post(f"index/{index}/documents", json=docs, headers=build_headers(user=user)),
-        401,
+        403,
     )
-    check(client.put(f"index/{index}/documents/1", json={}), 401)
+    check(client.put(f"index/{index}/documents/1", json={}), 403)
     check(
         client.put(f"index/{index}/documents/1", json={}, headers=build_headers(user=user)),
-        401,
+        403,
     )
-    check(client.get(f"index/{index}/documents/1"), 401)
-    check(client.get(f"index/{index}/documents/1", headers=build_headers(user=user)), 401)
+    check(client.get(f"index/{index}/documents/1"), 403)
+    check(client.get(f"index/{index}/documents/1", headers=build_headers(user=user)), 403)
 
 
 def test_documents(client, index, user):

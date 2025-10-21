@@ -72,9 +72,9 @@ async def authenticated_user(token: str | None = Depends(oauth2_scheme)) -> User
             return User(email=None, superadmin=True)
         elif settings.auth == AuthOptions.allow_guests:
             return User(email=None)
-        else:
+        else:  # settings.auth == AuthOptions.allow_authenticated_guests:
             raise HTTPException(
-                status_code=HTTP_401_UNAUTHORIZED,
+                status_code=401,
                 detail="This instance requires guests to be authenticated. Please provide a valid bearer token",
             )
     try:
@@ -83,4 +83,7 @@ async def authenticated_user(token: str | None = Depends(oauth2_scheme)) -> User
         logging.exception("Login failed")
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    return User(email=email, superadmin=email == settings.admin_email)
+    if settings.auth == AuthOptions.no_auth or email == settings.admin_email:
+        return User(email=email, superadmin=True)
+    else:
+        return User(email=email)

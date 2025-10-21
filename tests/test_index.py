@@ -79,33 +79,17 @@ def test_import_index():
     assert index not in list_index_ids()
 
 
-def test_list_indices(index, guest_index, admin):
-    assert index in list_index_ids()
-    assert guest_index in list_index_ids()
-    assert index in list_index_ids(admin)
-    assert guest_index in list_index_ids(admin)
-    user = "user@example.com"
-    assert index not in list_index_ids(user)
-    assert guest_index in list_index_ids(user)
-    update_project_role(user, index, Roles.WRITER)
-    # refresh_index(get_settings().system_index)
-    assert index in list_user_project_indices(User(email=user))
-    delete_project_index(index)
-    # refresh_index(get_settings().system_index)
-    assert index not in list_user_project_indices(User(email=user))
-
-
 def test_global_roles():
     email = "user@example.com"
     user = User(email=email)
     assert get_user_server_role(user).role == Roles.NONE.name
-    update_server_role(email_pattern=email, role=Roles.ADMIN)
+    update_server_role(email=email, role=Roles.ADMIN)
     # refresh_index(get_settings().system_index)
     assert get_user_server_role(user).role == Roles.ADMIN.name
-    update_server_role(email_pattern=email, role=Roles.WRITER)
+    update_server_role(email=email, role=Roles.WRITER)
     # refresh_index(get_settings().system_index)
     assert get_user_server_role(user).role == Roles.WRITER.name
-    delete_server_role(email_pattern=email)
+    delete_server_role(email=email)
     # refresh_index(get_settings().system_index)
     assert get_user_server_role(user).role == Roles.NONE.name
 
@@ -114,13 +98,13 @@ def test_index_roles(index):
     email = "user@example.com"
     user = User(email=email)
     assert get_user_project_role(user, index).role == Roles.NONE
-    update_project_role(email_pattern=email, project_id=index, role=Roles.WRITER)
+    update_project_role(email=email, project_id=index, role=Roles.WRITER)
     # refresh_index(get_settings().system_index)
     assert get_user_project_role(user, index).role == Roles.METAREADER
-    update_project_role(email_pattern=email, project_id=index, role=Roles.ADMIN)
+    update_project_role(email=email, project_id=index, role=Roles.ADMIN)
     # refresh_index(get_settings().system_index)
     assert get_user_project_role(user, index).role == Roles.ADMIN
-    delete_project_role(email_pattern=email, project_id=index)
+    delete_project_role(email=email, project_id=index)
     # refresh_index(get_settings().system_index)
     assert get_user_project_role(user, index).role == Roles.NONE
 

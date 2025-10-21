@@ -9,6 +9,7 @@ from amcat4.elastic import es
 from amcat4.models import CreateField, FieldType, ProjectSettings, Roles
 from amcat4.projects.documents import upload_documents
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
+from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
 from amcat4.systemdata.requests import clear_requests
 from amcat4.systemdata.roles import (
     delete_server_role,
@@ -17,13 +18,6 @@ from amcat4.systemdata.roles import (
 )
 from tests.middlecat_keypair import PUBLIC_KEY
 
-UNITS = [
-    {"unit": {"text": "unit1"}},
-    {"unit": {"text": "unit2"}, "gold": {"element": "au"}},
-]
-CODEBOOK = {"foo": "bar"}
-PROVENANCE = {"bar": "foo"}
-RULES = {"ruleset": "crowdcoding"}
 UNITTEST_SYSTEM_INDEX = "amcat4_unittest_system"
 
 
@@ -40,10 +34,11 @@ def mock_middlecat():
 def my_setup():
     # Override system db
     get_settings().system_index = UNITTEST_SYSTEM_INDEX
+    system_index_version = create_or_update_systemdata(rm_broken_versions=True)
 
     es.cache_clear()
     yield None
-    delete_project_index(UNITTEST_SYSTEM_INDEX, ignore_missing=True)
+    delete_systemdata_version(system_index_version)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -62,7 +57,7 @@ def admin():
     email = "admin@amcat.nl"
     update_server_role(email, Roles.ADMIN, ignore_missing=True)
     yield email
-    delete_server_role(email)
+    delete_server_role(email, ignore_missing=True)
 
 
 @pytest.fixture()
@@ -70,7 +65,7 @@ def writer():
     email = "writer@amcat.nl"
     update_server_role(email, Roles.WRITER, ignore_missing=True)
     yield email
-    delete_server_role(email)
+    delete_server_role(email, ignore_missing=True)
 
 
 @pytest.fixture()
@@ -78,7 +73,7 @@ def reader():
     email = "reader@amcat.nl"
     update_server_role(email, Roles.READER, ignore_missing=True)
     yield email
-    delete_server_role(email)
+    delete_server_role(email, ignore_missing=True)
 
 
 @pytest.fixture()
@@ -86,24 +81,24 @@ def writer2():
     email = "writer2@amcat.nl"
     update_server_role(email, Roles.WRITER, ignore_missing=True)
     yield email
-    delete_server_role(email)
+    delete_server_role(email, ignore_missing=True)
 
 
 @pytest.fixture()
 def user():
-    name = "test_user@amcat.nl"
-    update_server_role(name, Roles.READER, ignore_missing=True)
-    yield name
-    delete_server_role(name)
+    email = "test_user@amcat.nl"
+    update_server_role(email, Roles.READER, ignore_missing=True)
+    yield email
+    delete_server_role(email, ignore_missing=True)
 
 
 @pytest.fixture()
 def username():
     """A name to create a user which will be deleted afterwards if needed"""
-    name = "test_username@amcat.nl"
-    delete_server_role(name, ignore_missing=True)
-    yield name
-    delete_server_role(name)
+    email = "test_username@amcat.nl"
+    delete_server_role(email, ignore_missing=True)
+    yield email
+    delete_server_role(email, ignore_missing=True)
 
 
 @pytest.fixture()
@@ -194,8 +189,7 @@ def populate_index(index):
 def index_docs():
     index = "amcat4_unittest_indexdocs"
     delete_project_index(index, ignore_missing=True)
-    create_project_index(ProjectSettings(id=index))
-    set_project_guest_role(index, Roles.READER)
+    create_project_index(ProjectSettings(id=index, name="Unittest Index with Docs"))
     populate_index(index)
     yield index
     delete_project_index(index, ignore_missing=True)

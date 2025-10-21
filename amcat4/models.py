@@ -7,8 +7,8 @@ from typing_extensions import Self
 
 
 class User(BaseModel):
-    email: EmailStr | None
-    superadmin: bool = False
+    email: EmailStr | None  # this can only be an authenticed, full email address or None for unauthenticated users
+    superadmin: bool = False  # if auth is disabled, or if the user is the hardcoded admin email
 
 
 class Roles(IntEnum):
@@ -20,27 +20,29 @@ class Roles(IntEnum):
     ADMIN = 50
 
 
-## Use the RoleValidator as a type in pydantic models to accept the name as input
 Role = Literal["NONE", "LISTER", "METAREADER", "READER", "WRITER", "ADMIN"]
+GuestRole = Literal["NONE", "LISTER", "METAREADER", "READER", "WRITER"]
+ServerRole = Literal["NONE", "WRITER", "ADMIN"]
 
 
 IndexId = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*$")]
+IndexIds = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*$")]
+
+
 RoleEmailPattern = EmailStr | Literal["*"]  # user@domain.com or *@domain.com or *
 RoleContext = IndexId | Literal["_server"]
 
 
 class RoleRule(BaseModel):
-    email_pattern: RoleEmailPattern
+    email: RoleEmailPattern
     role_context: RoleContext
     role: Role
 
     @model_validator(mode="after")
     def validate_role(self) -> Self:
-        uses_wildcard = "*" in self.email_pattern
+        uses_wildcard = "*" in self.email
         if self.role == Roles.ADMIN and uses_wildcard:
-            raise ValueError(
-                f"Cannot create ADMIN role for {self.email_pattern}. Only exact email matches can have ADMIN role"
-            )
+            raise ValueError(f"Cannot create ADMIN role for {self.email}. Only exact email matches can have ADMIN role")
         return self
 
 

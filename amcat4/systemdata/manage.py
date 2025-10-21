@@ -1,5 +1,6 @@
 import logging
 from typing import Literal
+from amcat4.config import get_settings
 from amcat4.elastic.connection import elastic_connection
 from amcat4.elastic.util import (
     SystemIndexMapping,
@@ -13,15 +14,7 @@ class InvalidSystemIndex(Exception):
     pass
 
 
-class SystemIndexVersionStatus(BaseModel):
-    version: int
-    broken: bool = False  # True if some indices are missing or have pending migrations
-    does_not_exist: bool = True  # True if no indices for this version exist
-    pending_migrations: list[str] = []  # list of indices with pending migrations
-    missing_indices: list[str] = []  # list of indices that are missing
-
-
-def create_or_update_systemdata(rm_pending_migrations: bool = True, rm_broken_versions: bool = False) -> None:
+def create_or_update_systemdata(rm_pending_migrations: bool = True, rm_broken_versions: bool = False) -> int:
     """
     This is the main function. It should be called at startup, and will automatically
     update the system indices mappings and start a migration if needed. This will
@@ -34,10 +27,11 @@ def create_or_update_systemdata(rm_pending_migrations: bool = True, rm_broken_ve
     :param rm_broken_versions: If True, broken versions (with missing indices) will be deleted automatically. This
                                is NOT safe, since these indices might contain important data. So by default this is False.
                                But we should have (todo) a migrate script that can be run manually from the command line.
+    :return: The active systemdata version after the operation.
     """
 
     # Check the current version of the system indices exists
-    active_version = active_systemdata_status(rm_pending_migrations, rm_broken_versions)
+    active_version = active_systemdata_status(LATEST_VERSION, rm_pending_migrations, rm_broken_versions)
 
     if active_version is None:
         logging.info("No active system index version exists. Creating latest version mappings.")
@@ -52,8 +46,12 @@ def create_or_update_systemdata(rm_pending_migrations: bool = True, rm_broken_ve
         logging.info(f"Syst index at version {active_version}, migrating to version {LATEST_VERSION}")
         migrate(active_version, LATEST_VERSION)
 
+    return LATEST_VERSION
 
-def active_systemdata_status(rm_pending_migrations: bool = True, rm_broken_versions: bool = False) -> int | None:
+
+def active_systemdata_status(
+    latest_version: int, rm_pending_migrations: bool = True, rm_broken_versions: bool = False
+) -> int | None:
     """
     Find which systemdata version is currently active, and return its version nr.
     To migrate from this version to the latest version,there cannot be any broken
@@ -70,7 +68,7 @@ def active_systemdata_status(rm_pending_migrations: bool = True, rm_broken_versi
     remaining systemdata might contain important data, so by default
     rm_broken_versions is False.
     """
-    for i in range(LATEST_VERSION, 1, -1):
+    for i in range(latest_version, 1, -1):
         status = systemdata_version_status(i)
 
         if status.broken:
@@ -141,6 +139,14 @@ def update_systemdata_mappings(version: int) -> None:
     for index in indices:
         id = system_index_name(version, index.name)
         elastic_connection().indices.put_mapping(index=id, properties=index.mapping)
+
+
+class SystemIndexVersionStatus(BaseModel):
+    version: int
+    broken: bool = False  # True if some indices are missing or have pending migrations
+    does_not_exist: bool = True  # True if no indices for this version exist
+    pending_migrations: list[str] = []  # list of indices with pending migrations
+    missing_indices: list[str] = []  # list of indices that are missing
 
 
 def systemdata_version_status(version: int) -> SystemIndexVersionStatus:

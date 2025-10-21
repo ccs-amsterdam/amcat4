@@ -34,7 +34,7 @@ from amcat4.models import (
     User,
 )
 from amcat4.systemdata.roles import get_user_project_role, role_is_at_least
-from amcat4.systemdata.versions.v2 import FIELDS_INDEX, fields_index_id
+from amcat4.systemdata.versions.v2 import fields_index, fields_index_id
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, index_scan
 from amcat4.systemdata.typemap import TYPEMAP_AMCAT_TO_ES, TYPEMAP_ES_TO_AMCAT
 
@@ -245,7 +245,7 @@ def raise_if_field_not_allowed(index: str, user: User, fields: list[FieldSpec]) 
             if field.snippet is None:
                 # if snippet is not specified, the whole field is requested
                 raise HTTPException(
-                    status_code=401, detail=f"METAREADER cannot read {field} on index {index}. {max_params_msg}"
+                    status_code=403, detail=f"METAREADER cannot read {field} on index {index}. {max_params_msg}"
                 )
 
             valid_nomatch_chars = field.snippet.nomatch_chars <= metareader.max_snippet.nomatch_chars
@@ -254,12 +254,12 @@ def raise_if_field_not_allowed(index: str, user: User, fields: list[FieldSpec]) 
             valid = valid_nomatch_chars and valid_max_matches and valid_match_chars
             if not valid:
                 raise HTTPException(
-                    status_code=401,
+                    status_code=403,
                     detail=f"The requested snippet of {field.name} on index {index} is too long. {max_params_msg}",
                 )
         else:
             raise HTTPException(
-                status_code=401,
+                status_code=403,
                 detail=f"METAREADER cannot read {field.name} on index {index}",
             )
 
@@ -390,13 +390,13 @@ def _update_fields(index: str, fields: dict[str, Field]):
         for field, settings in fields.items():
             id = fields_index_id(index, field)
             field_doc = {"index": index, "name": field, "settings": settings.model_dump()}
-            yield BulkInsertAction(index=FIELDS_INDEX, id=id, doc=field_doc)
+            yield BulkInsertAction(index=fields_index(), id=id, doc=field_doc)
 
     es_bulk_upsert(insert_fields())
 
 
 def _list_fields(index: str) -> dict[str, Field]:
-    docs = index_scan(FIELDS_INDEX, query={"term": {"index": index}})
+    docs = index_scan(fields_index(), query={"term": {"index": index}})
     return {doc["name"]: Field.model_validate(doc["settings"]) for id, doc in docs}
 
 

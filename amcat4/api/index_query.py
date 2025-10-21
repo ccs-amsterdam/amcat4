@@ -7,12 +7,12 @@ from pydantic.main import BaseModel
 
 from amcat4.projects.aggregate import Aggregation, Axis, TopHitsAggregation, query_aggregate
 from amcat4.api.auth import authenticated_user
-from amcat4.models import FieldSpec, FilterSpec, FilterValue, Roles, SortSpec, User
+from amcat4.models import FieldSpec, FilterSpec, FilterValue, IndexId, IndexIds, Roles, SortSpec, User
 from amcat4.projects.query import delete_query, update_query, update_tag_query, query_documents
 from amcat4.systemdata.fields import get_allowed_fields, raise_if_field_not_allowed
 from amcat4.systemdata.roles import raise_if_not_project_index_role
 
-app_query = APIRouter(prefix="/index", tags=["query"])
+app_index_query = APIRouter(prefix="/index", tags=["query"])
 
 
 class QueryMeta(BaseModel):
@@ -32,9 +32,9 @@ class QueryResult(BaseModel):
     meta: QueryMeta
 
 
-@app_query.post("/{index}/query", response_model=QueryResult)
+@app_index_query.post("/{index}/query", response_model=QueryResult)
 def query_documents_post(
-    index: str,
+    index: IndexIds,
     queries: Annotated[
         str | list[str] | dict[str, str] | None,
         Body(
@@ -113,7 +113,8 @@ def query_documents_post(
 
     fieldspecs = _standardize_fieldspecs(fields)
     if fieldspecs:
-        raise_if_field_not_allowed(index, user, fieldspecs)
+        for ix in indices:
+            raise_if_field_not_allowed(ix, user, fieldspecs)
     else:
         if len(indices) > 1:
             raise ValueError("Fields should be specified if multiple indices are given")
@@ -170,9 +171,9 @@ class AxisSpec(BaseModel):
     interval: Optional[str] = None
 
 
-@app_query.post("/{index}/aggregate")
+@app_index_query.post("/{index}/aggregate")
 def query_aggregate_post(
-    index: str,
+    index: IndexIds,
     axes: Optional[List[AxisSpec]] = Body(None, description="Axes to aggregate on (i.e. group by)"),
     aggregations: Optional[List[AggregationSpec | TopHitsAggregationSpec]] = Body(
         None, description="Aggregate functions to compute"
@@ -222,8 +223,8 @@ def query_aggregate_post(
             else:
                 fields_to_check += [FieldSpec(name=f) for f in agg.fields]
 
-    for index_name in indices:
-        if fields_to_check:
+    if fields_to_check:
+        for index_name in indices:
             raise_if_field_not_allowed(index_name, user, fields_to_check)
 
     _axes = [Axis(**x.model_dump()) for x in axes] if axes else []
@@ -247,9 +248,9 @@ def query_aggregate_post(
     }
 
 
-@app_query.post("/{index}/tags_update")
+@app_index_query.post("/{index}/tags_update")
 def query_update_tags(
-    index: str,
+    index: IndexIds,
     action: Literal["add", "remove"] = Body(None, description="Action (add or remove) on tags"),
     field: str = Body(None, description="Tag field to update"),
     tag: str = Body(None, description="Tag to add or remove"),
@@ -285,9 +286,9 @@ def query_update_tags(
     return update_result
 
 
-@app_query.post("/{index}/update_by_query")
+@app_index_query.post("/{index}/update_by_query")
 def update_by_query(
-    index: str,
+    index: IndexIds,
     field: Annotated[str, Body(description="Field to update")],
     value: Annotated[str | int | float | None, Body(description="New value for the field, or null/None to delete field")],
     queries: Annotated[
@@ -312,13 +313,15 @@ def update_by_query(
 
     Select documents using queries and/or filters, and specify a field and new value.
     """
-    raise_if_not_project_index_role(user, index, Roles.WRITER)
-    return update_query(index, field, value, _standardize_queries(queries), _standardize_filters(filters), ids)
+    indices = index.split(",")
+    for ix in indices:
+        raise_if_not_project_index_role(user, ix, Roles.WRITER)
+    return update_query(indices, field, value, _standardize_queries(queries), _standardize_filters(filters), ids)
 
 
-@app_query.post("/{index}/delete_by_query")
+@app_index_query.post("/{index}/delete_by_query")
 def delete_by_query(
-    index: str,
+    index: IndexIds,
     queries: Annotated[
         str | list[str] | dict[str, str] | None,
         Body(
@@ -341,8 +344,10 @@ def delete_by_query(
 
     Select documents using queries and/or filters, and specify a field and new value.
     """
-    raise_if_not_project_index_role(user, index, Roles.WRITER)
-    return delete_query(index, _standardize_queries(queries), _standardize_filters(filters), ids)
+    indices = index.split(",")
+    for ix in indices:
+        raise_if_not_project_index_role(user, ix, Roles.WRITER)
+    return delete_query(indices, _standardize_queries(queries), _standardize_filters(filters), ids)
 
 
 def _standardize_queries(queries: str | list[str] | dict[str, str] | None = None) -> dict[str, str] | None:

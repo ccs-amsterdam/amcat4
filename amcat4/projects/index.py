@@ -12,7 +12,7 @@ from amcat4.systemdata.settings import (
     update_project_settings,
 )
 from amcat4.elastic.util import index_scan
-from amcat4.systemdata.versions.v2 import SETTINGS_INDEX, settings_index_id
+from amcat4.systemdata.versions.v2 import settings_index, settings_index_id
 
 
 class IndexDoesNotExist(ValueError):
@@ -20,7 +20,7 @@ class IndexDoesNotExist(ValueError):
 
 
 def raise_if_not_project_exists(index_id: str):
-    if not es().exists(index=SETTINGS_INDEX, id=settings_index_id(index_id)):
+    if not es().exists(index=settings_index(), id=settings_index_id(index_id)):
         raise IndexDoesNotExist(f'Index "{index_id}" does not exist')
 
 
@@ -30,7 +30,7 @@ def create_project_index(new_index: ProjectSettings, admin_email: str | None = N
     This function creates the elasticsearch index first, and then creates the settings document.
     """
     index_id = settings_index_id(new_index.id)
-    if es().exists(index=SETTINGS_INDEX, id=index_id):
+    if es().exists(index=settings_index(), id=index_id):
         raise ValueError(f'Index "{index_id}" already exists')
 
     create_es_index(new_index.id)
@@ -50,7 +50,7 @@ def register_project_index(
     """
     if not es().indices.exists(index=index.id):
         raise ValueError(f'Index "{index.id}" does not exist in elasticsearch')
-    if es().exists(index=SETTINGS_INDEX, id=settings_index_id(index.id)):
+    if es().exists(index=settings_index(), id=settings_index_id(index.id)):
         raise ValueError(f'Index "{index.id}" is already registered')
 
     create_project_settings(index, admin_email)
@@ -83,8 +83,8 @@ def list_project_indices(ids: list[str] | None = None, source: list[str] | None 
     """
     List all project indices, or only those with the given ids.
     """
-    query = {"terms": {"_id": ids}} if ids else None
-    for id, ix in index_scan(SETTINGS_INDEX, query=query, source=source):
+    query = {"terms": {"_id": ids}} if ids is not None else None
+    for id, ix in index_scan(settings_index(), query=query, source=source):
         project_settings = ix["project_settings"]
         yield ProjectSettings.model_validate(project_settings)
 
@@ -106,17 +106,17 @@ def list_user_project_indices(user: User, show_all=False) -> Iterable[tuple[Proj
     Return both the index and RoleRule that the user matched for that index (can be None if show_all is True)
     TODO: add pagination and search here
     """
+    if show_all:
+        raise_if_not_server_role(user, Roles.ADMIN)
+        for index in list_project_indices():
+            yield index, RoleRule(role=Roles.ADMIN.name, role_context=index.id, email=user.email or "*")
+        return
+
     project_role_lookup: dict[str, RoleRule] = {}
     user_indices: list[str] = []
     for role in list_user_project_roles(user, required_role=Roles.LISTER):
         project_role_lookup[role.role_context] = role
         user_indices.append(role.role_context)
 
-    if show_all:
-        raise_if_not_server_role(user, Roles.ADMIN)
-        indices = list_project_indices()
-    else:
-        indices = list_project_indices(ids=user_indices)
-
-    for index in indices:
+    for index in list_project_indices(ids=user_indices):
         yield index, project_role_lookup[index.id]

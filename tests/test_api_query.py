@@ -1,4 +1,4 @@
-from amcat4.systemdata.roles import update_project_role
+from amcat4.systemdata.roles import create_project_role, update_project_role
 from amcat4.models import CreateField, FieldSpec, Roles
 from amcat4.projects.query import query_documents
 from amcat4.projects.index import refresh_index
@@ -7,6 +7,8 @@ from tests.tools import build_headers, check, post_json, dictset
 
 
 def test_query_post(client, index_docs, user):
+    create_project_role(user, index_docs, Roles.READER)
+
     def q(**body):
         return post_json(client, f"/index/{index_docs}/query", user=user, expected=200, json=body)["results"]
 
@@ -36,6 +38,7 @@ def test_query_post(client, index_docs, user):
 
 
 def test_aggregate(client, index_docs, user):
+    create_project_role(user, index_docs, Roles.READER)
     r = post_json(
         client,
         f"/index/{index_docs}/aggregate",
@@ -89,6 +92,7 @@ def test_aggregate(client, index_docs, user):
 
 
 def test_bare_aggregate(client, index_docs, user):
+    create_project_role(user, index_docs, Roles.READER)
     r = post_json(
         client,
         f"/index/{index_docs}/aggregate",
@@ -119,7 +123,9 @@ def test_bare_aggregate(client, index_docs, user):
 
 
 def test_multiple_index(client, index_docs, index, user):
-    update_project_role(user, index, Roles.READER)
+    create_project_role(user, index_docs, Roles.READER)
+    create_project_role(user, index, Roles.READER)
+
     upload(
         index,
         [{"text": "also a text", "i": -1, "cat": "c"}],
@@ -130,6 +136,7 @@ def test_multiple_index(client, index_docs, index, user):
         },
     )
     indices = f"{index},{index_docs}"
+    print(indices)
 
     r = post_json(
         client,
@@ -151,6 +158,8 @@ def test_multiple_index(client, index_docs, index, user):
 
 
 def test_aggregate_datemappings(client, index_docs, user):
+    create_project_role(user, index_docs, Roles.READER)
+
     r = post_json(
         client,
         f"/index/{index_docs}/aggregate",
@@ -180,12 +189,14 @@ def test_aggregate_datemappings(client, index_docs, user):
 
 
 def test_query_tags(client, index_docs, user):
+    create_project_role(user, index_docs, Roles.READER)
+
     def tags():
         result = query_documents(index_docs, fields=[FieldSpec(name="tag")])
         return {doc["_id"]: doc["tag"] for doc in (result.data if result else []) if doc.get("tag")}
 
-    check(client.post(f"/index/{index_docs}/tags_update"), 401)
-    check(client.post(f"/index/{index_docs}/tags_update", headers=build_headers(user=user)), 401)
+    check(client.post(f"/index/{index_docs}/tags_update"), 403)
+    check(client.post(f"/index/{index_docs}/tags_update", headers=build_headers(user=user)), 403)
 
     update_project_role(user, index_docs, Roles.WRITER)
 
@@ -227,13 +238,14 @@ def test_api_update_by_query(client, index_docs, user):
         return {doc["_id"]: doc.get("subcat") for doc in (res.data if res else [])}
 
     # Delete requires WRITER privs
-    update_project_role(user, index_docs, Roles.READER)
+    create_project_role(user, index_docs, Roles.READER)
+
     res = client.post(
         f"/index/{index_docs}/update_by_query",
         json=dict(field="subcat", value="z", filters=dict(cat="a")),
         headers=build_headers(user=user),
     )
-    assert res.status_code == 401
+    assert res.status_code == 403
 
     update_project_role(user, index_docs, Roles.WRITER)
     res = client.post(
@@ -252,13 +264,13 @@ def test_api_delete_by_query(client, index_docs, user):
         return {doc["_id"] for doc in (res.data if res else [])}
 
     # Delete requires WRITER privs
-    update_project_role(user, index_docs, Roles.READER)
+    create_project_role(user, index_docs, Roles.READER)
     res = client.post(
         f"/index/{index_docs}/delete_by_query",
         json=dict(filters=dict(cat="a")),
         headers=build_headers(user=user),
     )
-    assert res.status_code == 401
+    assert res.status_code == 403
 
     update_project_role(user, index_docs, Roles.WRITER)
     res = client.post(

@@ -12,7 +12,7 @@ from amcat4.api.index_documents import app_index_documents
 from amcat4.api.index_fields import app_index_fields
 from amcat4.api.index_users import app_index_users
 from amcat4.api.info import app_info
-from amcat4.api.query import app_query
+from amcat4.api.index_query import app_index_query
 from amcat4.api.requests import app_requests
 from amcat4.api.users import app_users
 from amcat4.systemdata.manage import create_or_update_systemdata
@@ -49,7 +49,7 @@ app.include_router(app_index)
 app.include_router(app_index_documents)
 app.include_router(app_index_fields)
 app.include_router(app_index_users)
-app.include_router(app_query)
+app.include_router(app_index_query)
 app.include_router(app_requests)
 app.add_middleware(
     CORSMiddleware,

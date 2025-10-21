@@ -1,13 +1,14 @@
 from fastapi.testclient import TestClient
 from amcat4.models import FieldSpec, SnippetParams
 
+from amcat4.systemdata.roles import set_project_guest_role
 from tests.tools import build_headers, post_json
 
 
 def create_index_metareader(client, index, admin):
-    # Create new user and set index role to metareader
-    client.post("/users", headers=build_headers(admin), json={"email": "meta@reader.com", "role": "METAREADER"})
-    client.put(f"/index/{index}/users/meta@reader.com", headers=build_headers(admin), json={"role": "METAREADER"})
+    res = client.post(
+        f"/index/{index}/users", headers=build_headers(admin), json={"email": "meta@reader.com", "role": "METAREADER"}
+    )
 
 
 def set_metareader_access(client, index, admin, metareader):
@@ -23,7 +24,7 @@ def check_allowed(client, index: str, field: FieldSpec, allowed=True):
         client,
         f"/index/{index}/query",
         user="meta@reader.com",
-        expected=200 if allowed else 401,
+        expected=200 if allowed else 403,
         json={"fields": [field.model_dump()]},
     )
 
@@ -89,7 +90,7 @@ def test_metareader_aggregation(client: TestClient, admin, index_docs):
         headers=build_headers("meta@reader.com"),
         json={"axes": [{"field": "text"}]},
     )
-    assert response.status_code == 401
+    assert response.status_code == 403
     assert "metareader cannot read text" in response.json()["detail"].lower()
 
     # Metareader should be able to use aggregation functions on fields they have access to
@@ -119,7 +120,7 @@ def test_metareader_aggregation(client: TestClient, admin, index_docs):
         headers=build_headers("meta@reader.com"),
         json={"aggregations": [{"field": "i", "function": "avg"}]},
     )
-    assert response.status_code == 401
+    assert response.status_code == 403
     assert "metareader cannot read i" in response.json()["detail"].lower()
 
 
@@ -155,7 +156,7 @@ def test_metareader_field_stats(client: TestClient, admin, index_docs):
         f"/index/{index_docs}/fields/date/stats",
         headers=build_headers("meta@reader.com"),
     )
-    assert response.status_code == 401
+    assert response.status_code == 403
     assert "metareader cannot" in response.json()["detail"].lower()
 
 

@@ -20,8 +20,6 @@ def test_handler_responses(client: TestClient, admin):
     # You need to login to access /users/me if auth is required
     get_settings().auth = AuthOptions.allow_authenticated_guests
     assert client.get("/users/me").status_code == 401
-    get_settings().auth = AuthOptions.authorized_users_only
-    assert client.get("/users/me").status_code == 401
 
     # A valid token needs a valid resource, expiry, and email
     now = int(datetime.now().timestamp())

@@ -12,16 +12,27 @@ from typing import Iterable, Literal
 
 VERSION = 2
 
-SETTINGS_INDEX = system_index_name(VERSION, "settings")
-ROLES_INDEX = system_index_name(VERSION, "roles")
-FIELDS_INDEX = system_index_name(VERSION, "fields")
-REQUESTS_INDEX = system_index_name(VERSION, "requests")
+# TODO: are there more elegant solutions?
+# Here we export functions that need to be imported in the systemdata management code, because:
+# - we need to be able to get the right index names, and this needs to be a function because
+#   tests change the system index prefix in the settings
+# - we need to create the ids in a consistent way
 
 
-# UGHhhh...
-# We need to use the id field for specifying unique fields, and this needs to be imported
-# in the index code (e.g. fields.py) to be able to update the right document.
-# Is there a more elegant way to do this?
+def settings_index() -> str:
+    return system_index_name(VERSION, "settings")
+
+
+def roles_index() -> str:
+    return system_index_name(VERSION, "roles")
+
+
+def fields_index() -> str:
+    return system_index_name(VERSION, "fields")
+
+
+def requests_index() -> str:
+    return system_index_name(VERSION, "requests")
 
 
 def settings_index_id(index: str | Literal["_server"]) -> str:
@@ -110,7 +121,7 @@ fields_mapping: ElasticMapping = dict(
 )
 
 roles_mapping: ElasticMapping = dict(
-    email_pattern={"type": "keyword"},  # can also be *@domain.com (domain match) or * (guest match)
+    email={"type": "keyword"},  # can also be *@domain.com (domain match) or * (guest match)
     role_context={"type": "keyword"},  # either _server or an index name
     role={"type": "keyword"},  # "NONE", "LISTER", "METAREADER", "READER", "WRITER", "ADMIN"
     # API KEY PROPOSAL:
@@ -160,7 +171,7 @@ def check_deprecated_version(index: str):
 
 def migrate_server_settings(doc: dict):
     return BulkInsertAction(
-        index=SETTINGS_INDEX,
+        index=settings_index(),
         id=settings_index_id("_server"),
         doc={
             "server_settings": {
@@ -179,7 +190,7 @@ def migrate_server_settings(doc: dict):
 
 def migrate_project_settings(index: str, doc: dict):
     return BulkInsertAction(
-        index=SETTINGS_INDEX,
+        index=settings_index(),
         id=settings_index_id(index),
         doc={
             "project_settings": {
@@ -198,12 +209,12 @@ def migrate_roles(role: dict, in_index: str | None):
     email = role.get("email", "")
     doc = {
         "role_context": in_index if in_index else "_server",
-        "email_pattern": email,
+        "email": email,
         "role": role.get("role"),
         "role_match": "DOMAIN" if email.startswith("*@") else "EXACT",
     }
 
-    return BulkInsertAction(index=ROLES_INDEX, id=roles_index_id(doc["email"], doc["index"]), doc=doc)
+    return BulkInsertAction(index=roles_index(), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
 
 
 def migrate_guest_roles(role: dict, in_index: str | None):
@@ -215,7 +226,7 @@ def migrate_guest_roles(role: dict, in_index: str | None):
         "role_match": "ANY",
     }
 
-    return BulkInsertAction(index=ROLES_INDEX, id=roles_index_id(doc["email"], doc["index"]), doc=doc)
+    return BulkInsertAction(index=roles_index(), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
 
 
 def migrate_requests(request: dict):
@@ -233,7 +244,7 @@ def migrate_requests(request: dict):
     }
 
     return BulkInsertAction(
-        index=REQUESTS_INDEX,
+        index=requests_index(),
         id=requests_index_id(doc["request_type"], doc["email"], doc["role_context"]),
         doc=doc,
     )
@@ -245,7 +256,7 @@ def migrate_fields(index: str, field: dict):
         "field": field.get("field"),
         "settings": field.get("settings", {}),
     }
-    return BulkInsertAction(index=FIELDS_INDEX, id=fields_index_id(index, doc["field"]), doc=doc)
+    return BulkInsertAction(index=fields_index(), id=fields_index_id(index, doc["field"]), doc=doc)
 
 
 SYSTEM_INDICES = [

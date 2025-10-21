@@ -139,7 +139,7 @@ def list_users(_args):
 
     if roles:
         for role in roles:
-            print(f"{role.role}: {role.email_pattern}")
+            print(f"{role.role}: {role.email}")
     if not roles:
         print("(No users defined yet, use add-admin to add users by email)")
 
