@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from amcat4.systemdata.versions.v2 import roles_index, roles_index_id
 from amcat4.elastic import es
 from amcat4.models import (
+    GuestRole,
     IndexId,
     Role,
     RoleContext,
@@ -90,7 +91,6 @@ def get_user_project_role(user: User, project_index: IndexId, global_admin: bool
 
     returns a RoleRule with Role.NONE if no role exists.
     """
-    print(user)
     if user.superadmin:
         return RoleRule(email=user.email or "*", role_context=project_index, role=Roles.ADMIN.name)
 
@@ -171,9 +171,12 @@ def set_project_guest_role(index_id: IndexId, role: Roles):
     _update_role(email="*", role_context=index_id, role=role, ignore_missing=True)
 
 
-def get_project_guest_role(index_id: IndexId) -> Role:
+def get_project_guest_role(index_id: IndexId) -> GuestRole:
     """Get the guest role for an index. Note that this returns the Role not RoleRule!"""
-    return get_user_project_role(user=User(email=None), project_index=index_id).role
+    role = get_user_project_role(user=User(email=None), project_index=index_id).role
+    if role == Roles.ADMIN.name:
+        return Roles.WRITER.name  # guests cannot be ADMIN.
+    return role
 
 
 def _create_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles):

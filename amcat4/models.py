@@ -1,12 +1,20 @@
 from enum import IntEnum
+from fastapi import Body
 import pydantic
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, model_validator, Field as pydanticField
 from typing import Annotated, Any, Literal, Union
-from typing_extensions import Self
+from typing_extensions import Self, TypedDict
+
+
+class FieldDocs(TypedDict):
+    title: str
+    description: str
 
 
 class User(BaseModel):
+    """For internal user only. Represents an authenticated user."""
+
     email: EmailStr | None  # this can only be an authenticed, full email address or None for unauthenticated users
     superadmin: bool = False  # if auth is disabled, or if the user is the hardcoded admin email
 
@@ -20,17 +28,25 @@ class Roles(IntEnum):
     ADMIN = 50
 
 
+Archived = Annotated[bool, Body(..., description="Boolean for setting archived to true or false")]
+
 Role = Literal["NONE", "LISTER", "METAREADER", "READER", "WRITER", "ADMIN"]
 GuestRole = Literal["NONE", "LISTER", "METAREADER", "READER", "WRITER"]
 ServerRole = Literal["NONE", "WRITER", "ADMIN"]
 
 
-IndexId = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*$")]
-IndexIds = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*$")]
+IndexId = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*$", title="Index ID")]
+IndexIds = Annotated[
+    str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*$", title="Index ID or comma-separated IDs")
+]
 
-
-RoleEmailPattern = EmailStr | Literal["*"]  # user@domain.com or *@domain.com or *
-RoleContext = IndexId | Literal["_server"]
+RoleEmailPattern = Annotated[
+    EmailStr | Literal["*"],
+    pydanticField(title="An email addres (user@domain.com), domain wildcard (*@domain.com) or guest wildcard (*)"),
+]  # user@domain.com or *@domain.com or *
+RoleContext = Annotated[
+    IndexId | Literal["_server"], pydanticField(title="Index ID for project roles or _server for server roles")
+]
 
 
 class RoleRule(BaseModel):
@@ -224,7 +240,7 @@ PermissionRequest = Annotated[Union[RoleRequest, CreateProjectRequest], pydantic
 
 
 class ProjectSettings(BaseModel):
-    id: str
+    id: IndexId
     name: str | None = None
     description: str | None = None
     folder: str | None = None
@@ -234,7 +250,6 @@ class ProjectSettings(BaseModel):
 
 
 class ServerSettings(BaseModel):
-    id: str
     name: str | None = None
     description: str | None = None
     contact: list[ContactInfo] | None = None

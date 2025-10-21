@@ -1,5 +1,7 @@
 from typing import Iterable, Mapping
 
+from fastapi import HTTPException
+
 
 from amcat4.elastic import es
 from amcat4.models import CreateField, FieldType, ProjectSettings, Roles, RoleRule, User
@@ -31,7 +33,7 @@ def create_project_index(new_index: ProjectSettings, admin_email: str | None = N
     """
     index_id = settings_index_id(new_index.id)
     if es().exists(index=settings_index(), id=index_id):
-        raise ValueError(f'Index "{index_id}" already exists')
+        raise HTTPException(409, f'Index "{index_id}" already exists')
 
     create_es_index(new_index.id)
     register_project_index(new_index, admin_email)
@@ -49,9 +51,9 @@ def register_project_index(
     NOTE: the mappings argument is not yet used, but we need it if we want to support importing properly
     """
     if not es().indices.exists(index=index.id):
-        raise ValueError(f'Index "{index.id}" does not exist in elasticsearch')
+        raise HTTPException(404, f'Index "{index.id}" does not exist in elasticsearch')
     if es().exists(index=settings_index(), id=settings_index_id(index.id)):
-        raise ValueError(f'Index "{index.id}" is already registered')
+        raise HTTPException(409, f'Index "{index.id}" is already registered')
 
     create_project_settings(index, admin_email)
     if mappings:

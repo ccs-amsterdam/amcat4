@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 
 from amcat4.api.auth import authenticated_user, get_middlecat_config
 from amcat4.config import get_settings, validate_settings
+from amcat4.elastic.connection import connect_elastic
 from amcat4.projects.query import get_task_status
 from amcat4.models import Roles, ServerSettings, User
 from amcat4.systemdata.roles import raise_if_not_server_role
@@ -17,14 +18,14 @@ app_info = APIRouter(tags=["informational"])
 
 @app_info.get("/")
 def index(request: Request):
-    # host = get_settings().host
-    # es_alive = elastic.ping()
-    # auth = get_settings().auth
-    # has_admin_email = bool(get_settings().admin_email)
+    host = get_settings().host
+    es_alive = connect_elastic().ping()
+    auth = get_settings().auth
+    has_admin_email = bool(get_settings().admin_email)
     middlecat_url = get_settings().middlecat_url
 
-    # middlecat_alive = False
-    # api_version = version("amcat4")
+    middlecat_alive = False
+    api_version = version("amcat4")
     if middlecat_url:
         try:
             get_middlecat_config(middlecat_url)

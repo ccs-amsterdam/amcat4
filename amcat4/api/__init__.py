@@ -3,9 +3,11 @@
 from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError, BaseModel
 
 from amcat4.api.index import app_index
 from amcat4.api.index_documents import app_index_documents
@@ -66,4 +68,11 @@ async def value_error_exception_handler(request: Request, exc: ValueError):
     return JSONResponse(
         status_code=400,
         content={"message": str(exc)},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"message": "There was an issue with the data you sent.", "fields_invalid": exc.errors()}
     )

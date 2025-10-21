@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from amcat4.config import AuthOptions
 from amcat4.models import Roles, User
 from amcat4.systemdata.roles import delete_server_role, get_user_server_role, set_project_guest_role
-from tests.tools import get_json, build_headers, post_json, check, set_auth
+from tests.tools import get_json, build_headers, check, set_auth
 
 
 def test_auth(client: TestClient, user, admin, index):

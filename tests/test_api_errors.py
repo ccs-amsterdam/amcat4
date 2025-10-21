@@ -1,7 +1,6 @@
 import re
 
-from amcat4.elastic import es
-from tests.tools import amcat_settings, build_headers
+from tests.tools import build_headers
 
 
 def check(client, url, status, message, method="post", user=None, **kargs):
@@ -23,5 +22,5 @@ def test_documents_unauthorized(
 
 def test_error_index_create(client, writer, index):
     for name in ("Test", "_test", "test test"):
-        check(client, "/index/", 400, "invalid index name", json=dict(id=name), user=writer)
-    check(client, "/index/", 400, "already exists", json=dict(id=index), user=writer)
+        check(client, "/index/", 422, "there was an issue with the data you sent", json=dict(id=name), user=writer)
+    check(client, "/index/", 409, "already exists", json=dict(id=index), user=writer)

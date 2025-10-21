@@ -88,7 +88,7 @@ def get_server_settings() -> ServerSettings:
         doc = es().get(index=settings_index(), id=id)["_source"]
         doc = doc["server_settings"]
     except NotFoundError:
-        return ServerSettings(id=id)
+        return ServerSettings()
     return ServerSettings.model_validate(doc)
 
 

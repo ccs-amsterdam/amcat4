@@ -1,11 +1,12 @@
 """API Endpoints for document and index management."""
 
-from fastapi import APIRouter, Body, Depends, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, Depends, status, Path
+from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
     IndexId,
+    RoleEmailPattern,
     Roles,
     Role,
     User,
@@ -22,12 +23,17 @@ app_index_users = APIRouter(prefix="", tags=["project users"])
 
 
 class IndexUserResponse(BaseModel):
-    email: str
-    role: Role
+    email: RoleEmailPattern = Field(
+        ...,
+        description="The closest email address the user matches to. Can be an exact email address (user@domain.com), domain wildcard (*@domain.com) or guest wildcard (*)",
+    )
+    role: Role = Field(..., description="The user role associate to this email address, domain or guest")
 
 
 @app_index_users.get("/index/{ix}/users")
-def list_index_users(ix: IndexId, user: User = Depends(authenticated_user)) -> list[IndexUserResponse]:
+def list_index_users(
+    ix: IndexId = Path(..., description="ID of the index to list users for"), user: User = Depends(authenticated_user)
+) -> list[IndexUserResponse]:
     """
     List the users in this index.
 
@@ -43,8 +49,8 @@ def list_index_users(ix: IndexId, user: User = Depends(authenticated_user)) -> l
 
 @app_index_users.post("/index/{ix}/users", status_code=status.HTTP_201_CREATED)
 def add_index_users(
-    ix: IndexId,
-    email: str = Body(..., description="Email address of the user to add"),
+    ix: IndexId = Path(..., description="ID of the index to add the user to"),
+    email: RoleEmailPattern = Body(..., description="Email address of the user to add"),
     role: Role = Body(..., description="Role of the user to add"),
     user: User = Depends(authenticated_user),
 ):
@@ -59,8 +65,8 @@ def add_index_users(
 
 @app_index_users.put("/index/{ix}/users/{email}", status_code=status.HTTP_200_OK)
 def modify_index_user(
-    ix: IndexId,
-    email: str,
+    ix: IndexId = Path(..., description="ID of the index to modify the user in"),
+    email: RoleEmailPattern = Path(..., description="Email address of the user to modify"),
     role: Role = Body(..., description="New role for the user", embed=True),
     user: User = Depends(authenticated_user),
 ):
@@ -77,12 +83,16 @@ def modify_index_user(
 
 
 @app_index_users.delete("/index/{ix}/users/{email}")
-def remove_index_user(ix: IndexId, email: str, user: User = Depends(authenticated_user)):
+def remove_index_user(
+    ix: IndexId = Path(..., description="ID of the index to remove the user from"),
+    email: RoleEmailPattern = Path(..., description="Email address of the user to remove"),
+    user: User = Depends(authenticated_user),
+):
     """
     Remove this user from the index.
 
     This requires ADMIN rights on the index or server, unless the user is removing themselves.
     """
-    if user.email and user.email != email:
+    if user.email != email:
         raise_if_not_project_index_role(user, ix, Roles.ADMIN)
     delete_project_role(email, ix)

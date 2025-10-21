@@ -199,10 +199,10 @@ def test_set_get_delete_roles(client: TestClient, admin: str, writer: str, user:
     assert users[writer] == "READER"
 
     # Anon can't delete
-    check(client.delete(writer_url), 403)
-    # Writer can't delete, not even themselves
-    check(client.delete(writer_url, headers=build_headers(writer)), 403)
-    # Admin can delete writer
+    check(client.delete(user_url), 403)
+    # Writer can't delete
+    check(client.delete(user_url, headers=build_headers(writer)), 403)
+    # Admin can delete
     check(client.delete(writer_url, headers=build_headers(user)), 200)
     # Global admin can delete index admin
     check(client.delete(user_url, headers=build_headers(admin)), 200)
