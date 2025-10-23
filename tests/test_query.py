@@ -8,7 +8,7 @@ from amcat4.api.index_query import _standardize_filters, _standardize_queries
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
 from amcat4.projects.query import get_task_status, query_documents, reindex
 from amcat4.systemdata.fields import list_fields
-from amcat4.models import FieldSpec, FilterSpec, FilterValue, SnippetParams
+from amcat4.models import FieldSpec, FilterSpec, FilterValue, ProjectSettings, SnippetParams
 from tests.conftest import upload
 
 
@@ -116,7 +116,8 @@ def test_reindex(index_docs, index_name):
     # Re-indexing should error if destination does not exist
     with raises(Exception):
         reindex(source_index=index_docs, destination_index=index_name)
-    create_project_index(index_name)
+    project = ProjectSettings(id=index_name)
+    create_project_index(project)
     task = reindex(source_index=index_docs, destination_index=index_name)
     while True:
         status = get_task_status(task["task"])
@@ -128,7 +129,7 @@ def test_reindex(index_docs, index_name):
     assert list_fields(index_docs) == list_fields(index_name)
 
     delete_project_index(index_name)
-    create_project_index(index_name)
+    create_project_index(project)
     reindex(
         source_index=index_docs,
         destination_index=index_name,

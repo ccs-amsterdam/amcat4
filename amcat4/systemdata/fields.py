@@ -82,6 +82,14 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
         if settings.identifier:
             new_identifiers = True
         mapping[field] = {"type": elastic_type}
+
+        # TODO: talk to Wouter.
+        # For object and nested types, we want to allow dynamic fields inside them.
+        # Otherwise we'd need to support creating nested types. But this has some risks.
+        # Alternative is to only allow creating 'flattened' object types.
+        if elastic_type in ["object", "nested"]:
+            mapping[field]["dynamic"] = True
+
         if settings.type in ["date"]:
             mapping[field]["format"] = "strict_date_optional_time"
 

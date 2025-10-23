@@ -2,6 +2,7 @@ from typing import List
 
 import pytest
 
+from amcat4.api.auth import authenticated_user
 from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.models import ProjectSettings, Roles, User
@@ -14,6 +15,8 @@ from amcat4.projects.index import (
     register_project_index,
 )
 from amcat4.systemdata.roles import (
+    create_project_role,
+    create_server_role,
     delete_project_role,
     delete_server_role,
     get_project_guest_role,
@@ -48,18 +51,15 @@ def test_create_delete_project_index():
     # Can we create and delete indices?
     index = "amcat4_unittest"
     delete_project_index(index, ignore_missing=True)
-    # refresh_index(get_settings().system_index)   # I'm trying to get rid of these; should not be necessary
     assert index not in list_es_indices()
     assert index not in list_index_ids()
     create_project_index(ProjectSettings(id=index))
-    # refresh_index(get_settings().system_index)
     assert index in list_es_indices()
     assert index in list_index_ids()
     # Cannot create duplicate index
     with pytest.raises(Exception):
         create_project_index(ProjectSettings(id=index))
     delete_project_index(index)
-    # refresh_index(get_settings().system_index)
     assert index not in list_es_indices()
     assert index not in list_index_ids()
 
@@ -72,10 +72,8 @@ def test_import_index():
     assert index in list_es_indices()
     assert index not in list_index_ids()
     register_project_index(ProjectSettings(id=index))
-    # refresh_index(get_settings().system_index)
     assert index in list_index_ids()
     deregister_project_index(index)
-    # refresh_index(get_settings().system_index)
     assert index not in list_index_ids()
 
 
@@ -83,30 +81,24 @@ def test_global_roles():
     email = "user@example.com"
     user = User(email=email)
     assert get_user_server_role(user).role == Roles.NONE.name
-    update_server_role(email=email, role=Roles.ADMIN)
-    # refresh_index(get_settings().system_index)
+    create_server_role(email=email, role=Roles.ADMIN)
     assert get_user_server_role(user).role == Roles.ADMIN.name
     update_server_role(email=email, role=Roles.WRITER)
-    # refresh_index(get_settings().system_index)
     assert get_user_server_role(user).role == Roles.WRITER.name
     delete_server_role(email=email)
-    # refresh_index(get_settings().system_index)
     assert get_user_server_role(user).role == Roles.NONE.name
 
 
 def test_index_roles(index):
     email = "user@example.com"
     user = User(email=email)
-    assert get_user_project_role(user, index).role == Roles.NONE
-    update_project_role(email=email, project_id=index, role=Roles.WRITER)
-    # refresh_index(get_settings().system_index)
-    assert get_user_project_role(user, index).role == Roles.METAREADER
+    assert get_user_project_role(user, index).role == Roles.NONE.name
+    create_project_role(email=email, project_id=index, role=Roles.WRITER)
+    assert get_user_project_role(user, index).role == Roles.WRITER.name
     update_project_role(email=email, project_id=index, role=Roles.ADMIN)
-    # refresh_index(get_settings().system_index)
-    assert get_user_project_role(user, index).role == Roles.ADMIN
+    assert get_user_project_role(user, index).role == Roles.ADMIN.name
     delete_project_role(email=email, project_id=index)
-    # refresh_index(get_settings().system_index)
-    assert get_user_project_role(user, index).role == Roles.NONE
+    assert get_user_project_role(user, index).role == Roles.NONE.name
 
 
 def test_guest_role(index):
@@ -116,21 +108,24 @@ def test_guest_role(index):
     assert get_project_guest_role(index) == Roles.READER.name
 
 
-def test_builtin_admin(index):
-    user = "admin@example.com"
-    get_settings().admin_email = user
-    assert get_user_server_role(User(email=user)).role == Roles.ADMIN.name
-    assert index in list_index_ids(user)
+def test_superadmin(index):
+    """
+    The User object passed by the authenticate_user dependency can
+    identify a user as superadmin. This is the case if the user's email
+    matches the admin_email setting, or when auth is disabled.
+    A superadmin has ADMIN role everywhere
+    """
+    superadmin = User(email="doesnt@matter.com", superadmin=True)
+    assert get_user_server_role(superadmin).role == Roles.ADMIN.name
+    assert get_user_project_role(superadmin, index).role == Roles.ADMIN.name
 
 
 def test_list_users(index, user):
-    update_server_role(user, role=Roles.WRITER)
     # refresh_index(get_settings().system_index)
+    create_project_role("user@domain.com", index, role=Roles.READER)
+    create_project_role("*@domain.com", index, role=Roles.METAREADER)
     project_users = list_project_roles()
-    server_users = list_server_roles()
-
-    assert len(list(server_users)) > 0
-    assert len(list(project_users)) > 0
+    assert len(list(project_users)) == 2
 
 
 def test_name_description(index):

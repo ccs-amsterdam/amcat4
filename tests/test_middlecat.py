@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 
 from amcat4.config import get_settings, AuthOptions
+from amcat4.models import Roles
 from tests.tools import get_json, create_token
 
 
@@ -12,11 +13,18 @@ def test_handler_responses(client: TestClient, admin):
         headers = {"Authorization": f"Bearer {token}"}
         return get_json(client, "/users/me", headers=headers, expected=expected)
 
-    # Guests have no /me
+    # With no auth everyone is admin
     get_settings().auth = AuthOptions.no_auth
-    assert client.get("/users/me").status_code == 404
+    me = client.get("/users/me").json()
+    assert me["role"] == Roles.ADMIN.name
+
+    # With guest access, the role depends on the guest role (*),
+    # which is NONE if not set
     get_settings().auth = AuthOptions.allow_guests
-    assert client.get("/users/me").status_code == 404
+    me = client.get("/users/me").json()
+    assert me["role"] == Roles.NONE.name
+    assert me["email"] == "*"
+
     # You need to login to access /users/me if auth is required
     get_settings().auth = AuthOptions.allow_authenticated_guests
     assert client.get("/users/me").status_code == 401

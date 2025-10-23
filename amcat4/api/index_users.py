@@ -1,5 +1,6 @@
 """API Endpoints for project user management."""
 
+from typing import Annotated
 from fastapi import APIRouter, Body, Depends, Path, Response, status
 from pydantic import BaseModel, Field
 
@@ -23,11 +24,21 @@ app_index_users = APIRouter(prefix="", tags=["project users"])
 
 
 # REQUEST MODELS
-class AddIndexUserBody(BaseModel):
+class CreateIndexUserBody(BaseModel):
     """Body for adding a user to an index."""
 
     email: RoleEmailPattern = Field(..., description="Email address of the user to add.")
     role: Role = Field(..., description="Role to grant to the user.")
+
+
+class UpdateIndexUserBody(BaseModel):
+    """Body for updating a user's role in an index."""
+
+    role: Role = Field(..., description="New role for the user.")
+    upsert: bool = Field(
+        False,
+        description="If true, create the user role if it does not exist.",
+    )
 
 
 # RESPONSE MODELS
@@ -43,7 +54,8 @@ class IndexUserResponse(BaseModel):
 
 @app_index_users.get("/index/{ix}/users")
 def list_index_users(
-    ix: IndexId = Path(..., description="ID of the index to list users for"), user: User = Depends(authenticated_user)
+    ix: Annotated[IndexId, Path(..., description="ID of the index to list users for")],
+    user: User = Depends(authenticated_user),
 ) -> list[IndexUserResponse]:
     """
     List the users and their roles for a given index. Requires WRITER role on the index.
@@ -55,8 +67,8 @@ def list_index_users(
 
 @app_index_users.post("/index/{ix}/users", status_code=status.HTTP_201_CREATED)
 def add_index_user(
-    ix: IndexId = Path(..., description="ID of the index to add the user to"),
-    body: AddIndexUserBody = Body(...),
+    ix: Annotated[IndexId, Path(..., description="ID of the index to list users for")],
+    body: Annotated[CreateIndexUserBody, Body(...)],
     user: User = Depends(authenticated_user),
 ) -> IndexUserResponse:
     """
@@ -69,23 +81,23 @@ def add_index_user(
 
 @app_index_users.put("/index/{ix}/users/{email}", status_code=status.HTTP_200_OK)
 def modify_index_user(
-    ix: IndexId = Path(..., description="ID of the index to modify the user in"),
-    email: RoleEmailPattern = Path(..., description="Email address of the user to modify"),
-    role: Role = Body(..., description="New role for the user", embed=True),
+    ix: Annotated[IndexId, Path(description="ID of the index to list users for")],
+    email: Annotated[RoleEmailPattern, Path(..., description="Email address of the user to modify")],
+    body: Annotated[UpdateIndexUserBody, Body(...)],
     user: User = Depends(authenticated_user),
 ) -> IndexUserResponse:
     """
     Change the role of a user in an index. Requires ADMIN role on the index.
     """
     raise_if_not_project_index_role(user, ix, Roles.ADMIN)
-    update_project_role(email, ix, Roles[role])
-    return IndexUserResponse(email=email, role=role)
+    update_project_role(email, ix, Roles[body.role], ignore_missing=body.upsert)
+    return IndexUserResponse(email=email, role=body.role)
 
 
 @app_index_users.delete("/index/{ix}/users/{email}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_index_user(
-    ix: IndexId = Path(..., description="ID of the index to remove the user from"),
-    email: RoleEmailPattern = Path(..., description="Email address of the user to remove"),
+    ix: Annotated[IndexId, Path(..., description="ID of the index to list users for")],
+    email: Annotated[RoleEmailPattern, Path(..., description="Email address of the user to modify")],
     user: User = Depends(authenticated_user),
 ):
     """

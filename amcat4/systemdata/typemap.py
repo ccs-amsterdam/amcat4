@@ -4,6 +4,13 @@
 # (this is relevant if we are importing an index)
 from amcat4.models import ElasticType, FieldType
 
+# TODO: decide what to do when users create an object field.
+# Easiest solution would be to only allow "flattened", or to set
+# "dynamic": false on object/nested fields. Otherwise we would
+# need to support setting the nested mapping.
+# Benefit of only supporting flattened would be that users can't
+# accidentally create incorrect mappings. And if we don't support
+# complex queries on object/nested fields, there is little harm done.
 
 TYPEMAP_ES_TO_AMCAT: dict[ElasticType, FieldType] = {
     # TEXT fields
@@ -50,6 +57,7 @@ TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "number": ["double", "float", "half_float", "scaled_float"],
     "integer": ["long", "integer", "byte", "short", "unsigned_long"],
     "object": ["object", "flattened", "nested"],
+    # "object": ["flattened"],
     "vector": ["dense_vector"],
     "geo_point": ["geo_point"],
     "tag": ["keyword", "wildcard"],

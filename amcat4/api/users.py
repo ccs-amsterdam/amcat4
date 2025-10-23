@@ -1,5 +1,7 @@
 """API Endpoints for managing global users and roles."""
 
+from typing import Annotated
+from click.core import F
 from fastapi import APIRouter, Body, Depends, Response, status
 from pydantic import BaseModel, Field
 
@@ -21,8 +23,21 @@ app_users = APIRouter(tags=["users"])
 class CreateUserBody(BaseModel):
     """Body for creating a new global user/role."""
 
-    email: RoleEmailPattern
-    role: ServerRole
+    email: RoleEmailPattern = Field(
+        ...,
+        description="Email address of the user to add. Can also be a domain wildcard (*@example.com) or guest wildcard (*).",
+    )
+    role: ServerRole = Field(..., description="Server role to grant to the user.")
+
+
+class UpdateUserBody(BaseModel):
+    """Body for updating a global user/role."""
+
+    role: ServerRole = Field(..., description="New role for the user.")
+    upsert: bool = Field(
+        False,
+        description="If true, create the user role if it does not exist.",
+    )
 
 
 # RESPONSE MODELS
@@ -82,11 +97,11 @@ def delete_user(email: RoleEmailPattern, current_user: User = Depends(authentica
 
 @app_users.put("/users/{email}")
 def modify_user(
-    email: RoleEmailPattern, role: ServerRole = Body(..., embed=True), user: User = Depends(authenticated_user)
+    email: RoleEmailPattern, body: Annotated[UpdateUserBody, Body(...)], user: User = Depends(authenticated_user)
 ) -> ServerUserResponse:
     """
     Modify a global user/role. Requires ADMIN server role.
     """
     raise_if_not_server_role(user, Roles.ADMIN)
-    update_server_role(email=email, role=Roles[role])
-    return ServerUserResponse(email=email, role=role)
+    update_server_role(email=email, role=Roles[body.role], ignore_missing=body.upsert)
+    return ServerUserResponse(email=email, role=body.role)

@@ -12,7 +12,7 @@ from amcat4.projects.documents import (
 )
 from amcat4.projects.index import refresh_index
 from amcat4.systemdata.fields import create_fields, field_values, list_fields
-from amcat4.models import CreateField, FieldSpec
+from amcat4.models import CreateField, FieldSpec, IndexId
 from amcat4.projects.query import query_documents
 from tests.conftest import upload
 
@@ -26,7 +26,10 @@ def test_upload_retrieve_document(index):
         _id="test",
         term_tfidf=[{"term": "test", "value": 0.2}, {"term": "value", "value": 0.3}],
     )
-    upload_documents(index, [a], fields={"text": "text", "title": "text", "date": "date", "term_tfidf": "object"})
+    test = upload_documents(index, [a], fields={"text": "text", "title": "text", "date": "date", "term_tfidf": "object"})
+    print(test)
+    refresh_index(index)
+    print(query_documents(index).data)
     d = get_document(index, "test")
     assert d["title"] == a["title"]
     assert d["term_tfidf"] == a["term_tfidf"]
@@ -71,6 +74,7 @@ def test_values(index):
 
 def test_update(index_docs):
     """Can we update a field on a document?"""
+    create_fields(index_docs, {"annotations": "object"})
     assert get_document(index_docs, "0", _source=["annotations"]) == {}
     update_document(index_docs, "0", {"annotations": {"x": 3}})
     assert get_document(index_docs, "0", _source=["annotations"])["annotations"] == {"x": 3}

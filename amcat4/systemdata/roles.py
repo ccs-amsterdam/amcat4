@@ -17,6 +17,8 @@ from amcat4.models import (
 )
 from amcat4.elastic.util import index_scan
 
+# TODO: should we set all update functions to ignore_missing=True by default?
+
 
 def create_project_role(email: RoleEmailPattern, project_id: IndexId, role: Roles):
     _create_role(email=email, role_context=project_id, role=role)
@@ -268,7 +270,7 @@ def _user_to_role_emails(user: User):
 
 
 def _min_role_query(min_role: Roles):
-    roles = [role.name for role in Roles if role > min_role]
+    roles = [role.name for role in Roles if role >= min_role]
     return {"terms": {"role": roles}}
 
 

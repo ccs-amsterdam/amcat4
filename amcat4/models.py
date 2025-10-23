@@ -209,16 +209,16 @@ class LinksGroup(BaseModel):
     links: list[Links]
 
 
+# TODO: Wouter opinion on role_request. Bit weird in createprojectrequest,
+# but otherwise the id becomes more complex, and in a way it is still a
+# request for a role (ADMIN) on the new project.
+
+
 class AbstractRequest(BaseModel):
     email: str
     timestamp: datetime | None = None
     message: str | None = None
     status: Literal["pending", "approved", "rejected"] = "pending"
-
-
-# TODO: Wouter opinion on role_request. Bit weird in createprojectrequest,
-# but otherwise the id becomes more complex, and in a way it is still a
-# request for a role (ADMIN) on the new project.
 
 
 class RoleRequest(AbstractRequest):
@@ -230,7 +230,6 @@ class RoleRequest(AbstractRequest):
 class CreateProjectRequest(AbstractRequest):
     request_type: Literal["create_project"] = "create_project"
     role_context: IndexId
-    email: str
     description: str | None = None
     name: str | None = None
     folder: str | None = None

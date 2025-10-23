@@ -76,32 +76,29 @@ def get_document(
     kargs = {}
     if fields:
         kargs["_source"] = fields
-    try:
-        return _documents.get_document(ix, docid, **kargs)
-    except elasticsearch.exceptions.NotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Document {ix}/{docid} not found",
-        )
+    return _documents.get_document(ix, docid, **kargs)
 
 
 @app_index_documents.put(
     "/index/{ix}/documents/{docid}",
     status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
 )
 def update_document(
     ix: Annotated[IndexId, Path(description="The index id")],
     docid: Annotated[str, Path(description="The document id")],
     update: Annotated[dict[str, Any], Body(..., description="A (partial) document. All given fields will be updated.")],
+    upsert: Annotated[bool, Query(description="If true, create the document if it does not exist")] = False,
     user: User = Depends(authenticated_user),
 ):
     """
     Update a document. Requires WRITER role on the index.
     """
+    # TODO: it's weird that upsert is now a query parameter.
+    # In other places its part of the body, but we can't do that here because
+    # the body is the document, which has unknown keys.
     raise_if_not_project_index_role(user, ix, Roles.WRITER)
     try:
-        _documents.update_document(ix, docid, update)
+        _documents.update_document(ix, docid, update, ignore_missing=upsert)
     except elasticsearch.exceptions.NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -112,7 +109,6 @@ def update_document(
 @app_index_documents.delete(
     "/index/{ix}/documents/{docid}",
     status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
 )
 def delete_document(
     ix: Annotated[IndexId, Path(description="The index id")],
@@ -123,10 +119,4 @@ def delete_document(
     Delete a document. Requires WRITER role on the index.
     """
     raise_if_not_project_index_role(user, ix, Roles.WRITER)
-    try:
-        _documents.delete_document(ix, docid)
-    except elasticsearch.exceptions.NotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Document {ix}/{docid} not found",
-        )
+    _documents.delete_document(ix, docid)

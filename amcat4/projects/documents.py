@@ -3,7 +3,9 @@ import json
 import logging
 from typing import Any, Literal, Mapping
 
+from elasticsearch import NotFoundError
 import elasticsearch.helpers
+from fastapi import HTTPException
 
 from amcat4.elastic import es
 from amcat4.models import CreateField, FieldType
@@ -88,10 +90,13 @@ def get_document(index: str, doc_id: str, **kargs) -> dict:
     :param doc_id: The document id (hash)
     :return: the source dict of the document
     """
-    return es().get(index=index, id=doc_id, **kargs)["_source"]
+    try:
+        return es().get(index=index, id=doc_id, **kargs)["_source"]
+    except NotFoundError:
+        raise HTTPException(404, detail=f"Document {index}/{doc_id} not found")
 
 
-def update_document(index: str, doc_id: str, fields: dict):
+def update_document(index: str, doc_id: str, fields: dict, ignore_missing: bool = False):
     """
     Update a single document.
 
@@ -99,18 +104,24 @@ def update_document(index: str, doc_id: str, fields: dict):
     :param doc_id: The document id (hash)
     :param fields: a {field: value} mapping of fields to update
     """
-    # Mypy doesn't understand that body= has been deprecated already...
-    es().update(index=index, id=doc_id, doc=fields)  # type: ignore
+    try:
+        es().update(index=index, id=doc_id, doc=fields, doc_as_upsert=ignore_missing)  # type: ignore
+    except NotFoundError:
+        raise HTTPException(404, detail=f"Document {index}/{doc_id} not found")
 
 
-def delete_document(index: str, doc_id: str):
+def delete_document(index: str, doc_id: str, ignore_missing: bool = False):
     """
     Delete a single document
 
     :param index: The Pname of the index
     :param doc_id: The document id (hash)
     """
-    es().delete(index=index, id=doc_id)
+    try:
+        es().delete(index=index, id=doc_id)
+    except NotFoundError:
+        if not ignore_missing:
+            raise HTTPException(404, detail=f"Document {index}/{doc_id} not found")
 
 
 UPDATE_SCRIPTS = dict(
