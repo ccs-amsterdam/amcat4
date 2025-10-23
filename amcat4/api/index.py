@@ -48,70 +48,60 @@ app_index = APIRouter(prefix="", tags=["index"])
 #
 # add both decorators to all functions, and register both routers
 
-# TODO: Decide on best way to validate and document fields.
-# - Notice the different style for NameField, description and the rest
-#   The description one feels best, because it only postpones deciding optional or not.
-#   But this changes how OpenAPI documents it (maybe for the better?)
-# - Ideally we don't repeat the description, but maybe we should repeat the type tp make it explicit in the models
-# (Relevant to do well, because this is also how we can set up an MCP server later)
-
-# FIELD ANNOTATIONS
-IdField = Annotated[IndexId, Field(description="ID of the index")]
-NameField = Field(description="Name of the index")
-DescriptionField = Annotated[str, Field(description="Description of the index")]
-GuestRoleField = Annotated[GuestRole | None, Field(description="Guest role for the index")]
-FolderField = Annotated[str | None, Field(description="Folder for the index")]
-ImageUrlField = Annotated[str | None, Field(description="Image URL for the index")]
-ContactField = Annotated[list[ContactInfo] | None, Field(description="Contact info for the index")]
-
-UserRoleField = Annotated[Role | None, Field(description="Role of the current user on this index")]
-UserRoleMatchField = Annotated[RoleEmailPattern | None, Field(description="Email pattern that determined the user role")]
-ArchivedField = Annotated[str | None, Field(description="Timestamp of when the index was archived, or null if not archived")]
-
 
 # REQUEST MODELS
 class UpdateIndexBody(BaseModel):
     """Form to update an existing index."""
 
-    name: Annotated[str | None, NameField] = None
-    description: DescriptionField | None = None
-    guest_role: GuestRoleField = None
-    folder: FolderField = None
-    image_url: ImageUrlField = None
-    contact: ContactField = None
+    name: str | None = Field(None, description="Name of the index")
+    description: str | None = Field(None, description="Description of the index")
+    guest_role: GuestRole | None = Field(None, description="Guest role for the index")
+    folder: str | None = Field(None, description="Folder for the index")
+    image_url: str | None = Field(None, description="Image URL for the index")
+    contact: list[ContactInfo] | None = Field(None, description="Contact info for the index")
 
 
-# the create body extends the update body with an id field
 class CreateIndexBody(UpdateIndexBody):
     """Form to create a new index."""
 
-    id: IdField
+    id: IndexId = Field(description="ID of the new index")
+
+
+class ReindexBody(BaseModel):
+    """Body for reindexing documents."""
+
+    destination: str = Field(..., description="The destination index id")
+    queries: str | list[str] | dict[str, str] | None = Field(None, description="Query/Queries to select documents to reindex.")
+    filters: Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None = Field(None, description="Field filters.")
 
 
 # RESPONSE MODELS
 class IndexListResponse(BaseModel):
-    id: IdField
-    name: Annotated[str | None, NameField]
-    description: DescriptionField | None
-    user_role: UserRoleField
-    user_role_match: UserRoleMatchField
-    archived: ArchivedField
-    folder: FolderField
-    image_url: ImageUrlField
+    id: IndexId = Field(description="ID of the index")
+    name: str | None = Field(description="Name of the index")
+    description: str = Field(description="Description of the index")
+    user_role: Role | None = Field(description="Role of the current user on this index")
+    user_role_match: RoleEmailPattern | None = Field(description="Email pattern that determined the user role")
+    archived: str | None = Field(description="Timestamp of when the index was archived, or null if not archived")
+    folder: str | None = Field(description="Folder for the index")
+    image_url: str | None = Field(description="Image URL for the index")
 
 
-# the list response plus guest role and contact info
 class IndexViewResponse(IndexListResponse):
-    guest_role: GuestRoleField
-    contact: ContactField
+    guest_role: GuestRole | None = Field(description="Guest role for the index")
+    contact: list[ContactInfo] | None = Field(description="Contact info for the index")
 
 
 @app_index.get("/index/")
-def index_list(current_user: User = Depends(authenticated_user)) -> list[IndexListResponse]:
+def index_list(
+    show_all: Annotated[
+        bool, Path(..., description="Also show indices user has no role on (requires ADMIN server role)")
+    ] = False,
+    current_user: User = Depends(authenticated_user),
+) -> list[IndexListResponse]:
     """
-    List indices from this server that the user has access to.
-
-    Returns a list of dicts with index details, including the user role.
+    List indices from this server that the user has access to. Returns a list of dicts with index details, including the user role.
+    Requires at least LISTER role on the index. If show_all is true, requires ADMIN server role and shows all indices.
     """
 
     ix_list: list = []
@@ -134,13 +124,11 @@ def index_list(current_user: User = Depends(authenticated_user)) -> list[IndexLi
 
 @app_index.post("/index/", status_code=status.HTTP_201_CREATED)
 def create_index(
-    body: Annotated[CreateIndexBody, Body()],
+    body: Annotated[CreateIndexBody, Body(...)],
     user: User = Depends(authenticated_user),
 ):
     """
-    Create a new index, setting the current user to admin (owner).
-
-    POST data should be json containing name and optional guest_role
+    Create a new index with the current user (you) as admin. Requires WRITER role on the server.
     """
     raise_if_not_server_role(user, Roles.WRITER, message="Creating a new project requires WRITER permission on the server")
 
@@ -166,18 +154,14 @@ def create_index(
         set_project_guest_role(body.id, Roles[body.guest_role])
 
 
-@app_index.put("/index/{ix}")
+@app_index.put("/index/{ix}", status_code=status.HTTP_204_NO_CONTENT)
 def modify_index(
     ix: Annotated[IndexId, Path(..., description="ID of the index to modify")],
-    body: Annotated[UpdateIndexBody, Body()],
+    body: Annotated[UpdateIndexBody, Body(...)],
     user: User = Depends(authenticated_user),
 ):
     """
-    Modify the index.
-
-    POST data should be json containing the changed values (i.e. name, description, guest_role)
-
-    User needs admin rights on the index
+    Modify an existing index. Requires ADMIN role on the index.
     """
     raise_if_not_project_index_role(user, ix, Roles.ADMIN)
 
@@ -201,7 +185,7 @@ def view_index(
     ix: IndexId = Path(..., description="ID of the index to view"), user: User = Depends(authenticated_user)
 ) -> IndexViewResponse:
     """
-    View the index.
+    Get details of a single index, including the user role. Requires at least LISTER role on the index.
     """
     try:
         d = get_project_settings(ix)
@@ -234,7 +218,7 @@ def archive_index(
 ):
     """
     Archive or unarchive the index. When an index is archived, it restricts usage, and adds a timestamp for when
-    it was archived.
+    it was archived. Requires ADMIN role on the index.
     """
     raise_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
@@ -251,7 +235,7 @@ def archive_index(
 
 @app_index.delete("/index/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_index(ix: IndexId, user: User = Depends(authenticated_user)):
-    """Delete the index."""
+    """Delete the index. Requires ADMIN role on the index."""
     raise_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
         delete_project_index(ix)
@@ -261,35 +245,18 @@ def delete_index(ix: IndexId, user: User = Depends(authenticated_user)):
 
 @app_index.get("/index/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def refresh(ix: str):
+    """Refresh the elastic index. Use this if you need to make recently added documents searchable immediately."""
     refresh_index(ix)
 
 
 @app_index.post("/index/{ix}/reindex")
 def start_reindex(
     ix: IndexId,
-    destination: str = Body(..., description="Email address of the user to add"),
-    queries: Annotated[
-        str | list[str] | dict[str, str] | None,
-        Body(
-            description=(
-                "Query/Queries to select documents to reindex. Value should be a single query string, "
-                "a list of query strings, or a dict of {'label': 'query'}"
-            ),
-        ),
-    ] = None,
-    filters: Annotated[
-        Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None,
-        Body(
-            description=(
-                "Field filters, should be a dict of field names to filter specifications, "
-                "which can be either a value, a list of values, or a FilterSpec dict"
-            ),
-        ),
-    ] = None,
+    body: Annotated[ReindexBody, Body(...)],
     user: User = Depends(authenticated_user),
 ):
     raise_if_not_project_index_role(user, ix, Roles.READER)
-    raise_if_not_project_index_role(user, destination, Roles.WRITER)
-    filters = _standardize_filters(filters)
-    queries = _standardize_queries(queries)
-    return reindex(source_index=ix, destination_index=destination, queries=queries, filters=filters)
+    raise_if_not_project_index_role(user, body.destination, Roles.WRITER)
+    filters = _standardize_filters(body.filters)
+    queries = _standardize_queries(body.queries)
+    return reindex(source_index=ix, destination_index=body.destination, queries=queries, filters=filters)

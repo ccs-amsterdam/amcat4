@@ -168,11 +168,14 @@ def update_documents_by_query(index: str | list[str], query: dict, field: str, v
             lang="painless",
             params=dict(field=field, value=value),
         )
-    return es().update_by_query(index=index, query=query, script=script, refresh=True)
+
+    result = es().update_by_query(index=index, query=query, script=script, refresh=True)
+    return dict(updated=result["updated"], total=result["total"])
 
 
 def delete_documents_by_query(index: str | list[str], query: dict):
-    return es().delete_by_query(index=index, query=query)
+    result = es().delete_by_query(index=index, query=query)
+    return dict(updated=result["deleted"], total=result["total"])
 
 
 def _create_document_id(document: dict, identifiers: list[str]) -> str:

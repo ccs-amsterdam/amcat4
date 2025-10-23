@@ -1,9 +1,9 @@
-"""API Endpoints for document and index management."""
+"""API Endpoints for index field management."""
 
-from http import HTTPStatus
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
@@ -14,6 +14,7 @@ from amcat4.models import (
     Roles,
     UpdateField,
     User,
+    Field as FieldModel,
 )
 from amcat4.systemdata import fields as _fields
 from amcat4.systemdata.roles import get_user_project_role, raise_if_not_project_index_role, role_is_at_least
@@ -21,7 +22,27 @@ from amcat4.systemdata.roles import get_user_project_role, raise_if_not_project_
 app_index_fields = APIRouter(prefix="", tags=["project index fields"])
 
 
-@app_index_fields.post("/index/{ix}/fields")
+# RESPONSE MODELS
+class FieldListResponse(BaseModel):
+    """A list of fields in the index."""
+
+    name: str = Field(..., description="The name of the field.")
+    type: FieldType = Field(..., description="The type of the field.")
+
+
+class FieldValuesResponse(BaseModel):
+    """A list of unique values for a field."""
+
+    values: list[Any] = Field(..., description="The unique values for the field.")
+
+
+class FieldStatsResponse(BaseModel):
+    """Statistics for a numeric field."""
+
+    stats: dict = Field(..., description="A dictionary of statistics for the field.")
+
+
+@app_index_fields.post("/index/{ix}/fields", status_code=status.HTTP_204_NO_CONTENT)
 def create_fields(
     ix: IndexId,
     fields: Annotated[
@@ -35,48 +56,40 @@ def create_fields(
     user: User = Depends(authenticated_user),
 ):
     """
-    Create fields
+    Create one or more fields in an index. Requires WRITER role on the index.
     """
     raise_if_not_project_index_role(user, ix, Roles.WRITER)
 
     _fields.create_fields(ix, fields)
-    return "", HTTPStatus.NO_CONTENT
 
 
 @app_index_fields.get("/index/{ix}/fields")
-def get_fields(ix: IndexId, user: User = Depends(authenticated_user)):
+def get_fields(ix: IndexId, user: User = Depends(authenticated_user)) -> dict[str, FieldModel]:
     """
-    Get the fields (columns) used in this index.
-
-    Returns a json array of {name, type} objects
+    Get the fields (columns) used in this index. Requires METAREADER role on the index.
     """
     raise_if_not_project_index_role(user, ix, Roles.METAREADER)
     return _fields.list_fields(ix)
 
 
-@app_index_fields.put("/index/{ix}/fields")
+@app_index_fields.put("/index/{ix}/fields", status_code=status.HTTP_204_NO_CONTENT)
 def update_fields(
     ix: IndexId, fields: Annotated[dict[str, UpdateField], Body(description="")], user: User = Depends(authenticated_user)
 ):
     """
-    Update the field settings
+    Update the settings of one or more fields. Requires WRITER role on the index.
     """
     raise_if_not_project_index_role(user, ix, Roles.WRITER)
-
     _fields.update_fields(ix, fields)
-    return "", HTTPStatus.NO_CONTENT
 
 
 @app_index_fields.get("/index/{ix}/fields/{field}/values")
-def get_field_values(ix: IndexId, field: str, user: User = Depends(authenticated_user)):
+def get_field_values(ix: IndexId, field: str, user: User = Depends(authenticated_user)) -> list[Any]:
     """
-    Get unique values for a specific field. Should mainly/only be used for tag fields.
-    Main purpose is to provide a list of values for a dropdown menu.
+    Get unique values for a specific field. Requires READER role on the index.
 
-    TODO: at the moment 'only' returns top 2000 values. Currently throws an
-    error if there are more than 2000 unique values. We can increase this limit, but
-    there should be a limit. Querying could be an option, but not sure if that is
-    efficient, since elastic has to aggregate all values first.
+    This is intended for fields with a limited number of unique values (e.g., tag fields).
+    It will return an error if the field has more than 2000 unique values.
     """
     raise_if_not_project_index_role(user, ix, Roles.READER)
     values = _fields.field_values(ix, field, size=2001)
@@ -89,8 +102,8 @@ def get_field_values(ix: IndexId, field: str, user: User = Depends(authenticated
 
 
 @app_index_fields.get("/index/{ix}/fields/{field}/stats")
-def get_field_stats(ix: IndexId, field: str, user: User = Depends(authenticated_user)):
-    """Get statistics for a specific value. Only works for numeric (incl date) fields."""
+def get_field_stats(ix: IndexId, field: str, user: User = Depends(authenticated_user)) -> dict:
+    """Get statistics for a specific field. Only works for numeric (incl date) fields. Requires READER or METAREADER role."""
     role = get_user_project_role(user, ix)
     if role_is_at_least(role, Roles.READER):
         return _fields.field_stats(ix, field)

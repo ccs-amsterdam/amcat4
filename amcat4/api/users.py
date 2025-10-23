@@ -1,14 +1,7 @@
-"""
-User/Account and authentication endpoints.
+"""API Endpoints for managing global users and roles."""
 
-AmCAT4 can use either Basic or Token-based authentication.
-A client can request a token with basic authentication and store that token for future requests.
-"""
-
-from typing import Annotated
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Body, Depends, Response, status
 from pydantic import BaseModel, Field
-from pydantic.networks import EmailStr
 
 from amcat4.api.auth import authenticated_user
 from amcat4.models import Role, Roles, RoleEmailPattern, ServerRole, User
@@ -24,39 +17,35 @@ from amcat4.systemdata.roles import (
 app_users = APIRouter(tags=["users"])
 
 
-class ServerUserResponse(BaseModel):
-    email: RoleEmailPattern = Field(
-        description="The closest email address the user matches to. Can be an exact email address (user@domain.com), domain wildcard (*@domain.com) or guest wildcard (*)",
-    )
-    role: Role = Field(description="The user role associate to this email address, domain or guest")
-
-
+# REQUEST MODELS
 class CreateUserBody(BaseModel):
-    """Form to create a new global user."""
+    """Body for creating a new global user/role."""
 
     email: RoleEmailPattern
     role: ServerRole
 
 
-class ChangeUserBody(BaseModel):
-    """Form to change a global user."""
+# RESPONSE MODELS
+class ServerUserResponse(BaseModel):
+    """Response for a global user/role."""
 
-    role: ServerRole
-
-
-# TODO: should we also rename users, since it's actually roles now?
+    email: RoleEmailPattern = Field(
+        description="The email pattern for this role (e.g., user@example.com, *@example.com, or *).",
+    )
+    role: Role = Field(description="The role assigned to the user.")
 
 
 @app_users.post("/users", status_code=status.HTTP_201_CREATED)
-def create_user(new_user: CreateUserBody, user=Depends(authenticated_user)):
-    """Create a new user."""
+def create_user(new_user: CreateUserBody, user=Depends(authenticated_user)) -> ServerUserResponse:
+    """Create a new global user/role. Requires ADMIN server role."""
     raise_if_not_server_role(user, Roles.ADMIN)
     create_server_role(new_user.email, role=Roles[new_user.role])
+    return ServerUserResponse(email=new_user.email, role=new_user.role)
 
 
 @app_users.get("/users/me")
 def get_current_user(user: User = Depends(authenticated_user)) -> ServerUserResponse:
-    """View the current user."""
+    """Get the current user's global role."""
     role = get_user_server_role(user)
     return ServerUserResponse(email=role.email, role=role.role)
 
@@ -64,9 +53,7 @@ def get_current_user(user: User = Depends(authenticated_user)) -> ServerUserResp
 @app_users.get("/users/{email}")
 def get_user(email: RoleEmailPattern, current_user: User = Depends(authenticated_user)) -> ServerUserResponse:
     """
-    View a specified current user.
-
-    Only WRITER and ADMIN can view other users.
+    Get a specified user's global role. Requires WRITER server role if viewing other users.
     """
     if current_user.email and current_user.email != email:
         raise_if_not_server_role(current_user, Roles.WRITER)
@@ -75,18 +62,17 @@ def get_user(email: RoleEmailPattern, current_user: User = Depends(authenticated
 
 
 @app_users.get("/users")
-def list_global_users(user=Depends(authenticated_user)):
-    """List all global users"""
+def list_global_users(user=Depends(authenticated_user)) -> list[ServerUserResponse]:
+    """List all global users/roles. Requires WRITER server role."""
     raise_if_not_server_role(user, Roles.WRITER)
     server_roles = list_server_roles()
-    return [{"email": role.email, "role": role.role} for role in server_roles]
+    return [ServerUserResponse(email=role.email, role=role.role) for role in server_roles]
 
 
-@app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+@app_users.delete("/users/{email}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(email: RoleEmailPattern, current_user: User = Depends(authenticated_user)):
     """
-    Delete the given user.
-    Users can delete themselves and admin can delete everyone
+    Delete a global user/role. Users can delete themselves, and ADMINs can delete any user/role.
     """
     if current_user.email != email:
         raise_if_not_server_role(current_user, Roles.ADMIN)
@@ -95,10 +81,12 @@ def delete_user(email: RoleEmailPattern, current_user: User = Depends(authentica
 
 
 @app_users.put("/users/{email}")
-def modify_user(email: RoleEmailPattern, data: ChangeUserBody, user: User = Depends(authenticated_user)):
+def modify_user(
+    email: RoleEmailPattern, role: ServerRole = Body(..., embed=True), user: User = Depends(authenticated_user)
+) -> ServerUserResponse:
     """
-    Modify the given user.
-    Only admin can change users.
+    Modify a global user/role. Requires ADMIN server role.
     """
     raise_if_not_server_role(user, Roles.ADMIN)
-    update_server_role(email=email, role=Roles[data.role])
+    update_server_role(email=email, role=Roles[role])
+    return ServerUserResponse(email=email, role=role)

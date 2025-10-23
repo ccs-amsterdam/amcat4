@@ -49,7 +49,7 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
             headers=build_headers(user=writer),
             json={"guest_role": "METAREADER"},
         ),
-        200,
+        204,
     )
     check(
         client.put(
@@ -65,7 +65,7 @@ def test_create_list_delete_index(client, index_name, user, writer, writer2, adm
             headers=build_headers(user=admin),
             json={"guest_role": "READER"},
         ),
-        200,
+        204,
     )
     assert get_project_guest_role(index_name) == Roles.READER.name
 
@@ -203,9 +203,9 @@ def test_set_get_delete_roles(client: TestClient, admin: str, writer: str, user:
     # Writer can't delete
     check(client.delete(user_url, headers=build_headers(writer)), 403)
     # Admin can delete
-    check(client.delete(writer_url, headers=build_headers(user)), 200)
+    check(client.delete(writer_url, headers=build_headers(user)), 204)
     # Global admin can delete index admin
-    check(client.delete(user_url, headers=build_headers(admin)), 200)
+    check(client.delete(user_url, headers=build_headers(admin)), 204)
     users = {u["email"]: u["role"] for u in get_json(client, f"/index/{index}/users", user=admin) or []}
     assert user not in users
 
@@ -223,7 +223,7 @@ def test_name_description(client, index, index_name, user, admin):
     # global admin and index writer can change details
     check(
         client.put(f"/index/{index}", json=dict(name="test"), headers=build_headers(admin)),
-        200,
+        204,
     )
 
     create_project_role(user, index, Roles.ADMIN)
@@ -234,7 +234,7 @@ def test_name_description(client, index, index_name, user, admin):
             json=dict(description="ooktest"),
             headers=build_headers(user),
         ),
-        200,
+        204,
     )
 
     # global admin and index or guest metareader can read details

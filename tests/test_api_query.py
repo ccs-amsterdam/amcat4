@@ -195,19 +195,15 @@ def test_query_tags(client, index_docs, user):
         result = query_documents(index_docs, fields=[FieldSpec(name="tag")])
         return {doc["_id"]: doc["tag"] for doc in (result.data if result else []) if doc.get("tag")}
 
-    check(client.post(f"/index/{index_docs}/tags_update"), 403)
-    check(client.post(f"/index/{index_docs}/tags_update", headers=build_headers(user=user)), 403)
+    add_tags = dict(action="add", field="tag", tag="x", filters={"cat": "a"})
+
+    check(client.post(f"/index/{index_docs}/tags_update", json=add_tags), 403)
+    check(client.post(f"/index/{index_docs}/tags_update", json=add_tags, headers=build_headers(user=user)), 403)
 
     update_project_role(user, index_docs, Roles.WRITER)
 
     assert tags() == {}
-    res = post_json(
-        client,
-        f"/index/{index_docs}/tags_update",
-        user=user,
-        expected=200,
-        json=dict(action="add", field="tag", tag="x", filters={"cat": "a"}),
-    )
+    res = post_json(client, f"/index/{index_docs}/tags_update", user=user, expected=200, json=add_tags)
     assert res["updated"] == 3
     # should refresh before returning
     # refresh_index(index_docs)

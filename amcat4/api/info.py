@@ -1,7 +1,10 @@
+"""API Endpoints for server information and configuration."""
+
 from importlib.metadata import version
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user, get_middlecat_config
 from amcat4.config import get_settings, validate_settings
@@ -16,8 +19,30 @@ templates = Jinja2Templates(directory="templates")
 app_info = APIRouter(tags=["informational"])
 
 
+# RESPONSE MODELS
+class AuthConfigResponse(BaseModel):
+    """Response for authentication configuration."""
+
+    middlecat_url: str | None = Field(None, description="The URL of the MiddleCat server.")
+    resource: str | None = Field(None, description="The resource identifier for this AmCAT instance.")
+    authorization: str = Field(..., description="The authorization mode.")
+    warnings: list[str] = Field(..., description="A list of configuration warnings.")
+    minio: bool = Field(..., description="Whether MinIO is configured.")
+    api_version: str = Field(..., description="The version of the AmCAT API.")
+
+
+class TaskStatusResponse(BaseModel):
+    """Response for a background task status."""
+
+    status: str = Field(..., description="The status of the task.")
+    progress: int = Field(..., description="The progress of the task in percent.")
+    message: str | None = Field(None, description="A message about the task status.")
+    result: dict | None = Field(None, description="The result of the task if completed.")
+
+
 @app_info.get("/")
 def index(request: Request):
+    """Returns an HTML page with information about this AmCAT instance."""
     host = get_settings().host
     es_alive = connect_elastic().ping()
     auth = get_settings().auth
@@ -37,31 +62,33 @@ def index(request: Request):
 
 @app_info.get("/config")
 @app_info.get("/middlecat")
-def get_auth_config():
-    print(get_settings())
+def get_auth_config() -> AuthConfigResponse:
+    """Get the authentication configuration for this AmCAT instance."""
+    settings = get_settings()
     return {
-        "middlecat_url": get_settings().middlecat_url,
-        "resource": get_settings().host,
-        "authorization": get_settings().auth,
-        "warnings": [validate_settings()],
-        "minio": get_settings().minio_host != "None",
+        "middlecat_url": settings.middlecat_url,
+        "resource": settings.host,
+        "authorization": settings.auth,
+        "warnings": [w for w in [validate_settings()] if w],
+        "minio": settings.minio_host != "None",
         "api_version": version("amcat4"),
     }
 
 
 @app_info.get("/config/branding")
-def read_branding():
+def read_branding() -> ServerSettings:
+    """Get the server branding settings."""
     return get_server_settings()
 
 
-@app_info.put("/config/branding")
+@app_info.put("/config/branding", status_code=status.HTTP_204_NO_CONTENT)
 def change_branding(data: ServerSettings, user: User = Depends(authenticated_user)):
-    ## This doesn't yet make sense. The problem is that if we have a separate branding endpoint,
-    ## we need to make sure that the server_settings document exists.
+    """Update the server branding settings. Requires ADMIN server role."""
     raise_if_not_server_role(user, Roles.ADMIN)
     upsert_server_settings(data)
 
 
 @app_info.get("/task/{taskId}")
-def task_status(taskId: str, _user: User = Depends(authenticated_user)):
+def task_status(taskId: str, _user: User = Depends(authenticated_user)) -> TaskStatusResponse:
+    """Get the status of a background task."""
     return get_task_status(taskId)

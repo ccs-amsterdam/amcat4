@@ -1,13 +1,13 @@
-"""API Endpoints for querying."""
+"""API Endpoints for querying and manipulating documents in an index."""
 
-from typing import Annotated, Any, Dict, List, Literal, Mapping, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
-from pydantic.main import BaseModel
+from pydantic import BaseModel, Field
 
 from amcat4.projects.aggregate import Aggregation, Axis, TopHitsAggregation, query_aggregate
 from amcat4.api.auth import authenticated_user
-from amcat4.models import FieldSpec, FilterSpec, FilterValue, IndexId, IndexIds, Roles, SortSpec, User
+from amcat4.models import FieldSpec, FilterSpec, FilterValue, IndexIds, Roles, SortSpec, User
 from amcat4.projects.query import delete_query, update_query, update_tag_query, query_documents
 from amcat4.systemdata.fields import get_allowed_fields, raise_if_field_not_allowed
 from amcat4.systemdata.roles import raise_if_not_project_index_role
@@ -15,132 +15,97 @@ from amcat4.systemdata.roles import raise_if_not_project_index_role
 app_index_query = APIRouter(prefix="/index", tags=["query"])
 
 
-class QueryMeta(BaseModel):
-    """Form for query metadata."""
-
-    total_count: int
-    per_page: Optional[int] = None
-    page_count: Optional[int] = None
-    page: Optional[int] = None
-    scroll_id: Optional[str] = None
-
-
-class QueryResult(BaseModel):
-    """Form for query results."""
-
-    results: List[Dict[str, Any]]
-    meta: QueryMeta
-
-
-@app_index_query.post("/{index}/query", response_model=QueryResult)
-def query_documents_post(
-    index: IndexIds,
-    queries: Annotated[
-        str | list[str] | dict[str, str] | None,
-        Body(
-            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-            "or a dict of {'label': 'query'}",
+# TYPES
+FieldsType = Annotated[
+    list[str | FieldSpec] | None,
+    Field(
+        None,
+        description=(
+            "Select which document fields to retrieve. Can be a list of field names"
+            "or a list of FieldSpec dictionaries. The latter allows specifying snippet lengths."
         ),
-    ] = None,
-    fields: Annotated[
-        list[str | FieldSpec] | None,
-        Body(
-            description="List of fields to retrieve for each document"
-            "In the list you can specify a fieldname, but also a FieldSpec dict."
-            "Using the FieldSpec allows you to request only a snippet of a field."
-            "fieldname[nomatch_chars;max_matches;match_chars]. 'matches' here refers to words from text queries. "
-            "If there is no query, the snippet is the first [nomatch_chars] characters. "
-            "If there is a query, snippets are returned for up to [max_matches] matches, with each match having [match_chars] "
-            "characters. If there are multiple matches, they are concatenated with ' ... '.",
-            openapi_examples={
-                "simple": {"summary": "Retrieve single field", "value": '["title", "text", "date"]'},
-                "text as snippet": {
-                    "summary": "Retrieve the full title, but text only as snippet",
-                    "value": '["title", {"name": "text", "snippet": {"nomatch_chars": 100}}]',
-                },
-                "all allowed fields": {
-                    "summary": "If fields is left empty, all fields that the user is allowed to see are returned",
-                },
-            },
-        ),
-    ] = None,
-    filters: Annotated[
-        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
-        Body(
-            description="Field filters, should be a dict of field names to filter specifications,"
-            "which can be either a value, a list of values, or a FilterSpec dict",
-        ),
-    ] = None,
-    sort: Annotated[
-        str | list[str] | list[dict[str, SortSpec]] | None,
-        Body(
-            description="Sort by field name(s) or dict (see "
-            "https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html for dict format)",
-            openapi_examples={
-                "simple": {"summary": "Sort by single field", "value": "'date'"},
-                "multiple": {
-                    "summary": "Sort by multiple fields",
-                    "value": "['date', 'title']",
-                },
-                "dict": {
-                    "summary": "Use dict to specify sort options",
-                    "value": " [{'date': {'order':'desc'}}]",
-                },
-            },
-        ),
-    ] = None,
-    per_page: Annotated[int, Body(le=200, description="Number of documents per page")] = 10,
-    page: Annotated[int, Body(description="Which page to retrieve")] = 0,
-    scroll: Annotated[
-        str | None,
-        Body(
-            description="Scroll specification (e.g. '5m') to start a scroll request"
-            "This will return a scroll_id which should be passed to subsequent calls"
-            "(this is the advised way of scrolling through multiple pages of results)",
-            examples=["5m"],
-        ),
-    ] = None,
-    scroll_id: Annotated[str | None, Body(description="Scroll id from previous response to continue scrolling")] = None,
-    highlight: Annotated[bool, Body(description="If true, highlight fields")] = False,
-    user: User = Depends(authenticated_user),
-):
-    """
-    List or query documents in this index.
+        examples=[
+            ["title", "body"],
+            [{"name": "body", "snippet_length": {"nomatch_chars": 100, "max_matches": 3, "match_chars": 50}}],
+        ],
+    ),
+]
 
-    Returns a JSON object {data: [...], meta: {total_count, per_page, page_count, page|scroll_id}}
-    """
-    indices = index.split(",")
+FiltersType = Annotated[
+    dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
+    Field(
+        None,
+        description=(
+            "Filter results by field values. Provide a dictionary where keys are field names. "
+            "The value can be a list of values for exact matches. For more complex filters, value "
+            "can be a FilterSpec dictionary, with keys: 'values', 'gt', 'gte', 'lt', 'lte', 'exists'."
+        ),
+        examples=[
+            {"status": ["published"]},
+            {"category": ["news", "blog"]},
+            {"date": {"gte": "2023-01-01", "lte": "2023-12-31"}},
+        ],
+    ),
+]
 
-    fieldspecs = _standardize_fieldspecs(fields)
-    if fieldspecs:
-        for ix in indices:
-            raise_if_field_not_allowed(ix, user, fieldspecs)
-    else:
-        if len(indices) > 1:
-            raise ValueError("Fields should be specified if multiple indices are given")
-        fieldspecs = get_allowed_fields(user, indices[0])
+SortType = Annotated[
+    str | list[str] | list[dict[str, SortSpec]] | None,
+    Field(
+        None,
+        description=(
+            "Sort results by a field. Can be a single field name, a list of field names, "
+            "or a list of dictionaries specifying field and sort order."
+        ),
+        examples=[
+            "date",
+            ["date", "title"],
+            [{"date": {"order": "desc"}}, {"title": {"order": "asc"}}],
+        ],
+    ),
+]
 
-    r = query_documents(
-        indices,
-        queries=_standardize_queries(queries),
-        filters=_standardize_filters(filters),
-        fields=fieldspecs,
-        sort=_standardize_sort(sort),
-        per_page=per_page,
-        page=page,
-        scroll_id=scroll_id,
-        scroll=scroll,
-        highlight=highlight,
+QueriesType = Annotated[
+    str | list[str] | dict[str, str] | None,
+    Field(
+        None,
+        description=(
+            "Full-text search. Can be a single query string, a list of query strings, "
+            "or a dictionary mapping labels to query strings."
+        ),
+        examples=[
+            "this OR that",
+            ["this OR that", '"this exactly"'],
+            {"My Query": "this OR that"},
+        ],
+    ),
+]
+
+
+# REQUEST MODELS
+class QueryDocumentsBody(BaseModel):
+    """Body for querying documents."""
+
+    queries: QueriesType
+    fields: FieldsType
+    filters: FiltersType
+    sort: SortType
+    per_page: int = Field(10, le=200, description="Number of documents per page.")
+    page: int = Field(0, description="Which page to retrieve.")
+    scroll: str | None = Field(
+        None,
+        description=(
+            "Scroll is the most efficient way to retrieve large result sets. Specify "
+            "how long the scroll context should be kept alive, e.g., '5m' for one minute. "
+            "results will then contain a scroll_id that can be used to retrieve the next batch."
+        ),
     )
-    if r is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No results")
-    return r.as_dict()
+    scroll_id: str | None = Field(None, description="Scroll ID as returned by a previous query for getting the next batch.")
+    highlight: bool = Field(False, description="If true, highlight fields.")
 
 
 class AggregationSpec(BaseModel):
     """Form for an aggregation."""
 
-    # TODO: can probably merge wth Aggregation class?
     field: str
     function: str
     name: Optional[str] = None
@@ -150,9 +115,8 @@ class AggregationSpec(BaseModel):
 
 
 class TopHitsAggregationSpec(BaseModel):
-    """Form for an aggregation."""
+    """Form for a top hits aggregation."""
 
-    # TODO: can probably merge wth TopHitsAggregation class?
     fields: list[str]
     function: Literal["top_hits"] = "top_hits"
     name: Optional[str] = None
@@ -166,58 +130,144 @@ class TopHitsAggregationSpec(BaseModel):
 class AxisSpec(BaseModel):
     """Form for an axis specification."""
 
-    # TODO: can probably merge wth Axis class?
     field: str
     interval: Optional[str] = None
 
 
-@app_index_query.post("/{index}/aggregate")
+class QueryAggregateBody(BaseModel):
+    """Body for aggregating documents."""
+
+    axes: Optional[List[AxisSpec]] = Field(None, description="Axes to aggregate on.")
+    aggregations: Optional[List[AggregationSpec | TopHitsAggregationSpec]] = Field(None, description="Aggregate functions.")
+    queries: QueriesType
+    filters: FiltersType
+    after: Optional[dict[str, Any]] = Field(None, description="After cursor for pagination.")
+
+
+class UpdateTagsBody(BaseModel):
+    """Body for updating tags."""
+
+    action: Literal["add", "remove"] = Field(..., description="Action to perform on tags.")
+    field: str = Field(..., description="Tag field to update.")
+    tag: str = Field(..., description="Tag to add or remove.")
+    queries: QueriesType
+    filters: FiltersType
+    ids: Optional[Union[str, List[str]]] = Field(None, description="Document IDs to update.")
+
+
+class UpdateByQueryBody(BaseModel):
+    """Body for updating documents by query."""
+
+    field: str = Field(..., description="Field to update.")
+    value: str | int | float | None = Field(..., description="New value for the field.")
+    queries: QueriesType
+    filters: FiltersType
+    ids: Optional[List[str]] = Field(None, description="Document IDs to update.")
+
+
+class DeleteByQueryBody(BaseModel):
+    """Body for deleting documents by query."""
+
+    queries: QueriesType
+    filters: FiltersType
+    ids: Optional[List[str]] = Field(None, description="Document IDs to delete.")
+
+
+# RESPONSE MODELS
+class QueryMeta(BaseModel):
+    """Metadata for a query result."""
+
+    total_count: int
+    per_page: Optional[int] = None
+    page_count: Optional[int] = None
+    page: Optional[int] = None
+    scroll_id: Optional[str] = None
+
+
+class QueryResult(BaseModel):
+    """Results of a document query."""
+
+    results: List[Dict[str, Any]]
+    meta: QueryMeta
+
+
+class AggregateResult(BaseModel):
+    """Results of an aggregation query."""
+
+    meta: dict
+    data: list[dict]
+
+
+class QueryUpdateResponse(BaseModel):
+    """Response for a tags update operation."""
+
+    updated: int
+    total: int
+
+
+class TaskResponse(BaseModel):
+    """Response for a background task."""
+
+    task_id: str = Field(..., description="The ID of the background task.")
+
+
+@app_index_query.post("/{index}/query")
+def query_documents_post(
+    index: IndexIds,
+    body: Annotated[QueryDocumentsBody, Body(...)],
+    user: User = Depends(authenticated_user),
+) -> QueryResult:
+    """
+    Query documents in one or more indices. Requires READER or METAREADER role on the index/indices.
+    """
+    indices = index.split(",")
+
+    fieldspecs = _standardize_fieldspecs(body.fields)
+    if fieldspecs:
+        for ix in indices:
+            raise_if_field_not_allowed(ix, user, fieldspecs)
+    else:
+        if len(indices) > 1:
+            raise ValueError("Fields should be specified if multiple indices are given")
+        fieldspecs = get_allowed_fields(user, indices[0])
+
+    r = query_documents(
+        indices,
+        queries=_standardize_queries(body.queries),
+        filters=_standardize_filters(body.filters),
+        fields=fieldspecs,
+        sort=_standardize_sort(body.sort),
+        per_page=body.per_page,
+        page=body.page,
+        scroll_id=body.scroll_id,
+        scroll=body.scroll,
+        highlight=body.highlight,
+    )
+    if r is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No results")
+    return r.as_dict()
+
+
+@app_index_query.post("/{index}/aggregate", response_model=AggregateResult)
 def query_aggregate_post(
     index: IndexIds,
-    axes: Optional[List[AxisSpec]] = Body(None, description="Axes to aggregate on (i.e. group by)"),
-    aggregations: Optional[List[AggregationSpec | TopHitsAggregationSpec]] = Body(
-        None, description="Aggregate functions to compute"
-    ),
-    queries: Annotated[
-        str | list[str] | dict[str, str] | None,
-        Body(
-            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-            "or a dict of {'label': 'query'}",
-        ),
-    ] = None,
-    filters: Annotated[
-        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
-        Body(
-            description="Field filters, should be a dict of field names to filter specifications,"
-            "which can be either a value, a list of values, or a FilterSpec dict",
-        ),
-    ] = None,
-    after: Annotated[dict[str, Any] | None, Body(description="After cursor for pagination")] = None,
+    body: Annotated[QueryAggregateBody, Body(...)],
     user: User = Depends(authenticated_user),
 ):
     """
-    Construct an aggregate query.
-
-    For example, to get average views per week per publisher
-    {
-     'axes': [{'field': 'date', 'interval':'week'}, {'field': 'publisher'}],
-     'aggregations': [{'field': 'views', 'function': 'avg'}]
-    }
-
-    Returns a JSON object {data: [{axis1, ..., n, aggregate1, ...}, ...], meta: {axes: [...], aggregations: [...]}
+    Perform an aggregation query on one or more indices. Requires READER or METAREADER role.
     """
-
     indices = index.split(",")
 
     fields_to_check = []
 
-    if axes:
-        for axis in axes:
+    if body.axes:
+        for axis in body.axes:
             if axis.field != "_query":
                 fields_to_check.append(FieldSpec(name=axis.field))
 
-    if aggregations:
-        for agg in aggregations:
+    if body.aggregations:
+        for agg in body.aggregations:
             if isinstance(agg, AggregationSpec):
                 fields_to_check.append(FieldSpec(name=agg.field))
             else:
@@ -227,15 +277,15 @@ def query_aggregate_post(
         for index_name in indices:
             raise_if_field_not_allowed(index_name, user, fields_to_check)
 
-    _axes = [Axis(**x.model_dump()) for x in axes] if axes else []
-    _aggregations = [a.instantiate() for a in aggregations] if aggregations else []
+    _axes = [Axis(**x.model_dump()) for x in body.axes] if body.axes else []
+    _aggregations = [a.instantiate() for a in body.aggregations] if body.aggregations else []
     results = query_aggregate(
         indices,
         _axes,
         _aggregations,
-        queries=_standardize_queries(queries),
-        filters=_standardize_filters(filters),
-        after=after,
+        queries=_standardize_queries(body.queries),
+        filters=_standardize_filters(body.filters),
+        after=body.after,
     )
 
     return {
@@ -251,106 +301,57 @@ def query_aggregate_post(
 @app_index_query.post("/{index}/tags_update")
 def query_update_tags(
     index: IndexIds,
-    action: Literal["add", "remove"] = Body(None, description="Action (add or remove) on tags"),
-    field: str = Body(None, description="Tag field to update"),
-    tag: str = Body(None, description="Tag to add or remove"),
-    queries: Annotated[
-        str | list[str] | dict[str, str] | None,
-        Body(
-            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-            "or a dict of {'label': 'query'}",
-        ),
-    ] = None,
-    filters: Annotated[
-        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
-        Body(
-            description="Field filters, should be a dict of field names to filter specifications,"
-            "which can be either a value, a list of values, or a FilterSpec dict",
-        ),
-    ] = None,
-    ids: Optional[Union[str, List[str]]] = Body(None, description="Document IDs of documents to update"),
+    body: Annotated[UpdateTagsBody, Body(...)],
     user: User = Depends(authenticated_user),
-):
+) -> QueryUpdateResponse:
     """
-    Add or remove tags by query or by id
+    Add or remove tags from documents by query or by id. Requires WRITER role on the index/indices.
     """
     indices = index.split(",")
     for i in indices:
         raise_if_not_project_index_role(user, i, Roles.WRITER)
 
+    ids = body.ids
     if isinstance(ids, (str, int)):
         ids = [ids]
-    update_result = update_tag_query(
-        indices, action, field, tag, _standardize_queries(queries), _standardize_filters(filters), ids
+    return update_tag_query(
+        indices, body.action, body.field, body.tag, _standardize_queries(body.queries), _standardize_filters(body.filters), ids
     )
-    return update_result
 
 
 @app_index_query.post("/{index}/update_by_query")
 def update_by_query(
     index: IndexIds,
-    field: Annotated[str, Body(description="Field to update")],
-    value: Annotated[str | int | float | None, Body(description="New value for the field, or null/None to delete field")],
-    queries: Annotated[
-        str | list[str] | dict[str, str] | None,
-        Body(
-            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-            "or a dict of {'label': 'query'}",
-        ),
-    ] = None,
-    filters: Annotated[
-        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
-        Body(
-            description="Field filters, should be a dict of field names to filter specifications,"
-            "which can be either a value, a list of values, or a FilterSpec dict",
-        ),
-    ] = None,
-    ids: Optional[List[str]] = Body(None, description="Document IDs of documents to delete"),
+    body: Annotated[UpdateByQueryBody, Body(...)],
     user: User = Depends(authenticated_user),
-):
+) -> QueryUpdateResponse:
     """
-    Update documents by query.
-
-    Select documents using queries and/or filters, and specify a field and new value.
+    Update documents by query. Requires WRITER role on the index/indices.
     """
     indices = index.split(",")
     for ix in indices:
         raise_if_not_project_index_role(user, ix, Roles.WRITER)
-    return update_query(indices, field, value, _standardize_queries(queries), _standardize_filters(filters), ids)
+    return update_query(
+        indices, body.field, body.value, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids
+    )
 
 
 @app_index_query.post("/{index}/delete_by_query")
 def delete_by_query(
     index: IndexIds,
-    queries: Annotated[
-        str | list[str] | dict[str, str] | None,
-        Body(
-            description="Query/Queries to run. Value should be a single query string, a list of query strings, "
-            "or a dict of {'label': 'query'}",
-        ),
-    ] = None,
-    filters: Annotated[
-        dict[str, FilterValue | list[FilterValue] | FilterSpec] | None,
-        Body(
-            description="Field filters, should be a dict of field names to filter specifications,"
-            "which can be either a value, a list of values, or a FilterSpec dict",
-        ),
-    ] = None,
-    ids: Optional[List[str]] = Body(None, description="Document IDs of documents to delete"),
+    body: Annotated[DeleteByQueryBody, Body(...)],
     user: User = Depends(authenticated_user),
-):
+) -> QueryUpdateResponse:
     """
-    Update documents by query.
-
-    Select documents using queries and/or filters, and specify a field and new value.
+    Delete documents by query. Requires WRITER role on the index/indices.
     """
     indices = index.split(",")
     for ix in indices:
         raise_if_not_project_index_role(user, ix, Roles.WRITER)
-    return delete_query(indices, _standardize_queries(queries), _standardize_filters(filters), ids)
+    return delete_query(indices, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids)
 
 
-def _standardize_queries(queries: str | list[str] | dict[str, str] | None = None) -> dict[str, str] | None:
+def _standardize_queries(queries: QueriesType) -> dict[str, str] | None:
     """Convert query json to dict format: {label1:query1, label2: query2} uses indices if no labels given."""
 
     if queries:
@@ -364,9 +365,7 @@ def _standardize_queries(queries: str | list[str] | dict[str, str] | None = None
     return None
 
 
-def _standardize_filters(
-    filters: Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None = None,
-) -> dict[str, FilterSpec] | None:
+def _standardize_filters(filters: FiltersType) -> dict[str, FilterSpec] | None:
     """Convert filters to dict format: {field: {values: []}}."""
     if not filters:
         return None
@@ -384,7 +383,7 @@ def _standardize_filters(
     return f
 
 
-def _standardize_fieldspecs(fields: list[str | FieldSpec] | None = None) -> list[FieldSpec] | None:
+def _standardize_fieldspecs(fields: FieldsType) -> list[FieldSpec] | None:
     """Convert fields to list of FieldSpecs."""
     if not fields:
         return None
