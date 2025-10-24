@@ -106,10 +106,10 @@ def test_query_multiple_index(index_docs, index):
 
 # TODO: Do we want to support this? What are the options?
 #       If so, need to add it to FilterSpec
-# def test_query_filter_mapping(index_docs):
-#     q = functools.partial(query_ids, index_docs)
-#     assert q(filters={"date": {"monthnr": "2"}}) == {1}
-#     assert q(filters={"date": {"dayofweek": "Monday"}}) == {0, 3}
+def test_query_filter_mapping(index_docs):
+    q = functools.partial(query_ids, index_docs)
+    assert q(filters={"date": FilterSpec(monthnr=2)}) == {1}
+    assert q(filters={"date": FilterSpec(dayofweek="Monday")}) == {0, 3}
 
 
 def test_reindex(index_docs, index_name):

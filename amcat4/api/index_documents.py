@@ -3,13 +3,13 @@
 from typing import Annotated, Any, Literal
 
 import elasticsearch
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
 from amcat4.projects import documents as _documents
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
-    CreateField,
+    CreateDocumentField,
     FieldType,
     IndexId,
     Roles,
@@ -25,7 +25,7 @@ class UploadDocumentsBody(BaseModel):
     """Form to upload documents."""
 
     documents: list[dict[str, Any]] = Field(description="The documents to upload")
-    fields: dict[str, FieldType | CreateField] | None = Field(
+    fields: dict[str, FieldType | CreateDocumentField] | None = Field(
         None,
         description="If a field in documents does not yet exist, you can create it on the spot. "
         "If you only need to specify the type, and use the default settings, "
@@ -59,7 +59,9 @@ def upload_documents(
     Upload documents to an index. Requires WRITER role on the index.
     """
     raise_if_not_project_index_role(user, ix, Roles.WRITER)
-    return _documents.upload_documents(ix, body.documents, body.fields, body.operation)
+
+    result = _documents.upload_documents(ix, body.documents, body.fields, body.operation)
+    return UploadResult.model_validate(result)
 
 
 @app_index_documents.get("/index/{ix}/documents/{docid}")
@@ -93,9 +95,6 @@ def update_document(
     """
     Update a document. Requires WRITER role on the index.
     """
-    # TODO: it's weird that upsert is now a query parameter.
-    # In other places its part of the body, but we can't do that here because
-    # the body is the document, which has unknown keys.
     raise_if_not_project_index_role(user, ix, Roles.WRITER)
     try:
         _documents.update_document(ix, docid, update, ignore_missing=upsert)

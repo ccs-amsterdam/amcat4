@@ -30,8 +30,6 @@ from amcat4.systemdata.roles import (
 )
 from amcat4.systemdata.settings import get_project_settings, update_project_settings
 
-## TODO: replace all the functions from the removed amcat4.index with the new functions
-
 
 def list_es_indices() -> List[str]:
     """

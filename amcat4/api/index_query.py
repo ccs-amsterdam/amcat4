@@ -184,7 +184,7 @@ class QueryMeta(BaseModel):
     scroll_id: Optional[str] = None
 
 
-class QueryResult(BaseModel):
+class QueryResultDict(BaseModel):
     """Results of a document query."""
 
     results: List[Dict[str, Any]]
@@ -216,7 +216,7 @@ def query_documents_post(
     index: IndexIds,
     body: Annotated[QueryDocumentsBody, Body(...)],
     user: User = Depends(authenticated_user),
-) -> QueryResult:
+) -> QueryResultDict:
     """
     Query documents in one or more indices. Requires READER or METAREADER role on the index/indices.
     """
@@ -245,7 +245,7 @@ def query_documents_post(
     )
     if r is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No results")
-    return r.as_dict()
+    return QueryResultDict(**r.as_dict())
 
 
 @app_index_query.post("/{index}/aggregate", response_model=AggregateResult)

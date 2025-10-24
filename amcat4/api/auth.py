@@ -59,11 +59,6 @@ def decode_middlecat_token(token: str) -> dict:
         raise InvalidToken(e)
 
 
-# TODO: inform wouter about change. No longer use authenticated_writer etc
-# because it mixed authentication and authorization, and to do authorization
-# in one place only (not 'sometimes' in the Depends)
-
-
 async def authenticated_user(token: str | None = Depends(oauth2_scheme)) -> User:
     """Dependency to verify and return a user based on a token."""
     settings = get_settings()

@@ -8,14 +8,14 @@ import elasticsearch.helpers
 from fastapi import HTTPException
 
 from amcat4.elastic import es
-from amcat4.models import CreateField, FieldType
+from amcat4.models import CreateDocumentField, FieldType
 from amcat4.systemdata.fields import coerce_type, create_fields, create_or_verify_tag_field, list_fields
 
 
 def upload_documents(
     index: str,
     documents: list[dict[str, Any]],
-    fields: Mapping[str, FieldType | CreateField] | None = None,
+    fields: Mapping[str, FieldType | CreateDocumentField] | None = None,
     op_type: Literal["index", "create", "update"] = "index",
     raise_on_error=False,
 ):

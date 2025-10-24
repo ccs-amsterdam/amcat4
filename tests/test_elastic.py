@@ -12,7 +12,7 @@ from amcat4.projects.documents import (
 )
 from amcat4.projects.index import refresh_index
 from amcat4.systemdata.fields import create_fields, field_values, list_fields
-from amcat4.models import CreateField, FieldSpec, IndexId
+from amcat4.models import CreateDocumentField, FieldSpec, IndexId
 from amcat4.projects.query import query_documents
 from tests.conftest import upload
 
@@ -155,7 +155,7 @@ def test_upload_with_explicit_ids(index):
 
 def test_upload_with_identifiers(index):
     doc = {"url": "http://", "text": "text"}
-    res = upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True), "text": "text"})
+    res = upload_documents(index, [doc], fields={"url": CreateDocumentField(type="keyword", identifier=True), "text": "text"})
     assert res["successes"] == 1
     _assert_n(index, 1)
 
@@ -187,16 +187,16 @@ def test_invalid_adding_identifiers(index):
     # adding an identifier to an existing index should fail
     doc = {"url": "http://", "text": "text"}
     with pytest.raises(ValueError):
-        upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True)})
+        upload_documents(index, [doc], fields={"url": CreateDocumentField(type="keyword", identifier=True)})
 
 
 def test_valid_adding_identifiers(index):
     doc = {"text": "text"}
-    upload_documents(index, [doc], fields={"text": CreateField(type="text", identifier=True)})
+    upload_documents(index, [doc], fields={"text": CreateDocumentField(type="text", identifier=True)})
 
     # adding an additional identifier to an existing index should succeed if the index already has identifiers
     doc = {"url": "http://", "text": "text"}
-    res = upload_documents(index, [doc], fields={"url": CreateField(type="keyword", identifier=True)})
+    res = upload_documents(index, [doc], fields={"url": CreateDocumentField(type="keyword", identifier=True)})
 
     # the document should have been added because its not a full duplicate (in first doc url was empty)
     assert res["successes"] == 1

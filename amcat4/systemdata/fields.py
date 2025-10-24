@@ -18,36 +18,29 @@ import datetime
 import json
 from typing import Any, Iterable, Iterator, Mapping, cast, get_args
 
+from _pytest import logging
 from elasticsearch import NotFoundError
 from fastapi import HTTPException
 
 from amcat4.elastic import es
 from amcat4.models import (
-    CreateField,
+    CreateDocumentField,
     ElasticType,
-    Field,
-    FieldMetareaderAccess,
+    DocumentField,
+    DocumentFieldMetareaderAccess,
     FieldSpec,
     FieldType,
     Roles,
-    UpdateField,
+    UpdateDocumentField,
     User,
 )
 from amcat4.systemdata.roles import get_user_project_role, role_is_at_least
-from amcat4.systemdata.versions.v2 import fields_index, fields_index_id
+from amcat4.systemdata.versions import fields_index, fields_index_id
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, index_scan
 from amcat4.systemdata.typemap import TYPEMAP_AMCAT_TO_ES, TYPEMAP_ES_TO_AMCAT
 
-# TODO: there is now a lot of complexity because we allow querying multiple indices at once.
-# I think we should instead:
-# - Create a 'discovery' endpoint that given a query returns all public indices that match the query,
-#   with field access information (and possibly document counts).
-#   (This can then even be used to discover indices across servers!!)
-# - If users want data from multiple indices, they then just need to make multiple requests, one per index.
-#   With the discovery endpoint, we can provide UI / helper functions for this.
 
-
-def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
+def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocumentField]):
     mapping: dict[str, Any] = {}
     current_fields = list_fields(index)
 
@@ -83,17 +76,13 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
             new_identifiers = True
         mapping[field] = {"type": elastic_type}
 
-        # TODO: talk to Wouter.
-        # For object and nested types, we want to allow dynamic fields inside them.
-        # Otherwise we'd need to support creating nested types. But this has some risks.
-        # Alternative is to only allow creating 'flattened' object types.
-        if elastic_type in ["object", "nested"]:
-            mapping[field]["dynamic"] = True
+        # if elastic_type in ["object", "nested"]:
+        #     mapping[field]["dynamic"] = True
 
         if settings.type in ["date"]:
             mapping[field]["format"] = "strict_date_optional_time"
 
-        current_fields[field] = Field(
+        current_fields[field] = DocumentField(
             type=settings.type,
             elastic_type=elastic_type,
             identifier=settings.identifier,
@@ -112,7 +101,7 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateField]):
         _update_fields(index, current_fields)
 
 
-def update_fields(index: str, fields: dict[str, UpdateField]):
+def update_fields(index: str, fields: dict[str, UpdateDocumentField]):
     current_fields = list_fields(index)
 
     for field, new_settings in fields.items():
@@ -144,13 +133,13 @@ def update_fields(index: str, fields: dict[str, UpdateField]):
     _update_fields(index, current_fields)
 
 
-def list_fields(index: str) -> dict[str, Field]:
+def list_fields(index: str) -> dict[str, DocumentField]:
     """
     Retrieve the fields settings for this index. Look for both the field settings in the system index,
     and the field mappings in the index itself. If a field is not defined in the system index, return the
     default settings for that field type and add it to the system index. This way, any elastic index can be imported
     """
-    fields: dict[str, Field] = {}
+    fields: dict[str, DocumentField] = {}
 
     try:
         system_index_fields = _list_fields(index)
@@ -162,8 +151,7 @@ def list_fields(index: str) -> dict[str, Field]:
         type = TYPEMAP_ES_TO_AMCAT.get(elastic_type)
 
         if type is None:
-            # skip over unsupported elastic fields.
-            # (TODO: also return warning to client?)
+            logging.warning(f"Field {field} in index {index} has unsupported elastic type {elastic_type}, skipping")
             continue
 
         if field not in system_index_fields:
@@ -344,7 +332,7 @@ def field_values(index: str, field: str, size: int) -> list[str]:
     return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]
 
 
-def field_stats(index: str, field: str) -> list[str]:
+def field_stats(index: str, field: str):
     """
     :param index: The index
     :param field: The field name
@@ -357,9 +345,9 @@ def field_stats(index: str, field: str) -> list[str]:
 
 def _get_default_metareader(type: FieldType):
     if type in ["boolean", "number", "date"]:
-        return FieldMetareaderAccess(access="read")
+        return DocumentFieldMetareaderAccess(access="read")
 
-    return FieldMetareaderAccess(access="none")
+    return DocumentFieldMetareaderAccess(access="none")
 
 
 def _get_default_field(type: FieldType):
@@ -372,28 +360,28 @@ def _get_default_field(type: FieldType):
         raise ValueError(
             f"The default elastic type mapping for field type {type} is not defined (if this happens, blame and inform Kasper)"
         )
-    return Field(elastic_type=elastic_type[0], type=type, metareader=_get_default_metareader(type))
+    return DocumentField(elastic_type=elastic_type[0], type=type, metareader=_get_default_metareader(type))
 
 
-def _standardize_createfields(fields: Mapping[str, FieldType | CreateField]) -> dict[str, CreateField]:
+def _standardize_createfields(fields: Mapping[str, FieldType | CreateDocumentField]) -> dict[str, CreateDocumentField]:
     sfields = {}
     for k, v in fields.items():
         if isinstance(v, str):
             assert v in get_args(FieldType), f"Unknown amcat type {v}"
-            sfields[k] = CreateField(type=cast(FieldType, v))
+            sfields[k] = CreateDocumentField(type=cast(FieldType, v))
         else:
             sfields[k] = v
     return sfields
 
 
-def _check_forbidden_type(field: Field, type: FieldType):
+def _check_forbidden_type(field: DocumentField, type: FieldType):
     if field.identifier:
         for forbidden_type in ["tag", "vector"]:
             if type == forbidden_type:
                 raise ValueError(f"Field {field} is an identifier field, which cannot be a {forbidden_type} field")
 
 
-def _update_fields(index: str, fields: dict[str, Field]):
+def _update_fields(index: str, fields: dict[str, DocumentField]):
     def insert_fields():
         for field, settings in fields.items():
             id = fields_index_id(index, field)
@@ -403,9 +391,9 @@ def _update_fields(index: str, fields: dict[str, Field]):
     es_bulk_upsert(insert_fields())
 
 
-def _list_fields(index: str) -> dict[str, Field]:
+def _list_fields(index: str) -> dict[str, DocumentField]:
     docs = index_scan(fields_index(), query={"term": {"index": index}})
-    return {doc["name"]: Field.model_validate(doc["settings"]) for id, doc in docs}
+    return {doc["name"]: DocumentField.model_validate(doc["settings"]) for id, doc in docs}
 
 
 def _get_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:

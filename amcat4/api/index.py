@@ -1,7 +1,7 @@
 """API Endpoints for document and index management."""
 
 from datetime import datetime
-from typing import Annotated, Mapping
+from typing import Annotated
 
 from elastic_transport import ApiError
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Response, status
@@ -16,11 +16,9 @@ from amcat4.projects.index import (
     update_project_index,
 )
 from amcat4.api.auth import authenticated_user
-from amcat4.api.index_query import _standardize_filters, _standardize_queries
+from amcat4.api.index_query import FiltersType, QueriesType, _standardize_filters, _standardize_queries
 from amcat4.models import (
     ContactInfo,
-    FilterSpec,
-    FilterValue,
     GuestRole,
     IndexId,
     ProjectSettings,
@@ -71,8 +69,8 @@ class ReindexBody(BaseModel):
     """Body for reindexing documents."""
 
     destination: str = Field(..., description="The destination index id")
-    queries: str | list[str] | dict[str, str] | None = Field(None, description="Query/Queries to select documents to reindex.")
-    filters: Mapping[str, FilterValue | list[FilterValue] | FilterSpec] | None = Field(None, description="Field filters.")
+    queries: QueriesType
+    filters: FiltersType
 
 
 # RESPONSE MODELS
@@ -258,5 +256,6 @@ def start_reindex(
     raise_if_not_project_index_role(user, ix, Roles.READER)
     raise_if_not_project_index_role(user, body.destination, Roles.WRITER)
     filters = _standardize_filters(body.filters)
+
     queries = _standardize_queries(body.queries)
     return reindex(source_index=ix, destination_index=body.destination, queries=queries, filters=filters)

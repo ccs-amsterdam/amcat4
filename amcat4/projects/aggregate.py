@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple,
 from amcat4.projects.date_mappings import interval_mapping
 from amcat4.elastic import es
 from amcat4.systemdata.fields import list_fields
-from amcat4.models import Field, FilterSpec, SortSpec
+from amcat4.models import DocumentField, FilterSpec, SortSpec
 from amcat4.projects.query import build_body
 
 
@@ -339,7 +339,7 @@ def query_aggregate(
     if axes and sum([x.field == "_query" for x in axes[1:]]) > 1:
         raise ValueError("Only one aggregation axis may be by query")
 
-    all_fields: dict[str, Field] = dict()
+    all_fields: dict[str, DocumentField] = dict()
     indices = index if isinstance(index, list) else [index]
     for index in indices:
         index_fields = list_fields(index)

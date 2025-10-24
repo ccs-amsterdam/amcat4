@@ -2,19 +2,19 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
-    CreateField,
+    CreateDocumentField,
     FieldSpec,
     FieldType,
     IndexId,
     Roles,
-    UpdateField,
+    UpdateDocumentField,
     User,
-    Field as FieldModel,
+    DocumentField,
 )
 from amcat4.systemdata import fields as _fields
 from amcat4.systemdata.roles import get_user_project_role, raise_if_not_project_index_role, role_is_at_least
@@ -46,7 +46,7 @@ class FieldStatsResponse(BaseModel):
 def create_fields(
     ix: IndexId,
     fields: Annotated[
-        dict[str, FieldType | CreateField],
+        dict[str, FieldType | CreateDocumentField],
         Body(
             description="Either a dictionary that maps field names to field specifications"
             "({field: {type: 'text', identifier: True }}), "
@@ -64,7 +64,7 @@ def create_fields(
 
 
 @app_index_fields.get("/index/{ix}/fields")
-def get_fields(ix: IndexId, user: User = Depends(authenticated_user)) -> dict[str, FieldModel]:
+def get_fields(ix: IndexId, user: User = Depends(authenticated_user)) -> dict[str, DocumentField]:
     """
     Get the fields (columns) used in this index. Requires METAREADER role on the index.
     """
@@ -74,7 +74,9 @@ def get_fields(ix: IndexId, user: User = Depends(authenticated_user)) -> dict[st
 
 @app_index_fields.put("/index/{ix}/fields", status_code=status.HTTP_204_NO_CONTENT)
 def update_fields(
-    ix: IndexId, fields: Annotated[dict[str, UpdateField], Body(description="")], user: User = Depends(authenticated_user)
+    ix: IndexId,
+    fields: Annotated[dict[str, UpdateDocumentField], Body(description="")],
+    user: User = Depends(authenticated_user),
 ):
     """
     Update the settings of one or more fields. Requires WRITER role on the index.
@@ -102,7 +104,7 @@ def get_field_values(ix: IndexId, field: str, user: User = Depends(authenticated
 
 
 @app_index_fields.get("/index/{ix}/fields/{field}/stats")
-def get_field_stats(ix: IndexId, field: str, user: User = Depends(authenticated_user)) -> dict:
+def get_field_stats(ix: IndexId, field: str, user: User = Depends(authenticated_user)):
     """Get statistics for a specific field. Only works for numeric (incl date) fields. Requires READER or METAREADER role."""
     role = get_user_project_role(user, ix)
     if role_is_at_least(role, Roles.READER):

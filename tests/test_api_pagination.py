@@ -1,5 +1,5 @@
 from amcat4.systemdata.roles import Roles, create_project_role, update_project_role
-from amcat4.models import CreateField
+from amcat4.models import CreateDocumentField
 from tests.conftest import upload
 from tests.tools import post_json
 
@@ -28,7 +28,7 @@ def test_pagination(client, index, user):
 
 def test_scroll(client, index, user):
     create_project_role(user, index, Roles.READER)
-    upload(index, docs=[{"i": i} for i in range(66)], fields={"i": CreateField(type="integer")})
+    upload(index, docs=[{"i": i} for i in range(66)], fields={"i": CreateDocumentField(type="integer")})
     url = f"/index/{index}/query"
     r = post_json(
         client,

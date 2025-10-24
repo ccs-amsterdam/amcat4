@@ -7,7 +7,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError, BaseModel
 
 from amcat4.api.index import app_index
 from amcat4.api.index_documents import app_index_documents

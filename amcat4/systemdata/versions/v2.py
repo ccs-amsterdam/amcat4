@@ -12,12 +12,6 @@ from typing import Iterable, Literal
 
 VERSION = 2
 
-# TODO: are there more elegant solutions?
-# Here we export functions that need to be imported in the systemdata management code, because:
-# - we need to be able to get the right index names, and this needs to be a function because
-#   tests change the system index prefix in the settings
-# - we need to create the ids in a consistent way
-
 
 def settings_index() -> str:
     return system_index_name(VERSION, "settings")
@@ -47,10 +41,8 @@ def fields_index_id(index: str, name: str) -> str:
     return f"{index}:{name}"
 
 
-def requests_index_id(type: str, email: str, role_context: str | Literal["_server"]) -> str:
-    if type == "create_project" and role_context == "_server":
-        raise ValueError("role_context must not be _server for create_project requests")
-    return f"{type}:{role_context}:{email}"
+def requests_index_id(type: str, email: str, project_id: str | None) -> str:
+    return f"{type}:{project_id or ''}:{email}"
 
 
 _contact_field = object_field(
@@ -140,10 +132,9 @@ roles_mapping: ElasticMapping = dict(
 )
 
 requests_mapping: ElasticMapping = dict(
-    request_type={"type": "keyword"},
+    type={"type": "keyword"},
     email={"type": "keyword"},
-    role_context={"type": "keyword"},  # either _server or an index name
-    index={"type": "keyword"},
+    project_id={"type": "keyword"},
     status={"type": "keyword"},  # "pending", "approved", "rejected"
     message={"type": "text"},
     timestamp={"type": "date"},
@@ -231,9 +222,9 @@ def migrate_guest_roles(role: dict, in_index: str | None):
 
 def migrate_requests(request: dict):
     doc = {
-        "request_type": request.get("request_type"),
+        "type": request.get("request_type"),
         "email": request.get("email"),
-        "role_context": request.get("index", "_server"),
+        "project_id": request.get("index"),
         "status": "pending",  # before approved and rejected requests were removed
         "message": request.get("message"),
         "timestamp": request.get("timestamp"),
@@ -245,7 +236,7 @@ def migrate_requests(request: dict):
 
     return BulkInsertAction(
         index=requests_index(),
-        id=requests_index_id(doc["request_type"], doc["email"], doc["role_context"]),
+        id=requests_index_id(doc["type"], doc["email"], doc["role_context"]),
         doc=doc,
     )
 

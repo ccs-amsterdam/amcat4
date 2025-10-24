@@ -4,7 +4,7 @@ from fastapi import HTTPException
 
 
 from amcat4.elastic import es
-from amcat4.models import CreateField, FieldType, ProjectSettings, Roles, RoleRule, User
+from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles, RoleRule, User
 from amcat4.systemdata.fields import create_fields, list_fields
 
 from amcat4.systemdata.roles import list_user_project_roles, raise_if_not_server_role
@@ -14,7 +14,7 @@ from amcat4.systemdata.settings import (
     update_project_settings,
 )
 from amcat4.elastic.util import index_scan
-from amcat4.systemdata.versions.v2 import settings_index, settings_index_id
+from amcat4.systemdata.versions import settings_index, settings_index_id
 
 
 class IndexDoesNotExist(ValueError):
@@ -40,7 +40,9 @@ def create_project_index(new_index: ProjectSettings, admin_email: str | None = N
 
 
 def register_project_index(
-    index: ProjectSettings, admin_email: str | None = None, mappings: Mapping[str, FieldType | CreateField] | None = None
+    index: ProjectSettings,
+    admin_email: str | None = None,
+    mappings: Mapping[str, FieldType | CreateDocumentField] | None = None,
 ):
     """
     Register an existing elasticsearch index in the settings index.

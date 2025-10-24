@@ -3,7 +3,7 @@ from typing import Iterable
 from elasticsearch import ConflictError, NotFoundError
 from fastapi import HTTPException
 from pydantic import ValidationError
-from amcat4.systemdata.versions.v2 import roles_index, roles_index_id
+from amcat4.systemdata.versions import roles_index, roles_index_id
 from amcat4.elastic import es
 from amcat4.models import (
     GuestRole,
@@ -16,8 +16,6 @@ from amcat4.models import (
     Roles,
 )
 from amcat4.elastic.util import index_scan
-
-# TODO: should we set all update functions to ignore_missing=True by default?
 
 
 def create_project_role(email: RoleEmailPattern, project_id: IndexId, role: Roles):

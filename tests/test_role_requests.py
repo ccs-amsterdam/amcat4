@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 import pytest
 
-from amcat4.models import Roles, User
+from amcat4.models import AdminPermissionRequest, ProjectRoleRequest, Roles, User
 from amcat4.projects.index import IndexDoesNotExist
 from amcat4.systemdata.requests import (
     delete_request,
@@ -11,10 +11,9 @@ from amcat4.systemdata.requests import (
     list_user_requests,
     process_request,
 )
-from amcat4.models import RoleRequest, CreateProjectRequest, PermissionRequest
+from amcat4.models import CreateProjectRequest
 from amcat4.systemdata.roles import (
     create_project_role,
-    create_server_role,
     delete_project_role,
     get_user_project_role,
     update_project_role,
@@ -24,48 +23,79 @@ from amcat4.systemdata.settings import get_project_settings
 from tests.tools import build_headers, check, get_json, post_json
 
 
-def all_requests() -> dict[tuple[str, str, str | None], PermissionRequest]:
-    return {(r.request_type, r.email, r.role_context): r for r in list_all_requests()}
+def all_requests() -> dict[tuple[str, str, str | None], AdminPermissionRequest]:
+    return {get_request_id(r): r for r in list_all_requests()}
+
+
+def admin_requests(user: User) -> dict[tuple[str, str, str | None], AdminPermissionRequest]:
+    return {get_request_id(r): r for r in list_admin_requests(user)}
+
+
+def my_requests(user: User) -> dict[tuple[str, str, str | None], AdminPermissionRequest]:
+    return {get_request_id(r): r for r in list_user_requests(user)}
+
+
+def get_request_id(r: AdminPermissionRequest) -> str:
+    ## unique requests are identified by (type, email, index)
+    return request_id(r.request.type, r.email, r.request.project_id)
+
+
+def request_id(type: str, email: str, project_id: str | None = None) -> str:
+    return f"{type}:{project_id or ''}:{email}"
 
 
 def keys(requests):
-    return {(r["request_type"], r["email"], r["index"]) for r in requests}
+    return {(r["type"], r["email"], r["index"]) for r in requests}
 
 
 def test_role_requests(clean_requests, index, user):
     assert all_requests() == {}
 
     # Can we file a request?
-    update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
+    update_request(
+        AdminPermissionRequest(email=user, request=ProjectRoleRequest(type="project_role", project_id=index, role="ADMIN"))
+    )
+
     requests = all_requests()
-    assert set(requests.keys()) == {("role", user, index)}
-    r = requests["role", user, index]
-    assert isinstance(r, RoleRequest)
-    assert r.role == "ADMIN"
+    id = request_id("project_role", user, index)
+    assert set(requests.keys()) == {id}
+    r = requests[id]
+    assert isinstance(r, AdminPermissionRequest)
+    assert r.request.role == "ADMIN"
     assert r.timestamp is not None
     t = r.timestamp
 
     # Does re-filing the request update the timestamp
-    update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
+    update_request(
+        AdminPermissionRequest(email=user, request=ProjectRoleRequest(type="project_role", project_id=index, role="ADMIN"))
+    )
     requests = all_requests()
-    assert set(requests.keys()) == {("role", user, index)}
-    r = requests["role", user, index]
-    assert isinstance(r, RoleRequest)
-    assert r.role == "ADMIN"
+    assert set(requests.keys()) == {id}
+    r = requests[id]
+    assert isinstance(r, AdminPermissionRequest)
+    assert r.request.role == "ADMIN"
     assert r.timestamp is not None
     assert r.timestamp > t
 
     # Updating a request
-    update_request(RoleRequest(role_context=index, email=user, role="METAREADER"))
+    update_request(
+        AdminPermissionRequest(
+            email=user, request=ProjectRoleRequest(type="project_role", project_id=index, role="METAREADER")
+        )
+    )
     requests = all_requests()
 
-    assert set(requests.keys()) == {("role", user, index)}
-    r = requests["role", user, index]
-    assert isinstance(r, RoleRequest)
-    assert r.role == "METAREADER"
+    assert set(requests.keys()) == {id}
+    r = requests[id]
+    assert isinstance(r, AdminPermissionRequest)
+    assert r.request.role == "METAREADER"
 
     # Cancelling a request
-    delete_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
+    delete_request(
+        AdminPermissionRequest(
+            email=user, request=ProjectRoleRequest(type="project_role", project_id=index, role="METAREADER")
+        )
+    )
     assert all_requests() == {}
 
 
@@ -73,53 +103,87 @@ def test_list_admin_requests(clean_requests, index, guest_index, index_name, use
     user_obj = User(email=user)
 
     assert all_requests() == {}
-    requests = {(r.request_type, r.email, r.role_context): r for r in list_admin_requests(user_obj)}
+    requests = admin_requests(user_obj)
     assert requests == {}
-    update_request(RoleRequest(role_context=index, email="john@example.com", role="METAREADER"))
-    update_request(RoleRequest(role_context=guest_index, email="jane@example.com", role="ADMIN"))
-    update_request(CreateProjectRequest(role_context=index_name, email="john@example.com"))
+
+    ## Make three requests
+    update_request(
+        AdminPermissionRequest(
+            email="john@example.com", request=ProjectRoleRequest(type="project_role", project_id=index, role="METAREADER")
+        )
+    )
+    update_request(
+        AdminPermissionRequest(
+            email="jane@example.com", request=ProjectRoleRequest(type="project_role", project_id=guest_index, role="ADMIN")
+        )
+    )
+    update_request(
+        AdminPermissionRequest(
+            email="john@example.com", request=CreateProjectRequest(type="create_project", project_id=index_name)
+        )
+    )
+    ## create their ids (for ease of testing assertions)
+    john_role_req = request_id("project_role", "john@example.com", index)
+    jane_role_req = request_id("project_role", "jane@example.com", guest_index)
+    john_create_req = request_id("create_project", "john@example.com", index_name)
+
+    update_request(
+        AdminPermissionRequest(
+            email="john@example.com", request=CreateProjectRequest(type="create_project", project_id=index_name)
+        )
+    )
 
     # An admin on a specific index should see requests for that index
     create_project_role(user, index, Roles.ADMIN)
 
-    requests = {(r.request_type, r.email, r.role_context): r for r in list_admin_requests(user_obj)}
-    assert set(requests.keys()) == {("role", "john@example.com", index)}
+    requests = admin_requests(user_obj)
+    assert set(requests.keys()) == {john_role_req}
+
     create_project_role(user, guest_index, Roles.ADMIN)
-    requests = {(r.request_type, r.email, r.role_context): r for r in list_admin_requests(user_obj)}
-    assert set(requests.keys()) == {("role", "john@example.com", index), ("role", "jane@example.com", guest_index)}
+    requests = admin_requests(user_obj)
+    assert set(requests.keys()) == {john_role_req, jane_role_req}
 
     # A global writer can see project creation requests (???)
     update_server_role(user, Roles.WRITER)
     delete_project_role(user, guest_index)
-    requests = {(r.request_type, r.email, r.role_context): r for r in list_admin_requests(user_obj)}
-    assert set(requests.keys()) == {("role", "john@example.com", index), ("create_project", "john@example.com", index_name)}
+    requests = admin_requests(user_obj)
+    assert set(requests.keys()) == {john_role_req, john_create_req}
 
-    # A global admin still only sees requests for projects where they are admin
-    # TODO: Wouter, it used to be the other way around, but should global admin see all requests?
     admin_obj = User(email=admin)
-    requests = {(r.request_type, r.email, r.role_context): r for r in list_admin_requests(admin_obj)}
-    assert set(requests.keys()) == {
-        ("create_project", "john@example.com", index_name),
-    }
+    requests = admin_requests(admin_obj)
+
+    assert set(requests.keys()) == {john_create_req}
 
 
 def test_list_my_requests(clean_requests, index, index_name, user):
     user_obj = User(email=user)
 
     assert list(list_user_requests(user_obj)) == []
-    update_request(RoleRequest(role_context=index, email="someoneelse@example.com", role="ADMIN"))
+    update_request(
+        AdminPermissionRequest(
+            email="someoneelse@example.com", request=ProjectRoleRequest(type="project_role", project_id=index, role="ADMIN")
+        )
+    )
     assert list(list_user_requests(user_obj)) == []
-    update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
-    requests = {(r.request_type, r.email, r.role_context): r for r in list_user_requests(user_obj)}
-    assert set(requests.keys()) == {("role", user, index)}
+    update_request(
+        AdminPermissionRequest(email=user, request=ProjectRoleRequest(type="project_role", project_id=index, role="ADMIN"))
+    )
+    user_role_req = request_id("project_role", user, index)
 
-    role_request = requests[("role", user, index)]
-    assert role_request.request_type == "role"
-    assert role_request.role == Roles.ADMIN.name
+    requests = my_requests(user_obj)
+    assert set(requests.keys()) == {user_role_req}
 
-    update_request(CreateProjectRequest(role_context=index_name, email=user))
-    requests = {(r.request_type, r.email, r.role_context): r for r in list_user_requests(user_obj)}
-    assert set(requests.keys()) == {("role", user, index), ("create_project", user, index_name)}
+    role_request = requests[user_role_req]
+    assert role_request.request.type == "project_role"
+    assert role_request.request.role == Roles.ADMIN.name
+
+    update_request(
+        AdminPermissionRequest(email=user, request=CreateProjectRequest(type="create_project", project_id=index_name))
+    )
+    user_create_req = request_id("create_project", user, index_name)
+    requests = my_requests(user_obj)
+
+    assert set(requests.keys()) == {user_role_req, user_create_req}
 
 
 def test_resolve_requests(clean_requests, index, index_name, user, admin):
@@ -133,8 +197,12 @@ def test_resolve_requests(clean_requests, index, index_name, user, admin):
         get_project_settings(index_name)
 
     update_project_role(admin, index, Roles.ADMIN, ignore_missing=True)
-    update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
-    update_request(CreateProjectRequest(role_context=index_name, email=user))
+    update_request(
+        AdminPermissionRequest(email=user, request=ProjectRoleRequest(type="project_role", project_id=index, role="ADMIN"))
+    )
+    update_request(
+        AdminPermissionRequest(email=user, request=CreateProjectRequest(type="create_project", project_id=index_name))
+    )
 
     requests = list(list_admin_requests(admin_obj))
     ## created 2 requests
@@ -163,7 +231,13 @@ def test_resolve_requests(clean_requests, index, index_name, user, admin):
 
 def test_project_attributes(clean_requests, index_name, user, admin):
     admin_obj = User(email=admin)
-    update_request(CreateProjectRequest(role_context=index_name, email=user, message="message", name="name"))
+    update_request(
+        AdminPermissionRequest(
+            email=user,
+            message="message",
+            request=CreateProjectRequest(project_id=index_name, name="name", type="create_project"),
+        )
+    )
 
     requests = list(list_admin_requests(admin_obj))
     for request in requests:
@@ -174,17 +248,17 @@ def test_project_attributes(clean_requests, index_name, user, admin):
 
 
 def test_request_attributes_api(clean_requests, client, index_name, user):
-    request = dict(request_type="create_project", project_id=index_name, email=user, message="message", name="name")
+    request = dict(email=user, message="message", request=dict(type="create_project", name="name", project_id=index_name))
     post_json(client, "/permission_requests", json=request, user=user, expected=204)
     r = get_json(client, "/permission_requests", user=user)
     assert len(r) == 1
     assert r[0]["message"] == "message"
-    assert r[0]["name"] == "name"
+    assert r[0]["request"]["name"] == "name"
 
 
 def test_api_post_request(clean_requests, client, index, index_name, user):
     assert all_requests() == {}
-    request = dict(request_type="role", role_context=index, email=user, role="ADMIN")
+    request = dict(type="role", role_context=index, email=user, role="ADMIN")
     # Guests / unauthenticated users cannot post requests
     check(client.post("/permission_requests", json=request), expected=401)
     # You cannot post a request for someone else
@@ -205,7 +279,7 @@ def test_api_post_request(clean_requests, client, index, index_name, user):
         client,
         "/permission_requests",
         expected=204,
-        json={"request_type": "create_project", "index": index_name, "email": user},
+        json={"type": "create_project", "index": index_name, "email": user},
         user=user,
     )
     assert set(all_requests().keys()) == {("role", user, index), ("create_project", user, index_name)}
@@ -219,7 +293,7 @@ def test_api_get_my_requests(clean_requests, client, index, user):
     assert get_json(client, "/permission_requests", user=user) == []
     update_request(RoleRequest(role_context=index, email=user, role="ADMIN"))
     (req,) = get_json(client, "/permission_requests", user=user)
-    assert req["request_type"] == "role"
+    assert req["type"] == "role"
     assert req["email"] == user
 
 

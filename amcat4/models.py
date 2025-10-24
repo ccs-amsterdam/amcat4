@@ -1,22 +1,23 @@
 from enum import IntEnum
 from fastapi import Body
-import pydantic
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, model_validator, Field as pydanticField
+from pydantic import BaseModel, EmailStr, model_validator, Field
 from typing import Annotated, Any, Literal, Union
-from typing_extensions import Self, TypedDict
-
-
-class FieldDocs(TypedDict):
-    title: str
-    description: str
+from typing_extensions import Self
 
 
 class User(BaseModel):
-    """For internal user only. Represents an authenticated user."""
+    """For internal use only. Represents an authenticated user."""
 
     email: EmailStr | None  # this can only be an authenticed, full email address or None for unauthenticated users
     superadmin: bool = False  # if auth is disabled, or if the user is the hardcoded admin email
+
+
+IndexId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]*$", title="Index ID")]
+IndexIds = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*$", title="Index ID or comma-separated IDs")]
+
+
+######################## ROLE SPECIFICATIONS #########################
 
 
 class Roles(IntEnum):
@@ -28,25 +29,16 @@ class Roles(IntEnum):
     ADMIN = 50
 
 
-Archived = Annotated[bool, Body(..., description="Boolean for setting archived to true or false")]
-
 Role = Literal["NONE", "LISTER", "METAREADER", "READER", "WRITER", "ADMIN"]
 GuestRole = Literal["NONE", "LISTER", "METAREADER", "READER", "WRITER"]
 ServerRole = Literal["NONE", "WRITER", "ADMIN"]
 
 
-IndexId = Annotated[str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*$", title="Index ID")]
-IndexIds = Annotated[
-    str, pydanticField(pattern=r"^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*$", title="Index ID or comma-separated IDs")
-]
-
 RoleEmailPattern = Annotated[
     EmailStr | Literal["*"],
-    pydanticField(title="An email addres (user@domain.com), domain wildcard (*@domain.com) or guest wildcard (*)"),
+    Field(title="An email addres (user@domain.com), domain wildcard (*@domain.com) or guest wildcard (*)"),
 ]  # user@domain.com or *@domain.com or *
-RoleContext = Annotated[
-    IndexId | Literal["_server"], pydanticField(title="Index ID for project roles or _server for server roles")
-]
+RoleContext = Annotated[IndexId | Literal["_server"], Field(title="Index ID for project roles or _server for server roles")]
 
 
 class RoleRule(BaseModel):
@@ -61,6 +53,8 @@ class RoleRule(BaseModel):
             raise ValueError(f"Cannot create ADMIN role for {self.email}. Only exact email matches can have ADMIN role")
         return self
 
+
+######################## DOCUMENT FIELD SPECIFICATIONS #########################
 
 FieldType = Literal[
     "text",
@@ -113,26 +107,26 @@ class SnippetParams(BaseModel):
     the first [nomatch_chars] of the field.
     """
 
-    nomatch_chars: Annotated[int, pydantic.Field(ge=1)] = 100
-    max_matches: Annotated[int, pydantic.Field(ge=0)] = 0
-    match_chars: Annotated[int, pydantic.Field(ge=1)] = 50
+    nomatch_chars: Annotated[int, Field(ge=1)] = 100
+    max_matches: Annotated[int, Field(ge=0)] = 0
+    match_chars: Annotated[int, Field(ge=1)] = 50
 
 
-class FieldMetareaderAccess(BaseModel):
+class DocumentFieldMetareaderAccess(BaseModel):
     """Metareader access for a specific field."""
 
     access: Literal["none", "read", "snippet"] = "none"
     max_snippet: SnippetParams | None = None
 
 
-class Field(BaseModel):
+class DocumentField(BaseModel):
     """Settings for a field. Some settings, such as metareader, have a strict type because they are used
     server side. Others, such as client_settings, are free-form and can be used by the client to store settings."""
 
     type: FieldType
     elastic_type: ElasticType
     identifier: bool = False
-    metareader: FieldMetareaderAccess = FieldMetareaderAccess()
+    metareader: DocumentFieldMetareaderAccess = DocumentFieldMetareaderAccess()
     client_settings: dict[str, Any] = {}
 
     @model_validator(mode="after")
@@ -146,23 +140,25 @@ class Field(BaseModel):
         return self
 
 
-class CreateField(BaseModel):
+class CreateDocumentField(BaseModel):
     """Model for creating a field"""
 
     type: FieldType
     elastic_type: ElasticType | None = None
     identifier: bool = False
-    metareader: FieldMetareaderAccess | None = None
+    metareader: DocumentFieldMetareaderAccess | None = None
     client_settings: dict[str, Any] | None = None
 
 
-class UpdateField(BaseModel):
+class UpdateDocumentField(BaseModel):
     """Model for updating a field"""
 
     type: FieldType | None = None
-    metareader: FieldMetareaderAccess | None = None
+    metareader: DocumentFieldMetareaderAccess | None = None
     client_settings: dict[str, Any] | None = None
 
+
+####################### SEARCH SPECIFICATIONS #########################
 
 FilterValue = str | int
 
@@ -177,6 +173,9 @@ class FilterSpec(BaseModel):
     lte: FilterValue | None = None
     exists: bool | None = None
 
+    monthnr: int | None = None
+    dayofweek: str | None = None
+
 
 class FieldSpec(BaseModel):
     """Form for field specification."""
@@ -189,6 +188,44 @@ class SortSpec(BaseModel):
     """Form for sort specification."""
 
     order: Literal["asc", "desc"] = "asc"
+
+
+###################### PERMISSION REQUESTS #########################
+
+
+class ServerRoleRequest(BaseModel):
+    type: Literal["server_role"]
+    role: Role = Field(..., description="The server role being requested.")
+
+
+class ProjectRoleRequest(BaseModel):
+    type: Literal["project_role"]
+    project_id: IndexId = Field(..., description="ID of the project for which the role is requested.")
+    role: Role = Field(..., description="The project role being requested.")
+
+
+class CreateProjectRequest(BaseModel):
+    type: Literal["create_project"]
+    project_id: IndexId = Field(..., description="ID for the new project.")
+    name: str | None = Field(None, description="Optional name for the new project.")
+    description: str | None = Field(None, description="Optional description for the new project.")
+    folder: str | None = Field(None, description="Optional folder for the new project.")
+
+
+class PermissionRequest(BaseModel):
+    email: EmailStr = Field(..., description="Email address of the user making the request.")
+    message: str | None = Field(None, description="Optional message from the user making the request.")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Timestamp of the request.")
+    request: Union[ServerRoleRequest, ProjectRoleRequest, CreateProjectRequest] = Field(
+        discriminator="type", description="The permission request."
+    )
+
+
+class AdminPermissionRequest(PermissionRequest):
+    status: Literal["approved", "rejected", "pending"] = Field("pending", description="Status of the request.")
+
+
+####################### PROJECT AND SERVER SETTINGS #########################
 
 
 class ContactInfo(BaseModel):
@@ -207,35 +244,6 @@ class Links(BaseModel):
 class LinksGroup(BaseModel):
     title: str
     links: list[Links]
-
-
-# TODO: Wouter opinion on role_request. Bit weird in createprojectrequest,
-# but otherwise the id becomes more complex, and in a way it is still a
-# request for a role (ADMIN) on the new project.
-
-
-class AbstractRequest(BaseModel):
-    email: str
-    timestamp: datetime | None = None
-    message: str | None = None
-    status: Literal["pending", "approved", "rejected"] = "pending"
-
-
-class RoleRequest(AbstractRequest):
-    request_type: Literal["role"] = "role"
-    role_context: IndexId | Literal["_server"]
-    role: Role
-
-
-class CreateProjectRequest(AbstractRequest):
-    request_type: Literal["create_project"] = "create_project"
-    role_context: IndexId
-    description: str | None = None
-    name: str | None = None
-    folder: str | None = None
-
-
-PermissionRequest = Annotated[Union[RoleRequest, CreateProjectRequest], pydantic.Field(discriminator="request_type")]
 
 
 class ProjectSettings(BaseModel):

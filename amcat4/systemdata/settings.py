@@ -2,19 +2,11 @@ from elasticsearch import ConflictError, NotFoundError
 from fastapi import HTTPException
 
 from amcat4.systemdata.roles import create_project_role
-from amcat4.systemdata.versions.v2 import roles_index, settings_index, settings_index_id
+from amcat4.systemdata.versions import roles_index, settings_index, settings_index_id
 from amcat4.elastic import es
 from amcat4.models import ProjectSettings, Roles, ServerSettings
 
 ## PROJECT INDEX SETTINGS
-
-
-# TODO: We already used to make a distinction between create and update, but
-#       we didn't really enforce it (update was upsert by defailt). I now do
-#       enforce it, but there is a tradeoff between strictness and usability.
-#       Create should only work if the document does not exist yet, but the only
-#       risk of upsert is accidentally creating when you misspecify a name.
-#       (basically, we could change the ignore_missing flags to default to True)
 
 
 def get_project_settings(index_id: str) -> ProjectSettings:
