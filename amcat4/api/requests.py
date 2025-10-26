@@ -13,7 +13,7 @@ from amcat4.systemdata.requests import (
 )
 from amcat4.systemdata.roles import (
     get_user_server_role,
-    raise_if_not_project_index_role,
+    HTTPException_if_not_project_index_role,
     role_is_at_least,
 )
 
@@ -27,7 +27,7 @@ def get_admin_requests(user: User = Depends(authenticated_user)) -> list[AdminPe
     Server and project ADMINs can resolve role requests.
     Server ADMINs and WRITERs can resolve project creation requests.
     """
-    return list_admin_requests(user=user)
+    return list(list_admin_requests(user=user))
 
 
 @app_requests.post("/admin", status_code=status.HTTP_204_NO_CONTENT)
@@ -36,29 +36,37 @@ def post_admin_requests(requests: list[AdminPermissionRequest] = Body(...), user
     server_role = get_user_server_role(user)
 
     for r in requests:
-        if r.type == "create_project":
+        if r.request.type == "create_project":
             if not role_is_at_least(server_role, Roles.WRITER):
                 raise HTTPException(
                     status_code=403,
                     detail="Only server WRITERs and ADMINs can process project creation requests",
                 )
-        if r.type == "server_role":
+        if r.request.type == "server_role":
             if not role_is_at_least(server_role, Roles.ADMIN):
                 raise HTTPException(
                     status_code=403,
                     detail="Only server ADMINs can process server role requests",
                 )
-        if r.type == "project_role":
-            raise_if_not_project_index_role(
+        if r.request.type == "project_role":
+            HTTPException_if_not_project_index_role(
                 user, r.role_context, Roles.ADMIN, message="Only project ADMINs can process project role requests"
             )
 
-        process_request(r)
+        try:
+            process_request(r)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Error processing request {r.type} for {r.email} on {r.role_context}: {e}",
+            )
 
 
 @app_requests.get("/", response_model=list[AdminPermissionRequest])
 def get_requests(user: User = Depends(authenticated_user)):
     """Lists any active role request from this user."""
+    if user.email is None:
+        raise HTTPException(401, detail="Anonymous guests have no permission requests.")
     return list_user_requests(user=user)
 
 
@@ -70,11 +78,5 @@ def post_requests(request: Annotated[PermissionRequest, Body(...)], user: User =
             status_code=401,
             detail="Anonymous guests cannot make access requests",
         )
-    if user.email != request.email:
-        raise HTTPException(
-            status_code=401,
-            detail="Request email does not match user",
-        )
 
-    request_obj = request.request
-    update_request(AdminPermissionRequest(email=request.email, message=request.message, request=request_obj))
+    update_request(AdminPermissionRequest(email=user.email, request=request))

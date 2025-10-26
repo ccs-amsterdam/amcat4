@@ -132,7 +132,7 @@ def get_user_server_role(user: User) -> RoleRule:
         return RoleRule(email="*", role_context="_server", role="NONE")
 
 
-def raise_if_not_project_index_role(
+def HTTPException_if_not_project_index_role(
     user: User, role_context: RoleContext, required_role: Roles, global_admin: bool = True, message: str | None = None
 ):
     """
@@ -144,7 +144,7 @@ def raise_if_not_project_index_role(
         raise HTTPException(403, detail)
 
 
-def raise_if_not_server_role(user: User, required_role: Roles, message: str | None = None):
+def HTTPException_if_not_server_role(user: User, required_role: Roles, message: str | None = None):
     """
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
@@ -166,8 +166,6 @@ def set_project_guest_role(index_id: IndexId, role: Roles):
     """
     Helper to set the guest role for an index.
     """
-    if role == Roles.ADMIN:
-        raise HTTPException(422, "Cannot set guest role to ADMIN. Guests can at most be WRITER.")
     _update_role(email="*", role_context=index_id, role=role, ignore_missing=True)
 
 
@@ -188,13 +186,8 @@ def _create_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles
     if role == Roles.NONE:
         raise HTTPException(422, "Cannot create a role with Role.NONE.")
 
-    try:
-        user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-        es().create(index=roles_index(), id=id, document=user_role.model_dump(), refresh=True)
-    except ValidationError:
-        raise HTTPException(422, f"Invalid role {role} for {email} in context {role_context}.")
-    except ConflictError:
-        raise HTTPException(409, f"Role for {email} in context {role_context} already exists. Use update instead.")
+    user_role = RoleRule(email=email, role_context=role_context, role=role.name)
+    es().create(index=roles_index(), id=id, document=user_role.model_dump(), refresh=True)
 
 
 def _update_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles, ignore_missing: bool = False):
@@ -205,23 +198,12 @@ def _update_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles
     if role == Roles.NONE:
         _delete_role(email, role_context, ignore_missing=ignore_missing)
 
-    try:
-        user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-        es().update(index=roles_index(), id=id, doc=user_role.model_dump(), doc_as_upsert=ignore_missing, refresh=True)
-    except ValidationError:
-        raise HTTPException(422, f"Invalid role {role} for {email} in context {role_context}.")
-    except NotFoundError:
-        raise HTTPException(
-            404, f"Role for {email} in context {role_context} does not exist. You need to create the role first"
-        )
+    user_role = RoleRule(email=email, role_context=role_context, role=role.name)
+    es().update(index=roles_index(), id=id, doc=user_role.model_dump(), doc_as_upsert=ignore_missing, refresh=True)
 
 
 def _delete_role(email: RoleEmailPattern, role_context: RoleContext, ignore_missing: bool = False):
-    try:
-        es().delete(index=roles_index(), id=roles_index_id(email, role_context), refresh=True)
-    except NotFoundError:
-        if not ignore_missing:
-            raise HTTPException(404, f"Role for {email} in context {role_context} does not exist.")
+    es().delete(index=roles_index(), id=roles_index_id(email, role_context), refresh=True)
 
 
 def _list_roles(

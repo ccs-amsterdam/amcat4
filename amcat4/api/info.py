@@ -11,7 +11,7 @@ from amcat4.config import get_settings, validate_settings
 from amcat4.elastic.connection import connect_elastic
 from amcat4.projects.query import get_task_status
 from amcat4.models import Roles, ServerSettings, User
-from amcat4.systemdata.roles import raise_if_not_server_role
+from amcat4.systemdata.roles import HTTPException_if_not_server_role
 from amcat4.systemdata.settings import upsert_server_settings, get_server_settings
 
 templates = Jinja2Templates(directory="templates")
@@ -84,7 +84,7 @@ def read_branding() -> ServerSettings:
 @app_info.put("/config/branding", status_code=status.HTTP_204_NO_CONTENT)
 def change_branding(data: ServerSettings, user: User = Depends(authenticated_user)):
     """Update the server branding settings. Requires ADMIN server role."""
-    raise_if_not_server_role(user, Roles.ADMIN)
+    HTTPException_if_not_server_role(user, Roles.ADMIN)
     upsert_server_settings(data)
 
 

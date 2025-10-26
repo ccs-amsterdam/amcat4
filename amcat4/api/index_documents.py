@@ -2,11 +2,10 @@
 
 from typing import Annotated, Any, Literal
 
-import elasticsearch
+from elasticsearch import NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
-from amcat4.projects import documents as _documents
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
     CreateDocumentField,
@@ -15,7 +14,8 @@ from amcat4.models import (
     Roles,
     User,
 )
-from amcat4.systemdata.roles import raise_if_not_project_index_role
+from amcat4.projects.documents import delete_document, fetch_document, update_document, create_or_update_documents
+from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_index_documents = APIRouter(prefix="", tags=["documents"])
 
@@ -58,9 +58,9 @@ def upload_documents(
     """
     Upload documents to an index. Requires WRITER role on the index.
     """
-    raise_if_not_project_index_role(user, ix, Roles.WRITER)
+    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
 
-    result = _documents.upload_documents(ix, body.documents, body.fields, body.operation)
+    result = create_or_update_documents(ix, body.documents, body.fields, body.operation)
     return UploadResult.model_validate(result)
 
 
@@ -74,18 +74,24 @@ def get_document(
     """
     Get a single document by id. Requires READER role on the index.
     """
-    raise_if_not_project_index_role(user, ix, Roles.READER)
+    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
     kargs = {}
     if fields:
         kargs["_source"] = fields
-    return _documents.get_document(ix, docid, **kargs)
+    try:
+        return fetch_document(ix, docid, **kargs)
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document {ix}/{docid} not found",
+        )
 
 
 @app_index_documents.put(
     "/index/{ix}/documents/{docid}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def update_document(
+def modify_document(
     ix: Annotated[IndexId, Path(description="The index id")],
     docid: Annotated[str, Path(description="The document id")],
     update: Annotated[dict[str, Any], Body(..., description="A (partial) document. All given fields will be updated.")],
@@ -95,10 +101,10 @@ def update_document(
     """
     Update a document. Requires WRITER role on the index.
     """
-    raise_if_not_project_index_role(user, ix, Roles.WRITER)
+    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
     try:
-        _documents.update_document(ix, docid, update, ignore_missing=upsert)
-    except elasticsearch.exceptions.NotFoundError:
+        update_document(ix, docid, update, ignore_missing=upsert)
+    except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Document {ix}/{docid} not found",
@@ -109,7 +115,7 @@ def update_document(
     "/index/{ix}/documents/{docid}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def delete_document(
+def remove_document(
     ix: Annotated[IndexId, Path(description="The index id")],
     docid: Annotated[str, Path(description="The document id")],
     user: User = Depends(authenticated_user),
@@ -117,5 +123,11 @@ def delete_document(
     """
     Delete a document. Requires WRITER role on the index.
     """
-    raise_if_not_project_index_role(user, ix, Roles.WRITER)
-    _documents.delete_document(ix, docid)
+    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    try:
+        delete_document(ix, docid)
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document {ix}/{docid} not found",
+        )

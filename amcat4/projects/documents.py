@@ -3,16 +3,14 @@ import json
 import logging
 from typing import Any, Literal, Mapping
 
-from elasticsearch import NotFoundError
 import elasticsearch.helpers
-from fastapi import HTTPException
 
 from amcat4.elastic import es
 from amcat4.models import CreateDocumentField, FieldType
 from amcat4.systemdata.fields import coerce_type, create_fields, create_or_verify_tag_field, list_fields
 
 
-def upload_documents(
+def create_or_update_documents(
     index: str,
     documents: list[dict[str, Any]],
     fields: Mapping[str, FieldType | CreateDocumentField] | None = None,
@@ -82,7 +80,7 @@ def upload_document_es_actions(index, documents, op_type):
         yield action
 
 
-def get_document(index: str, doc_id: str, **kargs) -> dict:
+def fetch_document(index: str, doc_id: str, **kargs) -> dict:
     """
     Get a single document from this index.
 
@@ -90,10 +88,7 @@ def get_document(index: str, doc_id: str, **kargs) -> dict:
     :param doc_id: The document id (hash)
     :return: the source dict of the document
     """
-    try:
-        return es().get(index=index, id=doc_id, **kargs)["_source"]
-    except NotFoundError:
-        raise HTTPException(404, detail=f"Document {index}/{doc_id} not found")
+    return es().get(index=index, id=doc_id, **kargs)["_source"]
 
 
 def update_document(index: str, doc_id: str, fields: dict, ignore_missing: bool = False):
@@ -104,10 +99,7 @@ def update_document(index: str, doc_id: str, fields: dict, ignore_missing: bool 
     :param doc_id: The document id (hash)
     :param fields: a {field: value} mapping of fields to update
     """
-    try:
-        es().update(index=index, id=doc_id, doc=fields, doc_as_upsert=ignore_missing)  # type: ignore
-    except NotFoundError:
-        raise HTTPException(404, detail=f"Document {index}/{doc_id} not found")
+    es().update(index=index, id=doc_id, doc=fields, doc_as_upsert=ignore_missing)  # type: ignore
 
 
 def delete_document(index: str, doc_id: str, ignore_missing: bool = False):
@@ -117,11 +109,7 @@ def delete_document(index: str, doc_id: str, ignore_missing: bool = False):
     :param index: The Pname of the index
     :param doc_id: The document id (hash)
     """
-    try:
-        es().delete(index=index, id=doc_id)
-    except NotFoundError:
-        if not ignore_missing:
-            raise HTTPException(404, detail=f"Document {index}/{doc_id} not found")
+    es().delete(index=index, id=doc_id)
 
 
 UPDATE_SCRIPTS = dict(

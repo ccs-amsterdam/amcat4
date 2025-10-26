@@ -1,7 +1,8 @@
 """API Endpoints for project user management."""
 
 from typing import Annotated
-from fastapi import APIRouter, Body, Depends, Path, Response, status
+from elasticsearch import ConflictError, NotFoundError
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Response, status
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
@@ -16,7 +17,7 @@ from amcat4.systemdata.roles import (
     create_project_role,
     delete_project_role,
     list_project_roles,
-    raise_if_not_project_index_role,
+    HTTPException_if_not_project_index_role,
     update_project_role,
 )
 
@@ -53,20 +54,20 @@ class IndexUserResponse(BaseModel):
 
 
 @app_index_users.get("/index/{ix}/users")
-def list_index_users(
+def project_users(
     ix: Annotated[IndexId, Path(..., description="ID of the index to list users for")],
     user: User = Depends(authenticated_user),
 ) -> list[IndexUserResponse]:
     """
     List the users and their roles for a given index. Requires WRITER role on the index.
     """
-    raise_if_not_project_index_role(user, ix, Roles.WRITER)
+    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
     roles = list_project_roles(project_ids=[ix])
     return [IndexUserResponse(email=r.email, role=r.role) for r in roles]
 
 
 @app_index_users.post("/index/{ix}/users", status_code=status.HTTP_201_CREATED)
-def add_index_user(
+def add_project_user(
     ix: Annotated[IndexId, Path(..., description="ID of the index to list users for")],
     body: Annotated[CreateIndexUserBody, Body(...)],
     user: User = Depends(authenticated_user),
@@ -74,13 +75,16 @@ def add_index_user(
     """
     Add a user to an index or update their role. Requires ADMIN role on the index.
     """
-    raise_if_not_project_index_role(user, ix, Roles.ADMIN)
-    create_project_role(body.email, ix, Roles[body.role])
+    HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
+    try:
+        create_project_role(body.email, ix, Roles[body.role])
+    except ConflictError:
+        raise HTTPException(409, detail=f"User {body.email} already has a role on index {ix}")
     return IndexUserResponse(email=body.email, role=body.role)
 
 
 @app_index_users.put("/index/{ix}/users/{email}", status_code=status.HTTP_200_OK)
-def modify_index_user(
+def modify_project_user(
     ix: Annotated[IndexId, Path(description="ID of the index to list users for")],
     email: Annotated[RoleEmailPattern, Path(..., description="Email address of the user to modify")],
     body: Annotated[UpdateIndexUserBody, Body(...)],
@@ -89,13 +93,16 @@ def modify_index_user(
     """
     Change the role of a user in an index. Requires ADMIN role on the index.
     """
-    raise_if_not_project_index_role(user, ix, Roles.ADMIN)
-    update_project_role(email, ix, Roles[body.role], ignore_missing=body.upsert)
+    HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
+    try:
+        update_project_role(email, ix, Roles[body.role], ignore_missing=body.upsert)
+    except NotFoundError:
+        raise HTTPException(404, detail=f"User {email} does not have a role on index {ix}")
     return IndexUserResponse(email=email, role=body.role)
 
 
 @app_index_users.delete("/index/{ix}/users/{email}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_index_user(
+def remove_project_user(
     ix: Annotated[IndexId, Path(..., description="ID of the index to list users for")],
     email: Annotated[RoleEmailPattern, Path(..., description="Email address of the user to modify")],
     user: User = Depends(authenticated_user),
@@ -104,5 +111,8 @@ def remove_index_user(
     Remove a user from an index. Requires ADMIN role on the index, unless a user is removing themselves.
     """
     if user.email != email:
-        raise_if_not_project_index_role(user, ix, Roles.ADMIN)
-    delete_project_role(email, ix)
+        HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
+    try:
+        delete_project_role(email, ix)
+    except NotFoundError:
+        raise HTTPException(404, detail=f"User {email} does not have a role on index {ix}")

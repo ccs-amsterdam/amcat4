@@ -177,6 +177,10 @@ def query_documents(
         h = query_highlight_and_snippets(fields, highlight) if fields is not None else None
         body = build_body(queries, filters, h)
 
+        # TODO: we might be able to optimize a bit by not getting fields via _source if we
+        #       know we're going to overwrite them with the snippet (highlight) results.
+        #       Is also a bit 'safer' than overwriting the full text if we only allow snippets
+        # fieldnames = [field.name for field in fields if not field.snippet] if fields is not None else ["_id"]
         fieldnames = [field.name for field in fields] if fields is not None else ["_id"]
         kwargs["_source"] = fieldnames
 
@@ -230,8 +234,7 @@ def query_highlight_and_snippets(fields: list[FieldSpec], highlight_queries: boo
                 # only needed if highlight is True
                 highlight["fields"][field.name] = {"number_of_fragments": 0}
         else:
-            # the elastic highlight feature is also used to get snippets. note that
-            # above in the
+            # the elastic highlight feature is also used to get snippets.
             highlight["fields"][field.name] = {
                 "no_match_size": field.snippet.nomatch_chars,
                 "number_of_fragments": field.snippet.max_matches,
@@ -253,8 +256,8 @@ def overwrite_highlight_results(hit: dict, hitdict: dict):
     if not hit.get("highlight"):
         return hitdict
     for key in hit["highlight"].keys():
-        if hit["highlight"][key]:
-            hitdict[key] = " ... ".join(hit["highlight"][key])
+        # if hit["highlight"][key]:
+        hitdict[key] = " ... ".join(hit["highlight"][key])
     return hitdict
 
 

@@ -1,6 +1,6 @@
 from enum import IntEnum
 from fastapi import Body
-from datetime import datetime
+from datetime import datetime, UTC
 from pydantic import BaseModel, EmailStr, model_validator, Field
 from typing import Annotated, Any, Literal, Union
 from typing_extensions import Self
@@ -195,34 +195,45 @@ class SortSpec(BaseModel):
 
 class ServerRoleRequest(BaseModel):
     type: Literal["server_role"]
-    role: Role = Field(..., description="The server role being requested.")
+    role: Role = Field(description="The server role being requested.")
+    message: str | None = Field(
+        default=None,
+        description="Message to the server administrators to explain who you are and why you need this server role.",
+    )
 
 
 class ProjectRoleRequest(BaseModel):
     type: Literal["project_role"]
-    project_id: IndexId = Field(..., description="ID of the project for which the role is requested.")
-    role: Role = Field(..., description="The project role being requested.")
+    project_id: IndexId = Field(description="ID of the project for which the role is requested.")
+    role: Role = Field(description="The project role being requested.")
+    message: str | None = Field(
+        default=None,
+        description="Message to the project administrators to explain who you are and why you need this project role.",
+    )
 
 
 class CreateProjectRequest(BaseModel):
     type: Literal["create_project"]
-    project_id: IndexId = Field(..., description="ID for the new project.")
-    name: str | None = Field(None, description="Optional name for the new project.")
-    description: str | None = Field(None, description="Optional description for the new project.")
-    folder: str | None = Field(None, description="Optional folder for the new project.")
-
-
-class PermissionRequest(BaseModel):
-    email: EmailStr = Field(..., description="Email address of the user making the request.")
-    message: str | None = Field(None, description="Optional message from the user making the request.")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Timestamp of the request.")
-    request: Union[ServerRoleRequest, ProjectRoleRequest, CreateProjectRequest] = Field(
-        discriminator="type", description="The permission request."
+    project_id: IndexId = Field(description="ID for the new project.")
+    name: str | None = Field(default=None, description="Optional name for the new project.")
+    description: str | None = Field(default=None, description="Optional description for the new project.")
+    folder: str | None = Field(default=None, description="Optional folder for the new project.")
+    message: str | None = Field(
+        default=None, description="Message to explain the purpose of this project, and any details relevant to its approval."
     )
 
 
-class AdminPermissionRequest(PermissionRequest):
-    status: Literal["approved", "rejected", "pending"] = Field("pending", description="Status of the request.")
+PermissionRequest = Annotated[
+    Union[ServerRoleRequest, ProjectRoleRequest, CreateProjectRequest],
+    Field(discriminator="type", description="The permission request."),
+]
+
+
+class AdminPermissionRequest(BaseModel):
+    email: EmailStr = Field(description="Email address of the user making the request.")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC), description="Timestamp of the request.")
+    status: Literal["approved", "rejected", "pending"] = Field(default="pending", description="Status of the request.")
+    request: PermissionRequest
 
 
 ####################### PROJECT AND SERVER SETTINGS #########################

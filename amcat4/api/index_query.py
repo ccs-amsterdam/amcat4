@@ -9,8 +9,11 @@ from amcat4.projects.aggregate import Aggregation, Axis, TopHitsAggregation, que
 from amcat4.api.auth import authenticated_user
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, IndexIds, Roles, SortSpec, User
 from amcat4.projects.query import delete_query, update_query, update_tag_query, query_documents
-from amcat4.systemdata.fields import get_allowed_fields, raise_if_field_not_allowed
-from amcat4.systemdata.roles import raise_if_not_project_index_role
+from amcat4.systemdata.fields import (
+    HTTPException_if_invalid_field_access,
+    allowed_fieldspecs,
+)
+from amcat4.systemdata.roles import get_user_project_role, HTTPException_if_not_project_index_role, role_is_at_least
 
 app_index_query = APIRouter(prefix="/index", tags=["query"])
 
@@ -220,16 +223,15 @@ def query_documents_post(
     """
     Query documents in one or more indices. Requires READER or METAREADER role on the index/indices.
     """
+    # TODO: break up the query and scroll logic. So when scroll_id is given, we don't need to check fields/roles again.
+    # that DOES require a strict max time window for scrolls though (which we need anyway).
     indices = index.split(",")
 
     fieldspecs = _standardize_fieldspecs(body.fields)
     if fieldspecs:
-        for ix in indices:
-            raise_if_field_not_allowed(ix, user, fieldspecs)
+        HTTPException_if_invalid_field_access(indices, user, fieldspecs)
     else:
-        if len(indices) > 1:
-            raise ValueError("Fields should be specified if multiple indices are given")
-        fieldspecs = get_allowed_fields(user, indices[0])
+        fieldspecs = allowed_fieldspecs(user, indices)
 
     r = query_documents(
         indices,
@@ -274,8 +276,7 @@ def query_aggregate_post(
                 fields_to_check += [FieldSpec(name=f) for f in agg.fields]
 
     if fields_to_check:
-        for index_name in indices:
-            raise_if_field_not_allowed(index_name, user, fields_to_check)
+        HTTPException_if_invalid_field_access(indices, user, fields_to_check)
 
     _axes = [Axis(**x.model_dump()) for x in body.axes] if body.axes else []
     _aggregations = [a.instantiate() for a in body.aggregations] if body.aggregations else []
@@ -309,7 +310,7 @@ def query_update_tags(
     """
     indices = index.split(",")
     for i in indices:
-        raise_if_not_project_index_role(user, i, Roles.WRITER)
+        HTTPException_if_not_project_index_role(user, i, Roles.WRITER)
 
     ids = body.ids
     if isinstance(ids, (str, int)):
@@ -330,7 +331,7 @@ def update_by_query(
     """
     indices = index.split(",")
     for ix in indices:
-        raise_if_not_project_index_role(user, ix, Roles.WRITER)
+        HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
     return update_query(
         indices, body.field, body.value, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids
     )
@@ -347,7 +348,7 @@ def delete_by_query(
     """
     indices = index.split(",")
     for ix in indices:
-        raise_if_not_project_index_role(user, ix, Roles.WRITER)
+        HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
     return delete_query(indices, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids)
 
 

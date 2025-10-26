@@ -4,10 +4,12 @@ from datetime import datetime
 from typing import Annotated
 
 from elastic_transport import ApiError
+from elasticsearch import ConflictError, NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Response, status
 from pydantic import BaseModel, Field
 
 from amcat4.projects.index import (
+    IndexAlreadyExists,
     IndexDoesNotExist,
     create_project_index,
     delete_project_index,
@@ -31,8 +33,8 @@ from amcat4.projects.query import reindex
 from amcat4.systemdata.roles import (
     get_project_guest_role,
     get_user_project_role,
-    raise_if_not_project_index_role,
-    raise_if_not_server_role,
+    HTTPException_if_not_project_index_role,
+    HTTPException_if_not_server_role,
     role_is_at_least,
     set_project_guest_role,
 )
@@ -128,7 +130,9 @@ def create_index(
     """
     Create a new index with the current user (you) as admin. Requires WRITER role on the server.
     """
-    raise_if_not_server_role(user, Roles.WRITER, message="Creating a new project requires WRITER permission on the server")
+    HTTPException_if_not_server_role(
+        user, Roles.WRITER, message="Creating a new project requires WRITER permission on the server"
+    )
 
     try:
         create_project_index(
@@ -142,7 +146,11 @@ def create_index(
             ),
             user.email,
         )
+    except IndexAlreadyExists:
+        raise HTTPException(status_code=409, detail=f"Index {body.id} already exists")
     except ApiError as e:
+        print(e)
+        print(e.message)
         raise HTTPException(
             status_code=400,
             detail=dict(info=f"Error on creating index: {e}", message=e.message, body=e.body),
@@ -161,18 +169,21 @@ def modify_index(
     """
     Modify an existing index. Requires ADMIN role on the index.
     """
-    raise_if_not_project_index_role(user, ix, Roles.ADMIN)
+    HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
 
-    update_project_index(
-        ProjectSettings(
-            id=ix,
-            name=body.name,
-            description=body.description,
-            folder=body.folder,
-            image_url=body.image_url,
-            contact=body.contact,
+    try:
+        update_project_index(
+            ProjectSettings(
+                id=ix,
+                name=body.name,
+                description=body.description,
+                folder=body.folder,
+                image_url=body.image_url,
+                contact=body.contact,
+            )
         )
-    )
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail=f"Index {ix} does not exist")
 
     if body.guest_role:
         set_project_guest_role(ix, Roles[body.guest_role])
@@ -187,8 +198,10 @@ def view_index(
     """
     try:
         d = get_project_settings(ix)
-    except Exception:
+    except NotFoundError:
         raise HTTPException(status_code=404, detail=f"Index {ix} does not exist")
+    except Exception:
+        raise HTTPException(status_code=500, detail=f"Error reading index {ix} settings")
 
     role = get_user_project_role(user, project_index=ix)
     if not role_is_at_least(role, Roles.LISTER):
@@ -218,7 +231,7 @@ def archive_index(
     Archive or unarchive the index. When an index is archived, it restricts usage, and adds a timestamp for when
     it was archived. Requires ADMIN role on the index.
     """
-    raise_if_not_project_index_role(user, ix, Roles.ADMIN)
+    HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
         d = get_project_settings(ix)
         is_archived = d.archived is not None
@@ -234,7 +247,7 @@ def archive_index(
 @app_index.delete("/index/{ix}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_index(ix: IndexId, user: User = Depends(authenticated_user)):
     """Delete the index. Requires ADMIN role on the index."""
-    raise_if_not_project_index_role(user, ix, Roles.ADMIN)
+    HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
         delete_project_index(ix)
     except IndexDoesNotExist:
@@ -253,8 +266,8 @@ def start_reindex(
     body: Annotated[ReindexBody, Body(...)],
     user: User = Depends(authenticated_user),
 ):
-    raise_if_not_project_index_role(user, ix, Roles.READER)
-    raise_if_not_project_index_role(user, body.destination, Roles.WRITER)
+    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+    HTTPException_if_not_project_index_role(user, body.destination, Roles.WRITER)
     filters = _standardize_filters(body.filters)
 
     queries = _standardize_queries(body.queries)

@@ -1,5 +1,4 @@
-from elasticsearch import ConflictError, NotFoundError
-from fastapi import HTTPException
+from elasticsearch import NotFoundError
 
 from amcat4.systemdata.roles import create_project_role
 from amcat4.systemdata.versions import roles_index, settings_index, settings_index_id
@@ -11,16 +10,9 @@ from amcat4.models import ProjectSettings, Roles, ServerSettings
 
 def get_project_settings(index_id: str) -> ProjectSettings:
     id = settings_index_id(index_id)
-    try:
-        doc = es().get(index=settings_index(), id=id)["_source"]
-    except NotFoundError:
-        raise HTTPException(404, f"Index {id} does not exist")
-
-    try:
-        doc = doc["project_settings"]
-        return ProjectSettings.model_validate(doc)
-    except Exception as e:
-        raise HTTPException(500, f"Error reading settings for index {id}: {e}") from e
+    doc = es().get(index=settings_index(), id=id)["_source"]
+    doc = doc["project_settings"]
+    return ProjectSettings.model_validate(doc)
 
 
 def create_project_settings(index_settings: ProjectSettings, admin_email: str | None = None):
@@ -30,17 +22,9 @@ def create_project_settings(index_settings: ProjectSettings, admin_email: str | 
     It is called when creating a new index, and can be used to register existing/imported indices.
     """
     index_id = index_settings.id
-    if not es().indices.exists(index=index_id):
-        raise HTTPException(status_code=404, detail=f"Elastic index {index_id} does not exist")
-
-    try:
-        id = settings_index_id(index_settings.id)
-        doc = dict(project_settings=index_settings.model_dump())
-        es().create(index=settings_index(), id=id, document=doc, refresh=True)
-    except ConflictError as e:
-        raise HTTPException(409, f'Index "{index_id}" is already registered') from e
-    except Exception as e:
-        raise e
+    id = settings_index_id(index_settings.id)
+    doc = dict(project_settings=index_settings.model_dump())
+    es().create(index=settings_index(), id=id, document=doc, refresh=True)
 
     if admin_email:
         create_project_role(admin_email, index_id, Roles.ADMIN)
@@ -49,10 +33,7 @@ def create_project_settings(index_settings: ProjectSettings, admin_email: str | 
 def update_project_settings(index_settings: ProjectSettings, ignore_missing: bool = False):
     id = settings_index_id(index_settings.id)
     doc = dict(project_settings=index_settings.model_dump(exclude_none=True))
-    try:
-        es().update(index=settings_index(), id=id, doc=doc, doc_as_upsert=ignore_missing, refresh=True)
-    except NotFoundError:
-        raise HTTPException(404, f"Index {index_settings.id} is not yet registered")
+    es().update(index=settings_index(), id=id, doc=doc, doc_as_upsert=ignore_missing, refresh=True)
 
 
 def delete_project_settings(index_id: str, ignore_missing: bool = False):

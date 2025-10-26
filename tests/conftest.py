@@ -7,7 +7,7 @@ from amcat4 import api
 from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import es
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles
-from amcat4.projects.documents import upload_documents
+from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
 from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
 from amcat4.systemdata.requests import clear_requests
@@ -141,7 +141,7 @@ def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType |
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
-    upload_documents(index, docs, fields)
+    create_or_update_documents(index, docs, fields)
     refresh_index(index)
 
 

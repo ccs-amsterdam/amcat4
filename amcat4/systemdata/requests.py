@@ -1,10 +1,5 @@
-from datetime import datetime
-from email import message
 from typing import Iterable
-import logging
 
-from elasticsearch import ConflictError
-from fastapi import HTTPException
 from pydantic import EmailStr
 
 
@@ -21,6 +16,7 @@ from amcat4.models import (
 from amcat4.projects.index import create_project_index
 from amcat4.systemdata.roles import (
     get_user_server_role,
+    list_user_project_roles,
     role_is_at_least,
     update_project_role,
     list_user_roles,
@@ -34,7 +30,7 @@ def update_request(request: AdminPermissionRequest):
     # TODO add timestamp=datetime.now().isoformat())
     # Index requests  by type+email+index
     doc = _request_to_elastic(request)
-    id = requests_index_id(doc["type"], doc["email"], doc["project_id"])
+    id = requests_index_id(doc.get("type"), doc.get("email"), doc.get("project_id", None))
 
     es().update(
         index=requests_index(),
@@ -48,10 +44,7 @@ def update_request(request: AdminPermissionRequest):
 def delete_request(request: AdminPermissionRequest):
     doc = _request_to_elastic(request)
     id = requests_index_id(doc["type"], doc["email"], doc["project_id"])
-    try:
-        es().delete(index=requests_index(), id=id, refresh=True)
-    except ConflictError:
-        raise HTTPException(404, "The request you tried to delete does not exist")
+    es().delete(index=requests_index(), id=id, refresh=True)
 
 
 def list_user_requests(user: User) -> Iterable[AdminPermissionRequest]:
@@ -74,52 +67,56 @@ def list_admin_requests(user: User) -> Iterable[AdminPermissionRequest]:
     if user.email is None:
         return []
 
-    # First return all role request, based on contexts where the user is admin
-    role_contexts = [r.role_context for r in list_user_roles(user, required_role=Roles.ADMIN)]
-    query = {
-        "bool": {
-            "must": [
-                {"terms": {"project_id": role_contexts}},
-                {"terms": {"type": ["server_role", "project_role"]}},
-                {"term": {"status": "pending"}},
-            ]
-        }
-    }
-
-    for id, doc in index_scan(requests_index(), query=query):
-        yield _request_from_elastic(doc)
-
-    # then if user is server writer, return all create_project requests
     server_role = get_user_server_role(user)
+
+    # Create project requests
     if role_is_at_least(server_role, Roles.WRITER):
         query = {"bool": {"must": [{"term": {"type": "create_project"}}, {"term": {"status": "pending"}}]}}
         for id, doc in index_scan(requests_index(), query=query):
             yield _request_from_elastic(doc)
 
+    # Server role requests
+    if role_is_at_least(server_role, Roles.ADMIN):
+        query = {"bool": {"must": [{"term": {"type": "server_role"}}, {"term": {"status": "pending"}}]}}
+        for id, doc in index_scan(requests_index(), query=query):
+            yield _request_from_elastic(doc)
+
+    # Project role requests
+    role_contexts = [r.role_context for r in list_user_project_roles(user, required_role=Roles.ADMIN)]
+    if role_contexts:
+        query = {
+            "bool": {
+                "must": [
+                    {"terms": {"project_id": role_contexts}},
+                    {"terms": {"type": ["server_role", "project_role"]}},
+                    {"term": {"status": "pending"}},
+                ]
+            }
+        }
+
+        for id, doc in index_scan(requests_index(), query=query):
+            yield _request_from_elastic(doc)
+
 
 def process_request(request: AdminPermissionRequest):
-    try:
-        if request.status == "pending":
-            raise ValueError("Cannot process pending requests")
-        elif request.status == "approved":
-            match request.request.type:
-                case "server_role":
-                    _process_server_role_request(request.email, request.request)
-                case "project_role":
-                    _process_project_role_request(request.email, request.request)
-                case "create_project":
-                    _process_create_project_request(request.email, request.request)
-                case _:
-                    raise ValueError(f"Cannot process {request}")
-        elif request.status == "rejected":
-            pass
-        else:
-            raise ValueError(f"Unknown request status {request.status}")
+    if request.status == "pending":
+        raise ValueError("Cannot process pending requests")
+    elif request.status == "approved":
+        match request.request.type:
+            case "server_role":
+                _process_server_role_request(request.email, request.request)
+            case "project_role":
+                _process_project_role_request(request.email, request.request)
+            case "create_project":
+                _process_create_project_request(request.email, request.request)
+            case _:
+                raise ValueError(f"Cannot process {request}")
+    elif request.status == "rejected":
+        pass
+    else:
+        raise ValueError(f"Unknown request status {request.status}")
 
-        update_request(request)
-    except Exception as e:
-        HTTPException(400, f"Error processing request {request}: {e}")
-        # logging.error(f"Error processing request {request}: {e}")
+    update_request(request)
 
 
 def _process_project_role_request(email: EmailStr, request: ProjectRoleRequest):
@@ -143,18 +140,21 @@ def _process_create_project_request(email: EmailStr, request: CreateProjectReque
 
 def _request_to_elastic(request: AdminPermissionRequest) -> dict:
     data = request.model_dump()
+    request = data.get("request")
 
     doc = dict(
-        type=data["request"].get("type"),
-        email=data["email"],
-        project_id=data["request"].get("project_id", None),
-        status=data["status"],
-        timestamp=data["timestamp"],
-        message=data["message"],
-        role=data["request"].get("role", None),
-        name=data["request"].get("name", None),
-        description=data["request"].get("description", None),
-        folder=data["request"].get("folder", None),
+        # request admin fields
+        email=data.get("email"),
+        timestamp=data.get("timestamp"),
+        status=data.get("status"),
+        message=data["request"]["message"],
+        # request specific fields
+        type=request.get("type"),
+        project_id=request.get("project_id", None),
+        role=request.get("role", None),
+        name=request.get("name", None),
+        description=request.get("description", None),
+        folder=request.get("folder", None),
     )
 
     doc = {k: v for k, v in doc.items() if v is not None}
@@ -178,7 +178,6 @@ def _request_from_elastic(d: dict) -> AdminPermissionRequest:
     return AdminPermissionRequest.model_validate(
         dict(
             email=d.get("email"),
-            message=d.get("message"),
             timestamp=d.get("timestamp"),
             status=d.get("status"),
             request=d,

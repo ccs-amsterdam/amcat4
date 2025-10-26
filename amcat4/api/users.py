@@ -2,8 +2,9 @@
 
 from typing import Annotated
 from click.core import F
-from fastapi import APIRouter, Body, Depends, Response, status
-from pydantic import BaseModel, Field
+from elasticsearch import ConflictError, NotFoundError
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+from pydantic import BaseModel, Field, ValidationError
 
 from amcat4.api.auth import authenticated_user
 from amcat4.models import Role, Roles, RoleEmailPattern, ServerRole, User
@@ -12,7 +13,7 @@ from amcat4.systemdata.roles import (
     delete_server_role,
     get_user_server_role,
     list_server_roles,
-    raise_if_not_server_role,
+    HTTPException_if_not_server_role,
     update_server_role,
 )
 
@@ -53,8 +54,12 @@ class ServerUserResponse(BaseModel):
 @app_users.post("/users", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: CreateUserBody, user=Depends(authenticated_user)) -> ServerUserResponse:
     """Create a new global user/role. Requires ADMIN server role."""
-    raise_if_not_server_role(user, Roles.ADMIN)
-    create_server_role(new_user.email, role=Roles[new_user.role])
+    HTTPException_if_not_server_role(user, Roles.ADMIN)
+    try:
+        create_server_role(new_user.email, role=Roles[new_user.role])
+    except ConflictError:
+        raise HTTPException(409, f"Server role for {new_user.email} already exists. Use update instead.")
+
     return ServerUserResponse(email=new_user.email, role=new_user.role)
 
 
@@ -71,7 +76,7 @@ def get_user(email: RoleEmailPattern, current_user: User = Depends(authenticated
     Get a specified user's global role. Requires WRITER server role if viewing other users.
     """
     if current_user.email and current_user.email != email:
-        raise_if_not_server_role(current_user, Roles.WRITER)
+        HTTPException_if_not_server_role(current_user, Roles.WRITER)
     role = get_user_server_role(User(email=email))
     return ServerUserResponse(email=role.email, role=role.role)
 
@@ -79,7 +84,7 @@ def get_user(email: RoleEmailPattern, current_user: User = Depends(authenticated
 @app_users.get("/users")
 def list_global_users(user=Depends(authenticated_user)) -> list[ServerUserResponse]:
     """List all global users/roles. Requires WRITER server role."""
-    raise_if_not_server_role(user, Roles.WRITER)
+    HTTPException_if_not_server_role(user, Roles.WRITER)
     server_roles = list_server_roles()
     return [ServerUserResponse(email=role.email, role=role.role) for role in server_roles]
 
@@ -90,9 +95,11 @@ def delete_user(email: RoleEmailPattern, current_user: User = Depends(authentica
     Delete a global user/role. Users can delete themselves, and ADMINs can delete any user/role.
     """
     if current_user.email != email:
-        raise_if_not_server_role(current_user, Roles.ADMIN)
-
-    delete_server_role(email=email)
+        HTTPException_if_not_server_role(current_user, Roles.ADMIN)
+    try:
+        delete_server_role(email=email)
+    except NotFoundError:
+        raise HTTPException(404, detail=f"Server role for {email} does not exist")
 
 
 @app_users.put("/users/{email}")
@@ -102,6 +109,9 @@ def modify_user(
     """
     Modify a global user/role. Requires ADMIN server role.
     """
-    raise_if_not_server_role(user, Roles.ADMIN)
-    update_server_role(email=email, role=Roles[body.role], ignore_missing=body.upsert)
+    HTTPException_if_not_server_role(user, Roles.ADMIN)
+    try:
+        update_server_role(email=email, role=Roles[body.role], ignore_missing=body.upsert)
+    except NotFoundError:
+        raise HTTPException(404, detail=f"Server role for {email} does not exist")
     return ServerUserResponse(email=email, role=body.role)

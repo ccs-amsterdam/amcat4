@@ -20,6 +20,7 @@ from typing import Any, Iterable, Iterator, Mapping, cast, get_args
 
 from _pytest import logging
 from elasticsearch import NotFoundError
+from elasticsearch.helpers.actions import scan
 from fastapi import HTTPException
 
 from amcat4.elastic import es
@@ -30,11 +31,13 @@ from amcat4.models import (
     DocumentFieldMetareaderAccess,
     FieldSpec,
     FieldType,
+    IndexId,
+    Role,
     Roles,
     UpdateDocumentField,
     User,
 )
-from amcat4.systemdata.roles import get_user_project_role, role_is_at_least
+from amcat4.systemdata.roles import get_user_project_role, list_user_project_roles, role_is_at_least
 from amcat4.systemdata.versions import fields_index, fields_index_id
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, index_scan
 from amcat4.systemdata.typemap import TYPEMAP_AMCAT_TO_ES, TYPEMAP_ES_TO_AMCAT
@@ -147,7 +150,7 @@ def list_fields(index: str) -> dict[str, DocumentField]:
         system_index_fields = {}
 
     update_system_index = False
-    for field, elastic_type in _get_index_fields(index):
+    for field, elastic_type in _get_es_index_fields(index):
         type = TYPEMAP_ES_TO_AMCAT.get(elastic_type)
 
         if type is None:
@@ -166,98 +169,130 @@ def list_fields(index: str) -> dict[str, DocumentField]:
     return fields
 
 
-def get_allowed_fields(user: User, index: str) -> list[FieldSpec]:
+def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSpec]:
     """
-    For any endpoint that returns field values, make sure the user only gets fields that
-    they are allowed to see. If fields is None, return all allowed fields. If fields is not None,
-    check whether the user can access the fields (If not, raise an error).
+    Returns the intersection of allowed fieldspecs across multiple indices for the given user.
     """
-    role = get_user_project_role(user, index)
+
+    fields_across_indices: dict[str, list[FieldSpec] | None] = {}
+
+    roles = list_user_project_roles(user, project_ids=indices)
+    role_dict = {role.project_id: role.role for role in roles}
+
+    # Note that we NEED to use list_fields and not _list_fields,
+    # because we need to be certain the es fields are all registered in the system index.
+    for index in indices:
+        for field_name, field in list_fields(index).items():
+            if field_name not in fields_across_indices:
+                fields_across_indices[field_name] = []
+            role = role_dict.get(index, "NONE")
+            fieldspec = get_fieldspec_for_role(role, field)
+            fields_across_indices[field_name].append(fieldspec)
+
+    fieldspecs: list[FieldSpec] = []
+    for name, specs in fields_across_indices.items():
+        fieldspecs.append(intersect_fieldspecs(specs))
+
+    return fieldspecs
+
+
+def get_fieldspec_for_role(role: Role, field: DocumentField) -> FieldSpec | None:
     if not role_is_at_least(role, Roles.METAREADER):
-        raise HTTPException(
-            status_code=403,
-            detail=f"User '{user.email}' does not have permission to access index {index}",
-        )
-    is_reader = role_is_at_least(role, Roles.READER)
-
-    allowed_fields: list[FieldSpec] = []
-    for name, field in list_fields(index).items():
-        if is_reader:
-            allowed_fields.append(FieldSpec(name=name))
-        else:
-            metareader = field.metareader
-            if metareader.access == "read":
-                allowed_fields.append(FieldSpec(name=name))
-            if metareader.access == "snippet":
-                allowed_fields.append(FieldSpec(name=name, snippet=metareader.max_snippet))
-
-    return allowed_fields
-
-
-def raise_if_field_not_allowed(index: str, user: User, fields: list[FieldSpec]) -> None:
-    """
-    If the current user is a metareader (!!needs to be confirmed by caller),
-    check if they are allowed to query the given fields and snippets on the given index.
-
-    :param index: The index to check the role on
-    :param user: The email address of the authenticated user
-    :param fields: The fields to check
-    :param snippets: The snippets to check
-    :return: Nothing. Throws HTTPException if the user is not allowed to query the given fields and snippets.
-    """
-    role = get_user_project_role(user, index)
-    if not role_is_at_least(role, Roles.METAREADER):
-        raise HTTPException(
-            status_code=403,
-            detail=f"User '{user.email}' does not have permission to access index {index}",
-        )
-    if role_is_at_least(role, Roles.READER):
-        return
-
-    if fields is None or len(fields) == 0:
         return None
 
-    index_fields = list_fields(index)
-    for field in fields:
-        if field.name not in index_fields:
-            # Should we raise an error here? If we want to support querying multiple
-            # indices at once, not throwing an error allows the user to query fields
-            # that do not exist on all indices
-            continue
-        metareader = index_fields[field.name].metareader
+    if role_is_at_least(role, Roles.READER):
+        return FieldSpec(name=field.name)
 
-        if metareader.access == "read":
-            continue
-        elif metareader.access == "snippet" and metareader.max_snippet is not None:
-            if metareader.max_snippet is None:
-                max_params_msg = ""
+    metareader = field.metareader
+    if metareader.access == "read":
+        return FieldSpec(name=field.name)
+    elif metareader.access == "snippet":
+        return FieldSpec(name=field.name, snippet=metareader.max_snippet)
+    elif metareader.access == "none":
+        return None
+    else:
+        raise ValueError(f"Unknown metareader access type: {metareader.access}")
+
+
+def intersect_fieldspecs(specs: list[FieldSpec | None]) -> FieldSpec | None:
+    min_spec = specs[0]
+    if min_spec is None:
+        return None
+    for spec in specs[1:]:
+        if spec is None:
+            return None
+        if min_spec.name != spec.name:
+            raise ValueError(f"Cannot intersect fieldspecs with different names: {min_spec.name} and {spec.name}")
+
+        if spec.snippet is not None:
+            if min_spec.snippet is None:
+                min_spec.snippet = spec.snippet
             else:
-                max_params_msg = (
-                    "Can only read snippet with max parameters:"
-                    f" nomatch_chars={metareader.max_snippet.nomatch_chars}"
-                    f", max_matches={metareader.max_snippet.max_matches}"
-                    f", match_chars={metareader.max_snippet.match_chars}"
-                )
-            if field.snippet is None:
-                # if snippet is not specified, the whole field is requested
-                raise HTTPException(
-                    status_code=403, detail=f"METAREADER cannot read {field} on index {index}. {max_params_msg}"
-                )
+                min_spec.snippet.nomatch_chars = min(min_spec.snippet.nomatch_chars, spec.snippet.nomatch_chars)
+                min_spec.snippet.max_matches = min(min_spec.snippet.max_matches, spec.snippet.max_matches)
+                min_spec.snippet.match_chars = min(min_spec.snippet.match_chars, spec.snippet.match_chars)
 
-            valid_nomatch_chars = field.snippet.nomatch_chars <= metareader.max_snippet.nomatch_chars
-            valid_max_matches = field.snippet.max_matches <= metareader.max_snippet.max_matches
-            valid_match_chars = field.snippet.match_chars <= metareader.max_snippet.match_chars
-            valid = valid_nomatch_chars and valid_max_matches and valid_match_chars
-            if not valid:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"The requested snippet of {field.name} on index {index} is too long. {max_params_msg}",
-                )
-        else:
+    return min_spec
+
+
+def HTTPException_if_invalid_field_access(indices: list[str], user: User, fields: list[FieldSpec]) -> None:
+    """
+    Check for the given field specifications whether the user has required access on all given indices.
+    """
+    if len(fields) == 0:
+        return None
+
+    roles = list_user_project_roles(user, project_ids=indices)
+    role_dict = {role.role_context: role for role in roles}
+
+    for index in indices:
+        role = role_dict.get(index)
+        if not role_is_at_least(role, Roles.METAREADER):
             raise HTTPException(
                 status_code=403,
-                detail=f"METAREADER cannot read {field.name} on index {index}",
+                detail=f"User '{user.email}' does not have permission to access index {index}",
             )
+        if role_is_at_least(role, Roles.READER):
+            continue
+
+        index_fields = list_fields(index)
+        for field in fields:
+            if field.name not in index_fields:
+                continue
+            metareader = index_fields[field.name].metareader
+
+            if metareader.access == "read":
+                continue
+            elif metareader.access == "snippet" and metareader.max_snippet is not None:
+                if metareader.max_snippet is None:
+                    max_params_msg = ""
+                else:
+                    max_params_msg = (
+                        "Can only read snippet with max parameters:"
+                        f" nomatch_chars={metareader.max_snippet.nomatch_chars}"
+                        f", max_matches={metareader.max_snippet.max_matches}"
+                        f", match_chars={metareader.max_snippet.match_chars}"
+                    )
+                if field.snippet is None:
+                    # if snippet is not specified, the whole field is requested
+                    raise HTTPException(
+                        status_code=403, detail=f"METAREADER cannot read {field} on index {index}. {max_params_msg}"
+                    )
+
+                valid_nomatch_chars = field.snippet.nomatch_chars <= metareader.max_snippet.nomatch_chars
+                valid_max_matches = field.snippet.max_matches <= metareader.max_snippet.max_matches
+                valid_match_chars = field.snippet.match_chars <= metareader.max_snippet.match_chars
+                valid = valid_nomatch_chars and valid_max_matches and valid_match_chars
+                if not valid:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"The requested snippet of {field.name} on index {index} is too long. {max_params_msg}",
+                    )
+            else:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"METAREADER cannot read {field.name} on index {index}",
+                )
 
 
 def coerce_type(value: Any, type: FieldType):
@@ -344,8 +379,9 @@ def field_stats(index: str, field: str):
 
 
 def _get_default_metareader(type: FieldType):
-    if type in ["boolean", "number", "date"]:
-        return DocumentFieldMetareaderAccess(access="read")
+    # Safety first: just make "none" the default for everything
+    # if [some safe condition that I cant really think of]:
+    #     return DocumentFieldMetareaderAccess(access="read")
 
     return DocumentFieldMetareaderAccess(access="none")
 
@@ -396,7 +432,7 @@ def _list_fields(index: str) -> dict[str, DocumentField]:
     return {doc["name"]: DocumentField.model_validate(doc["settings"]) for id, doc in docs}
 
 
-def _get_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:
+def _get_es_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:
     r = es().indices.get_mapping(index=index)
 
     if "properties" in r[index]["mappings"]:
