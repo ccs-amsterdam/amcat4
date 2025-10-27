@@ -12,7 +12,7 @@ from amcat4.projects.documents import (
 )
 from amcat4.projects.index import refresh_index
 from amcat4.systemdata.fields import create_fields, field_values, list_fields
-from amcat4.models import CreateDocumentField, FieldSpec, IndexId
+from amcat4.models import CreateDocumentField, FieldSpec
 from amcat4.projects.query import query_documents
 from tests.conftest import upload
 
@@ -31,7 +31,6 @@ def test_upload_retrieve_document(index):
     )
     print(test)
     refresh_index(index)
-    print(query_documents(index).data)
     d = fetch_document(index, "test")
     assert d["title"] == a["title"]
     assert d["term_tfidf"] == a["term_tfidf"]
@@ -63,8 +62,8 @@ def test_fields(index):
     assert fields["date"].identifier is False
     assert fields["date"].client_settings is not None
 
-    # default settings depend on the type
-    assert fields["date"].metareader.access == "read"
+    # By default no metareader access
+    assert fields["date"].metareader.access == "none"
     assert fields["text"].metareader.access == "none"
 
 

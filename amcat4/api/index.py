@@ -4,8 +4,9 @@ from datetime import datetime
 from typing import Annotated
 
 from elastic_transport import ApiError
-from elasticsearch import ConflictError, NotFoundError
+from elasticsearch import NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Response, status
+from fastapi.types import IncEx
 from pydantic import BaseModel, Field
 
 from amcat4.projects.index import (
@@ -30,6 +31,7 @@ from amcat4.models import (
     User,
 )
 from amcat4.projects.query import reindex
+from amcat4.systemdata.images_compression import create_image_from_url
 from amcat4.systemdata.roles import (
     get_project_guest_role,
     get_user_project_role,
@@ -53,12 +55,12 @@ app_index = APIRouter(prefix="", tags=["index"])
 class UpdateIndexBody(BaseModel):
     """Form to update an existing index."""
 
-    name: str | None = Field(None, description="Name of the index")
-    description: str | None = Field(None, description="Description of the index")
-    guest_role: GuestRole | None = Field(None, description="Guest role for the index")
-    folder: str | None = Field(None, description="Folder for the index")
-    image_url: str | None = Field(None, description="Image URL for the index")
-    contact: list[ContactInfo] | None = Field(None, description="Contact info for the index")
+    name: str | None = Field(default=None, description="Name of the index")
+    description: str | None = Field(default=None, description="Description of the index")
+    guest_role: GuestRole | None = Field(default=None, description="Guest role for the index")
+    folder: str | None = Field(default=None, description="Folder for the index")
+    image_url: str | None = Field(default=None, description="Image URL for the index")
+    contact: list[ContactInfo] | None = Field(default=None, description="Contact info for the index")
 
 
 class CreateIndexBody(UpdateIndexBody):
@@ -70,7 +72,7 @@ class CreateIndexBody(UpdateIndexBody):
 class ReindexBody(BaseModel):
     """Body for reindexing documents."""
 
-    destination: str = Field(..., description="The destination index id")
+    destination: str = Field(description="The destination index id")
     queries: QueriesType
     filters: FiltersType
 
@@ -84,7 +86,7 @@ class IndexListResponse(BaseModel):
     user_role_match: RoleEmailPattern | None = Field(description="Email pattern that determined the user role")
     archived: str | None = Field(description="Timestamp of when the index was archived, or null if not archived")
     folder: str | None = Field(description="Folder for the index")
-    image_url: str | None = Field(description="Image URL for the index")
+    image_id: str | None = Field(description="Image ID for the index")
 
 
 class IndexViewResponse(IndexListResponse):
@@ -115,7 +117,7 @@ def index_list(
                 description=ix.description or "",
                 archived=ix.archived or "",
                 folder=ix.folder or "",
-                image_url=ix.image_url,
+                image_id=ix.image.hash if ix.image else None,
             )
         )
 
@@ -134,23 +136,17 @@ def create_index(
         user, Roles.WRITER, message="Creating a new project requires WRITER permission on the server"
     )
 
+    d = body.model_dump(exclude={"image_url"})
+    d["image"] = create_image_from_url(body.image_url) if body.image_url else None
+
     try:
         create_project_index(
-            ProjectSettings(
-                id=body.id,
-                name=body.name,
-                description=body.description,
-                folder=body.folder,
-                image_url=body.image_url,
-                contact=body.contact,
-            ),
+            ProjectSettings(**d),
             user.email,
         )
-    except IndexAlreadyExists:
-        raise HTTPException(status_code=409, detail=f"Index {body.id} already exists")
+    except IndexAlreadyExists as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except ApiError as e:
-        print(e)
-        print(e.message)
         raise HTTPException(
             status_code=400,
             detail=dict(info=f"Error on creating index: {e}", message=e.message, body=e.body),
@@ -175,11 +171,8 @@ def modify_index(
         update_project_index(
             ProjectSettings(
                 id=ix,
-                name=body.name,
-                description=body.description,
-                folder=body.folder,
-                image_url=body.image_url,
-                contact=body.contact,
+                **body.model_dump(exclude={"image_url"}),
+                image=create_image_from_url(body.image_url) if body.image_url else None,
             )
         )
     except NotFoundError:
@@ -216,7 +209,7 @@ def view_index(
         description=d.description or "",
         archived=d.archived or "",
         folder=d.folder or "",
-        image_url=d.image_url or "",
+        image_id=d.image.hash if d.image else None,
         contact=d.contact or [],
     )
 

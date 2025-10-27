@@ -1,14 +1,11 @@
 from fastapi.testclient import TestClient
 from amcat4.models import FieldSpec, SnippetParams
 
-from amcat4.systemdata.roles import set_project_guest_role
 from tests.tools import build_headers, post_json
 
 
 def create_index_metareader(client, index, admin):
-    res = client.post(
-        f"/index/{index}/users", headers=build_headers(admin), json={"email": "meta@reader.com", "role": "METAREADER"}
-    )
+    client.post(f"/index/{index}/users", headers=build_headers(admin), json={"email": "meta@reader.com", "role": "METAREADER"})
 
 
 def set_metareader_access(client, index, admin, metareader):

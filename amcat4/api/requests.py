@@ -50,7 +50,7 @@ def post_admin_requests(requests: list[AdminPermissionRequest] = Body(...), user
                 )
         if r.request.type == "project_role":
             HTTPException_if_not_project_index_role(
-                user, r.role_context, Roles.ADMIN, message="Only project ADMINs can process project role requests"
+                user, r.request.project_id, Roles.ADMIN, message="Only project ADMINs can process project role requests"
             )
 
         try:
@@ -58,7 +58,7 @@ def post_admin_requests(requests: list[AdminPermissionRequest] = Body(...), user
         except Exception as e:
             raise HTTPException(
                 status_code=400,
-                detail=f"Error processing request {r.type} for {r.email} on {r.role_context}: {e}",
+                detail=f"Error processing request {r.request.type} for {r.email}: {e}",
             )
 
 

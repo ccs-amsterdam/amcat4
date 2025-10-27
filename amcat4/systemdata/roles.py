@@ -1,14 +1,11 @@
 from typing import Iterable
 
-from elasticsearch import ConflictError, NotFoundError
 from fastapi import HTTPException
-from pydantic import ValidationError
 from amcat4.systemdata.versions import roles_index, roles_index_id
 from amcat4.elastic import es
 from amcat4.models import (
     GuestRole,
     IndexId,
-    Role,
     RoleContext,
     RoleEmailPattern,
     RoleRule,
@@ -203,7 +200,8 @@ def _update_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles
 
 
 def _delete_role(email: RoleEmailPattern, role_context: RoleContext, ignore_missing: bool = False):
-    es().delete(index=roles_index(), id=roles_index_id(email, role_context), refresh=True)
+    elastic = es().options(ignore_status=404) if ignore_missing else es()
+    elastic.delete(index=roles_index(), id=roles_index_id(email, role_context), refresh=True)
 
 
 def _list_roles(

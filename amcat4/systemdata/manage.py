@@ -1,6 +1,5 @@
 import logging
 from typing import Literal
-from amcat4.config import get_settings
 from amcat4.elastic.connection import elastic_connection
 from amcat4.elastic.util import (
     SystemIndexMapping,

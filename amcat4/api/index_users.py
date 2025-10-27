@@ -2,7 +2,7 @@
 
 from typing import Annotated
 from elasticsearch import ConflictError, NotFoundError
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user

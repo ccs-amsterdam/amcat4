@@ -13,7 +13,7 @@ from amcat4.systemdata.fields import (
     HTTPException_if_invalid_field_access,
     allowed_fieldspecs,
 )
-from amcat4.systemdata.roles import get_user_project_role, HTTPException_if_not_project_index_role, role_is_at_least
+from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_index_query = APIRouter(prefix="/index", tags=["query"])
 
@@ -315,9 +315,10 @@ def query_update_tags(
     ids = body.ids
     if isinstance(ids, (str, int)):
         ids = [ids]
-    return update_tag_query(
+    response = update_tag_query(
         indices, body.action, body.field, body.tag, _standardize_queries(body.queries), _standardize_filters(body.filters), ids
     )
+    return QueryUpdateResponse(**response)
 
 
 @app_index_query.post("/{index}/update_by_query")
@@ -332,9 +333,11 @@ def update_by_query(
     indices = index.split(",")
     for ix in indices:
         HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    return update_query(
+
+    response = update_query(
         indices, body.field, body.value, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids
     )
+    return QueryUpdateResponse(**response)
 
 
 @app_index_query.post("/{index}/delete_by_query")
@@ -349,7 +352,8 @@ def delete_by_query(
     indices = index.split(",")
     for ix in indices:
         HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    return delete_query(indices, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids)
+    response = delete_query(indices, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids)
+    return QueryUpdateResponse.model_validate(response)
 
 
 def _standardize_queries(queries: QueriesType) -> dict[str, str] | None:

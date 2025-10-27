@@ -1,10 +1,9 @@
 """API Endpoints for managing global users and roles."""
 
 from typing import Annotated
-from click.core import F
 from elasticsearch import ConflictError, NotFoundError
-from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
-from pydantic import BaseModel, Field, ValidationError
+from fastapi import APIRouter, Body, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
 from amcat4.models import Role, Roles, RoleEmailPattern, ServerRole, User

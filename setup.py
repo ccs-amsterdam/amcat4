@@ -28,6 +28,7 @@ setup(
         "typing_extensions",
         "uvicorn",
         "requests",
+        "Pillow",
         "class_doc",
         "mypy",
         "jsonpath_ng",

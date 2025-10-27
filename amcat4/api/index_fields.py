@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
     CreateDocumentField,
-    FieldSpec,
     FieldType,
     IndexId,
     Roles,
@@ -17,7 +16,6 @@ from amcat4.models import (
     DocumentField,
 )
 from amcat4.systemdata.fields import (
-    HTTPException_if_invalid_field_access,
     create_fields,
     field_stats,
     field_values,
@@ -118,7 +116,7 @@ def get_field_stats(ix: IndexId, field: str, user: User = Depends(authenticated_
     elif role_is_at_least(role, Roles.METAREADER):
         fields = list_fields(ix)
         if fields[field].metareader.access != "read":
-            raise HTTPException(403, detail=f"User {user.email} cannot access field stats for field {field} in index {ix}")
+            raise HTTPException(403, detail=f"Metareader cannot access field stats for field {field} in index {ix}")
         return field_stats(ix, field)
     else:
         raise HTTPException(

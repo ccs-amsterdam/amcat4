@@ -9,7 +9,6 @@ from amcat4.systemdata.roles import (
     set_project_guest_role,
     update_project_role,
 )
-from amcat4.systemdata.settings import get_project_settings
 from tests.tools import build_headers, check, get_json, post_json, put_json
 
 

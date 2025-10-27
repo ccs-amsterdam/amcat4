@@ -16,11 +16,10 @@ We need to make sure that:
 
 import datetime
 import json
+import logging
 from typing import Any, Iterable, Iterator, Mapping, cast, get_args
 
-from _pytest import logging
 from elasticsearch import NotFoundError
-from elasticsearch.helpers.actions import scan
 from fastapi import HTTPException
 
 from amcat4.elastic import es
@@ -32,12 +31,12 @@ from amcat4.models import (
     FieldSpec,
     FieldType,
     IndexId,
-    Role,
+    RoleRule,
     Roles,
     UpdateDocumentField,
     User,
 )
-from amcat4.systemdata.roles import get_user_project_role, list_user_project_roles, role_is_at_least
+from amcat4.systemdata.roles import list_user_project_roles, role_is_at_least
 from amcat4.systemdata.versions import fields_index, fields_index_id
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, index_scan
 from amcat4.systemdata.typemap import TYPEMAP_AMCAT_TO_ES, TYPEMAP_ES_TO_AMCAT
@@ -174,10 +173,10 @@ def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSpec]:
     Returns the intersection of allowed fieldspecs across multiple indices for the given user.
     """
 
-    fields_across_indices: dict[str, list[FieldSpec] | None] = {}
+    fields_across_indices: dict[str, list[FieldSpec | None]] = {}
 
     roles = list_user_project_roles(user, project_ids=indices)
-    role_dict = {role.project_id: role.role for role in roles}
+    role_dict: dict[str, RoleRule] = {role.role_context: role for role in roles}
 
     # Note that we NEED to use list_fields and not _list_fields,
     # because we need to be certain the es fields are all registered in the system index.
@@ -185,29 +184,31 @@ def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSpec]:
         for field_name, field in list_fields(index).items():
             if field_name not in fields_across_indices:
                 fields_across_indices[field_name] = []
-            role = role_dict.get(index, "NONE")
-            fieldspec = get_fieldspec_for_role(role, field)
+            role = role_dict.get(index)
+            fieldspec = get_fieldspec_for_role(role, field_name, field)
             fields_across_indices[field_name].append(fieldspec)
 
     fieldspecs: list[FieldSpec] = []
     for name, specs in fields_across_indices.items():
-        fieldspecs.append(intersect_fieldspecs(specs))
+        spec = intersect_fieldspecs(specs)
+        if spec is not None:
+            fieldspecs.append(spec)
 
     return fieldspecs
 
 
-def get_fieldspec_for_role(role: Role, field: DocumentField) -> FieldSpec | None:
+def get_fieldspec_for_role(role: RoleRule | None, field_name: str, field: DocumentField) -> FieldSpec | None:
     if not role_is_at_least(role, Roles.METAREADER):
         return None
 
     if role_is_at_least(role, Roles.READER):
-        return FieldSpec(name=field.name)
+        return FieldSpec(name=field_name)
 
     metareader = field.metareader
     if metareader.access == "read":
-        return FieldSpec(name=field.name)
+        return FieldSpec(name=field_name)
     elif metareader.access == "snippet":
-        return FieldSpec(name=field.name, snippet=metareader.max_snippet)
+        return FieldSpec(name=field_name, snippet=metareader.max_snippet)
     elif metareader.access == "none":
         return None
     else:

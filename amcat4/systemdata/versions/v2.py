@@ -1,3 +1,4 @@
+import hashlib
 from amcat4.elastic.connection import elastic_connection
 from amcat4.elastic.mapping import ElasticMapping, nested_field, object_field
 from amcat4.elastic.util import (
@@ -9,6 +10,8 @@ from amcat4.elastic.util import (
 )
 from amcat4.config import get_settings
 from typing import Iterable, Literal
+
+from amcat4.systemdata.images_compression import compress_image_from_url_to_base64
 
 VERSION = 2
 
@@ -25,6 +28,10 @@ def fields_index() -> str:
     return system_index_name(VERSION, "fields")
 
 
+def apikeys_index() -> str:
+    return system_index_name(VERSION, "apikeys")
+
+
 def requests_index() -> str:
     return system_index_name(VERSION, "requests")
 
@@ -35,6 +42,10 @@ def settings_index_id(index: str | Literal["_server"]) -> str:
 
 def roles_index_id(email: str, role_context: str | Literal["_server"]) -> str:
     return f"{role_context}:{email}"
+
+
+def apikeys_index_id(email: str, name: str) -> str:
+    return f"{email}:{name}"
 
 
 def fields_index_id(index: str, name: str) -> str:
@@ -51,6 +62,11 @@ _contact_field = object_field(
     url={"type": "keyword"},
 )
 
+_image_field = object_field(
+    hash={"type": "keyword"},
+    base64={"type": "binary"},
+)
+
 # The settings system index contains both server-wide settings and project settings.
 # The project settings are stored in documents with id equal to the project index name.
 # The server settings are stored in the document with id "_server"
@@ -63,7 +79,7 @@ settings_mapping: ElasticMapping = dict(
         contact=_contact_field,
         archived={"type": "date"},
         folder={"type": "keyword"},
-        image_url={"type": "keyword"},
+        image=_image_field,
     ),
     server_settings=object_field(
         id={"type": "keyword"},
@@ -72,7 +88,7 @@ settings_mapping: ElasticMapping = dict(
         contact=_contact_field,
         external_url={"type": "keyword"},
         welcome_text={"type": "text"},
-        icon={"type": "keyword"},
+        icon=_image_field,
         information_links=nested_field(
             title={"type": "text"},
             links=nested_field(
@@ -131,6 +147,19 @@ roles_mapping: ElasticMapping = dict(
     ),
 )
 
+apikey_mapping: ElasticMapping = dict(
+    email={"type": "keyword"},  # api key is always linked to user email
+    name={"type": "keyword"},  # user-given name. Has to be unique per user
+    secret_key={"type": "keyword"},  # random unique key
+    role_context={"type": "keyword"},  # either _server or an index name
+    max_role={"type": "keyword"},  # role is min(user role, max_role)
+    expires={"type": "date"},  # hard expiration date
+    last_used={"type": "date"},  # update with a 15 minute debounce on use
+    timeout_minutes={"type": "integer"},  # expire if now > last_used + timeout_minutes + 15 (debounce)
+    dpop_public_key={"type": "keyword"},  # for DPoP-bound API keys
+)
+
+
 requests_mapping: ElasticMapping = dict(
     type={"type": "keyword"},
     email={"type": "keyword"},
@@ -143,6 +172,14 @@ requests_mapping: ElasticMapping = dict(
     description={"type": "text"},
     folder={"type": "keyword"},
 )
+
+
+def create_image_from_url(url: str | None) -> dict | None:
+    if not url:
+        return None
+    base64 = compress_image_from_url_to_base64(url)
+    hash = hashlib.sha256(base64.encode("utf-8")).hexdigest() if base64 else ""
+    return dict(hash=hash, base64=base64)
 
 
 def check_deprecated_version(index: str):
@@ -170,7 +207,7 @@ def migrate_server_settings(doc: dict):
                 "description": None,
                 "external_url": doc.get("external_url"),
                 "welcome_text": doc.get("welcome_text"),
-                "icon": doc.get("server_icon"),
+                "icon": create_image_from_url(doc.get("server_icon")),
                 "information_links": doc.get("information_links"),
                 "welcome_buttons": doc.get("welcome_buttons"),
                 "contact": doc.get("contact"),
@@ -190,7 +227,7 @@ def migrate_project_settings(index: str, doc: dict):
                 "contact": doc.get("contact"),
                 "archived": doc.get("archived"),
                 "folder": doc.get("folder"),
-                "image_url": doc.get("image_url"),
+                "image": create_image_from_url(doc.get("image_url")),
             }
         },
     )
@@ -218,27 +255,6 @@ def migrate_guest_roles(role: dict, in_index: str | None):
     }
 
     return BulkInsertAction(index=roles_index(), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
-
-
-def migrate_requests(request: dict):
-    doc = {
-        "type": request.get("request_type"),
-        "email": request.get("email"),
-        "project_id": request.get("index"),
-        "status": "pending",  # before approved and rejected requests were removed
-        "message": request.get("message"),
-        "timestamp": request.get("timestamp"),
-        "role": request.get("role"),
-        "name": request.get("name"),
-        "description": request.get("description"),
-        "folder": request.get("folder"),
-    }
-
-    return BulkInsertAction(
-        index=requests_index(),
-        id=requests_index_id(doc["type"], doc["email"], doc["role_context"]),
-        doc=doc,
-    )
 
 
 def migrate_fields(index: str, field: dict):
@@ -271,9 +287,6 @@ def migrate():
 
                 for role in doc.get("roles", []):
                     yield migrate_roles(role, None)
-
-                for request in doc.get("requests", []):
-                    yield migrate_requests(request)
 
             # The other documents had the index name as id, and contained index settings, index roles and fields
             else:

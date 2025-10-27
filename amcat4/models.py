@@ -1,5 +1,4 @@
 from enum import IntEnum
-from fastapi import Body
 from datetime import datetime, UTC
 from pydantic import BaseModel, EmailStr, model_validator, Field
 from typing import Annotated, Any, Literal, Union
@@ -257,12 +256,17 @@ class LinksGroup(BaseModel):
     links: list[Links]
 
 
+class ImageObject(BaseModel):
+    hash: str
+    base64: str
+
+
 class ProjectSettings(BaseModel):
     id: IndexId
     name: str | None = None
     description: str | None = None
     folder: str | None = None
-    image_url: str | None = None
+    image: ImageObject | None = None
     contact: list[ContactInfo] | None = None
     archived: str | None = None
 
@@ -273,6 +277,6 @@ class ServerSettings(BaseModel):
     contact: list[ContactInfo] | None = None
     external_url: str | None = None
     welcome_text: str | None = None
-    icon: str | None = None
+    icon: ImageObject | None = None
     information_links: list[LinksGroup] | None = None
     welcome_buttons: list[Links] | None = None

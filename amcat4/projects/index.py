@@ -1,8 +1,5 @@
 from typing import Iterable, Mapping
 
-from elasticsearch import ConflictError, RequestError
-from fastapi import HTTPException
-
 
 from amcat4.elastic import es
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles, RoleRule, User
@@ -36,6 +33,22 @@ def create_project_index(new_index: ProjectSettings, admin_email: str | None = N
     An index needs to exist in two places: as an elasticsearch index, and as a document in the settings index.
     This function creates the elasticsearch index first, and then creates the settings document.
     """
+    index_exists = es().indices.exists(index=new_index.id)
+    project_exists = es().exists(index=settings_index(), id=settings_index_id(new_index.id))
+    if index_exists and project_exists:
+        raise IndexAlreadyExists(f'Project "{new_index.id}" already exists')
+    if index_exists and not project_exists:
+        # Note that we should not automatically register, because it's not certain the user is the original owner.
+        # Need to create some process for server admins to import/register existing indices.
+        raise IndexAlreadyExists(
+            f'Elasticsearch index "{new_index.id}" already exists, but is not yet registered as a project index',
+        )
+    if not index_exists and project_exists:
+        # We don't yet have a process to recover from this. We could just create the index and update the settings?
+        raise IndexAlreadyExists(
+            f'Project index "{new_index.id}" is already registered, but the elasticsearch index does not exist',
+        )
+
     create_es_index(new_index.id)
     register_project_index(new_index, admin_email)
 
@@ -90,13 +103,7 @@ def list_project_indices(ids: list[str] | None = None, source: list[str] | None 
 
 
 def create_es_index(index_id: str):
-    try:
-        es().indices.create(index=index_id, mappings={"dynamic": "strict", "properties": {}})
-    except RequestError as e:
-        if "resource_already_exists" in str(e):
-            raise IndexAlreadyExists(f'Index "{index_id}" already exists') from e
-        else:
-            raise HTTPException(status_code=500, detail=f'Error creating index "{index_id}": {e.info}') from e
+    es().indices.create(index=index_id, mappings={"dynamic": "strict", "properties": {}})
 
 
 def refresh_index(index: str):

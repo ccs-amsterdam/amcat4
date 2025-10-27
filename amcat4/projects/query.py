@@ -330,4 +330,5 @@ def reindex(
 
 
 def get_task_status(task_id):
-    return es().tasks.get(task_id=task_id)
+    res = es().tasks.get(task_id=task_id)
+    return res

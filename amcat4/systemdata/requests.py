@@ -1,7 +1,5 @@
 from typing import Iterable
 
-from pydantic import EmailStr
-
 
 from amcat4.elastic import es
 from amcat4.models import (
@@ -10,7 +8,6 @@ from amcat4.models import (
     ProjectSettings,
     Roles,
     CreateProjectRequest,
-    ServerRoleRequest,
     User,
 )
 from amcat4.projects.index import create_project_index
@@ -19,7 +16,6 @@ from amcat4.systemdata.roles import (
     list_user_project_roles,
     role_is_at_least,
     update_project_role,
-    list_user_roles,
     update_server_role,
 )
 from amcat4.elastic.util import index_scan
@@ -100,17 +96,9 @@ def list_admin_requests(user: User) -> Iterable[AdminPermissionRequest]:
 
 def process_request(request: AdminPermissionRequest):
     if request.status == "pending":
-        raise ValueError("Cannot process pending requests")
+        return None
     elif request.status == "approved":
-        match request.request.type:
-            case "server_role":
-                _process_server_role_request(request.email, request.request)
-            case "project_role":
-                _process_project_role_request(request.email, request.request)
-            case "create_project":
-                _process_create_project_request(request.email, request.request)
-            case _:
-                raise ValueError(f"Cannot process {request}")
+        _approve_request(request)
     elif request.status == "rejected":
         pass
     else:
@@ -119,42 +107,32 @@ def process_request(request: AdminPermissionRequest):
     update_request(request)
 
 
-def _process_project_role_request(email: EmailStr, request: ProjectRoleRequest):
-    update_project_role(email, request.project_id, Roles[request.role], ignore_missing=True)
-
-
-def _process_server_role_request(email: EmailStr, request: ServerRoleRequest):
-    update_server_role(request.email, Roles[request.role], ignore_missing=True)
-
-
-def _process_create_project_request(email: EmailStr, request: CreateProjectRequest):
-    # the permission context for a create_project request is the new index name
-    new_index = ProjectSettings(
-        id=request.project_id,
-        name=request.name,
-        description=request.description,
-        folder=request.folder,
-    )
-    create_project_index(new_index, admin_email=email)
+def _approve_request(ar: AdminPermissionRequest):
+    match ar.request.type:
+        case "server_role":
+            update_server_role(ar.email, Roles[ar.request.role], ignore_missing=True)
+        case "project_role":
+            assert isinstance(ar.request, ProjectRoleRequest)
+            update_project_role(ar.email, ar.request.project_id, Roles[ar.request.role], ignore_missing=True)
+        case "create_project":
+            assert isinstance(ar.request, CreateProjectRequest)
+            new_index = ProjectSettings(
+                id=ar.request.project_id,
+                name=ar.request.name,
+                description=ar.request.description,
+                folder=ar.request.folder,
+            )
+            create_project_index(new_index, admin_email=ar.email)
 
 
 def _request_to_elastic(request: AdminPermissionRequest) -> dict:
-    data = request.model_dump()
-    request = data.get("request")
-
+    # Almost the same, just flattened
+    # TODO: maybe make system index identical to model structure
     doc = dict(
-        # request admin fields
-        email=data.get("email"),
-        timestamp=data.get("timestamp"),
-        status=data.get("status"),
-        message=data["request"]["message"],
-        # request specific fields
-        type=request.get("type"),
-        project_id=request.get("project_id", None),
-        role=request.get("role", None),
-        name=request.get("name", None),
-        description=request.get("description", None),
-        folder=request.get("folder", None),
+        email=request.email,
+        timestamp=request.timestamp,
+        status=request.status,
+        **request.request.model_dump(),
     )
 
     doc = {k: v for k, v in doc.items() if v is not None}
@@ -162,19 +140,6 @@ def _request_to_elastic(request: AdminPermissionRequest) -> dict:
 
 
 def _request_from_elastic(d: dict) -> AdminPermissionRequest:
-    # type = d.get("type")
-
-    # required
-
-    # if type == "server_role":
-    #     request = ServerRoleRequest.model_validate(d)
-    # elif type == "project_role":
-    #     request = ProjectRoleRequest.model_validate(d)
-    # elif type == "create_project":
-    #     request = CreateProjectRequest.model_validate(d)
-    # else:
-    #     raise ValueError(f"Unknown request type: {type}")
-
     return AdminPermissionRequest.model_validate(
         dict(
             email=d.get("email"),
