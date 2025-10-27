@@ -117,6 +117,7 @@ def index_scan(
     query: dict | None = None,
     sort: dict | None = None,
     source: list[str] | None = None,
+    exclude_source: list[str] | None = None,
     scroll: str = "5m",
 ) -> Iterable[tuple[str, dict]]:
     """
@@ -130,7 +131,9 @@ def index_scan(
     if sort is not None:
         query_body["sort"] = sort
     if source is not None:
-        query_body["_source"] = source
+        query_body["_source_includes"] = source
+    if exclude_source is not None:
+        query_body["_source_excludes"] = exclude_source
 
     for hit in elasticsearch.helpers.scan(
         elastic_connection(),

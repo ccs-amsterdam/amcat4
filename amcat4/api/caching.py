@@ -11,7 +11,7 @@ F = TypeVar("F", bound=Callable)
 ResponseBody = TypeVar("ResponseBody")
 
 
-def static_browser_cache(func: F) -> F:
+def static_browser_cache(func: Callable) -> Callable:
     """
     Decorator to set a highly aggressive, immutable Cache-Control header
     on the response for static or immutable content. This indicates to browsers
@@ -34,7 +34,7 @@ def static_browser_cache(func: F) -> F:
     return wrapper
 
 
-def hashed_browser_cache(func: F) -> F:
+def hashed_browser_cache(func: Callable) -> Callable:
     """
     Decorator to add ETag-based caching to FastAPI endpoints.
     The ETag is based on a hash of the response content. If the client sends
@@ -50,7 +50,7 @@ def hashed_browser_cache(func: F) -> F:
     return wrapper
 
 
-def response_with_etag(request: Request, response: Response, data: ResponseBody) -> ResponseBody:
+def response_with_etag(request: Request, response: Response, data: ResponseBody) -> ResponseBody | Response:
     try:
         content_str = json.dumps(data, sort_keys=True, ensure_ascii=False).encode("utf-8")
     except TypeError as e:
@@ -64,7 +64,7 @@ def response_with_etag(request: Request, response: Response, data: ResponseBody)
     # Check if client has a (previous) matching ETag for this endpoint that matches the current content
     if_none_match = request.headers.get("if-none-match")
     if if_none_match == etag:
-        return Response(status_code=304, headers={"ETag": etag}).hexdigest()
+        return Response(status_code=304, headers={"ETag": etag})
 
     response.headers["ETag"] = etag
 

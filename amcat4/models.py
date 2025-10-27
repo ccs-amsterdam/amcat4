@@ -10,6 +10,7 @@ class User(BaseModel):
 
     email: EmailStr | None  # this can only be an authenticed, full email address or None for unauthenticated users
     superadmin: bool = False  # if auth is disabled, or if the user is the hardcoded admin email
+    auth_disabled: bool = False  # if auth is disabled on this server
 
 
 IndexId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]*$", title="Index ID")]
@@ -258,7 +259,7 @@ class LinksGroup(BaseModel):
 
 class ImageObject(BaseModel):
     hash: str
-    base64: str
+    base64: str | None = None
 
 
 class ProjectSettings(BaseModel):

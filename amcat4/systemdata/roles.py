@@ -88,7 +88,12 @@ def get_user_project_role(user: User, project_index: IndexId, global_admin: bool
 
     returns a RoleRule with Role.NONE if no role exists.
     """
-    if user.superadmin:
+    # If auth disabled always return the admin role, even if global_admin is False.
+    if user.auth_disabled:
+        return RoleRule(email=user.email or "*", role_context=project_index, role=Roles.ADMIN.name)
+
+    # If the user is a superadmin, we can directly return ADMIN
+    if global_admin and user.superadmin:
         return RoleRule(email=user.email or "*", role_context=project_index, role=Roles.ADMIN.name)
 
     # If we just need the project role, its a simple lookup
@@ -98,7 +103,6 @@ def get_user_project_role(user: User, project_index: IndexId, global_admin: bool
 
     # If we need to consider global admin, we fetch both roles in one go
     # and overwrite the project role if the server role is ADMIN
-
     else:
         user_roles = list_user_roles(user, role_contexts=[project_index, "_server"])
         project_role = next((ur for ur in user_roles if ur.role_context == project_index), None)

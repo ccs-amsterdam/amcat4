@@ -23,7 +23,8 @@ from amcat4.elastic.connection import connect_elastic
 from amcat4.models import FieldType, ProjectSettings, Roles
 from amcat4.projects.index import create_project_index, delete_project_index
 from amcat4.projects.documents import create_or_update_documents
-from amcat4.systemdata.manage import create_or_update_systemdata
+from amcat4.systemdata.images_compression import create_image_from_url
+from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
 from amcat4.systemdata.roles import list_server_roles, update_server_role
 
 SOTU_INDEX = "state_of_the_union"
@@ -35,8 +36,18 @@ def upload_test_data() -> str:
     csv.field_size_limit(sys.maxsize)
     csvfile = csv.DictReader(io.TextIOWrapper(url_open, encoding="utf-8"))
 
+    img_url = "https://preview.redd.it/president-bill-clintons-cat-socks-sitting-at-the-podium-in-v0-51wrybd3iabe1.jpeg?width=640&crop=smart&auto=webp&s=21b9f7787017f3fa1ab0fdba58839a42ca0a9cd2"
+    image = create_image_from_url(img_url)
+
     # creates the index info on the sqlite db
-    create_project_index(ProjectSettings(id=SOTU_INDEX))
+    create_project_index(
+        ProjectSettings(
+            id=SOTU_INDEX,
+            name="State of the Union Speeches",
+            description="State of the Union speeches from 1790 to 2020",
+            image=image,
+        )
+    )
 
     docs = [
         dict(
@@ -98,7 +109,22 @@ def migrate_systemdata(args) -> None:
         logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
         sys.exit(1)
 
-    create_or_update_systemdata(rm_pending_migrations=args.rm_pending, rm_broken_versions=args.rm_broken)
+    create_or_update_systemdata(rm_pending_migrations=args.rm_pending)
+
+
+def dangerously_destroy_systemdata(args) -> None:
+    settings = get_settings()
+    elastic = connect_elastic()
+    if not elastic.ping():
+        logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
+        sys.exit(1)
+
+    version = args.version
+    if not version:
+        logging.error("You must specify a version to delete using --version")
+        sys.exit(1)
+
+    delete_systemdata_version(int(version))
 
 
 def base_env():
@@ -248,18 +274,24 @@ def main():
 
     p = subparsers.add_parser("migrate", help="Migrate the system index to the current version")
     p.add_argument(
-        "rm_pending",
-        action="store_true",
-        help="Force remove pending migrations (see amcat4/systemdata/manage.py)",
-        default=True,
-    )
-    p.add_argument(
-        "rm_broken",
+        "--no-rm-pending",
         action="store_false",
-        help="Force remove broken systemdata version (see amcat4/systemdata/manage.py)",
-        default=False,
+        dest="rm_pending",
+        default=True,
+        help="Do NOT remove pending migrations (by default they ARE removed)",
     )
     p.set_defaults(func=migrate_systemdata)
+
+    p = subparsers.add_parser(
+        "dangerously_destroy_systemdata",
+        help="DANGER: Delete all systemdata for a given version. Use with caution, and only if you know what you're doing.",
+    )
+    p.add_argument(
+        "-v",
+        "--version",
+        help="The systemdata version to delete.",
+    )
+    p.set_defaults(func=dangerously_destroy_systemdata)
 
     args = parser.parse_args()
 

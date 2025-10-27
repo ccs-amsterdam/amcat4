@@ -5,7 +5,7 @@ from amcat4.elastic import es
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles, RoleRule, User
 from amcat4.systemdata.fields import create_fields, list_fields
 
-from amcat4.systemdata.roles import list_user_project_roles, HTTPException_if_not_server_role
+from amcat4.systemdata.roles import list_user_project_roles
 from amcat4.systemdata.settings import (
     create_project_settings,
     delete_project_settings,
@@ -21,11 +21,6 @@ class IndexDoesNotExist(ValueError):
 
 class IndexAlreadyExists(ValueError):
     pass
-
-
-def raise_if_not_project_exists(index_id: str):
-    if not es().exists(index=settings_index(), id=settings_index_id(index_id)):
-        raise IndexDoesNotExist(f'Index "{index_id}" does not exist')
 
 
 def create_project_index(new_index: ProjectSettings, admin_email: str | None = None):
@@ -92,12 +87,14 @@ def delete_project_index(index_id: str, ignore_missing: bool = False):
     delete_project_settings(index_id, ignore_missing)
 
 
-def list_project_indices(ids: list[str] | None = None, source: list[str] | None = None) -> Iterable[ProjectSettings]:
+def list_project_indices(ids: list[str] | None = None) -> Iterable[ProjectSettings]:
     """
     List all project indices, or only those with the given ids.
     """
     query = {"terms": {"_id": ids}} if ids is not None else None
-    for id, ix in index_scan(settings_index(), query=query, source=source):
+    exclude_source = ["project_settings.image.base64", "server_settings.icon.base64"]
+
+    for id, ix in index_scan(settings_index(), query=query, exclude_source=exclude_source):
         project_settings = ix["project_settings"]
         yield ProjectSettings.model_validate(project_settings)
 
@@ -120,7 +117,6 @@ def list_user_project_indices(user: User, show_all=False) -> Iterable[tuple[Proj
     TODO: add pagination and search here
     """
     if show_all:
-        HTTPException_if_not_server_role(user, Roles.ADMIN)
         for index in list_project_indices():
             yield index, RoleRule(role=Roles.ADMIN.name, role_context=index.id, email=user.email or "*")
         return

@@ -6,7 +6,6 @@ from typing import Annotated
 from elastic_transport import ApiError
 from elasticsearch import NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Response, status
-from fastapi.types import IncEx
 from pydantic import BaseModel, Field
 
 from amcat4.projects.index import (
@@ -37,7 +36,6 @@ from amcat4.systemdata.roles import (
     get_user_project_role,
     HTTPException_if_not_project_index_role,
     HTTPException_if_not_server_role,
-    role_is_at_least,
     set_project_guest_role,
 )
 from amcat4.systemdata.settings import get_project_settings
@@ -99,19 +97,21 @@ def index_list(
     show_all: Annotated[
         bool, Path(..., description="Also show indices user has no role on (requires ADMIN server role)")
     ] = False,
-    current_user: User = Depends(authenticated_user),
+    user: User = Depends(authenticated_user),
 ) -> list[IndexListResponse]:
     """
     List indices from this server that the user has access to. Returns a list of dicts with index details, including the user role.
     Requires at least LISTER role on the index. If show_all is true, requires ADMIN server role and shows all indices.
     """
+    if show_all:
+        HTTPException_if_not_server_role(user, Roles.ADMIN)
 
     ix_list: list = []
-    for ix, role in list_user_project_indices(current_user):
+    for ix, role in list_user_project_indices(user, show_all=show_all):
         ix_list.append(
             dict(
                 id=ix.id,
-                name=ix.name,
+                name=ix.name or "",
                 user_role=role.role if role else None,
                 user_role_match=role.email if role else None,
                 description=ix.description or "",
@@ -196,9 +196,9 @@ def view_index(
     except Exception:
         raise HTTPException(status_code=500, detail=f"Error reading index {ix} settings")
 
-    role = get_user_project_role(user, project_index=ix)
-    if not role_is_at_least(role, Roles.LISTER):
-        raise HTTPException(403, "Viewing a project requires LISTER permission on the project")
+    HTTPException_if_not_project_index_role(user, ix, Roles.LISTER)
+    role = get_user_project_role(user, project_index=ix, global_admin=False)
+    print(role)
 
     return IndexViewResponse(
         id=d.id,

@@ -2,8 +2,6 @@ from typing import List
 
 import pytest
 
-from amcat4.api.auth import authenticated_user
-from amcat4.config import get_settings
 from amcat4.elastic import es
 from amcat4.models import ProjectSettings, Roles, User
 from amcat4.projects.index import (
@@ -23,7 +21,6 @@ from amcat4.systemdata.roles import (
     get_user_project_role,
     get_user_server_role,
     list_project_roles,
-    list_server_roles,
     set_project_guest_role,
     update_project_role,
     update_server_role,

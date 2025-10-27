@@ -97,7 +97,10 @@ def modify_project_user(
     try:
         update_project_role(email, ix, Roles[body.role], ignore_missing=body.upsert)
     except NotFoundError:
-        raise HTTPException(404, detail=f"User {email} does not have a role on index {ix}")
+        raise HTTPException(
+            404,
+            detail=f"Cannot modify User {email}, because this user does not have a role on index {ix} yet. Create new user or use upsert",
+        )
     return IndexUserResponse(email=email, role=body.role)
 
 

@@ -34,7 +34,7 @@ def mock_middlecat():
 def my_setup():
     # Override system db
     get_settings().system_index = UNITTEST_SYSTEM_INDEX
-    system_index_version = create_or_update_systemdata(rm_broken_versions=True)
+    system_index_version = create_or_update_systemdata()
 
     es.cache_clear()
     yield None
