@@ -11,29 +11,13 @@ from amcat4.elastic.util import (
 from amcat4.config import get_settings
 from typing import Iterable, Literal
 
-from amcat4.systemdata.images_compression import compress_image_from_url_to_base64
+from amcat4.multimedia.image_compression import compress_image_from_url_to_base64
 
 VERSION = 2
 
 
-def settings_index() -> str:
-    return system_index_name(VERSION, "settings")
-
-
-def roles_index() -> str:
-    return system_index_name(VERSION, "roles")
-
-
-def fields_index() -> str:
-    return system_index_name(VERSION, "fields")
-
-
-def apikeys_index() -> str:
-    return system_index_name(VERSION, "apikeys")
-
-
-def requests_index() -> str:
-    return system_index_name(VERSION, "requests")
+def system_index(index: Literal["settings", "roles", "fields", "apikeys", "requests"]) -> str:
+    return system_index_name(VERSION, index)
 
 
 def settings_index_id(index: str | Literal["_server"]) -> str:
@@ -199,7 +183,7 @@ def check_deprecated_version(index: str):
 
 def migrate_server_settings(doc: dict):
     return BulkInsertAction(
-        index=settings_index(),
+        index=system_index("settings"),
         id=settings_index_id("_server"),
         doc={
             "server_settings": {
@@ -218,7 +202,7 @@ def migrate_server_settings(doc: dict):
 
 def migrate_project_settings(index: str, doc: dict):
     return BulkInsertAction(
-        index=settings_index(),
+        index=system_index("settings"),
         id=settings_index_id(index),
         doc={
             "project_settings": {
@@ -242,7 +226,7 @@ def migrate_roles(role: dict, in_index: str | None):
         "role_match": "DOMAIN" if email.startswith("*@") else "EXACT",
     }
 
-    return BulkInsertAction(index=roles_index(), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
+    return BulkInsertAction(index=system_index("roles"), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
 
 
 def migrate_guest_roles(role: dict, in_index: str | None):
@@ -254,7 +238,7 @@ def migrate_guest_roles(role: dict, in_index: str | None):
         "role_match": "ANY",
     }
 
-    return BulkInsertAction(index=roles_index(), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
+    return BulkInsertAction(index=system_index("roles"), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
 
 
 def migrate_fields(index: str, field: dict):
@@ -263,7 +247,7 @@ def migrate_fields(index: str, field: dict):
         "field": field.get("field"),
         "settings": field.get("settings", {}),
     }
-    return BulkInsertAction(index=fields_index(), id=fields_index_id(index, doc["field"]), doc=doc)
+    return BulkInsertAction(index=system_index("fields"), id=fields_index_id(index, doc["field"]), doc=doc)
 
 
 SYSTEM_INDICES = [

@@ -37,7 +37,7 @@ from amcat4.models import (
     User,
 )
 from amcat4.systemdata.roles import list_user_project_roles, role_is_at_least
-from amcat4.systemdata.versions import fields_index, fields_index_id
+from amcat4.systemdata.versions import system_index, fields_index_id
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, index_scan
 from amcat4.systemdata.typemap import TYPEMAP_AMCAT_TO_ES, TYPEMAP_ES_TO_AMCAT
 
@@ -423,13 +423,13 @@ def _update_fields(index: str, fields: dict[str, DocumentField]):
         for field, settings in fields.items():
             id = fields_index_id(index, field)
             field_doc = {"index": index, "name": field, "settings": settings.model_dump()}
-            yield BulkInsertAction(index=fields_index(), id=id, doc=field_doc)
+            yield BulkInsertAction(index=system_index("fields"), id=id, doc=field_doc)
 
     es_bulk_upsert(insert_fields())
 
 
 def _list_fields(index: str) -> dict[str, DocumentField]:
-    docs = index_scan(fields_index(), query={"term": {"index": index}})
+    docs = index_scan(system_index("fields"), query={"term": {"index": index}})
     return {doc["name"]: DocumentField.model_validate(doc["settings"]) for id, doc in docs}
 
 

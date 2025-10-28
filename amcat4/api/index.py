@@ -5,7 +5,7 @@ from typing import Annotated
 
 from elastic_transport import ApiError
 from elasticsearch import NotFoundError
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel, Field
 
 from amcat4.projects.index import (
@@ -13,6 +13,7 @@ from amcat4.projects.index import (
     IndexDoesNotExist,
     create_project_index,
     delete_project_index,
+    index_size_in_bytes,
     list_user_project_indices,
     refresh_index,
     update_project_index,
@@ -30,7 +31,7 @@ from amcat4.models import (
     User,
 )
 from amcat4.projects.query import reindex
-from amcat4.systemdata.images_compression import create_image_from_url
+from amcat4.multimedia.image_compression import create_image_from_url
 from amcat4.systemdata.roles import (
     get_project_guest_role,
     get_user_project_role,
@@ -90,12 +91,13 @@ class IndexListResponse(BaseModel):
 class IndexViewResponse(IndexListResponse):
     guest_role: GuestRole | None = Field(description="Guest role for the index")
     contact: list[ContactInfo] | None = Field(description="Contact info for the index")
+    bytes: int = Field(description="Size of the index in bytes")
 
 
 @app_index.get("/index/")
 def index_list(
     show_all: Annotated[
-        bool, Path(..., description="Also show indices user has no role on (requires ADMIN server role)")
+        bool, Query(..., description="Also show indices user has no role on (requires ADMIN server role)")
     ] = False,
     user: User = Depends(authenticated_user),
 ) -> list[IndexListResponse]:
@@ -105,6 +107,7 @@ def index_list(
     """
     if show_all:
         HTTPException_if_not_server_role(user, Roles.ADMIN)
+    print(show_all)
 
     ix_list: list = []
     for ix, role in list_user_project_indices(user, show_all=show_all):
@@ -198,7 +201,8 @@ def view_index(
 
     HTTPException_if_not_project_index_role(user, ix, Roles.LISTER)
     role = get_user_project_role(user, project_index=ix, global_admin=False)
-    print(role)
+
+    bytes = index_size_in_bytes(ix)
 
     return IndexViewResponse(
         id=d.id,
@@ -211,6 +215,7 @@ def view_index(
         folder=d.folder or "",
         image_id=d.image.hash if d.image else None,
         contact=d.contact or [],
+        bytes=bytes,
     )
 
 

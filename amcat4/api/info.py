@@ -11,7 +11,7 @@ from amcat4.config import get_settings, validate_settings
 from amcat4.elastic.connection import connect_elastic
 from amcat4.projects.query import get_task_status
 from amcat4.models import ContactInfo, Links, LinksGroup, Roles, ServerSettings, User
-from amcat4.systemdata.images_compression import create_image_from_url
+from amcat4.multimedia.image_compression import create_image_from_url
 from amcat4.systemdata.roles import HTTPException_if_not_server_role
 from amcat4.systemdata.settings import upsert_server_settings, get_server_settings
 

@@ -2,7 +2,7 @@ from typing import Iterable, Mapping
 
 
 from amcat4.elastic import es
-from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles, RoleRule, User
+from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, Roles, RoleRule, User
 from amcat4.systemdata.fields import create_fields, list_fields
 
 from amcat4.systemdata.roles import list_user_project_roles
@@ -12,7 +12,7 @@ from amcat4.systemdata.settings import (
     update_project_settings,
 )
 from amcat4.elastic.util import index_scan
-from amcat4.systemdata.versions import settings_index, settings_index_id
+from amcat4.systemdata.versions import system_index, settings_index_id
 
 
 class IndexDoesNotExist(ValueError):
@@ -29,7 +29,7 @@ def create_project_index(new_index: ProjectSettings, admin_email: str | None = N
     This function creates the elasticsearch index first, and then creates the settings document.
     """
     index_exists = es().indices.exists(index=new_index.id)
-    project_exists = es().exists(index=settings_index(), id=settings_index_id(new_index.id))
+    project_exists = es().exists(index=system_index("settings"), id=settings_index_id(new_index.id))
     if index_exists and project_exists:
         raise IndexAlreadyExists(f'Project "{new_index.id}" already exists')
     if index_exists and not project_exists:
@@ -94,7 +94,7 @@ def list_project_indices(ids: list[str] | None = None) -> Iterable[ProjectSettin
     query = {"terms": {"_id": ids}} if ids is not None else None
     exclude_source = ["project_settings.image.base64", "server_settings.icon.base64"]
 
-    for id, ix in index_scan(settings_index(), query=query, exclude_source=exclude_source):
+    for id, ix in index_scan(system_index("settings"), query=query, exclude_source=exclude_source):
         project_settings = ix["project_settings"]
         yield ProjectSettings.model_validate(project_settings)
 
@@ -129,3 +129,11 @@ def list_user_project_indices(user: User, show_all=False) -> Iterable[tuple[Proj
 
     for index in list_project_indices(ids=user_indices):
         yield index, project_role_lookup[index.id]
+
+
+def index_size_in_bytes(index_id: IndexId) -> dict:
+    response = es().indices.stats(
+        index=index_id,
+        metric="store",
+    )
+    return response["indices"][index_id]["total"]["store"]["size_in_bytes"]

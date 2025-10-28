@@ -1,0 +1,12 @@
+
+
+
+Check out a general s3 compliant python module, like boto3
+
+Rewrite the minio parts to use this module instead
+
+Try with cloudflare r2
+
+create fallback file storage on local disk:
+
+Maybe actually start with the filepath approach and implement boto3 later.

@@ -19,7 +19,7 @@ from amcat4.systemdata.roles import (
     update_server_role,
 )
 from amcat4.elastic.util import index_scan
-from amcat4.systemdata.versions import requests_index, requests_index_id
+from amcat4.systemdata.versions import system_index, requests_index_id
 
 
 def update_request(request: AdminPermissionRequest):
@@ -29,7 +29,7 @@ def update_request(request: AdminPermissionRequest):
     id = requests_index_id(doc.get("type"), doc.get("email"), doc.get("project_id", None))
 
     es().update(
-        index=requests_index(),
+        index=system_index("requests"),
         id=id,
         doc=doc,
         doc_as_upsert=True,
@@ -40,7 +40,7 @@ def update_request(request: AdminPermissionRequest):
 def delete_request(request: AdminPermissionRequest):
     doc = _request_to_elastic(request)
     id = requests_index_id(doc["type"], doc["email"], doc["project_id"])
-    es().delete(index=requests_index(), id=id, refresh=True)
+    es().delete(index=system_index("requests"), id=id, refresh=True)
 
 
 def list_user_requests(user: User) -> Iterable[AdminPermissionRequest]:
@@ -48,7 +48,7 @@ def list_user_requests(user: User) -> Iterable[AdminPermissionRequest]:
     if user.email is None:
         return []
 
-    docs = index_scan(requests_index(), query={"term": {"email": user.email}})
+    docs = index_scan(system_index("requests"), query={"term": {"email": user.email}})
     for id, doc in docs:
         yield _request_from_elastic(doc)
 
@@ -68,13 +68,13 @@ def list_admin_requests(user: User) -> Iterable[AdminPermissionRequest]:
     # Create project requests
     if role_is_at_least(server_role, Roles.WRITER):
         query = {"bool": {"must": [{"term": {"type": "create_project"}}, {"term": {"status": "pending"}}]}}
-        for id, doc in index_scan(requests_index(), query=query):
+        for id, doc in index_scan(system_index("requests"), query=query):
             yield _request_from_elastic(doc)
 
     # Server role requests
     if role_is_at_least(server_role, Roles.ADMIN):
         query = {"bool": {"must": [{"term": {"type": "server_role"}}, {"term": {"status": "pending"}}]}}
-        for id, doc in index_scan(requests_index(), query=query):
+        for id, doc in index_scan(system_index("requests"), query=query):
             yield _request_from_elastic(doc)
 
     # Project role requests
@@ -90,7 +90,7 @@ def list_admin_requests(user: User) -> Iterable[AdminPermissionRequest]:
             }
         }
 
-        for id, doc in index_scan(requests_index(), query=query):
+        for id, doc in index_scan(system_index("requests"), query=query):
             yield _request_from_elastic(doc)
 
 
@@ -157,7 +157,7 @@ def clear_requests():
     """
     TEST ONLY!!
     """
-    es().delete_by_query(index=requests_index(), query={"match_all": {}}, refresh=True)
+    es().delete_by_query(index=system_index("requests"), query={"match_all": {}}, refresh=True)
 
 
 def list_all_requests(statuses: list[str] | None = None) -> Iterable[AdminPermissionRequest]:
@@ -166,5 +166,5 @@ def list_all_requests(statuses: list[str] | None = None) -> Iterable[AdminPermis
     """
     query = {"terms": {"status": statuses}} if statuses else {"match_all": {}}
 
-    for id, doc in index_scan(requests_index(), query=query):
+    for id, doc in index_scan(system_index("requests"), query=query):
         yield _request_from_elastic(doc)
