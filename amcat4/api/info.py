@@ -11,7 +11,7 @@ from amcat4.config import get_settings, validate_settings
 from amcat4.elastic.connection import connect_elastic
 from amcat4.projects.query import get_task_status
 from amcat4.models import ContactInfo, Links, LinksGroup, Roles, ServerSettings, User
-from amcat4.multimedia.image_compression import create_image_from_url
+from amcat4.multimedia.image_processing import create_image_from_url
 from amcat4.systemdata.roles import HTTPException_if_not_server_role
 from amcat4.systemdata.settings import upsert_server_settings, get_server_settings
 
@@ -91,7 +91,7 @@ def read_branding() -> BrandingResponse:
     """Get the server branding settings."""
     settings = get_server_settings()
     d = settings.model_dump(exclude={"icon"})
-    d["icon_id"] = settings.icon.hash if settings.icon else None
+    d["icon_id"] = settings.icon.id if settings.icon else None
     return BrandingResponse(**d)
 
 

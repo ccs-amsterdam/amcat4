@@ -258,7 +258,7 @@ class LinksGroup(BaseModel):
 
 
 class ImageObject(BaseModel):
-    hash: str
+    id: str
     base64: str | None = None
 
 

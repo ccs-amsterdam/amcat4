@@ -1,4 +1,3 @@
-import hashlib
 from amcat4.elastic.connection import elastic_connection
 from amcat4.elastic.mapping import ElasticMapping, nested_field, object_field
 from amcat4.elastic.util import (
@@ -11,7 +10,7 @@ from amcat4.elastic.util import (
 from amcat4.config import get_settings
 from typing import Iterable, Literal
 
-from amcat4.multimedia.image_compression import compress_image_from_url_to_base64
+from amcat4.multimedia.image_processing import create_image_from_url
 
 VERSION = 2
 
@@ -47,7 +46,7 @@ _contact_field = object_field(
 )
 
 _image_field = object_field(
-    hash={"type": "keyword"},
+    id={"type": "keyword"},
     base64={"type": "binary"},
 )
 
@@ -156,14 +155,6 @@ requests_mapping: ElasticMapping = dict(
     description={"type": "text"},
     folder={"type": "keyword"},
 )
-
-
-def create_image_from_url(url: str | None) -> dict | None:
-    if not url:
-        return None
-    base64 = compress_image_from_url_to_base64(url)
-    hash = hashlib.sha256(base64.encode("utf-8")).hexdigest() if base64 else ""
-    return dict(hash=hash, base64=base64)
 
 
 def check_deprecated_version(index: str):

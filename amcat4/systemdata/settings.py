@@ -3,14 +3,15 @@ from elasticsearch import NotFoundError
 from amcat4.systemdata.roles import create_project_role
 from amcat4.systemdata.versions import system_index, settings_index_id
 from amcat4.elastic import es
-from amcat4.models import ProjectSettings, Roles, ServerSettings
+from amcat4.models import ImageObject, IndexId, ProjectSettings, Roles, ServerSettings
 
 ## PROJECT INDEX SETTINGS
 
 
 def get_project_settings(index_id: str) -> ProjectSettings:
     id = settings_index_id(index_id)
-    doc = es().get(index=system_index("settings"), id=id)["_source"]
+    exclude = ["project_settings.image.base64"]
+    doc = es().get(index=system_index("settings"), id=id, source_excludes=exclude)["_source"]
     doc = doc["project_settings"]
     return ProjectSettings.model_validate(doc)
 
@@ -50,6 +51,15 @@ def delete_project_settings(index_id: str, ignore_missing: bool = False):
         body={"query": {"term": {"role_context": index_id}}},
         refresh=True,
     )
+
+
+def get_project_image(index_id: IndexId) -> ImageObject | None:
+    id = settings_index_id(index_id)
+    include = ["project_settings.image"]
+    doc = es().get(index=system_index("settings"), id=id, source_includes=include)["_source"]
+    if "image" not in doc["project_settings"]:
+        return None
+    return ImageObject.model_validate(doc["project_settings"].get("image"))
 
 
 ## SERVER SETTINGS

@@ -131,7 +131,7 @@ def list_user_project_indices(user: User, show_all=False) -> Iterable[tuple[Proj
         yield index, project_role_lookup[index.id]
 
 
-def index_size_in_bytes(index_id: IndexId) -> dict:
+def index_size_in_bytes(index_id: IndexId) -> int:
     response = es().indices.stats(
         index=index_id,
         metric="store",

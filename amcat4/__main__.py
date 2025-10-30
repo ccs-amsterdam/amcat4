@@ -23,7 +23,7 @@ from amcat4.elastic.connection import connect_elastic
 from amcat4.models import FieldType, ProjectSettings, Roles
 from amcat4.projects.index import create_project_index, delete_project_index
 from amcat4.projects.documents import create_or_update_documents
-from amcat4.multimedia.image_compression import create_image_from_url
+from amcat4.multimedia.image_processing import create_image_from_url
 from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
 from amcat4.systemdata.roles import list_server_roles, update_server_role
 

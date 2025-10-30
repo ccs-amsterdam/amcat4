@@ -29,6 +29,7 @@ setup(
         "uvicorn",
         "requests",
         "Pillow",
+        "python-magic",
         "class_doc",
         "mypy",
         "jsonpath_ng",
