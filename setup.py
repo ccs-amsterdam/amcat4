@@ -33,6 +33,8 @@ setup(
         "class_doc",
         "mypy",
         "jsonpath_ng",
+        "boto3",
+        "boto3-stubs[essential]",
     ],
     extras_require={
         "dev": [

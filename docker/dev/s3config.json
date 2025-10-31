@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "dev_s3_admin_user",
+      "credentials": [
+        {
+          "accessKey": "DEV_S3_ACCESS_KEY_ID",
+          "secretKey": "DEV_S3_SECRET_ACCESS_KEY"
+        }
+      ],
+      "actions": ["Admin", "Read", "List", "Tagging", "Write"]
+    }
+  ]
+}

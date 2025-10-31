@@ -1,0 +1,56 @@
+version: "3.8"
+
+services:
+  # --- Elasticsearch Service ---
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.3
+    container_name: es01
+    environment:
+      # - ELASTIC_PASSWORD=DEV_ELASTIC_PASSWORD
+      - discovery.type=single-node
+      - xpack.security.enabled=false # DEV MODE: Disables security features
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200" # Exposed to local host for FastAPI connection
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dev-net
+
+  # --- SeaweedFS S3 Gateway Service ---
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs01
+    command: "weed server -s3 -s3.config=/etc/seaweedfs/s3config.json"
+    volumes:
+      - seaweedfs_data:/data
+      - ./s3config.json:/etc/seaweedfs/s3config.json:ro
+    ports:
+      - "8333:8333" # S3 Gateway
+      # - "8888:8888" # Web UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dev-net
+
+# --- Networks and Volumes ---
+networks:
+  dev-net:
+
+volumes:
+  elasticsearch_data:
+  seaweedfs_data:

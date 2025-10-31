@@ -12,6 +12,17 @@ Server for document management and automatic text analysis, developed as part of
 
 See also the [API Documentation](apidoc.md)
 
+## ElasticSearch and SeaweedFS
+
+AmCAT requires an elasticsearch and SeaweedFS instance. The easiest way to run these for development is to use docker-compose:
+
+```
+docker compose -f docker/env/docker-compose.yml up -d
+```
+
+This creates an elasticsearch instance at localhost:9200 and a SeaweedFS instance at localhost:9333, with dummy passwords.
+Naturally, you should NOT use this in production!
+
 ## Elasticsearch
 
 AmCAT requires an elasticsearch instance. The easiest way to run one for development is using docker:
@@ -20,7 +31,7 @@ AmCAT requires an elasticsearch instance. The easiest way to run one for develop
 sudo docker run --name elastic8 -dp 9200:9200 -e "xpack.security.enabled=false" -e ES_JAVA_OPTS="-Xms1g -Xmx1g" -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:8.6.1
 ```
 
-Please note that this docker is completely unsecured, so this should be configured differently in production and the used port 9200 should probably not be exposed to the Internet. 
+Please note that this docker is completely unsecured, so this should be configured differently in production and the used port 9200 should probably not be exposed to the Internet.
 
 ## Installing from source
 
@@ -53,9 +64,9 @@ env/bin/amcat4 create-test-index
 
 ## Security and configuration
 
-By default, the API is unsecured (no client authentication is necessary) and it expects an elasticsearch instance at localhost:9200. 
+By default, the API is unsecured (no client authentication is necessary) and it expects an elasticsearch instance at localhost:9200.
 
-AmCAT reads its configuration from environment variables, so you can either pass them directly or by creating a .env file. 
+AmCAT reads its configuration from environment variables, so you can either pass them directly or by creating a .env file.
 You can modify the [example .env file](.env.example) or interactively create the .env file using:
 
 ```

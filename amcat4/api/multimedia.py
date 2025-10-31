@@ -1,7 +1,11 @@
 from typing import Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from mypy_boto3_s3.type_defs import CommonPrefixTypeDef, ObjectTypeDef
 
 from amcat4.api.auth import authenticated_user
+from amcat4.models import Roles, User
+from amcat4.multimedia import multimedia
+from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_multimedia = APIRouter(prefix="/index/{ix}/multimedia", tags=["multimedia"])
 
@@ -9,25 +13,23 @@ app_multimedia = APIRouter(prefix="/index/{ix}/multimedia", tags=["multimedia"])
 
 
 @app_multimedia.get("/presigned_get")
-def presigned_get(ix: str, key: str, user: str = Depends(authenticated_user)):
-    # check_role(user, index.Role.READER, ix)
-    # try:
-    #     url = multimedia.presigned_get(ix, key)
-    #     obj = multimedia.stat_multimedia_object(ix, key)
-    #     return dict(url=url, content_type=(obj.content_type,), size=obj.size)
-    # except S3Error as e:
-    #     if e.code == "NoSuchKey":
-    #         raise HTTPException(status_code=404, detail=f"multimedia file {key} not found")
-    #     raise HTTPException(status_code=404, detail=e.message)
+def presigned_get(ix: str, key: str, user: User = Depends(authenticated_user)):
+    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+
+    try:
+        url = multimedia.presigned_get(ix, key)
+        obj = multimedia.stat_multimedia_object(ix, key)
+        return dict(url=url, content_type=(obj["ContentType"],), size=obj["ContentLength"])
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
     return None
 
 
 @app_multimedia.get("/presigned_post")
-def presigned_post(ix: str, user: str = Depends(authenticated_user)):
-    # check_role(user, index.Role.WRITER, ix)
-    # url, form_data = multimedia.presigned_post(ix)
-    # return dict(url=url, form_data=form_data)
-    return None
+def presigned_post(ix: str, user: User = Depends(authenticated_user)):
+    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    url, form_data = multimedia.presigned_post(ix)
+    return dict(url=url, form_data=form_data)
 
 
 @app_multimedia.get("/list")
@@ -39,32 +41,44 @@ def list_multimedia(
     recursive=False,
     presigned_get=False,
     metadata=False,
-    user: str = Depends(authenticated_user),
+    user: User = Depends(authenticated_user),
 ):
-    # recursive = str(recursive).lower() == "true"
-    # metadata = str(metadata).lower() == "true"
-    # presigned_get = str(presigned_get).lower() == "true"
+    recursive = str(recursive).lower() == "true"
+    metadata = str(metadata).lower() == "true"
+    presigned_get = str(presigned_get).lower() == "true"
 
-    # def process(obj: Object):
-    #     if metadata and (not obj.is_dir) and obj.object_name:
-    #         obj = multimedia.stat_multimedia_object(ix, obj.object_name)
-    #     result: dict[str, object] = dict(
-    #         key=obj.object_name,
-    #         is_dir=obj.is_dir,
-    #         last_modified=obj.last_modified,
-    #         size=obj.size,
-    #     )
-    #     if metadata:
-    #         result["metadata"] = (obj.metadata,)
-    #         result["content_type"] = (obj.content_type,)
+    def process(obj: ObjectTypeDef | CommonPrefixTypeDef):
+        if "Prefix" in obj:
+            return {
+                "key": obj["Prefix"],
+                "is_dir": True,
+            }
 
-    #     if presigned_get is True and not obj.is_dir:
-    #         if n > 10:
-    #             raise ValueError("Cannot provide presigned_get for more than 10 objects")
-    #         result["presigned_get"] = multimedia.presigned_get(ix, obj.object_name)
-    #     return result
+        if "Key" in obj:
+            key = obj["Key"]
+            result: dict[str, object] = dict(
+                key=key,
+                is_dir=False,
+                last_modified=obj.get("LastModified"),
+                size=obj.get("Size"),
+            )
 
-    # check_role(user, index.Role.READER, ix)
-    # objects = multimedia.list_multimedia_objects(ix, prefix, start_after, recursive)
-    # return [process(obj) for obj in itertools.islice(objects, n)]
+            if metadata:
+                o = multimedia.stat_multimedia_object(ix, key)
+                result["metadata"] = o["Metadata"]
+                result["content_type"] = o["ContentType"]
+
+            if presigned_get is True:
+                if n > 10:
+                    raise ValueError("Cannot provide presigned_get for more than 10 objects")
+                result["presigned_get"] = multimedia.presigned_get(ix, key)
+
+            return result
+
+        raise ValueError("Unknown object type")
+
+    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+
+    objects = multimedia.list_multimedia_objects(ix, prefix, start_after, recursive)
+    return [process(obj) for obj in itertools.islice(objects, n)]
     return None
