@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # --- Elasticsearch Service ---
   elasticsearch:
@@ -32,13 +30,13 @@ services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
     container_name: seaweedfs01
-    command: "weed server -s3 -s3.config=/etc/seaweedfs/s3config.json"
+    command: ["server", "-s3", "-s3.config=/etc/seaweedfs/s3config.json"]
     volumes:
       - seaweedfs_data:/data
       - ./s3config.json:/etc/seaweedfs/s3config.json:ro
     ports:
       - "8333:8333" # S3 Gateway
-      # - "8888:8888" # Web UI
+      - "8889:8888" # Web UI
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8888/"]
       interval: 10s

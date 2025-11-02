@@ -1,3 +1,4 @@
+import os
 import elasticsearch.helpers
 from elasticsearch.helpers.errors import BulkIndexError
 from amcat4.config import get_settings
@@ -13,13 +14,17 @@ class SystemIndexMapping(BaseModel):
     mapping: ElasticMapping
 
 
+## TODO: fix the entire mess with the amcat prefix...
+
+
 def system_index_name(version: int, path: str) -> str:
     """
     Get the full name for the system index, based on the version and path.
     (version and path are optional because the first version
     didn't have versions and only one path)
     """
-    index = get_settings().system_index
+    index = get_settings().amcat_prefix
+
     if version > 1:
         index = f"{index}_v{version}"
     if path != "":

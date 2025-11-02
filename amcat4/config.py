@@ -84,12 +84,12 @@ class Settings(BaseSettings):
         ),
     ] = None
 
-    system_index: Annotated[
+    amcat_prefix: Annotated[
         str,
         Field(
-            description="Elasticsearch index to store authorization information in",
+            description="AMCAT prefix used for system indices in Elasticsearch and S3 buckets",
         ),
-    ] = "amcat4_system"
+    ] = "amcat4data"
 
     auth: Annotated[AuthOptions, Field(description="Do we require authorization?")] = AuthOptions.no_auth
 
@@ -107,10 +107,9 @@ class Settings(BaseSettings):
         ),
     ] = None
 
-    minio_host: Annotated[str | None, Field()] = None
-    minio_tls: Annotated[bool, Field()] = False
-    minio_access_key: Annotated[str | None, Field()] = None
-    minio_secret_key: Annotated[str | None, Field()] = None
+    s3_host: Annotated[str | None, Field()] = None
+    s3_access_key: Annotated[str | None, Field()] = None
+    s3_secret_key: Annotated[str | None, Field()] = None
 
     @model_validator(mode="after")
     def set_ssl(self: Any) -> "Settings":

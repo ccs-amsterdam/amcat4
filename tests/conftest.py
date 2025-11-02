@@ -1,3 +1,4 @@
+import sys
 from typing import Any
 import pytest
 import responses
@@ -18,7 +19,10 @@ from amcat4.systemdata.roles import (
 )
 from tests.middlecat_keypair import PUBLIC_KEY
 
-UNITTEST_SYSTEM_INDEX = "amcat4_unittest_system"
+AMCAT_TESTS_PREFIX = "amcat4_unittest"
+
+## TODO: make a single prefix for both system indices and buckets
+## Called amcat prefix
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -33,7 +37,7 @@ def mock_middlecat():
 @pytest.fixture(scope="session", autouse=True)
 def my_setup():
     # Override system db
-    get_settings().system_index = UNITTEST_SYSTEM_INDEX
+    get_settings().amcat_prefix = AMCAT_TESTS_PREFIX
     system_index_version = create_or_update_systemdata()
 
     es.cache_clear()

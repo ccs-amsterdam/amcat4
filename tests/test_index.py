@@ -116,7 +116,6 @@ def test_superadmin(index):
 
 
 def test_list_users(index, user):
-    # refresh_index(get_settings().system_index)
     create_project_role("user@domain.com", index, role=Roles.READER)
     create_project_role("*@domain.com", index, role=Roles.METAREADER)
     project_users = list_project_roles()

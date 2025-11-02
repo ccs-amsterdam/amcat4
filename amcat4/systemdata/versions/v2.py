@@ -251,7 +251,7 @@ SYSTEM_INDICES = [
 
 def migrate():
     # v1 had just one big, bad index that used (whats now) the system indices prefix without version or path
-    v1_system_index = get_settings().system_index
+    v1_system_index = system_index_name(1, "")
     check_deprecated_version(v1_system_index)
 
     def bulk_generator() -> Iterable[BulkInsertAction]:

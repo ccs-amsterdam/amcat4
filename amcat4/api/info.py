@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from amcat4.api.auth import authenticated_user, get_middlecat_config
 from amcat4.config import get_settings, validate_settings
 from amcat4.elastic.connection import connect_elastic
+from amcat4.multimedia.objectstorage import s3_enabled
 from amcat4.projects.query import get_task_status
 from amcat4.models import ContactInfo, Links, LinksGroup, Roles, ServerSettings, User
 from amcat4.multimedia.image_processing import create_image_from_url
@@ -46,7 +47,7 @@ class AuthConfigResponse(BaseModel):
     resource: str | None = Field(None, description="The resource identifier for this AmCAT instance.")
     authorization: str = Field(..., description="The authorization mode.")
     warnings: list[str] = Field(..., description="A list of configuration warnings.")
-    minio: bool = Field(..., description="Whether MinIO is configured.")
+    s3_enabled: bool = Field(..., description="Whether S3 storage is configured.")
     api_version: str = Field(..., description="The version of the AmCAT API.")
 
 
@@ -81,7 +82,7 @@ def get_auth_config() -> AuthConfigResponse:
         resource=settings.host,
         authorization=settings.auth,
         warnings=[w for w in [validate_settings()] if w],
-        minio=settings.minio_host != "None",
+        s3_enabled=s3_enabled(),
         api_version=version("amcat4"),
     )
 

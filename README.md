@@ -14,24 +14,21 @@ See also the [API Documentation](apidoc.md)
 
 ## ElasticSearch and SeaweedFS
 
-AmCAT requires an elasticsearch and SeaweedFS instance. The easiest way to run these for development is to use docker-compose:
+AmCAT requires as least an elasticsearch instance, and optionally a SeaweedFS instance for file storage. The easiest way to set these up for development is to use docker-compose:
 
 ```
-docker compose -f docker/env/docker-compose.yml up -d
+docker compose -f dev/docker-compose.yml up -d
 ```
 
-This creates an elasticsearch instance at localhost:9200 and a SeaweedFS instance at localhost:9333, with dummy passwords.
-Naturally, you should NOT use this in production!
+This creates an elasticsearch instance at localhost:9200 and a SeaweedFS instance at localhost:9333. Note that this docker-compose file is completely unsecured, so this should be configured differently in production.
 
-## Elasticsearch
+### Alternatively, only run Elasticsearch
 
-AmCAT requires an elasticsearch instance. The easiest way to run one for development is using docker:
+If you just want to run elasticsearch without using docker-compose, you can run:
 
 ```
 sudo docker run --name elastic8 -dp 9200:9200 -e "xpack.security.enabled=false" -e ES_JAVA_OPTS="-Xms1g -Xmx1g" -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:8.6.1
 ```
-
-Please note that this docker is completely unsecured, so this should be configured differently in production and the used port 9200 should probably not be exposed to the Internet.
 
 ## Installing from source
 
