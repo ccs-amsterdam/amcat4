@@ -3,6 +3,7 @@ from typing import Iterable, Mapping
 
 from amcat4.elastic import es
 from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, Roles, RoleRule, User
+from amcat4.objectstorage.s3bucket import delete_index_bucket, s3_enabled
 from amcat4.systemdata.fields import create_fields, list_fields
 
 from amcat4.systemdata.roles import list_user_project_roles
@@ -80,10 +81,16 @@ def update_project_index(update_index: ProjectSettings):
 
 def delete_project_index(index_id: str, ignore_missing: bool = False):
     """
-    Delete both the index and the index settings
+    Delete both the index and the index settings, and the index bucket if any.
     """
     _es = es().options(ignore_status=404) if ignore_missing else es()
     _es.indices.delete(index=index_id)
+
+    # important, because otherwise new project with same name will inherit old bucket
+    # (buckets are always optional)
+    if s3_enabled():
+        delete_index_bucket(index_id, True)
+
     delete_project_settings(index_id, ignore_missing)
 
 

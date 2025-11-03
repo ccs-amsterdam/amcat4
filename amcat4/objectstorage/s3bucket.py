@@ -19,6 +19,12 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 from mypy_boto3_s3.client import S3Client
 
+## TODO: think about best way to sync elastic and s3 storage.
+## For security it would also be better if access to s3 objects
+## is not based on relation index name and bucket name.
+
+
+## TODO: now not used, because not possible with presigned posts.
 ALLOWED_CONTENT_TYPES = [
     "image/jpeg",
     "image/png",
@@ -87,16 +93,23 @@ def _connect_s3() -> Optional[S3Client]:
     )
 
 
-def get_bucket(index: str, create_if_needed=True) -> str:
+def bucket_name(index: str) -> str:
+    indexname = index.replace("_", "-")
+    use_test_db = get_settings().use_test_db
+    if use_test_db:
+        return f"test-index-{indexname}"
+    else:
+        return f"index-{indexname}"
+
+
+def get_index_bucket(index: str, create_if_needed=True) -> str:
     """
     Get the bucket name for this index. If create_if_needed is True, create the bucket if it doesn't exist.
     Returns the bucket name, or "" if it doesn't exist and create_if_needed is False.
     """
     s3 = get_s3_client()
 
-    bucket = f"index-{index.replace('_', '-')}"
-    if os.getenv("TEST_MODE"):
-        bucket = f"test-{bucket}"
+    bucket = bucket_name(index)
 
     try:
         s3.head_bucket(Bucket=bucket)
@@ -109,6 +122,11 @@ def get_bucket(index: str, create_if_needed=True) -> str:
         else:
             raise
     return bucket
+
+
+def delete_index_bucket(index: str, ignore_missing=True):
+    bucket = bucket_name(index)
+    delete_bucket(bucket, ignore_missing=ignore_missing)
 
 
 def list_s3_objects(
@@ -187,19 +205,24 @@ def get_s3_object(bucket: str, key: str) -> bytes:
     return res["Body"].read()
 
 
-def delete_bucket(bucket: str):
+def delete_bucket(bucket: str, ignore_missing=True):
     s3 = get_s3_client()
 
-    paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket):
-        if "Contents" in page:
-            to_delete: list[ObjectIdentifierTypeDef] = [
-                {"Key": obj.get("Key", "[never]")} for obj in page["Contents"] if obj.get("Key") is not None
-            ]
-            if to_delete:
-                s3.delete_objects(Bucket=bucket, Delete={"Objects": to_delete})
+    try:
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket):
+            if "Contents" in page:
+                to_delete: list[ObjectIdentifierTypeDef] = [
+                    {"Key": obj.get("Key", "[never]")} for obj in page["Contents"] if obj.get("Key") is not None
+                ]
+                if to_delete:
+                    s3.delete_objects(Bucket=bucket, Delete={"Objects": to_delete})
 
-    s3.delete_bucket(Bucket=bucket)
+        s3.delete_bucket(Bucket=bucket)
+    except Exception as e:
+        if ignore_missing and "NoSuchBucket" in str(e):
+            return
+        raise
 
 
 def add_s3_object(bucket: str, key: str, data: bytes):
@@ -215,8 +238,9 @@ def presigned_post(bucket: str, key_prefix: str = "", days_valid: int = 1) -> tu
     if key_prefix:
         conditions.append(["starts-with", "$key", key_prefix])
 
-    for content_type in ALLOWED_CONTENT_TYPES:
-        conditions.append(["eq", "$Content-Type", content_type])
+    # It seems this is impossible. Can only have one content-type condition, not multiple.
+    # for content_type in ALLOWED_CONTENT_TYPES:
+    #     conditions.append(["eq", "$Content-Type", content_type])
 
     pp = s3.generate_presigned_post(
         Bucket=bucket, Key="${filename}", Fields=None, Conditions=conditions, ExpiresIn=days_valid * 24 * 3600
@@ -224,6 +248,14 @@ def presigned_post(bucket: str, key_prefix: str = "", days_valid: int = 1) -> tu
     return pp["url"], pp["fields"]
 
 
-def presigned_get(bucket: str, key: str, days_valid=1) -> str:
+def presigned_get(bucket: str, key: str, hours_valid=24, **kwargs) -> str:
     s3 = get_s3_client()
-    return s3.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=days_valid * 24 * 3600)
+    params = {"Bucket": bucket, "Key": key, **kwargs}
+
+    return s3.generate_presigned_url("get_object", Params=params, ExpiresIn=hours_valid * 3600)
+
+
+def get_etag(bucket: str, key: str) -> str:
+    s3 = get_s3_client()
+    res = s3.head_object(Bucket=bucket, Key=key)
+    return res["ETag"].strip('"')

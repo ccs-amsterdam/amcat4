@@ -33,7 +33,7 @@ from amcat4.models import (
     User,
 )
 from amcat4.projects.query import reindex
-from amcat4.multimedia.image_processing import create_image_from_url
+from amcat4.objectstorage.image_processing import create_image_from_url
 from amcat4.systemdata.roles import (
     get_project_guest_role,
     get_user_project_role,

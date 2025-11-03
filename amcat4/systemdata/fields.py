@@ -36,9 +36,9 @@ from amcat4.models import (
     UpdateDocumentField,
     User,
 )
-from amcat4.systemdata.roles import list_user_project_roles, role_is_at_least
+from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, list_user_project_roles, role_is_at_least
 from amcat4.systemdata.versions import system_index, fields_index_id
-from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, index_scan
+from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, es_get, index_scan
 from amcat4.systemdata.typemap import TYPEMAP_AMCAT_TO_ES, TYPEMAP_ES_TO_AMCAT
 
 
@@ -234,6 +234,20 @@ def intersect_fieldspecs(specs: list[FieldSpec | None]) -> FieldSpec | None:
                 min_spec.snippet.match_chars = min(min_spec.snippet.match_chars, spec.snippet.match_chars)
 
     return min_spec
+
+
+def HTTPException_if_invalid_multimedia_field(index: str, field: str, user: User) -> None:
+    docfield = DocumentField.model_validate(es_get(system_index("fields"), fields_index_id(index, field)))
+    valid_types = ["image", "video", "audio"]
+    if docfield.type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Field '{field}' in index '{index}' is of type '{docfield.type}', "
+            f"but one of {valid_types} is required for multimedia operations.",
+        )
+
+    min_role = Roles.METAREADER if docfield.metareader.access == "read" else Roles.READER
+    HTTPException_if_not_project_index_role(user, index, min_role)
 
 
 def HTTPException_if_invalid_field_access(indices: list[str], user: User, fields: list[FieldSpec]) -> None:

@@ -3,7 +3,8 @@
 from typing import Annotated, Any, Literal
 
 from elasticsearch import NotFoundError
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Header, Path, Query, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
@@ -14,7 +15,9 @@ from amcat4.models import (
     Roles,
     User,
 )
+from amcat4.objectstorage import s3bucket
 from amcat4.projects.documents import delete_document, fetch_document, update_document, create_or_update_documents
+from amcat4.systemdata.fields import HTTPException_if_invalid_multimedia_field
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_index_documents = APIRouter(prefix="", tags=["documents"])
@@ -131,3 +134,40 @@ def remove_document(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Document {ix}/{docid} not found",
         )
+
+
+@app_index_documents.get("/index/{ix}/documents/{doc_id}/multimedia/{field}")
+def multimedia_get_gatekeeper(
+    ix: str,
+    doc_id: str,
+    field: str,
+    etag: str | None = Query(None, description="ETag can be included in query for immutable caching"),
+    if_none_match: str | None = Header(None, alias="If-None-Match"),
+    user: User = Depends(authenticated_user),
+):
+    """
+    Gatekeeper endpoint for multimedia GET requests.
+    """
+    # This validates both role access and whether field is a valid multimedia field
+    # (meaning that the field value can be used as an objectstorage key)
+    HTTPException_if_invalid_multimedia_field(ix, field, user)
+
+    bucket = s3bucket.bucket_name(ix)
+    url = fetch_document(ix, doc_id, source_includes=[field]).get(field)
+
+    if not url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"field '{field}' not found in document.")
+
+    # Cached flow: if the client provides a valid If-None-Match header, return immediately (dont auth for efficiency)
+    # (the browser gets the ETag from the S3 redirect response)
+    if if_none_match:
+        current_etag = s3bucket.get_etag(bucket, url)
+        if if_none_match.strip('"') == current_etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": f'"{current_etag}"'})
+
+    # Fetch flow: presigned url to s3
+    # If etag is provided in the query, we assume the client wants immutable caching
+    cache_control_value = "public, max-age=3153600, immutable" if etag else "no-cache, must-revalidate"
+    presigned_url = s3bucket.presigned_get(bucket, url, ResponseCacheControl=cache_control_value)
+
+    return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)

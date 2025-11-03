@@ -23,8 +23,11 @@ def system_index_name(version: int, path: str) -> str:
     (version and path are optional because the first version
     didn't have versions and only one path)
     """
-    index = get_settings().amcat_prefix
+    index = get_settings().system_index
+    use_test_db = get_settings().use_test_db
 
+    if use_test_db:
+        index = f"testdb_{index}"
     if version > 1:
         index = f"{index}_v{version}"
     if path != "":

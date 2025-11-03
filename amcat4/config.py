@@ -84,12 +84,12 @@ class Settings(BaseSettings):
         ),
     ] = None
 
-    amcat_prefix: Annotated[
+    system_index: Annotated[
         str,
         Field(
-            description="AMCAT prefix used for system indices in Elasticsearch and S3 buckets",
+            description="Prefix for indices in Elasticsearch that contain system data (users, roles, settings, etc.)",
         ),
-    ] = "amcat4data"
+    ] = "amcat4_system"
 
     auth: Annotated[AuthOptions, Field(description="Do we require authorization?")] = AuthOptions.no_auth
 
@@ -107,9 +107,16 @@ class Settings(BaseSettings):
         ),
     ] = None
 
-    s3_host: Annotated[str | None, Field()] = None
-    s3_access_key: Annotated[str | None, Field()] = None
-    s3_secret_key: Annotated[str | None, Field()] = None
+    s3_host: Annotated[str | None, Field(description="S3-compatible object storage host")] = None
+    s3_access_key: Annotated[str | None, Field(description="S3 access key")] = None
+    s3_secret_key: Annotated[str | None, Field(description="S3 secret key")] = None
+
+    use_test_db: Annotated[
+        bool,
+        Field(
+            description="Use a separate test database (for unit tests)",
+        ),
+    ] = False
 
     @model_validator(mode="after")
     def set_ssl(self: Any) -> "Settings":

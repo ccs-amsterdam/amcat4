@@ -10,7 +10,7 @@ from amcat4.elastic.util import (
 from amcat4.config import get_settings
 from typing import Iterable, Literal
 
-from amcat4.multimedia.image_processing import create_image_from_url
+from amcat4.objectstorage.image_processing import create_image_from_url
 
 VERSION = 2
 

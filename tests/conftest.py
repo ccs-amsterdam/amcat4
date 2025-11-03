@@ -1,5 +1,5 @@
 import sys
-from typing import Any
+from typing import Any, Tuple
 import pytest
 import responses
 from fastapi.testclient import TestClient
@@ -8,6 +8,7 @@ from amcat4 import api
 from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import es
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles
+from amcat4.objectstorage.s3bucket import delete_index_bucket, get_index_bucket, s3_enabled
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
 from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
@@ -21,15 +22,17 @@ from tests.middlecat_keypair import PUBLIC_KEY
 
 AMCAT_TESTS_PREFIX = "amcat4_unittest"
 
-## TODO: make a single prefix for both system indices and buckets
-## Called amcat prefix
-
 
 @pytest.fixture(scope="session", autouse=True)
-def mock_middlecat():
+def mock_requests():
     get_settings().middlecat_url = "http://localhost:5000"
     get_settings().host = "http://localhost:3000"
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as resp:
+
+    passthru: Tuple[str, ...] = ()
+    if s3_enabled():
+        passthru = (get_settings().s3_host or "",)
+
+    with responses.RequestsMock(assert_all_requests_are_fired=False, passthru_prefixes=passthru) as resp:
         resp.get("http://localhost:5000/api/configuration", json={"public_key": PUBLIC_KEY})
         yield None
 
@@ -37,12 +40,13 @@ def mock_middlecat():
 @pytest.fixture(scope="session", autouse=True)
 def my_setup():
     # Override system db
-    get_settings().amcat_prefix = AMCAT_TESTS_PREFIX
+    get_settings().use_test_db = True
     system_index_version = create_or_update_systemdata()
 
     es.cache_clear()
     yield None
     delete_systemdata_version(system_index_version)
+    get_settings().use_test_db = False
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -139,6 +143,21 @@ def clean_requests():
     clear_requests()
     yield
     clear_requests()
+
+
+@pytest.fixture()
+def index_with_bucket():
+    if not s3_enabled():
+        pytest.skip("S3 not configured, skipping tests needing object storage")
+
+    index = "amcat4_unittest_index_bucket"
+    delete_project_index(index, ignore_missing=True)
+    delete_index_bucket(index, ignore_missing=True)
+    create_project_index(ProjectSettings(id=index, name="Unittest Index"))
+    get_index_bucket(index, create_if_needed=True)
+    yield index
+    delete_project_index(index, ignore_missing=True)
+    # delete_index_bucket(index, ignore_missing=True)
 
 
 def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType | CreateDocumentField] | None = None):
