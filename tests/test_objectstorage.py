@@ -31,7 +31,7 @@ def test_presigned_form(index_with_bucket):
     key = "image.png"
 
     url, form_data = presigned_post(bucket, "")
-    print(url)
+
     res = requests.post(
         url=url,
         data={"Content-Type": "image/png", **form_data},

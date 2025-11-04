@@ -4,8 +4,7 @@ Interact with S3-compatible object storage (e.g., AWS S3, MinIO, SeaweedFS, Clou
 
 from datetime import datetime
 import functools
-import os
-from typing import Any, Iterable, Optional, TypedDict
+from typing import Any, Literal, Optional, TypedDict
 
 from mypy_boto3_s3.type_defs import (
     HeadObjectOutputTypeDef,
@@ -24,30 +23,13 @@ from mypy_boto3_s3.client import S3Client
 ## is not based on relation index name and bucket name.
 
 
-## TODO: now not used, because not possible with presigned posts.
-ALLOWED_CONTENT_TYPES = [
-    "image/jpeg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-    "video/mp4",
-    "video/quicktime",
-    "video/x-msvideo",
-    "video/x-matroska",
-    "audio/mpeg",
-    "audio/wav",
-    "audio/ogg",
-    "audio/mp4",
-    "application/pdf",
-]
-
-
 class ListObject(TypedDict):
     is_dir: bool
     key: str
     size: int | None
     last_modified: datetime | None
     presigned_get: str | None
+    etag: str | None
 
 
 class ListResults(TypedDict):
@@ -164,6 +146,7 @@ def list_s3_objects(
                         "size": content.get("Size"),
                         "last_modified": content.get("LastModified"),
                         "presigned_get": presigned and presigned_get(bucket, content["Key"]) or None,
+                        "etag": content.get("ETag").strip('"') if content.get("ETag") else None,
                     }
                 )
 
@@ -176,6 +159,7 @@ def list_s3_objects(
                     "size": None,
                     "last_modified": None,
                     "presigned_get": None,
+                    "etag": None,
                 }
             )
 
@@ -230,20 +214,22 @@ def add_s3_object(bucket: str, key: str, data: bytes):
     s3.put_object(Bucket=bucket, Key=key, Body=data)
 
 
-def presigned_post(bucket: str, key_prefix: str = "", days_valid: int = 1) -> tuple[str, dict[str, str]]:
+def presigned_post(
+    bucket: str, key_prefix: str = "", type_prefix: str = "", days_valid: int = 1
+) -> tuple[str, dict[str, str]]:
     s3 = get_s3_client()
 
     conditions: list[Any] = [{"bucket": bucket}]
 
-    if key_prefix:
-        conditions.append(["starts-with", "$key", key_prefix])
-
-    # It seems this is impossible. Can only have one content-type condition, not multiple.
-    # for content_type in ALLOWED_CONTENT_TYPES:
-    #     conditions.append(["eq", "$Content-Type", content_type])
+    if type_prefix:
+        conditions.append(["starts-with", "$Content-Type", type_prefix])
 
     pp = s3.generate_presigned_post(
-        Bucket=bucket, Key="${filename}", Fields=None, Conditions=conditions, ExpiresIn=days_valid * 24 * 3600
+        Bucket=bucket,
+        Key=f"{key_prefix}${{filename}}",
+        Fields={"success_action_status": "206"},
+        Conditions=conditions,
+        ExpiresIn=days_valid * 24 * 3600,
     )
     return pp["url"], pp["fields"]
 

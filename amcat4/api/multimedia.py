@@ -1,14 +1,12 @@
-import itertools
-from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, Query, Response, status
+from typing import Annotated
+from fastapi import APIRouter, Depends, HTTPException, Header, Path, Query, Response, status
 from fastapi.responses import RedirectResponse
-from mypy_boto3_s3.type_defs import CommonPrefixTypeDef, ObjectTypeDef
 
 from amcat4.api.auth import authenticated_user
-from amcat4.models import FieldSpec, Roles, User
+from amcat4.models import Roles, User
 from amcat4.objectstorage import s3bucket
-from amcat4.projects.documents import fetch_document
-from amcat4.systemdata.fields import HTTPException_if_invalid_field_access
+from amcat4.objectstorage.multimedia import get_multimedia_etag, presigned_multimedia_get, presigned_multimedia_post
+from amcat4.systemdata.fields import HTTPException_if_invalid_multimedia_field
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_multimedia = APIRouter(prefix="", tags=["multimedia"])
@@ -30,12 +28,10 @@ def presigned_get(ix: str, key: str, user: User = Depends(authenticated_user)):
     return None
 
 
-@app_multimedia.get("/index/{ix}/multimedia/presigned_post")
-def presigned_post(ix: str, user: User = Depends(authenticated_user)):
+@app_multimedia.get("/index/{ix}/multimedia/presigned_post/{field}")
+def presigned_post(ix: str, field: str, user: User = Depends(authenticated_user)):
     HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    bucket = s3bucket.get_index_bucket(ix)
-    url, form_data = s3bucket.presigned_post(bucket)
-    return dict(url=url, form_data=form_data)
+    return presigned_multimedia_post(ix, field)
 
 
 @app_multimedia.get("/index/{ix}/multimedia/list")
@@ -48,7 +44,13 @@ def list_multimedia(
     presigned_get: bool = Query(False, description="Whether to include presigned GET URLs"),
     user: User = Depends(authenticated_user),
 ):
+    """
+    List all multimedia objects in an index's S3 bucket.
+    """
     HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+    base_prefix = "multimedia/"
+
+    prefix = f"{base_prefix}{prefix or ''}"
 
     recursive = str(recursive).lower() == "true"
     presigned_get = str(presigned_get).lower() == "true"
@@ -58,6 +60,42 @@ def list_multimedia(
 
     bucket = s3bucket.bucket_name(ix)
     try:
-        return s3bucket.list_s3_objects(bucket, prefix, n, next_page_token, recursive, presigned_get)
+        res = s3bucket.list_s3_objects(bucket, prefix, n, next_page_token, recursive, presigned_get)
+        for item in res["items"]:
+            item["key"] = item["key"].removeprefix(base_prefix)
+        return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app_multimedia.get("/index/{ix}/multimedia/fields/{field}/{path:path}")
+def multimedia_get_gatekeeper(
+    ix: str,
+    field: Annotated[str, Path(description="The name of the elastic field containing the multimedia object")],
+    path: Annotated[str, Path(description="Path to the multimedia object within the field")],
+    v: str | None = Query(
+        None, description="A unique version id (like the S3 etag) can be included in query for immutable caching."
+    ),
+    if_none_match: str | None = Header(None, alias="If-None-Match"),
+    user: User = Depends(authenticated_user),
+):
+    """
+    Gatekeeper endpoint for multimedia GET requests. Redirects to a presigned S3 URL.
+
+    Uses two caching flows:
+    1. eTag based caching: if the client provides a fresh If-None-Match header, return 304
+    2. if a version (v) is provided in the query, we set an immutable caching policy
+    """
+    # note that both caching flows ignore auth for speed. The only risk is that a user can see
+    # a browser cached version of a file they are not allowed to see (anymore).
+
+    # eTag flow
+    if if_none_match:
+        current_etag = get_multimedia_etag(ix, field, path)
+        if if_none_match.strip('"') == current_etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": f'"{current_etag}"'})
+
+    # presigned url flow with immutable caching if version (v) is given
+    HTTPException_if_invalid_multimedia_field(ix, field, user)
+    presigned_url = presigned_multimedia_get(ix, field, path, immutable_cache=v is not None)
+    return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)

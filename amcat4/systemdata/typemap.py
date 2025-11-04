@@ -58,5 +58,6 @@ TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "image": ["wildcard", "keyword", "constant_keyword", "text"],
     "video": ["wildcard", "keyword", "constant_keyword", "text"],
     "audio": ["wildcard", "keyword", "constant_keyword", "text"],
+    "pdf": ["wildcard", "keyword", "constant_keyword", "text"],
     "url": ["wildcard", "keyword", "constant_keyword", "text"],
 }

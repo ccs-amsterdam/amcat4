@@ -156,7 +156,7 @@ def index_with_bucket():
     create_project_index(ProjectSettings(id=index, name="Unittest Index"))
     get_index_bucket(index, create_if_needed=True)
     yield index
-    delete_project_index(index, ignore_missing=True)
+    # delete_project_index(index, ignore_missing=True)
     # delete_index_bucket(index, ignore_missing=True)
 
 

@@ -237,7 +237,13 @@ def intersect_fieldspecs(specs: list[FieldSpec | None]) -> FieldSpec | None:
 
 
 def HTTPException_if_invalid_multimedia_field(index: str, field: str, user: User) -> None:
-    docfield = DocumentField.model_validate(es_get(system_index("fields"), fields_index_id(index, field)))
+    es_field = es_get(system_index("fields"), fields_index_id(index, field))
+    if es_field is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Field '{field}' does not exist in index '{index}'",
+        )
+    docfield = DocumentField.model_validate(es_field["settings"])
     valid_types = ["image", "video", "audio"]
     if docfield.type not in valid_types:
         raise HTTPException(
