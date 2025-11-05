@@ -2,10 +2,13 @@
 # this is not just the inverse of TYPEMAP_AMCAT_TO_ES because some AmCAT types map to multiple elastic
 # types (e.g., tag and keyword, image_url and wildcard)
 # (this is relevant if we are importing an index)
+from typing import Any
 from amcat4.models import ElasticType, FieldType
 
 
-TYPEMAP_ES_TO_AMCAT: dict[ElasticType, FieldType] = {
+# This needs to be a one on one mapping. It should be
+# possible to uniquely determine the AmCAT type from the elastic type.
+_TYPEMAP_ES_TO_AMCAT: dict[ElasticType, FieldType] = {
     # TEXT fields
     "text": "text",
     "annotated_text": "text",
@@ -42,7 +45,7 @@ TYPEMAP_ES_TO_AMCAT: dict[ElasticType, FieldType] = {
 
 # maps amcat field types to elastic field types.
 # The first elastic type in the array is the default.
-TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
+_TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "text": ["text", "annotated_text", "binary", "match_only_text"],
     "date": ["date"],
     "boolean": ["boolean"],
@@ -51,13 +54,58 @@ TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "integer": ["long", "integer", "byte", "short", "unsigned_long"],
     # "object": ["flattened", "object", "nested"],
     "object": ["flattened"],
-    # "json": ["text"], # deprecated
     "vector": ["dense_vector"],
     "geo_point": ["geo_point"],
     "tag": ["keyword", "wildcard"],
-    "image": ["wildcard", "keyword", "constant_keyword", "text"],
-    "video": ["wildcard", "keyword", "constant_keyword", "text"],
-    "audio": ["wildcard", "keyword", "constant_keyword", "text"],
-    "pdf": ["wildcard", "keyword", "constant_keyword", "text"],
     "url": ["wildcard", "keyword", "constant_keyword", "text"],
+    # MULTIMEDIA OBJECTS
+    "image": ["object"],
+    "video": ["object"],
+    "audio": ["object"],
 }
+
+
+def list_allowed_elastic_types(field_type: FieldType) -> list[ElasticType]:
+    return _TYPEMAP_AMCAT_TO_ES.get(field_type, [])
+
+
+def infer_field_type(elastic_type: ElasticType, properties: dict[str, Any] | None) -> FieldType:
+    """
+    Infer the amcat field type from the elastic type and (if applicable) properties (e.g.
+    if elastic type is object)
+    """
+    if elastic_type == "object":
+        special_type = _infer_special_object_type(properties)
+        if special_type is not None:
+            return special_type
+
+    type = _TYPEMAP_ES_TO_AMCAT.get(elastic_type)
+    if type is None:
+        raise ValueError(f"Cannot infer amcat field type from elastic type {elastic_type}")
+    return type
+
+
+def _infer_special_object_type(properties: dict[str, Any] | None) -> FieldType | None:
+    """
+    For object types, look at the properties to see if it is a special object type.
+    (currently only special objects are multimedia objects)
+    """
+    if properties is None:
+        return None
+
+    ## required multimedia properties
+    if properties.get("external", "") != "boolean":
+        return None
+    if properties.get("md5", "") != "keyword":
+        return None
+
+    ## we infer media type from the [type]_link field
+    multimedia_type: FieldType | None = None
+    if properties.get("image_link", "") == "keyword":
+        return "image"
+    if properties.get("video_link", "") == "keyword":
+        return "video"
+    if properties.get("audio_link", "") == "keyword":
+        return "audio"
+
+    return None

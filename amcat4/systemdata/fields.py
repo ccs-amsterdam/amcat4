@@ -16,8 +16,7 @@ We need to make sure that:
 
 import datetime
 import json
-import logging
-from typing import Any, Iterable, Iterator, Mapping, cast, get_args
+from typing import Any, Iterable, Iterator, Literal, Mapping, TypedDict, cast, get_args
 
 from elasticsearch import NotFoundError
 from fastapi import HTTPException
@@ -39,58 +38,62 @@ from amcat4.models import (
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, list_user_project_roles, role_is_at_least
 from amcat4.systemdata.versions import system_index, fields_index_id
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, es_get, index_scan
-from amcat4.systemdata.typemap import TYPEMAP_AMCAT_TO_ES, TYPEMAP_ES_TO_AMCAT
+from amcat4.systemdata.typemap import infer_field_type, list_allowed_elastic_types
+
+
+class UpdateFieldMapping(TypedDict):
+    name: str
+    type: FieldType
+    elastic_type: ElasticType
 
 
 def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocumentField]):
-    mapping: dict[str, Any] = {}
     current_fields = list_fields(index)
 
     sfields = _standardize_createfields(fields)
     old_identifiers = any(f.identifier for f in current_fields.values())
+
+    # flags to track whether we need to update mapping or identifiers
+    update_mapping = False
     new_identifiers = False
 
     for field, settings in sfields.items():
         if settings.elastic_type is not None:
-            allowed_types = TYPEMAP_AMCAT_TO_ES.get(settings.type, [])
+            allowed_types = list_allowed_elastic_types(settings.type)
             if settings.elastic_type not in allowed_types:
                 raise ValueError(
                     f"Field type {settings.type} does not support elastic type {settings.elastic_type}. "
                     f"Allowed types are: {allowed_types}"
                 )
-            elastic_type = settings.elastic_type
         else:
-            elastic_type = _get_default_field(settings.type).elastic_type
+            settings.elastic_type = _get_default_field(settings.type).elastic_type
 
         current = current_fields.get(field)
         if current is not None:
             # fields can already exist. For example, a scraper might include the field types in every
-            # upload request. If a field already exists, we'll ignore it, but we will throw an error
+            # upload request. If a field already exists, we'll ignore the new settings, and we will throw an error
             # if static settings (elastic type, identifier) do not match.
-            if current.elastic_type != elastic_type:
+            if current.elastic_type != settings.elastic_type:
                 raise ValueError(f"Field '{field}' already exists with elastic type '{current.elastic_type}'. ")
             if current.identifier != settings.identifier:
                 raise ValueError(f"Field '{field}' already exists with identifier '{current.identifier}'. ")
             continue
 
         # if field does not exist, we add it to both the mapping and the system index
+
+        update_mapping = True
         if settings.identifier:
             new_identifiers = True
-        mapping[field] = {"type": elastic_type}
 
-        # if elastic_type in ["object", "nested"]:
-        #     mapping[field]["dynamic"] = True
-
-        if settings.type in ["date"]:
-            mapping[field]["format"] = "strict_date_optional_time"
-
-        current_fields[field] = DocumentField(
+        new_field = DocumentField(
             type=settings.type,
-            elastic_type=elastic_type,
-            identifier=settings.identifier,
+            elastic_type=settings.elastic_type,
+            identifier=settings.identifier or False,
             metareader=settings.metareader or _get_default_metareader(settings.type),
         )
-        _check_forbidden_type(current_fields[field], settings.type)
+        _check_forbidden_type(new_field, settings.type)
+
+        current_fields[field] = new_field
 
     if new_identifiers:
         # new identifiers are only allowed if the index had identifiers, or if it is a new index (i.e. no documents)
@@ -98,9 +101,8 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocumentFie
         if has_docs and not old_identifiers:
             raise ValueError("Cannot add identifiers. Index already has documents with no identifiers.")
 
-    if len(mapping) > 0:
-        es().indices.put_mapping(index=index, properties=mapping)
-        _update_fields(index, current_fields)
+    if update_mapping:
+        _update_index_fields_mappings(index, current_fields)
 
 
 def update_fields(index: str, fields: dict[str, UpdateDocumentField]):
@@ -114,13 +116,11 @@ def update_fields(index: str, fields: dict[str, UpdateDocumentField]):
         if new_settings.type is not None:
             _check_forbidden_type(current, new_settings.type)
 
-            valid_es_types = TYPEMAP_AMCAT_TO_ES.get(new_settings.type)
-            if valid_es_types is None:
-                raise ValueError(f"Invalid field type: {new_settings.type}")
+            valid_es_types = list_allowed_elastic_types(new_settings.type)
             if current.elastic_type not in valid_es_types:
                 raise ValueError(
                     f"Field {field} has the elastic type {current.elastic_type}. A {new_settings.type} "
-                    "field can only have the following elastic types: {valid_es_types}."
+                    f"field can only have the following elastic types: {valid_es_types}."
                 )
             current_fields[field].type = new_settings.type
 
@@ -135,12 +135,22 @@ def update_fields(index: str, fields: dict[str, UpdateDocumentField]):
     _update_fields(index, current_fields)
 
 
-def list_fields(index: str) -> dict[str, DocumentField]:
+def list_fields(index: str, auto_repair: bool = True) -> dict[str, DocumentField]:
     """
-    Retrieve the fields settings for this index. Look for both the field settings in the system index,
-    and the field mappings in the index itself. If a field is not defined in the system index, return the
-    default settings for that field type and add it to the system index. This way, any elastic index can be imported
+    Retrieve the fields settings for this index.
+
+    If auto_repair is true, look for both (1) the field settings in the 'fields' system index,
+    and (2) the field mappings in the index itself. If these are not in sync, fix them.
     """
+    if auto_repair:
+        return list_and_repair_fields(index)
+    else:
+        return _list_fields(index)
+
+
+def list_and_repair_fields(
+    index: str,
+):
     fields: dict[str, DocumentField] = {}
 
     try:
@@ -148,19 +158,31 @@ def list_fields(index: str) -> dict[str, DocumentField]:
     except NotFoundError:
         system_index_fields = {}
 
+    # check if all fields in elastic are registered in the system index, and otherwise add them (update_system_index=True)
     update_system_index = False
-    for field, elastic_type in _get_es_index_fields(index):
-        type = TYPEMAP_ES_TO_AMCAT.get(elastic_type)
-
-        if type is None:
-            logging.warning(f"Field {field} in index {index} has unsupported elastic type {elastic_type}, skipping")
-            continue
-
-        if field not in system_index_fields:
+    inferred_fields = _infer_es_index_fields(index)
+    for name, inferred_field in inferred_fields.items():
+        if name not in system_index_fields:
             update_system_index = True
-            fields[field] = _get_default_field(type)
+            fields[name] = inferred_field
         else:
-            fields[field] = system_index_fields[field]
+            fields[name] = system_index_fields[name]
+
+            if fields[name].type != inferred_field.type or fields[name].elastic_type != inferred_field.elastic_type:
+                ## if for some reason the types in the system index and mapping don't match, update the system index using the
+                ## the inferred type (because we can't update the mapping)
+                update_system_index = True
+                fields[name].type = inferred_field.type
+                fields[name].elastic_type = inferred_field.elastic_type
+
+    # check if all fields in the system index have defined mappings in elastic, and otherwise update mapping (update_mapping=True)
+    update_mapping = False
+    for name in system_index_fields.keys():
+        if name not in inferred_fields.keys():
+            update_mapping = True
+
+    if update_mapping:
+        _update_index_fields_mappings(index, fields)
 
     if update_system_index:
         _update_fields(index, fields)
@@ -407,17 +429,21 @@ def _get_default_metareader(type: FieldType):
     return DocumentFieldMetareaderAccess(access="none")
 
 
-def _get_default_field(type: FieldType):
+def _get_default_field(type: FieldType, elastic_type: ElasticType | None = None):
     """
     Generate a field on the spot with default settings.
     Primary use case is importing existing indices with fields that are not registered in the system index.
     """
-    elastic_type = TYPEMAP_AMCAT_TO_ES.get(type)
     if elastic_type is None:
-        raise ValueError(
-            f"The default elastic type mapping for field type {type} is not defined (if this happens, blame and inform Kasper)"
-        )
-    return DocumentField(elastic_type=elastic_type[0], type=type, metareader=_get_default_metareader(type))
+        default_elastic_types = list_allowed_elastic_types(type)
+
+        if len(default_elastic_types) == 0:
+            raise ValueError(
+                f"The default elastic type mapping for field type {type} is not defined (if this happens, blame and inform Kasper)"
+            )
+        elastic_type = default_elastic_types[0]
+
+    return DocumentField(elastic_type=elastic_type, type=type, metareader=_get_default_metareader(type))
 
 
 def _standardize_createfields(fields: Mapping[str, FieldType | CreateDocumentField]) -> dict[str, CreateDocumentField]:
@@ -453,9 +479,62 @@ def _list_fields(index: str) -> dict[str, DocumentField]:
     return {doc["name"]: DocumentField.model_validate(doc["settings"]) for id, doc in docs}
 
 
-def _get_es_index_fields(index: str) -> Iterator[tuple[str, ElasticType]]:
+def _get_es_index_fields(index: str) -> Iterator[tuple[str, dict]]:
     r = es().indices.get_mapping(index=index)
-
     if "properties" in r[index]["mappings"]:
-        for k, v in r[index]["mappings"]["properties"].items():
-            yield k, v.get("type", "object")
+        for name, mapping in r[index]["mappings"]["properties"].items():
+            yield name, mapping
+
+
+def _infer_es_index_fields(index: str) -> dict[str, DocumentField]:
+    fields: dict[str, DocumentField] = {}
+    for name, mapping in _get_es_index_fields(index):
+        elastic_type = mapping.get("type", "object")
+        nested_props = mapping.get("properties", None)
+        type = infer_field_type(elastic_type, nested_props)
+        field = _get_default_field(type, elastic_type)
+        fields[name] = field
+    return fields
+
+
+def _update_index_fields_mappings(index: str, fields: dict[str, DocumentField]) -> None:
+    """
+    Update the elasticsearch index mapping for the given fields.
+    Note that we can only add new fields or change certain properties of existing fields.
+    We cannot change the type of an existing field.
+    """
+    mapping_updates: dict[str, dict[str, Any]] = {}
+    for field_name, field in fields.items():
+        mapping_updates[field_name] = {"type": field.elastic_type}
+
+        ## Multimedia fields are objects with specific properties
+        if field.type == "image":
+            mapping_updates[field_name]["properties"] = _create_multimedia_field_properties("image")
+        if field.type == "video":
+            mapping_updates[field_name]["properties"] = _create_multimedia_field_properties("video")
+        if field.type == "audio":
+            mapping_updates[field_name]["properties"] = _create_multimedia_field_properties("audio")
+
+        ## Date fields need a specific format
+        if field.type == "date":
+            mapping_updates[field_name]["format"] = "strict_date_optional_time"
+
+    es().indices.put_mapping(index=index, properties=mapping_updates)
+    _update_fields(index, fields)
+
+
+def _create_multimedia_field_properties(type: Literal["image", "video", "audio"]) -> dict[str, Any]:
+    properties: dict = {
+        "external": {"type": "boolean"},
+        "md5": {"type": "keyword"},
+    }
+    if type == "image":
+        properties["image_link"] = {"type": "keyword"}
+    elif type == "video":
+        properties["video_link"] = {"type": "keyword"}
+    elif type == "audio":
+        properties["audio_link"] = {"type": "keyword"}
+    else:
+        raise ValueError(f"Unknown multimedia type: {type}")
+
+    return properties

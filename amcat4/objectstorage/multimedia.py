@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 from amcat4.objectstorage.s3bucket import get_etag, bucket_name, get_index_bucket, presigned_post, presigned_get
 from amcat4.systemdata.fields import list_fields
 
@@ -10,6 +10,23 @@ ALLOWED_CONTENT_PREFIXES: dict[CONTENT_TYPE, str] = {
     "audio": "audio/",
     # "pdf": "application/pdf", # to be added later
 }
+
+
+def create_multimedia_field_properties(type: Literal["image", "video", "audio"]) -> dict[str, Any]:
+    properties: dict = {
+        "external": {"type": "boolean"},
+        "md5": {"type": "keyword"},
+    }
+    if type == "image":
+        properties["image_link"] = {"type": "keyword"}
+    elif type == "video":
+        properties["video_link"] = {"type": "keyword"}
+    elif type == "audio":
+        properties["audio_link"] = {"type": "keyword"}
+    else:
+        raise ValueError(f"Unknown multimedia type: {type}")
+
+    return properties
 
 
 def multimedia_key(ix: str, field: str, path: str) -> str:

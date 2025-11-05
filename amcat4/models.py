@@ -70,7 +70,6 @@ FieldType = Literal[
     "video",
     "audio",
     "tag",
-    "json",
     "url",
 ]
 ElasticType = Literal[
@@ -98,6 +97,23 @@ ElasticType = Literal[
     "dense_vector",
     "geo_point",
 ]
+
+
+class MultimediaBaseModel(BaseModel):
+    external: bool = False
+    md5: str | None = None
+
+
+class ImageField(MultimediaBaseModel):
+    image_link: str
+
+
+class VideoField(MultimediaBaseModel):
+    video_link: str
+
+
+class AudioField(MultimediaBaseModel):
+    audio_link: str
 
 
 class SnippetParams(BaseModel):
@@ -140,12 +156,15 @@ class DocumentField(BaseModel):
         return self
 
 
-class CreateDocumentField(BaseModel):
-    """Model for creating a field"""
-
+class DocumentFieldDefinition(BaseModel):
     type: FieldType
     elastic_type: ElasticType | None = None
-    identifier: bool = False
+    identifier: bool | None = None
+
+
+class CreateDocumentField(DocumentFieldDefinition):
+    """Model for creating a field"""
+
     metareader: DocumentFieldMetareaderAccess | None = None
     client_settings: dict[str, Any] | None = None
 

@@ -6,14 +6,14 @@ from typing import Any, Literal, Mapping
 import elasticsearch.helpers
 
 from amcat4.elastic import es
-from amcat4.models import CreateDocumentField, FieldType
+from amcat4.models import CreateDocumentField, DocumentFieldDefinition, FieldType
 from amcat4.systemdata.fields import coerce_type, create_fields, create_or_verify_tag_field, list_fields
 
 
 def create_or_update_documents(
     index: str,
     documents: list[dict[str, Any]],
-    fields: Mapping[str, FieldType | CreateDocumentField] | None = None,
+    fields: Mapping[str, FieldType | DocumentFieldDefinition] | None = None,
     op_type: Literal["index", "create", "update"] = "index",
     raise_on_error=False,
 ):
@@ -26,7 +26,14 @@ def create_or_update_documents(
     :param op_type: Whether to 'index' new documents (create or overwrite), 'create' (only create) or 'update' existing documents
     """
     if fields:
-        create_fields(index, fields)
+        create_fields_dict: dict[str, CreateDocumentField] = dict()
+        for k, v in fields.items():
+            if isinstance(v, str):
+                create_fields_dict[k] = CreateDocumentField(type=v)
+            else:
+                create_fields_dict[k] = CreateDocumentField(**v.model_dump())
+
+        create_fields(index, create_fields_dict)
 
     actions = list(upload_document_es_actions(index, documents, op_type))
     try:

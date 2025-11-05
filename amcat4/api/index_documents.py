@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
     CreateDocumentField,
+    DocumentFieldDefinition,
     FieldType,
     IndexId,
     Roles,
@@ -17,7 +18,6 @@ from amcat4.models import (
 )
 from amcat4.objectstorage import s3bucket
 from amcat4.projects.documents import delete_document, fetch_document, update_document, create_or_update_documents
-from amcat4.systemdata.fields import HTTPException_if_invalid_multimedia_field
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_index_documents = APIRouter(prefix="", tags=["documents"])
@@ -28,11 +28,10 @@ class UploadDocumentsBody(BaseModel):
     """Form to upload documents."""
 
     documents: list[dict[str, Any]] = Field(description="The documents to upload")
-    fields: dict[str, FieldType | CreateDocumentField] | None = Field(
+    fields: dict[str, FieldType | DocumentFieldDefinition] | None = Field(
         None,
-        description="If a field in documents does not yet exist, you can create it on the spot. "
-        "If you only need to specify the type, and use the default settings, "
-        "you can use the short form: {field: type}",
+        description="Field type definitions need to be explicitly defined before uploading documents. "
+        "By providing them here, they will be created when uploading the documents, and verified if they already exist. ",
     )
     operation: Literal["index", "update", "create"] = Field(
         "index",
