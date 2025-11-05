@@ -1,6 +1,7 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Header, Path, Query, Response, status
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
 from amcat4.models import Roles, User
@@ -14,27 +15,55 @@ app_multimedia = APIRouter(prefix="", tags=["multimedia"])
 ## TODO reimplement these endpoints
 
 
-@app_multimedia.get("/index/{ix}/multimedia/presigned_get")
-def presigned_get(ix: str, key: str, user: User = Depends(authenticated_user)):
-    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+# @app_multimedia.get("/index/{ix}/multimedia/presigned_get")
+# def presigned_get(ix: str, key: str, user: User = Depends(authenticated_user)):
+#     HTTPException_if_not_project_index_role(user, ix, Roles.READER)
 
-    try:
-        bucket = s3bucket.bucket_name(ix)
-        url = s3bucket.presigned_get(bucket, key)
-        obj = s3bucket.stat_s3_object(bucket, key)
-        return dict(url=url, content_type=(obj["ContentType"],), size=obj["ContentLength"])
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return None
+#     try:
+#         bucket = s3bucket.bucket_name(ix)
+#         url = s3bucket.presigned_get(bucket, key)
+#         obj = s3bucket.stat_s3_object(bucket, key)
+#         return dict(url=url, content_type=(obj["ContentType"],), size=obj["ContentLength"])
+#     except Exception as e:
+#         raise HTTPException(status_code=404, detail=str(e))
+#     return None
+
+class PresignUploadBody(BaseModel):
+    links: list[str] = Field(description="Links to multimedia objects")
+    field: str | None = Field(None, description="Optionally, only look in a specific field")
 
 
-@app_multimedia.get("/index/{ix}/multimedia/presigned_post/{field}")
-def presigned_post(ix: str, field: str, user: User = Depends(authenticated_user)):
+@app_multimedia.post(f"/index/{ix}/multimedia/presign_upload")
+def presigned_post(ix: str,
+    body
+    user: User = Depends(authenticated_user)):
+    """
+    Upload a list of multimedia file links (e.g., [folder/image.png, folder/subfolder/video.mp4]),
+    and receive presigned POST URLs for uploading the file to a document field that matches
+    the link.
+
+    The link must match the
+    link value in one of the multimedia fields in the index.
+    """
     HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    return presigned_multimedia_post(ix, field)
+
+    return presigned_multimedia_post(ix, doc, field, id)
 
 
-@app_multimedia.get("/index/{ix}/multimedia/list")
+@app_multimedia.post("/index/{ix}/multimedia/presign_upload/{doc}/{field}")
+def presigned_post(ix: str,
+    doc: str,
+    field: str,
+    user: User = Depends(authenticated_user)):
+    """
+    Get a presigned POST URL for uploading a multimedia object to a specific document field.
+    """
+    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+
+    return presigned_multimedia_post(ix, doc, field, id)
+
+
+@app_multimedia.get("/index/{ix}/multimedia")
 def list_multimedia(
     ix: str,
     n: int = Query(50, description="Number of objects to return"),
@@ -68,9 +97,10 @@ def list_multimedia(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app_multimedia.get("/index/{ix}/multimedia/fields/{field}/{path:path}")
+@app_multimedia.get("/index/{ix}/multimedia/{doc}/{field}/{id}")
 def multimedia_get_gatekeeper(
     ix: str,
+    doc: Annotated[str, Path(description="The document id containing the multimedia object")],
     field: Annotated[str, Path(description="The name of the elastic field containing the multimedia object")],
     path: Annotated[str, Path(description="Path to the multimedia object within the field")],
     v: str | None = Query(

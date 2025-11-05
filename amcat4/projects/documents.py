@@ -98,15 +98,19 @@ def fetch_document(index: str, doc_id: str, **kargs) -> dict:
     return es().get(index=index, id=doc_id, **kargs)["_source"]
 
 
-def update_document(index: str, doc_id: str, fields: dict, ignore_missing: bool = False):
+def update_document(
+    index: str, doc_id: str, fields: dict, ignore_missing: bool = False, get_source: bool | Mapping[str, Any] = False
+):
     """
     Update a single document.
 
     :param index: The name of the index
     :param doc_id: The document id (hash)
     :param fields: a {field: value} mapping of fields to update
+    :param ignore_missing: If True, create the document if it does not exist
+    :param get_source: If True, return the updated document source
     """
-    es().update(index=index, id=doc_id, doc=fields, doc_as_upsert=ignore_missing)  # type: ignore
+    es().update(index=index, id=doc_id, doc=fields, source=get_source, doc_as_upsert=ignore_missing)  # type: ignore
 
 
 def delete_document(index: str, doc_id: str, ignore_missing: bool = False):
