@@ -136,7 +136,6 @@ def test_multiple_index(client, index_docs, index, user):
         },
     )
     indices = f"{index},{index_docs}"
-    print(indices)
 
     r = post_json(
         client,

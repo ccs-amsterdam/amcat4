@@ -93,19 +93,38 @@ def _infer_special_object_type(properties: dict[str, Any] | None) -> FieldType |
     if properties is None:
         return None
 
-    ## required multimedia properties
-    if properties.get("external", "") != "boolean":
+    multimedia_type = infer_multimedia_object_type(properties)
+    if multimedia_type is not None:
+        return multimedia_type
+
+    return None
+
+
+def infer_multimedia_object_type(properties: dict[str, Any]) -> FieldType | None:
+    """
+    Given the properties of an object field, infer if it is a multimedia object field.
+    """
+    if not _property_type_is(properties, "size", "long"):
         return None
-    if properties.get("md5", "") != "keyword":
+    if not _property_type_is(properties, "etag", "keyword"):
+        return None
+    if not _property_type_is(properties, "content_type", "keyword"):
         return None
 
     ## we infer media type from the [type]_link field
-    multimedia_type: FieldType | None = None
-    if properties.get("image_link", "") == "keyword":
+    ## (which is why need to include the multimedia type in the key)
+    if _property_type_is(properties, "image_link", "keyword"):
         return "image"
-    if properties.get("video_link", "") == "keyword":
+    if _property_type_is(properties, "video_link", "keyword"):
         return "video"
-    if properties.get("audio_link", "") == "keyword":
+    if _property_type_is(properties, "audio_link", "keyword"):
         return "audio"
 
     return None
+
+
+def _property_type_is(properties: dict[str, Any], property_name: str, type: ElasticType) -> bool:
+    prop = properties.get(property_name)
+    if prop is None:
+        return False
+    return prop.get("type") == type

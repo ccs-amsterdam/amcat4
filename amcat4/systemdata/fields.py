@@ -23,22 +23,25 @@ from fastapi import HTTPException
 
 from amcat4.elastic import es
 from amcat4.models import (
+    AudioField,
     CreateDocumentField,
     ElasticType,
     DocumentField,
     DocumentFieldMetareaderAccess,
     FieldSpec,
     FieldType,
+    ImageField,
     IndexId,
     RoleRule,
     Roles,
     UpdateDocumentField,
     User,
+    VideoField,
 )
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, list_user_project_roles, role_is_at_least
 from amcat4.systemdata.versions import system_index, fields_index_id
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, es_get, index_scan
-from amcat4.systemdata.typemap import infer_field_type, list_allowed_elastic_types
+from amcat4.systemdata.typemap import infer_field_type, infer_multimedia_object_type, list_allowed_elastic_types
 
 
 class UpdateFieldMapping(TypedDict):
@@ -347,7 +350,7 @@ def coerce_type(value: Any, type: FieldType):
         return value.isoformat()
     if type == "tag" and isinstance(value, Iterable) and not isinstance(value, str):
         return [str(val) for val in value]
-    if type in ["text", "tag", "image", "video", "audio", "date"]:
+    if type in ["text", "tag", "date"]:
         return str(value)
     if type in ["boolean"]:
         return bool(value)
@@ -367,6 +370,14 @@ def coerce_type(value: Any, type: FieldType):
         return value
     if type in ["geo_point"]:
         return value
+
+    # for multimedia types, we expect an object with specific properties
+    if type in ["image"]:
+        return ImageField(image_link=value).model_dump()
+    if type in ["video"]:
+        return VideoField(video_link=value).model_dump()
+    if type in ["audio"]:
+        return AudioField(audio_link=value).model_dump()
 
     return value
 
@@ -525,8 +536,9 @@ def _update_index_fields_mappings(index: str, fields: dict[str, DocumentField]) 
 
 def _create_multimedia_field_properties(type: Literal["image", "video", "audio"]) -> dict[str, Any]:
     properties: dict = {
-        "external": {"type": "boolean"},
-        "md5": {"type": "keyword"},
+        "size": {"type": "long"},
+        "content_type": {"type": "keyword"},
+        "etag": {"type": "keyword"},
     }
     if type == "image":
         properties["image_link"] = {"type": "keyword"}
@@ -536,5 +548,8 @@ def _create_multimedia_field_properties(type: Literal["image", "video", "audio"]
         properties["audio_link"] = {"type": "keyword"}
     else:
         raise ValueError(f"Unknown multimedia type: {type}")
+
+    if not infer_multimedia_object_type(properties) == type:
+        raise ValueError("This error should only happen if someone tampered with the multimedia field mappings")
 
     return properties

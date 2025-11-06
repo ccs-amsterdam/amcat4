@@ -6,7 +6,11 @@ from pydantic import BaseModel, Field
 from amcat4.api.auth import authenticated_user
 from amcat4.models import Roles, User
 from amcat4.objectstorage import s3bucket
-from amcat4.objectstorage.multimedia import get_multimedia_etag, presigned_multimedia_get, presigned_multimedia_post
+from amcat4.objectstorage.multimedia import (
+    presigned_multimedia_get,
+    presigned_multimedia_post,
+    refresh_index_multimedia,
+)
 from amcat4.systemdata.fields import HTTPException_if_invalid_multimedia_field
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
@@ -28,48 +32,43 @@ app_multimedia = APIRouter(prefix="", tags=["multimedia"])
 #         raise HTTPException(status_code=404, detail=str(e))
 #     return None
 
+
 class PresignUploadBody(BaseModel):
     links: list[str] = Field(description="Links to multimedia objects")
     field: str | None = Field(None, description="Optionally, only look in a specific field")
 
 
-@app_multimedia.post(f"/index/{ix}/multimedia/presign_upload")
-def presigned_post(ix: str,
-    body
-    user: User = Depends(authenticated_user)):
+@app_multimedia.get("/index/{ix}/multimedia/upload/{doc}/{field}")
+def upload_multimedia(ix: str, doc: str, field: str, user: User = Depends(authenticated_user)):
     """
-    Upload a list of multimedia file links (e.g., [folder/image.png, folder/subfolder/video.mp4]),
-    and receive presigned POST URLs for uploading the file to a document field that matches
-    the link.
+    Upload a multimedia file. This is a three step process.
 
-    The link must match the
-    link value in one of the multimedia fields in the index.
-    """
-    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    - First you call this endpoint to get a presigned POST URL. The document/field is now marked as PENDING,
+    and you receive a URL and form data to upload the file to S3.
+    - You then upload the file to S3 using that URL and form data.
+    - Finally, you call the multimedia/refresh endpoint to update the document references.
 
-    return presigned_multimedia_post(ix, doc, field, id)
-
-
-@app_multimedia.post("/index/{ix}/multimedia/presign_upload/{doc}/{field}")
-def presigned_post(ix: str,
-    doc: str,
-    field: str,
-    user: User = Depends(authenticated_user)):
-    """
-    Get a presigned POST URL for uploading a multimedia object to a specific document field.
+    If you want to upload many files, you do not need to refresh after each upload, you can do it once at the end.
     """
     HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    return presigned_multimedia_post(ix, doc, field)
 
-    return presigned_multimedia_post(ix, doc, field, id)
+
+@app_multimedia.get("/index/{ix}/multimedia/refresh")
+def refresh_multimedia_field(ix: str, user: User = Depends(authenticated_user)):
+    """
+    After uploading multimedia files (with multimedia/presign_upload), call this endpoint to update
+    the references to these files in the elasticsearch documents.
+    """
+    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    return refresh_index_multimedia(ix)
 
 
 @app_multimedia.get("/index/{ix}/multimedia")
 def list_multimedia(
     ix: str,
     n: int = Query(50, description="Number of objects to return"),
-    prefix: str | None = Query(None, description="Only list objects with this prefix"),
     next_page_token: str | None = Query(None, description="Token to continue listing from"),
-    recursive: bool = Query(False, description="Whether to list objects recursively"),
     presigned_get: bool = Query(False, description="Whether to include presigned GET URLs"),
     user: User = Depends(authenticated_user),
 ):
@@ -77,35 +76,27 @@ def list_multimedia(
     List all multimedia objects in an index's S3 bucket.
     """
     HTTPException_if_not_project_index_role(user, ix, Roles.READER)
-    base_prefix = "multimedia/"
-
-    prefix = f"{base_prefix}{prefix or ''}"
-
-    recursive = str(recursive).lower() == "true"
     presigned_get = str(presigned_get).lower() == "true"
 
     if presigned_get is True and n > 50:
         raise ValueError("Cannot provide presigned_get for more than 50 objects at a time")
 
-    bucket = s3bucket.bucket_name(ix)
+    bucket = s3bucket.get_bucket("multimedia")
+    prefix = f"{ix}/"
+
     try:
-        res = s3bucket.list_s3_objects(bucket, prefix, n, next_page_token, recursive, presigned_get)
-        for item in res["items"]:
-            item["key"] = item["key"].removeprefix(base_prefix)
+        res = s3bucket.list_s3_objects(bucket, prefix, n, next_page_token, recursive=True, presigned=presigned_get)
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app_multimedia.get("/index/{ix}/multimedia/{doc}/{field}/{id}")
+@app_multimedia.get("/index/{ix}/multimedia/{doc}/{field}/{etag}")
 def multimedia_get_gatekeeper(
     ix: str,
     doc: Annotated[str, Path(description="The document id containing the multimedia object")],
     field: Annotated[str, Path(description="The name of the elastic field containing the multimedia object")],
-    path: Annotated[str, Path(description="Path to the multimedia object within the field")],
-    v: str | None = Query(
-        None, description="A unique version id (like the S3 etag) can be included in query for immutable caching."
-    ),
+    etag: Annotated[str, Path(description="etag of the multimedia object")],
     if_none_match: str | None = Header(None, alias="If-None-Match"),
     user: User = Depends(authenticated_user),
 ):
@@ -114,18 +105,17 @@ def multimedia_get_gatekeeper(
 
     Uses two caching flows:
     1. eTag based caching: if the client provides a fresh If-None-Match header, return 304
-    2. if a version (v) is provided in the query, we set an immutable caching policy
+    2. Try to set the browser cache to immutable, since the URL should be unique for the file version
     """
     # note that both caching flows ignore auth for speed. The only risk is that a user can see
     # a browser cached version of a file they are not allowed to see (anymore).
 
     # eTag flow
     if if_none_match:
-        current_etag = get_multimedia_etag(ix, field, path)
-        if if_none_match.strip('"') == current_etag:
-            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": f'"{current_etag}"'})
+        if if_none_match.strip('"') == etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": f'"{etag}"'})
 
     # presigned url flow with immutable caching if version (v) is given
     HTTPException_if_invalid_multimedia_field(ix, field, user)
-    presigned_url = presigned_multimedia_get(ix, field, path, immutable_cache=v is not None)
+    presigned_url = presigned_multimedia_get(ix, doc, field, immutable_cache=True)
     return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)

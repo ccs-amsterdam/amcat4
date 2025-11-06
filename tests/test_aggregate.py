@@ -32,7 +32,6 @@ def _y(y):
 def test_aggregate(index_docs):
     q = functools.partial(do_query, index_docs)
     assert q(Axis("cat")) == {"a": 3, "b": 1}
-    print(q(Axis(field="date")))
     assert q(Axis(field="date")) == {_d("2018-01-01"): 2, _d("2018-02-01"): 1, _d("2020-01-01"): 1}
 
 

@@ -1,4 +1,3 @@
-import sys
 from typing import Any, Tuple
 import pytest
 import responses
@@ -8,7 +7,7 @@ from amcat4 import api
 from amcat4.config import get_settings, AuthOptions
 from amcat4.elastic import es
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles
-from amcat4.objectstorage.s3bucket import delete_index_bucket, get_index_bucket, s3_enabled
+from amcat4.objectstorage.s3bucket import s3_enabled
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
 from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
@@ -115,7 +114,7 @@ def index():
     delete_project_index(index, ignore_missing=True)
     create_project_index(ProjectSettings(id=index, name="Unittest Index"))
     yield index
-    delete_project_index(index, ignore_missing=True)
+    # delete_project_index(index, ignore_missing=True)
 
 
 @pytest.fixture()
@@ -145,19 +144,18 @@ def clean_requests():
     clear_requests()
 
 
-@pytest.fixture()
-def index_with_bucket():
-    if not s3_enabled():
-        pytest.skip("S3 not configured, skipping tests needing object storage")
+# @pytest.fixture()
+# def index_with_multimedia():
+#     if not s3_enabled():
+#         pytest.skip("S3 not configured, skipping tests needing object storage")
 
-    index = "amcat4_unittest_index_bucket"
-    delete_project_index(index, ignore_missing=True)
-    delete_index_bucket(index, ignore_missing=True)
-    create_project_index(ProjectSettings(id=index, name="Unittest Index"))
-    get_index_bucket(index, create_if_needed=True)
-    yield index
-    # delete_project_index(index, ignore_missing=True)
-    # delete_index_bucket(index, ignore_missing=True)
+#     index = "amcat4_unittest_index_bucket"
+#     delete_project_index(index, ignore_missing=True)
+#     delete_project_multimedia(index)
+#     create_project_index(ProjectSettings(id=index, name="Unittest Index"))
+#     yield index
+#     # delete_project_index(index, ignore_missing=True)
+#     # delete_index_bucket(index, ignore_missing=True)
 
 
 def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType | CreateDocumentField] | None = None):

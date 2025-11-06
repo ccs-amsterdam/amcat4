@@ -26,7 +26,6 @@ def test_sort(index_many):
         res = query_documents(index_many, per_page=per_page, fields=[FieldSpec(name="id")], sort=key)
         assert res is not None
 
-        print(list(res.data))
         return [int(h["id"]) for h in res.data]
 
     assert q(["id"]) == [0, 1, 2, 3, 4]

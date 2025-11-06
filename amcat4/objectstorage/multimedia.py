@@ -1,7 +1,14 @@
-from typing import Any, Literal
-from amcat4.models import FilterSpec
-from amcat4.objectstorage.s3bucket import get_etag, bucket_name, get_index_bucket, presigned_post, presigned_get
-from amcat4.projects.query import query_documents
+from typing import Literal
+from amcat4.elastic import es
+from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, index_scan
+from amcat4.models import DocumentField
+from amcat4.objectstorage.s3bucket import (
+    delete_from_bucket,
+    get_object_head,
+    get_bucket,
+    presigned_post,
+    presigned_get,
+)
 from amcat4.systemdata.fields import list_fields
 
 
@@ -14,20 +21,23 @@ ALLOWED_CONTENT_PREFIXES: dict[CONTENT_TYPE, str] = {
 }
 
 
-def multimedia_key(ix: str, field: str, path: str) -> str:
-    return f"multimedia/{field}/{path}"
+def delete_project_multimedia(ix: str):
+    bucket = get_bucket("multimedia")
+    prefix = f"{ix}/"
+    delete_from_bucket(bucket, prefix=prefix)
 
 
-def get_multimedia_etag(ix: str, field: str, path: str) -> str:
-    bucket = bucket_name(ix)
-    key = multimedia_key(ix, field, path)
-    return get_etag(bucket, key)
+def multimedia_key(ix: str, doc: str, field: str) -> str:
+    return f"{ix}/{doc}/{field}"
 
 
-def presigned_multimedia_get(ix: str, field: str, path: str, immutable_cache: bool) -> str:
-    bucket = bucket_name(ix)
-    key = multimedia_key(ix, field, path)
+def presigned_multimedia_get(ix: str, doc: str, field: str, immutable_cache: bool) -> str:
+    bucket = get_bucket("multimedia")
+    key = multimedia_key(ix, doc, field)
 
+    ## Note that this does not mean that ix/doc/field is immutably cached.
+    ## it applies to the gatekeeper endpoint, which should only set immutable_cache
+    ## to TRUE if the url includes the Etag (cache buster).
     if immutable_cache:
         cache = "public, max-age=31536000, immutable"
     else:
@@ -36,10 +46,10 @@ def presigned_multimedia_get(ix: str, field: str, path: str, immutable_cache: bo
     return presigned_get(bucket, key, ResponseCacheControl=cache)
 
 
-def presigned_multimedia_post(ix: str, doc: str, field: str, id: str) -> dict:
-    bucket = get_index_bucket(ix)
+def presigned_multimedia_post(ix: str, doc: str, field: str, redirect: str = "") -> dict:
+    bucket = get_bucket("multimedia")
 
-    docfield = list_fields(ix).get(field)
+    docfield = list_fields(ix, auto_repair=False).get(field)
     if not docfield:
         raise ValueError(f"Field {field} does not exist in index {ix}")
 
@@ -47,41 +57,35 @@ def presigned_multimedia_post(ix: str, doc: str, field: str, id: str) -> dict:
     if type not in ALLOWED_CONTENT_PREFIXES:
         raise ValueError(f"Field {field} is of type {type}, which is not a valid multimedia type")
 
-    key_prefix = f"multimedia/{field}/"
+    key = multimedia_key(ix, doc, field)
     type_prefix = ALLOWED_CONTENT_PREFIXES[type]
-    url, form_data = presigned_post(bucket, key_prefix=key_prefix, type_prefix=type_prefix)
-    return dict(url=url, form_data=form_data, key_prefix=key_prefix, type_prefix=type_prefix)
+
+    es().update(index=ix, id=doc, doc={field: {"etag": "PENDING"}}, refresh=True)
+    url, form_data = presigned_post(bucket, key=key, type_prefix=type_prefix, redirect=redirect)
+    return dict(url=url, form_data=form_data, type_prefix=type_prefix)
 
 
-def match_presigned_multimedia_post(ix: str, links: list[str], fields: list[str] | None, max_n=100) -> dict:
-    bucket = get_index_bucket(ix)
+def refresh_index_multimedia(ix: str):
+    multimedia_fields: dict[str, DocumentField] = {}
+    for name, field in list_fields(ix).items():
+        if field.type in ALLOWED_CONTENT_PREFIXES:
+            multimedia_fields[name] = field
 
-    field_prefixes = {}
-    for fieldname, field in list_fields(ix).items():
-        if fields is not None and fieldname not in fields:
-            continue
-        if field.type not in ALLOWED_CONTENT_PREFIXES:
-            continue
-        field_prefixes[fieldname] = ALLOWED_CONTENT_PREFIXES[field.type]
+    for name, field in multimedia_fields.items():
+        refresh_field_multimedia(ix, name)
 
-    linkfilter = FilterSpec.model_validate({"values": links})
-    filters = {fieldname: linkfilter for fieldname in field_prefixes.keys()}
 
-    docs = query_documents(
-        index=ix,
-        filters=filters,
-        per_page=max_n,
-    )
+def refresh_field_multimedia(ix: str, field_name: str):
+    bucket = get_bucket("multimedia")
+    query = {"term": {f"{field_name}.etag": "PENDING"}}
 
-    ## TODO:
-    # rename links to filenames.
-    # return list of filenames with corresponding presigned urls and form data.
-    # maybe do do this per field, because query
+    def bulk_refresh():
+        for id, doc in index_scan(ix, query=query, source=["id"]):
+            key = multimedia_key(ix, id, field_name)
+            response = get_object_head(bucket, key)
+            if response:
+                new_etag = response["ETag"].strip('"')
+                new_size = response["ContentLength"]
+                yield BulkInsertAction(index=ix, id=id, doc={field_name: {"etag": new_etag, "size": new_size}})
 
-    # for doc in docs.data:
-    #     for fieldname in field_prefixes.keys():
-    #         if fieldname in doc and doc[fieldname] in links:
-    #             key_prefix = f"multimedia/{fieldname}/"
-    #             type_prefix = field_prefixes[fieldname]
-    #             url, form_data = presigned_post(bucket, key_prefix=key_prefix, type_prefix=type_prefix)
-    #             return dict(url=url, form_data=form_data, key_prefix=key_prefix, type_prefix=type_prefix)
+    es_bulk_upsert(bulk_refresh())

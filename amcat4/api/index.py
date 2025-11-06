@@ -109,7 +109,6 @@ def index_list(
     """
     if show_all:
         HTTPException_if_not_server_role(user, Roles.ADMIN)
-    print(show_all)
 
     ix_list: list = []
     for ix, role in list_user_project_indices(user, show_all=show_all):

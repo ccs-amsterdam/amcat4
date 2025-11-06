@@ -3,7 +3,8 @@ from typing import Iterable, Mapping
 
 from amcat4.elastic import es
 from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, Roles, RoleRule, User
-from amcat4.objectstorage.s3bucket import delete_index_bucket, s3_enabled
+from amcat4.objectstorage.multimedia import delete_project_multimedia
+from amcat4.objectstorage.s3bucket import s3_enabled
 from amcat4.systemdata.fields import create_fields, list_fields
 
 from amcat4.systemdata.roles import list_user_project_roles
@@ -88,8 +89,9 @@ def delete_project_index(index_id: str, ignore_missing: bool = False):
 
     # important, because otherwise new project with same name will inherit old bucket
     # (buckets are always optional)
+    # TODO: should we actually use unique index ids?
     if s3_enabled():
-        delete_index_bucket(index_id, True)
+        delete_project_multimedia(index_id)
 
     delete_project_settings(index_id, ignore_missing)
 

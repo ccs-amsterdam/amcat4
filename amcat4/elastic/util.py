@@ -72,12 +72,12 @@ def es_bulk_action(
     because this automatically batches both the scan and the insert.
 
     def gen():
-        for id, doc in batched_index_scan("my_index"):
+        for id, doc in index_scan("my_index"):
             if doc.get("somefield") == "somevalue":
                 yield BulkInsertAction(index="another_index", id=id, doc=doc)
             if doc.get("otherfield") == "othervalue":
                 yield BulkInsertAction(index="yet_another_index", id=id, doc=doc)
-    bulk_action(gen())
+    es_bulk_upsert(gen())
 
     about op_type:
         - use "index" to create or overwrite documents

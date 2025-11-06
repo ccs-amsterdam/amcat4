@@ -29,7 +29,6 @@ def test_upload_retrieve_document(index):
     test = create_or_update_documents(
         index, [a], fields={"text": "text", "title": "text", "date": "date", "term_tfidf": "object"}
     )
-    print(test)
     refresh_index(index)
     d = fetch_document(index, "test")
     assert d["title"] == a["title"]

@@ -75,40 +75,31 @@ def _connect_s3() -> Optional[S3Client]:
     )
 
 
-def bucket_name(index: str) -> str:
-    indexname = index.replace("_", "-")
+def get_bucket(bucket: Literal["multimedia", "backup"]) -> str:
+    """
+    Get one of the standard buckets, taking into account whether we are using a test database.
+    """
     use_test_db = get_settings().use_test_db
     if use_test_db:
-        return f"test-index-{indexname}"
+        testbucket = f"test-{bucket}"
+        return _create_or_get_bucket_name(testbucket)
     else:
-        return f"index-{indexname}"
+        return _create_or_get_bucket_name(bucket)
 
 
-def get_index_bucket(index: str, create_if_needed=True) -> str:
-    """
-    Get the bucket name for this index. If create_if_needed is True, create the bucket if it doesn't exist.
-    Returns the bucket name, or "" if it doesn't exist and create_if_needed is False.
-    """
+@functools.lru_cache()
+def _create_or_get_bucket_name(bucket: str) -> str:
     s3 = get_s3_client()
-
-    bucket = bucket_name(index)
 
     try:
         s3.head_bucket(Bucket=bucket)
     except ClientError as e:
         error = e.response.get("Error", {})
         if error.get("Code") in ("404", "NoSuchBucket"):
-            if not create_if_needed:
-                return ""
             s3.create_bucket(Bucket=bucket)
         else:
             raise
     return bucket
-
-
-def delete_index_bucket(index: str, ignore_missing=True):
-    bucket = bucket_name(index)
-    delete_bucket(bucket, ignore_missing=ignore_missing)
 
 
 def list_s3_objects(
@@ -146,7 +137,7 @@ def list_s3_objects(
                         "size": content.get("Size"),
                         "last_modified": content.get("LastModified"),
                         "presigned_get": presigned and presigned_get(bucket, content["Key"]) or None,
-                        "etag": content.get("ETag").strip('"') if content.get("ETag") else None,
+                        "etag": content.get("ETag", "").strip('"') if content.get("ETag") else None,
                     }
                 )
 
@@ -189,24 +180,17 @@ def get_s3_object(bucket: str, key: str) -> bytes:
     return res["Body"].read()
 
 
-def delete_bucket(bucket: str, ignore_missing=True):
+def delete_from_bucket(bucket: str, prefix: str):
     s3 = get_s3_client()
 
-    try:
-        paginator = s3.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=bucket):
-            if "Contents" in page:
-                to_delete: list[ObjectIdentifierTypeDef] = [
-                    {"Key": obj.get("Key", "[never]")} for obj in page["Contents"] if obj.get("Key") is not None
-                ]
-                if to_delete:
-                    s3.delete_objects(Bucket=bucket, Delete={"Objects": to_delete})
-
-        s3.delete_bucket(Bucket=bucket)
-    except Exception as e:
-        if ignore_missing and "NoSuchBucket" in str(e):
-            return
-        raise
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        if "Contents" in page:
+            to_delete: list[ObjectIdentifierTypeDef] = [
+                {"Key": obj.get("Key", "[never]")} for obj in page["Contents"] if obj.get("Key") is not None
+            ]
+            if to_delete:
+                s3.delete_objects(Bucket=bucket, Delete={"Objects": to_delete})
 
 
 def add_s3_object(bucket: str, key: str, data: bytes):
@@ -215,19 +199,23 @@ def add_s3_object(bucket: str, key: str, data: bytes):
 
 
 def presigned_post(
-    bucket: str, key_prefix: str = "", type_prefix: str = "", days_valid: int = 1
+    bucket: str, key: str, type_prefix: str = "", redirect: str = "", days_valid: int = 1
 ) -> tuple[str, dict[str, str]]:
     s3 = get_s3_client()
 
     conditions: list[Any] = [{"bucket": bucket}]
+    fields: dict[str, str] = {}
 
     if type_prefix:
         conditions.append(["starts-with", "$Content-Type", type_prefix])
+    if redirect:
+        conditions.append({"success_action_redirect": redirect})
+        fields["success_action_redirect"] = redirect
 
     pp = s3.generate_presigned_post(
         Bucket=bucket,
-        Key=f"{key_prefix}${{filename}}",
-        Fields={"success_action_status": "206"},
+        Key=key,
+        Fields=fields,
         Conditions=conditions,
         ExpiresIn=days_valid * 24 * 3600,
     )
@@ -241,7 +229,12 @@ def presigned_get(bucket: str, key: str, hours_valid=24, **kwargs) -> str:
     return s3.generate_presigned_url("get_object", Params=params, ExpiresIn=hours_valid * 3600)
 
 
-def get_etag(bucket: str, key: str) -> str:
+def get_object_head(bucket: str, key: str, ignore_missing=False) -> HeadObjectOutputTypeDef | None:
     s3 = get_s3_client()
-    res = s3.head_object(Bucket=bucket, Key=key)
-    return res["ETag"].strip('"')
+    try:
+        res = s3.head_object(Bucket=bucket, Key=key)
+        return res
+    except Exception as e:
+        if ignore_missing and "NotFound" in str(e):
+            return None
+        raise

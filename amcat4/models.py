@@ -1,5 +1,6 @@
 from enum import IntEnum
 from datetime import datetime, UTC
+from tarfile import LENGTH_LINK
 from pydantic import BaseModel, EmailStr, model_validator, Field
 from typing import Annotated, Any, Literal, Union
 from typing_extensions import Self
@@ -97,23 +98,6 @@ ElasticType = Literal[
     "dense_vector",
     "geo_point",
 ]
-
-
-class MultimediaBaseModel(BaseModel):
-    external: bool = False
-    md5: str | None = None
-
-
-class ImageField(MultimediaBaseModel):
-    image_link: str
-
-
-class VideoField(MultimediaBaseModel):
-    video_link: str
-
-
-class AudioField(MultimediaBaseModel):
-    audio_link: str
 
 
 class SnippetParams(BaseModel):
@@ -300,3 +284,24 @@ class ServerSettings(BaseModel):
     icon: ImageObject | None = None
     information_links: list[LinksGroup] | None = None
     welcome_buttons: list[Links] | None = None
+
+
+####################### MULTIMEDIA FIELD SPECIFICATIONS #########################
+
+
+class MultimediaBaseModel(BaseModel):
+    size: int | None = None
+    content_type: str | None = None
+    etag: str | None = None
+
+
+class ImageField(MultimediaBaseModel):
+    image_link: str
+
+
+class VideoField(MultimediaBaseModel):
+    video_link: str
+
+
+class AudioField(MultimediaBaseModel):
+    audio_link: str

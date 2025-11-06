@@ -30,7 +30,13 @@ services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
     container_name: seaweedfs01
-    command: ["server", "-s3", "-s3.config=/etc/seaweedfs/s3config.json"]
+    command: [
+        "server",
+        "-s3",
+        "-s3.config=/etc/seaweedfs/s3config.json",
+        "-s3.allowEmptyFolder=false",
+        # "-s3.dirCleanupThresholdMB=0",
+      ]
     volumes:
       - seaweedfs_data:/data
       - ./s3config.json:/etc/seaweedfs/s3config.json:ro
