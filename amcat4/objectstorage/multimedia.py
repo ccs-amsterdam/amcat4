@@ -1,16 +1,18 @@
 from typing import Literal
+
+from mypy_boto3_s3.type_defs import HeadObjectOutputTypeDef
+
 from amcat4.elastic import es
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, index_scan
 from amcat4.models import DocumentField
 from amcat4.objectstorage.s3bucket import (
     delete_from_bucket,
-    get_object_head,
     get_bucket,
-    presigned_post,
+    get_object_head,
     presigned_get,
+    presigned_post,
 )
 from amcat4.systemdata.fields import list_fields
-
 
 CONTENT_TYPE = Literal["image", "video", "audio"]
 ALLOWED_CONTENT_PREFIXES: dict[CONTENT_TYPE, str] = {
@@ -19,6 +21,12 @@ ALLOWED_CONTENT_PREFIXES: dict[CONTENT_TYPE, str] = {
     "audio": "audio/",
     # "pdf": "application/pdf", # to be added later
 }
+
+
+def get_multimedia_meta(ix: str, doc: str, field: str) -> HeadObjectOutputTypeDef | None:
+    bucket = get_bucket("multimedia")
+    key = multimedia_key(ix, doc, field)
+    return get_object_head(bucket, key)
 
 
 def delete_project_multimedia(ix: str):
@@ -61,6 +69,7 @@ def presigned_multimedia_post(ix: str, doc: str, field: str, redirect: str = "")
     type_prefix = ALLOWED_CONTENT_PREFIXES[type]
 
     es().update(index=ix, id=doc, doc={field: {"etag": "PENDING"}}, refresh=True)
+
     url, form_data = presigned_post(bucket, key=key, type_prefix=type_prefix, redirect=redirect)
     return dict(url=url, form_data=form_data, type_prefix=type_prefix)
 
@@ -89,3 +98,7 @@ def refresh_field_multimedia(ix: str, field_name: str):
                 yield BulkInsertAction(index=ix, id=id, doc={field_name: {"etag": new_etag, "size": new_size}})
 
     es_bulk_upsert(bulk_refresh())
+
+
+def update_multimedia_field(ix: str, doc: str, field: str, etag: str, size: int):
+    es().update(index=ix, id=doc, doc={field: {"etag": etag, "size": size}}, refresh=True)

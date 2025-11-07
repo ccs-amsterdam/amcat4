@@ -1,7 +1,9 @@
 import time
-from fastapi.testclient import TestClient
+
 import pytest
 import requests
+from fastapi.testclient import TestClient
+
 from amcat4.elastic.util import index_scan
 from amcat4.models import Roles
 from amcat4.objectstorage import s3bucket
@@ -73,7 +75,13 @@ def test_presigned(client, index, user):
 
     ## works with correct (unchanged) key and content type
     type = post["type_prefix"] + "png"
-    assert requests.post(url=post["url"], data={**post["form_data"], "Content-Type": type}, files=file).status_code == 204
+    res = requests.post(url=post["url"], data={**post["form_data"], "Content-Type": type}, files=file, allow_redirects=False)
+
+    ## When successfull, S3 responds with a 303 redirect to the multimedia/{doc}/{field}/refresh endpoint,
+    ## which we need to do manually (ughh) because this request goes to the testing client
+    assert res.status_code == 303
+    redirect = res.headers["Location"]
+    client.get(redirect).raise_for_status()
 
     assert _get_names(client, index, user) == {"amcat4_unittest_index/doc1/image_field"}
 
