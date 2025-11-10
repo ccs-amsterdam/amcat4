@@ -3,8 +3,8 @@
 # types (e.g., tag and keyword, image_url and wildcard)
 # (this is relevant if we are importing an index)
 from typing import Any
-from amcat4.models import ElasticType, FieldType
 
+from amcat4.models import ElasticType, FieldType
 
 # This needs to be a one on one mapping. It should be
 # possible to uniquely determine the AmCAT type from the elastic type.
@@ -106,7 +106,7 @@ def infer_multimedia_object_type(properties: dict[str, Any]) -> FieldType | None
     """
     if not _property_type_is(properties, "size", "long"):
         return None
-    if not _property_type_is(properties, "etag", "keyword"):
+    if not _property_type_is(properties, "hash", "keyword"):
         return None
     if not _property_type_is(properties, "content_type", "keyword"):
         return None

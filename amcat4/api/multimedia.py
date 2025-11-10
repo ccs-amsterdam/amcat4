@@ -1,6 +1,7 @@
+import hashlib
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Path, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
@@ -12,7 +13,6 @@ from amcat4.objectstorage.multimedia import (
     get_multimedia_meta,
     presigned_multimedia_get,
     presigned_multimedia_post,
-    refresh_index_multimedia,
     update_multimedia_field,
 )
 from amcat4.projects.documents import fetch_document
@@ -20,6 +20,18 @@ from amcat4.systemdata.fields import HTTPException_if_invalid_multimedia_field
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_multimedia = APIRouter(prefix="", tags=["multimedia"])
+
+
+class UploadPostBody(BaseModel):
+    document: str = Field(description="The document id to upload the multimedia object for")
+    field: str = Field(description="The name of the elastic field to upload the multimedia object to")
+    size: int = Field(description="The exact (!) size of the multimedia file in bytes")
+    hash: str = Field(
+        max_length=32,
+        pattern="^[a-fA-F0-9]{32}$",
+        description="An md5 hash of the file in hexadecimal format. Used to prevent double uploads.",
+    )
+
 
 ## TODO:
 #
@@ -49,51 +61,32 @@ class PresignUploadBody(BaseModel):
     field: str | None = Field(None, description="Optionally, only look in a specific field")
 
 
-@app_multimedia.get("/index/{ix}/multimedia/upload/{doc}/{field}")
-def upload_multimedia(ix: str, doc: str, field: str, user: User = Depends(authenticated_user), request=Request):
+@app_multimedia.post(f"/index/{ix}/multimedia/upload")
+def upload_multimedia(
+    ix: str,
+    body: Annotated[UploadPostBody, Body(...)],
+    user: User = Depends(authenticated_user),
+    request=Request,
+):
     """
-    Upload a multimedia file. This is a three step process.
+    Upload a multimedia file. This is a two step process.
 
-    - First you call this endpoint to get a presigned POST URL. The document/field is now marked as PENDING,
-    and you receive a URL and form data to upload the file to S3.
-    - You then upload the file to S3 using that URL and form data.
-    - Finally, you call the multimedia/refresh endpoint to update the document references.
+    - First you call this endpoint to register the upload for a specific document field with a given size.
+    - You then receive a presigned POST url that you can use to upload the file.
 
-    If you want to upload many files, you do not need to refresh after each upload, you can do it once at the end.
-    """
-    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-
-    # base_url = str(request.base_url).rstrip("/")
-    # redirect_path = f"/index/{ix}/multimedia/{doc}/{field}/refresh"
-    # redirect_url = f"{base_url}{redirect_path}"
-
-    redirect_url = f"/index/{ix}/multimedia/{doc}/{field}/refresh"
-    return presigned_multimedia_post(ix, doc, field, redirect=redirect_url)
-
-
-@app_multimedia.get("/index/{ix}/multimedia/{doc}/{field}/refresh")
-def refresh_multimedia_field(ix: str, doc: str, field: str) -> None:
-    """
-    This endpoint is automatically redirected to after uploading a multimedia file.
-    It updates the references to the uploaded file in the elasticsearch documents.
-
-    This is a public endpoint so that S3 can call it.
-    """
-    print("hieeer")
-    meta = get_multimedia_meta(ix, doc, field)
-    if meta:
-        update = {field: {"etag": meta["ETag"], "size": meta["ContentLength"]}}
-        es_upsert(ix, doc, update, refresh=True)
-
-
-@app_multimedia.get("/index/{ix}/multimedia/refresh")
-def refresh_multimedia(ix: str, user: User = Depends(authenticated_user)):
-    """
-    After uploading multimedia files (with multimedia/presign_upload), call this endpoint to update
-    the references to these files in the elasticsearch documents.
+    If a file already exists, it will be overwritten.
     """
     HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    return refresh_index_multimedia(ix)
+
+    current = fetch_document(ix, body.document, source_includes=["field"]).get(body.field)
+    if current and current.get("hash") == body.hash and current.get("size") == body.size:
+        current_s3 = get_multimedia_meta(ix, body.document, body.field)
+        if current_s3:
+            raise HTTPException(status_code=409, detail="Multimedia file already exists")
+    else:
+        update_multimedia_field(ix, body.document, body.field, body.hash, body.size)
+
+    return presigned_multimedia_post(ix, body.document, body.field, body.size)
 
 
 @app_multimedia.get("/index/{ix}/multimedia")
@@ -128,8 +121,12 @@ def multimedia_get_gatekeeper(
     ix: str,
     doc: Annotated[str, Path(description="The document id containing the multimedia object")],
     field: Annotated[str, Path(description="The name of the elastic field containing the multimedia object")],
-    etag: Annotated[str, Path(description="etag of the multimedia object")],
-    if_none_match: str | None = Header(None, alias="If-None-Match"),
+    cache: Annotated[
+        str | None,
+        Query(
+            description="Optional unique id for browser caching. If provided, the response will be cached immutably.",
+        ),
+    ],
     user: User = Depends(authenticated_user),
 ):
     """
@@ -137,22 +134,18 @@ def multimedia_get_gatekeeper(
     """
     HTTPException_if_invalid_multimedia_field(ix, field, user)
 
-    # TODO: discuss whether we need this.
-    # - We only use the etag for cache busting, so we don't actually care if an invalid etag was used
-    # - THe update_multimedia_field is just a safety net in case an s3 update was not properly registered,
-    #   but if this is a real issue we need a better way to ensure consistency anyway.
-    meta = get_multimedia_meta(ix, doc, field)
-    if not meta:
-        raise HTTPException(status_code=404, detail="Multimedia object not found")
-    current_etag = meta["ETag"].strip('"')
-    if not etag == current_etag:
-        size = meta["ContentLength"]
-        update_multimedia_field(ix, doc, field, current_etag, size)
-        return RedirectResponse(
-            url=f"/index/{ix}/multimedia/{doc}/{field}/{current_etag}",
-            status_code=status.HTTP_308_PERMANENT_REDIRECT,
-            headers={"Cache-Control": "public, max-age=31536000"},
-        )
+    # meta = get_multimedia_meta(ix, doc, field)
+    # if not meta:
+    #     raise HTTPException(status_code=404, detail="Multimedia object not found")
+    # current_etag = meta["ETag"].strip('"')
+    # if not hash == current_etag:
+    #     size = meta["ContentLength"]
+    #     update_multimedia_field(ix, doc, field, current_etag, size)
+    #     return RedirectResponse(
+    #         url=f"/index/{ix}/multimedia/{doc}/{field}/{current_etag}",
+    #         status_code=status.HTTP_308_PERMANENT_REDIRECT,
+    #         headers={"Cache-Control": "public, max-age=31536000"},
+    #     )
 
-    presigned_url = presigned_multimedia_get(ix, doc, field, immutable_cache=True)
+    presigned_url = presigned_multimedia_get(ix, doc, field, immutable_cache=id is not None)
     return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)

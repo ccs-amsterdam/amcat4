@@ -1,8 +1,9 @@
+from datetime import UTC, datetime
 from enum import IntEnum
-from datetime import datetime, UTC
 from tarfile import LENGTH_LINK
-from pydantic import BaseModel, EmailStr, model_validator, Field
 from typing import Annotated, Any, Literal, Union
+
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing_extensions import Self
 
 
@@ -292,7 +293,7 @@ class ServerSettings(BaseModel):
 class MultimediaBaseModel(BaseModel):
     size: int | None = None
     content_type: str | None = None
-    etag: str | None = None
+    hash: str | None = None
 
 
 class ImageField(MultimediaBaseModel):

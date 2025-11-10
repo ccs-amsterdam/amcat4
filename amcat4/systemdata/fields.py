@@ -22,12 +22,13 @@ from elasticsearch import NotFoundError
 from fastapi import HTTPException
 
 from amcat4.elastic import es
+from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, es_get, index_scan
 from amcat4.models import (
     AudioField,
     CreateDocumentField,
-    ElasticType,
     DocumentField,
     DocumentFieldMetareaderAccess,
+    ElasticType,
     FieldSpec,
     FieldType,
     ImageField,
@@ -39,9 +40,8 @@ from amcat4.models import (
     VideoField,
 )
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, list_user_project_roles, role_is_at_least
-from amcat4.systemdata.versions import system_index, fields_index_id
-from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, es_get, index_scan
 from amcat4.systemdata.typemap import infer_field_type, infer_multimedia_object_type, list_allowed_elastic_types
+from amcat4.systemdata.versions import fields_index_id, system_index
 
 
 class UpdateFieldMapping(TypedDict):
@@ -538,7 +538,7 @@ def _create_multimedia_field_properties(type: Literal["image", "video", "audio"]
     properties: dict = {
         "size": {"type": "long"},
         "content_type": {"type": "keyword"},
-        "etag": {"type": "keyword"},
+        "hash": {"type": "keyword"},
     }
     if type == "image":
         properties["image_link"] = {"type": "keyword"}

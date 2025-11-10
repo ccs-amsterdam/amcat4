@@ -2,21 +2,21 @@
 Interact with S3-compatible object storage (e.g., AWS S3, MinIO, SeaweedFS, Cloudflare R2).
 """
 
-from datetime import datetime
 import functools
+from datetime import datetime
 from typing import Any, Literal, Optional, TypedDict
-
-from mypy_boto3_s3.type_defs import (
-    HeadObjectOutputTypeDef,
-    ListObjectsV2RequestTypeDef,
-    ObjectIdentifierTypeDef,
-)
-from amcat4.config import get_settings
 
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
 from mypy_boto3_s3.client import S3Client
+from mypy_boto3_s3.type_defs import (
+    HeadObjectOutputTypeDef,
+    ListObjectsV2RequestTypeDef,
+    ObjectIdentifierTypeDef,
+)
+
+from amcat4.config import get_settings
 
 ## TODO: think about best way to sync elastic and s3 storage.
 ## For security it would also be better if access to s3 objects
@@ -199,7 +199,7 @@ def add_s3_object(bucket: str, key: str, data: bytes):
 
 
 def presigned_post(
-    bucket: str, key: str, type_prefix: str = "", redirect: str = "", days_valid: int = 1
+    bucket: str, key: str, type_prefix: str = "", size: int | None = None, redirect: str = "", days_valid: int = 1
 ) -> tuple[str, dict[str, str]]:
     s3 = get_s3_client()
 
@@ -208,6 +208,8 @@ def presigned_post(
 
     if type_prefix:
         conditions.append(["starts-with", "$Content-Type", type_prefix])
+    if size is not None:
+        conditions.append(["content-length-range", 0, size])
     if redirect:
         conditions.append({"success_action_redirect": redirect})
         fields["success_action_redirect"] = redirect

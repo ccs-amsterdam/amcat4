@@ -1,37 +1,15 @@
-from functools import wraps
 import hashlib
 import json
 import logging
-from typing import Any, TypeVar, Callable
+from functools import wraps
+from typing import Any, Callable, TypeVar
+
 from fastapi import Request, Response
 
 # Not implemented yet. Just thinking aloud here and learning about caching strategies.
 
 F = TypeVar("F", bound=Callable)
 ResponseBody = TypeVar("ResponseBody")
-
-
-def static_browser_cache(func: Callable) -> Callable:
-    """
-    Decorator to set a highly aggressive, immutable Cache-Control header
-    on the response for static or immutable content. This indicates to browsers
-    and intermediate caches that the content can be cached for a long time (1 year)
-    and will not change, allowing for optimal caching behavior.
-
-    Main use case for AmCAT would be for static assets like project thumbnails.
-    This should then be an endpoint where each static asset has a unique URL
-    (so change the id when updating the asset).
-    """
-    max_age_seconds = 60 * 60 * 24 * 365
-    cache_header = f"public, max-age={max_age_seconds}, immutable"
-
-    @wraps(func)
-    async def wrapper(*args, response: Response, **kwargs) -> Any:
-        result = await func(*args, response=response, **kwargs)
-        response.headers["Cache-Control"] = cache_header
-        return result
-
-    return wrapper
 
 
 def hashed_browser_cache(func: Callable) -> Callable:
