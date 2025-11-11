@@ -4,7 +4,7 @@
 # (this is relevant if we are importing an index)
 from typing import Any
 
-from amcat4.models import ElasticType, FieldType
+from amcat4.models import ElasticType, FieldType, MultimediaElasticMapping
 
 # This needs to be a one on one mapping. It should be
 # possible to uniquely determine the AmCAT type from the elastic type.
@@ -74,57 +74,8 @@ def infer_field_type(elastic_type: ElasticType, properties: dict[str, Any] | Non
     Infer the amcat field type from the elastic type and (if applicable) properties (e.g.
     if elastic type is object)
     """
-    if elastic_type == "object":
-        special_type = _infer_special_object_type(properties)
-        if special_type is not None:
-            return special_type
 
     type = _TYPEMAP_ES_TO_AMCAT.get(elastic_type)
     if type is None:
         raise ValueError(f"Cannot infer amcat field type from elastic type {elastic_type}")
     return type
-
-
-def _infer_special_object_type(properties: dict[str, Any] | None) -> FieldType | None:
-    """
-    For object types, look at the properties to see if it is a special object type.
-    (currently only special objects are multimedia objects)
-    """
-    if properties is None:
-        return None
-
-    multimedia_type = infer_multimedia_object_type(properties)
-    if multimedia_type is not None:
-        return multimedia_type
-
-    return None
-
-
-def infer_multimedia_object_type(properties: dict[str, Any]) -> FieldType | None:
-    """
-    Given the properties of an object field, infer if it is a multimedia object field.
-    """
-    if not _property_type_is(properties, "size", "long"):
-        return None
-    if not _property_type_is(properties, "hash", "keyword"):
-        return None
-    if not _property_type_is(properties, "content_type", "keyword"):
-        return None
-
-    ## we infer media type from the [type]_link field
-    ## (which is why need to include the multimedia type in the key)
-    if _property_type_is(properties, "image_link", "keyword"):
-        return "image"
-    if _property_type_is(properties, "video_link", "keyword"):
-        return "video"
-    if _property_type_is(properties, "audio_link", "keyword"):
-        return "audio"
-
-    return None
-
-
-def _property_type_is(properties: dict[str, Any], property_name: str, type: ElasticType) -> bool:
-    prop = properties.get(property_name)
-    if prop is None:
-        return False
-    return prop.get("type") == type

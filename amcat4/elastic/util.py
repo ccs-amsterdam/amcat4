@@ -1,11 +1,13 @@
 import os
+from typing import Iterable, Literal
+
 import elasticsearch.helpers
 from elasticsearch.helpers.errors import BulkIndexError
-from amcat4.config import get_settings
 from pydantic import BaseModel
-from typing import Iterable, Literal
-from amcat4.elastic.mapping import ElasticMapping
+
+from amcat4.config import get_settings
 from amcat4.elastic.connection import elastic_connection
+from amcat4.elastic.mapping import ElasticMapping
 from amcat4.models import IndexId
 
 
@@ -49,8 +51,9 @@ def es_upsert(index: str, id: str, doc: dict, refresh: bool = True) -> None:
     elastic_connection().update(index=index, id=id, doc=doc, doc_as_upsert=True, refresh=refresh)
 
 
-def es_bulk_create_or_overwrite(generator: Iterable[BulkInsertAction], batchsize: int = 1000) -> None:
-    return es_bulk_action(generator, op_type="index", batchsize=batchsize)
+def es_bulk_create(generator: Iterable[BulkInsertAction], batchsize: int = 1000, overwrite: bool = False) -> None:
+    op_type = "index" if overwrite else "create"
+    return es_bulk_action(generator, op_type=op_type, batchsize=batchsize)
 
 
 def es_bulk_upsert(generator: Iterable[BulkInsertAction], batchsize: int = 1000) -> None:
@@ -82,9 +85,7 @@ def es_bulk_action(
     about op_type:
         - use "index" to create or overwrite documents
         - use "create" to create documents, fail if they already exist
-          (preferred in migrations for speed and safety)
-        - use "update" to create or update documents (preferred in normal use to
-          avoid data loss, and we should always validate input with pydantic anyway)
+        - use "update" to create or update documents (i.e. upsert)
     """
     actions: list[dict] = []
     for item in generator:
@@ -110,7 +111,8 @@ def bulk_helper_with_errors(actions: Iterable[dict], **kwargs) -> None:
     elastic bulk but printing the reason for the first error if any
     """
     try:
-        elasticsearch.helpers.bulk(elastic_connection(), actions, **kwargs)
+        elasticsearch.helpers.bulk(elastic_connection(), actions, stats_only=False, **kwargs)
+
     except BulkIndexError as e:
         if e.errors:
             _, error = list(e.errors[0].items())[0]

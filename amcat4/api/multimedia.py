@@ -23,14 +23,9 @@ app_multimedia = APIRouter(prefix="", tags=["multimedia"])
 
 
 class UploadPostBody(BaseModel):
-    document: str = Field(description="The document id to upload the multimedia object for")
     field: str = Field(description="The name of the elastic field to upload the multimedia object to")
+    filename: str = Field(description="The original filename of the multimedia object. Can include directories.")
     size: int = Field(description="The exact (!) size of the multimedia file in bytes")
-    hash: str = Field(
-        max_length=32,
-        pattern="^[a-fA-F0-9]{32}$",
-        description="An md5 hash of the file in hexadecimal format. Used to prevent double uploads.",
-    )
 
 
 ## TODO:
@@ -61,7 +56,7 @@ class PresignUploadBody(BaseModel):
     field: str | None = Field(None, description="Optionally, only look in a specific field")
 
 
-@app_multimedia.post(f"/index/{ix}/multimedia/upload")
+@app_multimedia.post("/index/{ix}/multimedia/upload")
 def upload_multimedia(
     ix: str,
     body: Annotated[UploadPostBody, Body(...)],
@@ -77,6 +72,8 @@ def upload_multimedia(
     If a file already exists, it will be overwritten.
     """
     HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+
+    # field_types: dict[str, str] = {}
 
     current = fetch_document(ix, body.document, source_includes=["field"]).get(body.field)
     if current and current.get("hash") == body.hash and current.get("size") == body.size:

@@ -16,7 +16,7 @@ We need to make sure that:
 
 import datetime
 import json
-from typing import Any, Iterable, Iterator, Literal, Mapping, TypedDict, cast, get_args
+from typing import Any, Iterable, Iterator, Mapping, TypedDict, cast, get_args
 
 from elasticsearch import NotFoundError
 from fastapi import HTTPException
@@ -24,23 +24,20 @@ from fastapi import HTTPException
 from amcat4.elastic import es
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, es_get, index_scan
 from amcat4.models import (
-    AudioField,
     CreateDocumentField,
     DocumentField,
     DocumentFieldMetareaderAccess,
     ElasticType,
     FieldSpec,
     FieldType,
-    ImageField,
     IndexId,
     RoleRule,
     Roles,
     UpdateDocumentField,
     User,
-    VideoField,
 )
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, list_user_project_roles, role_is_at_least
-from amcat4.systemdata.typemap import infer_field_type, infer_multimedia_object_type, list_allowed_elastic_types
+from amcat4.systemdata.typemap import infer_field_type, list_allowed_elastic_types
 from amcat4.systemdata.versions import fields_index_id, system_index
 
 
@@ -371,13 +368,9 @@ def coerce_type(value: Any, type: FieldType):
     if type in ["geo_point"]:
         return value
 
-    # for multimedia types, we expect an object with specific properties
-    if type in ["image"]:
-        return ImageField(image_link=value).model_dump()
-    if type in ["video"]:
-        return VideoField(video_link=value).model_dump()
-    if type in ["audio"]:
-        return AudioField(audio_link=value).model_dump()
+    # For multimedia types, we store the path or URL as a keyword
+    if type in ["image", "video", "audio"]:
+        return ["keyword"]
 
     return value
 
@@ -518,38 +511,9 @@ def _update_index_fields_mappings(index: str, fields: dict[str, DocumentField]) 
     for field_name, field in fields.items():
         mapping_updates[field_name] = {"type": field.elastic_type}
 
-        ## Multimedia fields are objects with specific properties
-        if field.type == "image":
-            mapping_updates[field_name]["properties"] = _create_multimedia_field_properties("image")
-        if field.type == "video":
-            mapping_updates[field_name]["properties"] = _create_multimedia_field_properties("video")
-        if field.type == "audio":
-            mapping_updates[field_name]["properties"] = _create_multimedia_field_properties("audio")
-
         ## Date fields need a specific format
         if field.type == "date":
             mapping_updates[field_name]["format"] = "strict_date_optional_time"
 
     es().indices.put_mapping(index=index, properties=mapping_updates)
     _update_fields(index, fields)
-
-
-def _create_multimedia_field_properties(type: Literal["image", "video", "audio"]) -> dict[str, Any]:
-    properties: dict = {
-        "size": {"type": "long"},
-        "content_type": {"type": "keyword"},
-        "hash": {"type": "keyword"},
-    }
-    if type == "image":
-        properties["image_link"] = {"type": "keyword"}
-    elif type == "video":
-        properties["video_link"] = {"type": "keyword"}
-    elif type == "audio":
-        properties["audio_link"] = {"type": "keyword"}
-    else:
-        raise ValueError(f"Unknown multimedia type: {type}")
-
-    if not infer_multimedia_object_type(properties) == type:
-        raise ValueError("This error should only happen if someone tampered with the multimedia field mappings")
-
-    return properties

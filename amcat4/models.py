@@ -287,22 +287,21 @@ class ServerSettings(BaseModel):
     welcome_buttons: list[Links] | None = None
 
 
-####################### MULTIMEDIA FIELD SPECIFICATIONS #########################
+####################### OBJECT STORAGE SPECIFICATIONS #########################
 
 
-class MultimediaBaseModel(BaseModel):
-    size: int | None = None
-    content_type: str | None = None
-    hash: str | None = None
+class UploadPostBody(BaseModel):
+    field: str = Field(description="The name of the elastic field to upload the multimedia object to")
+    filename: str = Field(description="The original filename of the multimedia object. Can include directories.")
+    size: int = Field(description="The exact (!) size of the multimedia file in bytes")
 
 
-class ImageField(MultimediaBaseModel):
-    image_link: str
-
-
-class VideoField(MultimediaBaseModel):
-    video_link: str
-
-
-class AudioField(MultimediaBaseModel):
-    audio_link: str
+class ObjectStorage(BaseModel):
+    index: IndexId
+    field: str
+    filename: str
+    content_type: str
+    size: int
+    registered: datetime
+    etag: str | None = None
+    last_synced: datetime | None = None
