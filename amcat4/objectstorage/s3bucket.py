@@ -4,7 +4,7 @@ Interact with S3-compatible object storage (e.g., AWS S3, MinIO, SeaweedFS, Clou
 
 import functools
 from datetime import datetime
-from typing import Any, Literal, Optional, TypedDict
+from typing import Any, Iterable, Literal, Optional, TypedDict
 
 import boto3
 from botocore.client import Config
@@ -18,9 +18,7 @@ from mypy_boto3_s3.type_defs import (
 
 from amcat4.config import get_settings
 
-## TODO: think about best way to sync elastic and s3 storage.
-## For security it would also be better if access to s3 objects
-## is not based on relation index name and bucket name.
+PRESIGNED_POST_HOURS_VALID = 6
 
 
 class ListObject(TypedDict):
@@ -161,6 +159,23 @@ def list_s3_objects(
     }
 
 
+def scan_s3_objects(bucket: str, prefix: str = "", page_size=5000) -> Iterable[ListObject]:
+    paginator = get_s3_client().get_paginator("list_objects_v2")
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix, PaginationConfig={"PageSize": page_size}):
+        if "Contents" in page:
+            for content in page["Contents"]:
+                if "Key" in content:
+                    yield ListObject(
+                        is_dir=False,
+                        key=content["Key"],
+                        size=content.get("Size"),
+                        last_modified=content.get("LastModified"),
+                        presigned_get=None,
+                        etag=content.get("ETag", "").strip('"') if content.get("ETag") else None,
+                    )
+
+
 def stat_s3_object(bucket: str, key: str) -> HeadObjectOutputTypeDef:
     s3 = get_s3_client()
 
@@ -199,7 +214,7 @@ def add_s3_object(bucket: str, key: str, data: bytes):
 
 
 def presigned_post(
-    bucket: str, key: str, type_prefix: str = "", size: int | None = None, redirect: str = "", days_valid: int = 1
+    bucket: str, key: str, type_prefix: str = "", size: int | None = None, redirect: str = ""
 ) -> tuple[str, dict[str, str]]:
     s3 = get_s3_client()
 
@@ -219,7 +234,7 @@ def presigned_post(
         Key=key,
         Fields=fields,
         Conditions=conditions,
-        ExpiresIn=days_valid * 24 * 3600,
+        ExpiresIn=PRESIGNED_POST_HOURS_VALID * 3600,
     )
     return pp["url"], pp["fields"]
 

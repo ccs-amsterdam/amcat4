@@ -290,18 +290,22 @@ class ServerSettings(BaseModel):
 ####################### OBJECT STORAGE SPECIFICATIONS #########################
 
 
-class UploadPostBody(BaseModel):
+class RegisterObject(BaseModel):
     field: str = Field(description="The name of the elastic field to upload the multimedia object to")
-    filename: str = Field(description="The original filename of the multimedia object. Can include directories.")
-    size: int = Field(description="The exact (!) size of the multimedia file in bytes")
+    filepath: str = Field(description="The original filename of the multimedia object. Can include directories.")
+    size: int = Field(gt=0, description="The exact (!) size of the multimedia file in bytes")
+    force: bool = Field(
+        default=False,
+        description="Whether to force re-uploading the object if it already exists with the same size",
+    )
 
 
 class ObjectStorage(BaseModel):
     index: IndexId
     field: str
-    filename: str
+    filepath: str
+    path: str
     content_type: str
     size: int
     registered: datetime
-    etag: str | None = None
     last_synced: datetime | None = None

@@ -1,4 +1,5 @@
 import hashlib
+from decimal import Overflow
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Path, Query, Request, Response, status
@@ -6,27 +7,29 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
-from amcat4.elastic.util import es_upsert
-from amcat4.models import Roles, User
+from amcat4.elastic.util import batched_index_scan, es_upsert
+from amcat4.models import ObjectStorage, RegisterObject, Roles, User
 from amcat4.objectstorage import s3bucket
 from amcat4.objectstorage.multimedia import (
     get_multimedia_meta,
+    multimedia_bucket,
     presigned_multimedia_get,
     presigned_multimedia_post,
+    refresh_multimedia_register,
     update_multimedia_field,
 )
 from amcat4.projects.documents import fetch_document
 from amcat4.systemdata.fields import HTTPException_if_invalid_multimedia_field
+from amcat4.systemdata.objectstorage import list_objects, refresh_objectstorage, register_objects
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_multimedia = APIRouter(prefix="", tags=["multimedia"])
 
-
-class UploadPostBody(BaseModel):
-    field: str = Field(description="The name of the elastic field to upload the multimedia object to")
-    filename: str = Field(description="The original filename of the multimedia object. Can include directories.")
-    size: int = Field(description="The exact (!) size of the multimedia file in bytes")
-
+## TODO: make MAX_BYTES a project setting
+## Server Devs should be able to set default project limits (like es and s3 size),
+## and should be able to change them later. (and via requests)
+## Project admins cannot change these limits, only server devs can.
+S3_MAX_BYTES_PER_PROJECT = 1 * 1024 * 1024 * 1024  # 1 GB
 
 ## TODO:
 #
@@ -51,17 +54,29 @@ class UploadPostBody(BaseModel):
 #     return None
 
 
-class PresignUploadBody(BaseModel):
-    links: list[str] = Field(description="Links to multimedia objects")
-    field: str | None = Field(None, description="Optionally, only look in a specific field")
+class PresignedPost(BaseModel):
+    filepath: str = Field(description="Name of the file (set by default in the presigned POST form)")
+    url: str = Field(description="The URL to POST the file to")
+    form_data: dict[str, str] = Field(description="The form data to include in the POST request")
+
+
+class UploadMultimediaResponse(BaseModel):
+    skipped: int = Field(description="Number of files that were skipped because they already existed with the same size")
+    new_total_size: int = Field(description="New total size of all multimedia files in the project after upload")
+    max_total_size: int = Field(description="Maximum allowed total size of all multimedia files in the project")
+    presigned_posts: list[PresignedPost] = Field(description="List of presigned POST details for uploading the files")
+
+
+class ListMultimediaResponse(BaseModel):
+    scroll_id: str | None = Field(description="Scroll ID to continue listing from")
+    objects: list[ObjectStorage] = Field(description="List of registered multimedia objects")
 
 
 @app_multimedia.post("/index/{ix}/multimedia/upload")
 def upload_multimedia(
     ix: str,
-    body: Annotated[UploadPostBody, Body(...)],
+    body: Annotated[list[RegisterObject], Body(...)],
     user: User = Depends(authenticated_user),
-    request=Request,
 ):
     """
     Upload a multimedia file. This is a two step process.
@@ -73,76 +88,123 @@ def upload_multimedia(
     """
     HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
 
-    # field_types: dict[str, str] = {}
+    max_size = S3_MAX_BYTES_PER_PROJECT
+    new_total_size, add_objects = register_objects(ix, body, max_bytes=max_size)
 
-    current = fetch_document(ix, body.document, source_includes=["field"]).get(body.field)
-    if current and current.get("hash") == body.hash and current.get("size") == body.size:
-        current_s3 = get_multimedia_meta(ix, body.document, body.field)
-        if current_s3:
-            raise HTTPException(status_code=409, detail="Multimedia file already exists")
-    else:
-        update_multimedia_field(ix, body.document, body.field, body.hash, body.size)
+    presigned_posts: list[PresignedPost] = []
+    for obj in add_objects:
+        url, form = presigned_multimedia_post(ix, obj)
+        presigned_posts.append(
+            PresignedPost(
+                filepath=obj.filepath,
+                url=url,
+                form_data=form,
+            )
+        )
 
-    return presigned_multimedia_post(ix, body.document, body.field, body.size)
+    return UploadMultimediaResponse(
+        skipped=len(body) - len(add_objects),
+        new_total_size=new_total_size,
+        max_total_size=max_size,
+        presigned_posts=presigned_posts,
+    )
 
 
 @app_multimedia.get("/index/{ix}/multimedia")
 def list_multimedia(
     ix: str,
-    n: int = Query(50, description="Number of objects to return"),
+    page_size: int = Query(1000, description="Max number of objects to return per page"),
+    directory: str | None = Query(None, description="Path of the directory to list objects from"),
+    search: str | None = Query(None, description="Search term to filter multimedia objects"),
+    recursive: bool = Query(False, description="If false, only list objects in the directory for the given prefix"),
+    scroll_id: str | None = Query(None, description="Scroll ID to continue listing from"),
+    user: User = Depends(authenticated_user),
+) -> ListMultimediaResponse:
+    """
+    List all registered multimedia objects.
+    """
+    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+
+    new_scroll_id, objects = list_objects(ix, page_size, directory, search, recursive, scroll_id)
+
+    return ListMultimediaResponse(scroll_id=new_scroll_id, objects=objects)
+
+
+@app_multimedia.get("/index/{ix}/multimedia/bucket")
+def list_multimedia_bucket(
+    ix: str,
+    page_size: int = Query(1000, description="Max number of objects to return per page"),
     next_page_token: str | None = Query(None, description="Token to continue listing from"),
-    presigned_get: bool = Query(False, description="Whether to include presigned GET URLs"),
+    directory: str | None = Query(None, description="Path of the directory to list objects from"),
+    recursive: bool = Query(False, description="If false, only list objects in the directory for the given prefix"),
     user: User = Depends(authenticated_user),
 ):
     """
     List all multimedia objects in an index's S3 bucket.
     """
     HTTPException_if_not_project_index_role(user, ix, Roles.READER)
-    presigned_get = str(presigned_get).lower() == "true"
-
-    if presigned_get is True and n > 50:
-        raise ValueError("Cannot provide presigned_get for more than 50 objects at a time")
-
-    bucket = s3bucket.get_bucket("multimedia")
-    prefix = f"{ix}/"
 
     try:
-        res = s3bucket.list_s3_objects(bucket, prefix, n, next_page_token, recursive=True, presigned=presigned_get)
-        return res
+        return list_multimedia_bucket(ix, page_size, next_page_token, directory, recursive)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app_multimedia.get("/index/{ix}/multimedia/{doc}/{field}/{etag}")
+@app_multimedia.get("/index/{ix}/multimedia/refresh")
+def refresh_multimedia(
+    ix: str,
+    field: str | None = Query(None, description="Limit refresh to specific elastic field"),
+    user: User = Depends(authenticated_user),
+) -> dict:
+    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    return refresh_multimedia_register(ix, field)
+
+
+@app_multimedia.get("/index/{ix}/multimedia/get/{field}/{filepath:path}")
 def multimedia_get_gatekeeper(
     ix: str,
-    doc: Annotated[str, Path(description="The document id containing the multimedia object")],
     field: Annotated[str, Path(description="The name of the elastic field containing the multimedia object")],
+    filepath: Annotated[str, Path(description="The filepath of the multimedia object")],
     cache: Annotated[
         str | None,
         Query(
-            description="Optional unique id for browser caching. If provided, the response will be cached immutably.",
+            description="Used for browser caching (do not set yourself)",
         ),
     ],
+    max_size: Annotated[
+        int | None,
+        Query(
+            description="Optional maximum size of the multimedia object in bytes. If the object exceeds this size, a 413 error will be returned.",
+        ),
+    ] = None,
     user: User = Depends(authenticated_user),
 ):
     """
-    Gatekeeper endpoint for multimedia GET requests. Redirects to a presigned S3 URL.
+    Gatekeeper endpoint for multimedia GET requests.
+
+    When used in browser, the ?cache=true parameter can be set. This triggers a self redirect with a unique cache id for the
+    current version of the multimedia object, and allows the browser to cache the object.
     """
+
+    if cache is None or cache == "true":
+        meta = get_multimedia_meta(ix, field, filepath)
+
+        if not meta:
+            raise HTTPException(status_code=404, detail="Multimedia object not found")
+
+        if max_size is not None and meta["ContentLength"] > max_size:
+            raise HTTPException(status_code=413, detail="Multimedia object exceeds maximum allowed size")
+
+        if cache == "true":
+            etag = meta["ETag"].strip('"')
+            return RedirectResponse(
+                url=f"/index/{ix}/multimedia/{field}/{filepath}?cache={etag}",
+                status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            )
+
+    ## Check whether user has access to this field
     HTTPException_if_invalid_multimedia_field(ix, field, user)
 
-    # meta = get_multimedia_meta(ix, doc, field)
-    # if not meta:
-    #     raise HTTPException(status_code=404, detail="Multimedia object not found")
-    # current_etag = meta["ETag"].strip('"')
-    # if not hash == current_etag:
-    #     size = meta["ContentLength"]
-    #     update_multimedia_field(ix, doc, field, current_etag, size)
-    #     return RedirectResponse(
-    #         url=f"/index/{ix}/multimedia/{doc}/{field}/{current_etag}",
-    #         status_code=status.HTTP_308_PERMANENT_REDIRECT,
-    #         headers={"Cache-Control": "public, max-age=31536000"},
-    #     )
-
-    presigned_url = presigned_multimedia_get(ix, doc, field, immutable_cache=id is not None)
+    set_immutable_cache = cache is not None and cache != "true"
+    presigned_url = presigned_multimedia_get(ix, field, filepath, immutable_cache=set_immutable_cache)
     return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)

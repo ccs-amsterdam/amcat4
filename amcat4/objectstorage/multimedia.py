@@ -1,52 +1,56 @@
-from typing import Literal
+from typing import Tuple
 
 from mypy_boto3_s3.type_defs import HeadObjectOutputTypeDef
 
 from amcat4.elastic import es
-from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, index_scan
-from amcat4.models import DocumentField
+from amcat4.models import ObjectStorage
+from amcat4.objectstorage import s3bucket
 from amcat4.objectstorage.s3bucket import (
+    ListResults,
     delete_from_bucket,
     get_bucket,
     get_object_head,
+    list_s3_objects,
     presigned_get,
     presigned_post,
 )
-from amcat4.systemdata.fields import list_fields
-
-CONTENT_TYPE = Literal["image", "video", "audio"]
-ALLOWED_CONTENT_PREFIXES: dict[CONTENT_TYPE, str] = {
-    "image": "image/",
-    "video": "video/",
-    "audio": "audio/",
-    # "pdf": "application/pdf", # to be added later
-}
+from amcat4.systemdata.objectstorage import delete_s3_register, refresh_objectstorage
+from amcat4.systemdata.versions import system_index
 
 
-def get_multimedia_meta(ix: str, doc: str, field: str) -> HeadObjectOutputTypeDef | None:
-    bucket = get_bucket("multimedia")
-    key = multimedia_key(ix, doc, field)
+def multimedia_key(ix: str, field: str, filepath: str) -> str:
+    return f"{ix}/{field}/{filepath}"
+
+
+def multimedia_bucket() -> str:
+    return get_bucket("multimedia")
+
+
+def get_multimedia_meta(ix: str, field: str, filepath: str) -> HeadObjectOutputTypeDef | None:
+    bucket = multimedia_bucket()
+    key = multimedia_key(ix, field, filepath)
     return get_object_head(bucket, key)
 
 
-def delete_project_multimedia(ix: str):
-    bucket = get_bucket("multimedia")
+def delete_project_multimedia(ix: str, field: str | None = None):
+    bucket = multimedia_bucket()
     prefix = f"{ix}/"
+
     delete_from_bucket(bucket, prefix=prefix)
+    delete_s3_register(ix, field)
 
 
-def multimedia_key(ix: str, doc: str, field: str) -> str:
-    return f"{ix}/{doc}/{field}"
+def refresh_multimedia_register(ix: str, field: str | None = None) -> dict:
+    bucket = multimedia_bucket()
+    return refresh_objectstorage(bucket, ix, field)
 
 
-def presigned_multimedia_get(ix: str, doc: str, field: str, immutable_cache: bool) -> str:
-    bucket = get_bucket("multimedia")
-    key = multimedia_key(ix, doc, field)
+def presigned_multimedia_get(ix: str, field: str, filepath: str, immutable_cache: bool) -> str:
+    bucket = multimedia_bucket()
+    key = multimedia_key(ix, field, filepath)
 
-    ## Note that this does not mean that ix/doc/field is immutably cached.
-    ## it applies to the gatekeeper endpoint, which should only set immutable_cache
-    ## to TRUE if the url includes the Etag (cache buster).
     if immutable_cache:
+        ## Immutable cache for 1 year on browser (private) side
         cache = "private, max-age=31536000, immutable"
     else:
         cache = "no-cache, must-revalidate"
@@ -54,22 +58,11 @@ def presigned_multimedia_get(ix: str, doc: str, field: str, immutable_cache: boo
     return presigned_get(bucket, key, ResponseCacheControl=cache)
 
 
-def presigned_multimedia_post(ix: str, doc: str, field: str, size: int, redirect: str = "") -> dict:
-    bucket = get_bucket("multimedia")
-
-    docfield = list_fields(ix, auto_repair=False).get(field)
-    if not docfield:
-        raise ValueError(f"Field {field} does not exist in index {ix}")
-
-    type = docfield.type
-    if type not in ALLOWED_CONTENT_PREFIXES:
-        raise ValueError(f"Field {field} is of type {type}, which is not a valid multimedia type")
-
-    key = multimedia_key(ix, doc, field)
-    type_prefix = ALLOWED_CONTENT_PREFIXES[type]
-
-    url, form_data = presigned_post(bucket, key=key, type_prefix=type_prefix, size=size, redirect=redirect)
-    return dict(url=url, form_data=form_data, type_prefix=type_prefix)
+def presigned_multimedia_post(ix: str, object: ObjectStorage) -> Tuple[str, dict[str, str]]:
+    bucket = multimedia_bucket()
+    key = multimedia_key(ix, object.field, object.filepath)
+    url, form = presigned_post(bucket, key=key, type_prefix=object.content_type, size=object.size)
+    return url, form
 
 
 def update_multimedia_field(ix: str, doc: str, field: str, hash: str, size: int):

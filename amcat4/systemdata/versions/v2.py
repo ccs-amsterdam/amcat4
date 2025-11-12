@@ -1,3 +1,5 @@
+import hashlib
+import json
 from typing import Iterable, Literal
 
 from amcat4.config import get_settings
@@ -39,8 +41,9 @@ def requests_index_id(type: str, email: str, project_id: str | None) -> str:
     return f"{type}:{project_id or ''}:{email}"
 
 
-def objectstorage_index_id(index: str, field: str, filename: str) -> str:
-    return f"{index}:{field}:{filename}"
+def objectstorage_index_id(index: str, field: str, filepath: str) -> str:
+    hash = hashlib.md5(filepath.encode("utf-8")).hexdigest()
+    return f"{index}:{field}:{hash}"
 
 
 _contact_field = object_field(
@@ -61,7 +64,7 @@ _image_field = object_field(
 settings_mapping: ElasticMapping = dict(
     project_settings=object_field(
         id={"type": "keyword"},
-        name={"type": "keyword"},
+        name={"type": "text"},
         description={"type": "text"},
         contact=_contact_field,
         archived={"type": "date"},
@@ -164,11 +167,11 @@ requests_mapping: ElasticMapping = dict(
 objectstorage_mapping: ElasticMapping = dict(
     index={"type": "keyword"},
     field={"type": "keyword"},
-    filename={"type": "keyword"},
+    filepath={"type": "wildcard"},
+    path={"type": "keyword"},
     content_type={"type": "keyword"},
     size={"type": "long"},
-    registered={"type": "date"},
-    etag={"type": "keyword"},
+    created={"type": "date"},
     last_synced={"type": "date"},
 )
 

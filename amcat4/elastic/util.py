@@ -1,5 +1,5 @@
 import os
-from typing import Iterable, Literal
+from typing import Any, Iterable, Literal, Tuple
 
 import elasticsearch.helpers
 from elasticsearch.helpers.errors import BulkIndexError
@@ -154,3 +154,50 @@ def index_scan(
         preserve_order=sort is not None,
     ):
         yield hit["_id"], hit["_source"]
+
+
+def batched_index_scan(
+    index: str,
+    batchsize: int = 1000,
+    query: dict | None = None,
+    sort: dict | None = None,
+    source: list[str] | None = None,
+    exclude_source: list[str] | None = None,
+    scroll: str = "5m",
+    scroll_id: str | None = None,
+) -> tuple[str | None, list[Tuple[str, dict[str, Any]]]]:
+    """
+    Like index scan, but returns a batch at a time and a scroll id for manual scrolling
+    """
+
+    query_body = {}
+    if query is not None:
+        query_body["query"] = query
+    if sort is not None:
+        query_body["sort"] = sort
+    if source is not None:
+        query_body["_source_includes"] = source
+    if exclude_source is not None:
+        query_body["_source_excludes"] = exclude_source
+
+    if scroll_id is None:
+        res = elastic_connection().search(
+            index=index,
+            query=query_body,
+            scroll=scroll,
+            size=batchsize,
+        )
+    else:
+        res = elastic_connection().scroll(scroll_id=scroll_id, scroll=scroll)
+
+    new_scroll_id: str | None = res.get("_scroll_id", None)
+    hits = res["hits"]["hits"]
+
+    if not hits:
+        if new_scroll_id:
+            elastic_connection().clear_scroll(scroll_id=new_scroll_id)
+        return None, []
+
+    batch_data: list[Tuple[str, dict[str, Any]]] = [(hit["_id"], hit["_source"]) for hit in hits]
+
+    return new_scroll_id, batch_data
