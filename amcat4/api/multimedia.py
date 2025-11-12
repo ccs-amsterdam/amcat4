@@ -1,26 +1,19 @@
-import hashlib
-from decimal import Overflow
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Path, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
-from amcat4.elastic.util import batched_index_scan, es_upsert
 from amcat4.models import ObjectStorage, RegisterObject, Roles, User
-from amcat4.objectstorage import s3bucket
 from amcat4.objectstorage.multimedia import (
     get_multimedia_meta,
-    multimedia_bucket,
     presigned_multimedia_get,
     presigned_multimedia_post,
     refresh_multimedia_register,
-    update_multimedia_field,
 )
-from amcat4.projects.documents import fetch_document
 from amcat4.systemdata.fields import HTTPException_if_invalid_multimedia_field
-from amcat4.systemdata.objectstorage import list_objects, refresh_objectstorage, register_objects
+from amcat4.systemdata.objectstorage import list_objects, register_objects
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_multimedia = APIRouter(prefix="", tags=["multimedia"])
@@ -170,7 +163,7 @@ def multimedia_get_gatekeeper(
         Query(
             description="Used for browser caching (do not set yourself)",
         ),
-    ],
+    ] = None,
     max_size: Annotated[
         int | None,
         Query(
@@ -186,13 +179,16 @@ def multimedia_get_gatekeeper(
     current version of the multimedia object, and allows the browser to cache the object.
     """
 
+    # This avoids fetching head twice in the cache redirect case
     if cache is None or cache == "true":
         meta = get_multimedia_meta(ix, field, filepath)
 
         if not meta:
+            HTTPException_if_invalid_multimedia_field(ix, field, user)
             raise HTTPException(status_code=404, detail="Multimedia object not found")
 
         if max_size is not None and meta["ContentLength"] > max_size:
+            HTTPException_if_invalid_multimedia_field(ix, field, user)
             raise HTTPException(status_code=413, detail="Multimedia object exceeds maximum allowed size")
 
         if cache == "true":

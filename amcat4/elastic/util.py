@@ -1,4 +1,3 @@
-import os
 from typing import Any, Iterable, Literal, Tuple
 
 import elasticsearch.helpers

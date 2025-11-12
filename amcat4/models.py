@@ -1,6 +1,5 @@
 from datetime import UTC, datetime
 from enum import IntEnum
-from tarfile import LENGTH_LINK
 from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
@@ -309,3 +308,5 @@ class ObjectStorage(BaseModel):
     size: int
     registered: datetime
     last_synced: datetime | None = None
+    etag: str | None = None
+    validated_etag: str | None = None

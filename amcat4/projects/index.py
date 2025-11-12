@@ -1,20 +1,18 @@
 from typing import Iterable, Mapping
 
-
 from amcat4.elastic import es
-from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, Roles, RoleRule, User
+from amcat4.elastic.util import index_scan
+from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, RoleRule, Roles, User
 from amcat4.objectstorage.multimedia import delete_project_multimedia
 from amcat4.objectstorage.s3bucket import s3_enabled
 from amcat4.systemdata.fields import create_fields, list_fields
-
 from amcat4.systemdata.roles import list_user_project_roles
 from amcat4.systemdata.settings import (
     create_project_settings,
     delete_project_settings,
     update_project_settings,
 )
-from amcat4.elastic.util import index_scan
-from amcat4.systemdata.versions import system_index, settings_index_id
+from amcat4.systemdata.versions import settings_index_id, settings_index_name
 
 
 class IndexDoesNotExist(ValueError):
@@ -31,7 +29,7 @@ def create_project_index(new_index: ProjectSettings, admin_email: str | None = N
     This function creates the elasticsearch index first, and then creates the settings document.
     """
     index_exists = es().indices.exists(index=new_index.id)
-    project_exists = es().exists(index=system_index("settings"), id=settings_index_id(new_index.id))
+    project_exists = es().exists(index=settings_index_name(), id=settings_index_id(new_index.id))
     if index_exists and project_exists:
         raise IndexAlreadyExists(f'Project "{new_index.id}" already exists')
     if index_exists and not project_exists:
@@ -103,7 +101,7 @@ def list_project_indices(ids: list[str] | None = None) -> Iterable[ProjectSettin
     query = {"terms": {"_id": ids}} if ids is not None else None
     exclude_source = ["project_settings.image.base64", "server_settings.icon.base64"]
 
-    for id, ix in index_scan(system_index("settings"), query=query, exclude_source=exclude_source):
+    for id, ix in index_scan(settings_index_name(), query=query, exclude_source=exclude_source):
         project_settings = ix["project_settings"]
         yield ProjectSettings.model_validate(project_settings)
 

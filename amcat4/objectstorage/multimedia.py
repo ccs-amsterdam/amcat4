@@ -4,18 +4,14 @@ from mypy_boto3_s3.type_defs import HeadObjectOutputTypeDef
 
 from amcat4.elastic import es
 from amcat4.models import ObjectStorage
-from amcat4.objectstorage import s3bucket
 from amcat4.objectstorage.s3bucket import (
-    ListResults,
     delete_from_bucket,
     get_bucket,
     get_object_head,
-    list_s3_objects,
     presigned_get,
     presigned_post,
 )
-from amcat4.systemdata.objectstorage import delete_s3_register, refresh_objectstorage
-from amcat4.systemdata.versions import system_index
+from amcat4.systemdata.objectstorage import delete_register, refresh_objectstorage
 
 
 def multimedia_key(ix: str, field: str, filepath: str) -> str:
@@ -29,7 +25,10 @@ def multimedia_bucket() -> str:
 def get_multimedia_meta(ix: str, field: str, filepath: str) -> HeadObjectOutputTypeDef | None:
     bucket = multimedia_bucket()
     key = multimedia_key(ix, field, filepath)
-    return get_object_head(bucket, key)
+    try:
+        return get_object_head(bucket, key)
+    except Exception:
+        return None
 
 
 def delete_project_multimedia(ix: str, field: str | None = None):
@@ -37,7 +36,7 @@ def delete_project_multimedia(ix: str, field: str | None = None):
     prefix = f"{ix}/"
 
     delete_from_bucket(bucket, prefix=prefix)
-    delete_s3_register(ix, field)
+    delete_register(ix, field)
 
 
 def refresh_multimedia_register(ix: str, field: str | None = None) -> dict:

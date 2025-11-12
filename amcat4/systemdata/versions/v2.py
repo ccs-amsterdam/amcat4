@@ -1,8 +1,6 @@
 import hashlib
-import json
 from typing import Iterable, Literal
 
-from amcat4.config import get_settings
 from amcat4.elastic.connection import elastic_connection
 from amcat4.elastic.mapping import ElasticMapping, nested_field, object_field
 from amcat4.elastic.util import (
@@ -17,8 +15,28 @@ from amcat4.objectstorage.image_processing import create_image_from_url
 VERSION = 2
 
 
-def system_index(index: Literal["settings", "roles", "fields", "apikeys", "requests", "objectstorage"]) -> str:
-    return system_index_name(VERSION, index)
+def settings_index_name() -> str:
+    return system_index_name(VERSION, "settings")
+
+
+def roles_index_name() -> str:
+    return system_index_name(VERSION, "roles")
+
+
+def fields_index_name() -> str:
+    return system_index_name(VERSION, "fields")
+
+
+def apikeys_index_name() -> str:
+    return system_index_name(VERSION, "apikeys")
+
+
+def requests_index_name() -> str:
+    return system_index_name(VERSION, "requests")
+
+
+def objectstorage_index_name() -> str:
+    return system_index_name(VERSION, "objectstorage")
 
 
 def settings_index_id(index: str | Literal["_server"]) -> str:
@@ -172,7 +190,12 @@ objectstorage_mapping: ElasticMapping = dict(
     content_type={"type": "keyword"},
     size={"type": "long"},
     created={"type": "date"},
+    ## After s3 sync
     last_synced={"type": "date"},
+    etag={"type": "keyword"},
+    ## We don't yet validate, but could register validation by eTag
+    ## so that it doesn't get overwritten by s3 sync
+    validated_etag={"type": "boolean"},
 )
 
 
@@ -193,7 +216,7 @@ def check_deprecated_version(index: str):
 
 def migrate_server_settings(doc: dict):
     return BulkInsertAction(
-        index=system_index("settings"),
+        index=settings_index_name(),
         id=settings_index_id("_server"),
         doc={
             "server_settings": {
@@ -212,7 +235,7 @@ def migrate_server_settings(doc: dict):
 
 def migrate_project_settings(index: str, doc: dict):
     return BulkInsertAction(
-        index=system_index("settings"),
+        index=settings_index_name(),
         id=settings_index_id(index),
         doc={
             "project_settings": {
@@ -236,7 +259,7 @@ def migrate_roles(role: dict, in_index: str | None):
         "role_match": "DOMAIN" if email.startswith("*@") else "EXACT",
     }
 
-    return BulkInsertAction(index=system_index("roles"), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
+    return BulkInsertAction(index=roles_index_name(), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
 
 
 def migrate_guest_roles(role: dict, in_index: str | None):
@@ -248,7 +271,7 @@ def migrate_guest_roles(role: dict, in_index: str | None):
         "role_match": "ANY",
     }
 
-    return BulkInsertAction(index=system_index("roles"), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
+    return BulkInsertAction(index=roles_index_name(), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
 
 
 def migrate_fields(index: str, field: dict):
@@ -257,7 +280,7 @@ def migrate_fields(index: str, field: dict):
         "field": field.get("field"),
         "settings": field.get("settings", {}),
     }
-    return BulkInsertAction(index=system_index("fields"), id=fields_index_id(index, doc["field"]), doc=doc)
+    return BulkInsertAction(index=fields_index_name(), id=fields_index_id(index, doc["field"]), doc=doc)
 
 
 SYSTEM_INDICES = [

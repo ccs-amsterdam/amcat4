@@ -1,10 +1,7 @@
-import time
-
 import pytest
 import requests
 from fastapi.testclient import TestClient
 
-from amcat4.elastic.util import index_scan
 from amcat4.models import Roles
 from amcat4.objectstorage import s3bucket
 from amcat4.projects.documents import create_or_update_documents
@@ -26,7 +23,7 @@ def test_authorisation(client, index, user, reader):
     create_or_update_documents(index, documents=[{"_id": "doc1", "image_field": "image.png"}], fields={"image_field": "image"})
 
     check(client.get(f"index/{index}/multimedia"), 403)
-    check(client.get(f"index/{index}/multimedia/doc1/image_field/etag"), 403)
+    check(client.get(f"index/{index}/multimedia/get/image_field/image.png"), 403)
     check(client.get(f"index/{index}/multimedia/upload/doc1/image"), 403)
 
     create_project_role(user, index, Roles.METAREADER)

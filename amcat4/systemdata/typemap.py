@@ -4,7 +4,7 @@
 # (this is relevant if we are importing an index)
 from typing import Any
 
-from amcat4.models import ElasticType, FieldType, MultimediaElasticMapping
+from amcat4.models import ElasticType, FieldType
 
 # This needs to be a one on one mapping. It should be
 # possible to uniquely determine the AmCAT type from the elastic type.
@@ -59,9 +59,9 @@ _TYPEMAP_AMCAT_TO_ES: dict[FieldType, list[ElasticType]] = {
     "tag": ["keyword", "wildcard"],
     "url": ["wildcard", "keyword", "constant_keyword", "text"],
     # MULTIMEDIA OBJECTS
-    "image": ["object"],
-    "video": ["object"],
-    "audio": ["object"],
+    "image": ["keyword"],
+    "video": ["keyword"],
+    "audio": ["keyword"],
 }
 
 

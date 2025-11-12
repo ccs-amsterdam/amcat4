@@ -36,9 +36,10 @@ from amcat4.models import (
     UpdateDocumentField,
     User,
 )
+from amcat4.systemdata.objectstorage import ALLOWED_MIME_TYPES
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, list_user_project_roles, role_is_at_least
 from amcat4.systemdata.typemap import infer_field_type, list_allowed_elastic_types
-from amcat4.systemdata.versions import fields_index_id, system_index
+from amcat4.systemdata.versions import fields_index_id, fields_index_name
 
 
 class UpdateFieldMapping(TypedDict):
@@ -259,7 +260,7 @@ def intersect_fieldspecs(specs: list[FieldSpec | None]) -> FieldSpec | None:
 
 
 def HTTPException_if_invalid_multimedia_field(index: str, field: str, user: User) -> None:
-    es_field = es_get(system_index("fields"), fields_index_id(index, field))
+    es_field = es_get(fields_index_name(), fields_index_id(index, field))
     if es_field is None:
         raise HTTPException(
             status_code=400,
@@ -355,10 +356,6 @@ def coerce_type(value: Any, type: FieldType):
         return float(value)
     if type in ["integer"]:
         return int(value)
-    if type == "json":
-        if isinstance(value, str):
-            return value
-        return json.dumps(value)
 
     # TODO: check coercion / validation for object, vector and geo types
     if type in ["object"]:
@@ -368,9 +365,19 @@ def coerce_type(value: Any, type: FieldType):
     if type in ["geo_point"]:
         return value
 
-    # For multimedia types, we store the path or URL as a keyword
+    # TODO: Perhaps we should check if its a local file path (meaning we use S3), and in
+    # that case enforce using a correct extension.
     if type in ["image", "video", "audio"]:
-        return ["keyword"]
+        value = str(value)
+        external_link = value.startswith("http://") or value.startswith("https://")
+        if not external_link:
+            ext = value.rsplit(".", 1)[-1].lower() if "." in value else ""
+            mime = ALLOWED_MIME_TYPES.get(ext, None)
+            if not mime or not mime.startswith(type):
+                raise ValueError(
+                    f"File extension .{ext} is not allowed for multimedia type {type} in a relative path ({value})."
+                )
+        return value
 
     return value
 
@@ -473,13 +480,13 @@ def _update_fields(index: str, fields: dict[str, DocumentField]):
         for field, settings in fields.items():
             id = fields_index_id(index, field)
             field_doc = {"index": index, "name": field, "settings": settings.model_dump()}
-            yield BulkInsertAction(index=system_index("fields"), id=id, doc=field_doc)
+            yield BulkInsertAction(index=fields_index_name(), id=id, doc=field_doc)
 
     es_bulk_upsert(insert_fields())
 
 
 def _list_fields(index: str) -> dict[str, DocumentField]:
-    docs = index_scan(system_index("fields"), query={"term": {"index": index}})
+    docs = index_scan(fields_index_name(), query={"term": {"index": index}})
     return {doc["name"]: DocumentField.model_validate(doc["settings"]) for id, doc in docs}
 
 

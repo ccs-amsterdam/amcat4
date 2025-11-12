@@ -1,12 +1,12 @@
 from datetime import UTC, datetime, timedelta
-from typing import Iterable, Tuple
+from typing import Tuple
 
 from amcat4.elastic import es
-from amcat4.elastic.util import BulkInsertAction, batched_index_scan, es_bulk_create, es_bulk_upsert, index_scan
+from amcat4.elastic.util import BulkInsertAction, batched_index_scan, es_bulk_create, es_bulk_upsert
 from amcat4.models import IndexId, ObjectStorage, RegisterObject
-from amcat4.objectstorage.s3bucket import PRESIGNED_POST_HOURS_VALID, list_s3_object_batches, scan_s3_objects
+from amcat4.objectstorage.s3bucket import PRESIGNED_POST_HOURS_VALID, scan_s3_objects
 from amcat4.systemdata.fields import list_fields
-from amcat4.systemdata.versions import objectstorage_index_id, system_index
+from amcat4.systemdata.versions import objectstorage_index_id, objectstorage_index_name
 
 ## We (can) only check mime types based on file extension.
 ALLOWED_MIME_TYPES = {
@@ -59,7 +59,7 @@ def register_objects(index: IndexId, objects: list[RegisterObject], max_bytes: i
 
     def generator():
         for id, obj in add_objects.items():
-            yield BulkInsertAction(index="amcat_multimedia", id=id, doc=obj.model_dump())
+            yield BulkInsertAction(index=objectstorage_index_name(), id=id, doc=obj.model_dump())
 
     es_bulk_create(generator(), overwrite=True)
 
@@ -95,7 +95,7 @@ def list_objects(
         query["bool"]["must"].append({"wildcard": {"filepath": f"*{search}*"}})
 
     new_scroll_id, batch = batched_index_scan(
-        index=system_index("objectstorage"), query=query, batchsize=page_size, scroll_id=scroll_id
+        index=objectstorage_index_name(), query=query, batchsize=page_size, scroll_id=scroll_id
     )
     return new_scroll_id, [ObjectStorage.model_validate(doc) for doc in batch]
 
@@ -121,7 +121,7 @@ def refresh_objectstorage(
             content_type = ALLOWED_MIME_TYPES.get(ext, None)
 
             action = BulkInsertAction(
-                index=system_index("objectstorage"),
+                index=objectstorage_index_name(),
                 id=objectstorage_index_id(index, field, filepath),
                 doc={
                     "index": index,
@@ -131,16 +131,17 @@ def refresh_objectstorage(
                     "content_type": content_type,
                     "size": obj["size"],
                     "last_synced": sync_time,
+                    "etag": obj["etag"],
                 },
             )
             yield action
 
     es_bulk_upsert(gen(), batchsize=2500)
 
-    return _clean_s3_register(index, field=field, min_sync=sync_time)
+    return _clean_register(index, field=field, min_sync=sync_time)
 
 
-def delete_s3_register(index: IndexId, field: str | None = None):
+def delete_register(index: IndexId, field: str | None = None):
     """
     Delete all ObjectStorage entries from ES for the given index and optional field.
     """
@@ -154,11 +155,11 @@ def delete_s3_register(index: IndexId, field: str | None = None):
     if field:
         query["bool"]["must"].append({"term": {"field": field}})
 
-    result = es().delete_by_query(index=system_index("objectstorage"), query=query)
+    result = es().delete_by_query(index=objectstorage_index_name(), query=query)
     return dict(updated=result["deleted"], total=result["total"])
 
 
-def _clean_s3_register(
+def _clean_register(
     index: IndexId, field: str | None = None, min_sync: datetime | None = None, keep_pending: bool = True
 ) -> dict:
     """
@@ -186,7 +187,7 @@ def _clean_s3_register(
         pending_time = datetime.now(UTC) - timedelta(hours=PRESIGNED_POST_HOURS_VALID + 1)
         query["bool"]["must"].append({"range": {"registered": {"lte": pending_time.isoformat()}}})
 
-    result = es().delete_by_query(index=system_index("objectstorage"), query=query)
+    result = es().delete_by_query(index=objectstorage_index_name(), query=query)
     return dict(updated=result["deleted"], total=result["total"])
 
 
@@ -197,7 +198,7 @@ def _get_current(index: IndexId, objects: list[RegisterObject]) -> dict[str, int
     non-existing objects will be omitted.
     """
     ids = [objectstorage_index_id(index, obj.field, obj.filepath) for obj in objects]
-    res = es().options(ignore_status=[404]).mget(index=system_index("objectstorage"), ids=ids, source_includes=["size"])
+    res = es().options(ignore_status=[404]).mget(index=objectstorage_index_name(), ids=ids, source_includes=["size"])
 
     existing: dict[str, int] = dict()
     for doc in res["docs"]:
@@ -215,7 +216,7 @@ def _get_total_size(index: IndexId) -> int:
     }
 
     agg = {"aggs": {"total_sum": {"sum": {"field": "size"}}}}
-    agg = es().search(query=query, index=system_index("objectstorage"), size=0, aggregations=agg)
+    agg = es().search(query=query, index=objectstorage_index_name(), size=0, aggregations=agg)
 
     return agg["aggregations"]["total_sum"]["value"]
 

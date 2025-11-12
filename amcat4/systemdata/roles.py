@@ -1,18 +1,19 @@
 from typing import Iterable
 
 from fastapi import HTTPException
-from amcat4.systemdata.versions import system_index, roles_index_id
+
 from amcat4.elastic import es
+from amcat4.elastic.util import index_scan
 from amcat4.models import (
     GuestRole,
     IndexId,
     RoleContext,
     RoleEmailPattern,
     RoleRule,
-    User,
     Roles,
+    User,
 )
-from amcat4.elastic.util import index_scan
+from amcat4.systemdata.versions import roles_index_id, roles_index_name
 
 
 def create_project_role(email: RoleEmailPattern, project_id: IndexId, role: Roles):
@@ -188,7 +189,7 @@ def _create_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles
         raise HTTPException(422, "Cannot create a role with Role.NONE.")
 
     user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-    es().create(index=system_index("roles"), id=id, document=user_role.model_dump(), refresh=True)
+    es().create(index=roles_index_name(), id=id, document=user_role.model_dump(), refresh=True)
 
 
 def _update_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles, ignore_missing: bool = False):
@@ -200,12 +201,12 @@ def _update_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles
         _delete_role(email, role_context, ignore_missing=ignore_missing)
 
     user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-    es().update(index=system_index("roles"), id=id, doc=user_role.model_dump(), doc_as_upsert=ignore_missing, refresh=True)
+    es().update(index=roles_index_name(), id=id, doc=user_role.model_dump(), doc_as_upsert=ignore_missing, refresh=True)
 
 
 def _delete_role(email: RoleEmailPattern, role_context: RoleContext, ignore_missing: bool = False):
     elastic = es().options(ignore_status=404) if ignore_missing else es()
-    elastic.delete(index=system_index("roles"), id=roles_index_id(email, role_context), refresh=True)
+    elastic.delete(index=roles_index_name(), id=roles_index_id(email, role_context), refresh=True)
 
 
 def _list_roles(
@@ -236,7 +237,7 @@ def _list_roles(
     if only_projects:
         query["bool"]["must"].append({"bool": {"must_not": {"term": {"role_context": "_server"}}}})
 
-    for id, user_role in index_scan(system_index("roles"), query=query):
+    for id, user_role in index_scan(roles_index_name(), query=query):
         yield RoleRule.model_validate(user_role)
 
 
