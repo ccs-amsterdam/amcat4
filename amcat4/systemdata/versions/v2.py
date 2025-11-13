@@ -187,15 +187,10 @@ objectstorage_mapping: ElasticMapping = dict(
     field={"type": "keyword"},
     filepath={"type": "wildcard"},
     path={"type": "keyword"},
-    content_type={"type": "keyword"},
     size={"type": "long"},
-    created={"type": "date"},
+    registered={"type": "date"},
     ## After s3 sync
     last_synced={"type": "date"},
-    etag={"type": "keyword"},
-    ## We don't yet validate, but could register validation by eTag
-    ## so that it doesn't get overwritten by s3 sync
-    validated_etag={"type": "boolean"},
 )
 
 

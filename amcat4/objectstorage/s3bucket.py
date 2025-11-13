@@ -11,6 +11,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 from mypy_boto3_s3.client import S3Client
 from mypy_boto3_s3.type_defs import (
+    GetObjectOutputTypeDef,
     HeadObjectOutputTypeDef,
     ListObjectsV2RequestTypeDef,
     ObjectIdentifierTypeDef,
@@ -189,10 +190,15 @@ def stat_s3_object(bucket: str, key: str) -> HeadObjectOutputTypeDef:
             raise
 
 
-def get_s3_object(bucket: str, key: str) -> bytes:
+def get_s3_object(bucket: str, key: str, first_bytes: int | None = None) -> GetObjectOutputTypeDef:
     s3 = get_s3_client()
-    res = s3.get_object(Bucket=bucket, Key=key)
-    return res["Body"].read()
+
+    if first_bytes is not None:
+        res = s3.get_object(Bucket=bucket, Key=key, Range=f"bytes=0-{first_bytes - 1}")
+    else:
+        res = s3.get_object(Bucket=bucket, Key=key)
+
+    return res
 
 
 def delete_from_bucket(bucket: str, prefix: str):
@@ -246,12 +252,7 @@ def presigned_get(bucket: str, key: str, hours_valid=24, **kwargs) -> str:
     return s3.generate_presigned_url("get_object", Params=params, ExpiresIn=hours_valid * 3600)
 
 
-def get_object_head(bucket: str, key: str, ignore_missing=False) -> HeadObjectOutputTypeDef | None:
+def get_object_head(bucket: str, key: str) -> HeadObjectOutputTypeDef:
     s3 = get_s3_client()
-    try:
-        res = s3.head_object(Bucket=bucket, Key=key)
-        return res
-    except Exception as e:
-        if ignore_missing and "NotFound" in str(e):
-            return None
-        raise
+    res = s3.head_object(Bucket=bucket, Key=key)
+    return res

@@ -304,9 +304,6 @@ class ObjectStorage(BaseModel):
     field: str
     filepath: str
     path: str
-    content_type: str
     size: int
     registered: datetime
     last_synced: datetime | None = None
-    etag: str | None = None
-    validated_etag: str | None = None

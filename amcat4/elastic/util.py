@@ -169,20 +169,13 @@ def batched_index_scan(
     Like index scan, but returns a batch at a time and a scroll id for manual scrolling
     """
 
-    query_body = {}
-    if query is not None:
-        query_body["query"] = query
-    if sort is not None:
-        query_body["sort"] = sort
-    if source is not None:
-        query_body["_source_includes"] = source
-    if exclude_source is not None:
-        query_body["_source_excludes"] = exclude_source
-
     if scroll_id is None:
         res = elastic_connection().search(
             index=index,
-            query=query_body,
+            query=query,
+            sort=sort,
+            source_includes=source,
+            source_excludes=exclude_source,
             scroll=scroll,
             size=batchsize,
         )

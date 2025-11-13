@@ -66,6 +66,14 @@ def register_objects(index: IndexId, objects: list[RegisterObject], max_bytes: i
     return new_total_size, list(add_objects.values())
 
 
+def get_object(index: IndexId, field: str, filepath: str) -> ObjectStorage | None:
+    id = objectstorage_index_id(index, field, filepath)
+    doc = es().options(ignore_status=[404]).get(index=objectstorage_index_name(), id=id)
+    if not doc["found"]:
+        return None
+    return ObjectStorage.model_validate(doc["_source"])
+
+
 def list_objects(
     index: IndexId,
     page_size: int = 1000,
@@ -116,22 +124,13 @@ def refresh_objectstorage(
     def gen():
         for obj in scan_s3_objects(bucket, prefix):
             index, field, filepath = obj["key"].split("/", 2)
-            path, _, ext = split_filepath(filepath)
-
-            content_type = ALLOWED_MIME_TYPES.get(ext, None)
 
             action = BulkInsertAction(
                 index=objectstorage_index_name(),
                 id=objectstorage_index_id(index, field, filepath),
                 doc={
-                    "index": index,
-                    "field": field,
-                    "filepath": filepath,
-                    "path": path,
-                    "content_type": content_type,
                     "size": obj["size"],
                     "last_synced": sync_time,
-                    "etag": obj["etag"],
                 },
             )
             yield action
@@ -157,6 +156,11 @@ def delete_register(index: IndexId, field: str | None = None):
 
     result = es().delete_by_query(index=objectstorage_index_name(), query=query)
     return dict(updated=result["deleted"], total=result["total"])
+
+
+def get_content_type(filepath: str) -> str | None:
+    _, _, ext = split_filepath(filepath)
+    return ALLOWED_MIME_TYPES.get(ext, None)
 
 
 def _clean_register(
@@ -215,7 +219,7 @@ def _get_total_size(index: IndexId) -> int:
         }
     }
 
-    agg = {"aggs": {"total_sum": {"sum": {"field": "size"}}}}
+    agg = {"total_sum": {"sum": {"field": "size"}}}
     agg = es().search(query=query, index=objectstorage_index_name(), size=0, aggregations=agg)
 
     return agg["aggregations"]["total_sum"]["value"]
@@ -233,7 +237,6 @@ def _create_object_doc(index: IndexId, obj: RegisterObject) -> ObjectStorage:
         field=obj.field,
         filepath=obj.filepath,
         path=path,
-        content_type=content_type,
         size=obj.size,
         registered=datetime.now(UTC),
         last_synced=None,
@@ -260,7 +263,11 @@ def _raise_if_invalid_type(index: IndexId, objects: dict[str, ObjectStorage]) ->
         if type not in allowed_types:
             raise ValueError(f"Field {obj.field} is of type {type}, which is not a valid multimedia type")
 
-        if not obj.content_type.startswith(type):
+        content_type = get_content_type(obj.filepath)
+
+        if not content_type:
+            raise ValueError(f"File {obj.filepath} has an unsupported file extension.")
+        if not content_type.startswith(type):
             raise ValueError(
-                f"Field {obj.field} is of type {type}, but file {obj.filepath} has content type {obj.content_type}."
+                f"Field {obj.field} is of type {type}, but the file extension of {obj.filepath} indicates content type {content_type}."
             )

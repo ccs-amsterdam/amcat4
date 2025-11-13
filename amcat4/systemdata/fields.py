@@ -15,7 +15,6 @@ We need to make sure that:
 """
 
 import datetime
-import json
 from typing import Any, Iterable, Iterator, Mapping, TypedDict, cast, get_args
 
 from elasticsearch import NotFoundError
@@ -36,7 +35,6 @@ from amcat4.models import (
     UpdateDocumentField,
     User,
 )
-from amcat4.systemdata.objectstorage import ALLOWED_MIME_TYPES
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, list_user_project_roles, role_is_at_least
 from amcat4.systemdata.typemap import infer_field_type, list_allowed_elastic_types
 from amcat4.systemdata.versions import fields_index_id, fields_index_name
@@ -169,12 +167,15 @@ def list_and_repair_fields(
         else:
             fields[name] = system_index_fields[name]
 
-            if fields[name].type != inferred_field.type or fields[name].elastic_type != inferred_field.elastic_type:
-                ## if for some reason the types in the system index and mapping don't match, update the system index using the
+            if fields[name].elastic_type != inferred_field.elastic_type:
+                ## if for some reason the elastic types in the system index and mapping don't match, update the system index using the
                 ## the inferred type (because we can't update the mapping)
                 update_system_index = True
-                fields[name].type = inferred_field.type
                 fields[name].elastic_type = inferred_field.elastic_type
+
+                ## If the current amcat type is not allowed for the new elastic type, we also need to update the amcat type
+                if fields[name].elastic_type not in list_allowed_elastic_types(fields[name].type):
+                    fields[name].type = inferred_field.type
 
     # check if all fields in the system index have defined mappings in elastic, and otherwise update mapping (update_mapping=True)
     update_mapping = False
@@ -259,7 +260,7 @@ def intersect_fieldspecs(specs: list[FieldSpec | None]) -> FieldSpec | None:
     return min_spec
 
 
-def HTTPException_if_invalid_multimedia_field(index: str, field: str, user: User) -> None:
+def HTTPException_if_invalid_or_unauthorized_field(index: str, field: str, user: User) -> None:
     es_field = es_get(fields_index_name(), fields_index_id(index, field))
     if es_field is None:
         raise HTTPException(
@@ -368,16 +369,7 @@ def coerce_type(value: Any, type: FieldType):
     # TODO: Perhaps we should check if its a local file path (meaning we use S3), and in
     # that case enforce using a correct extension.
     if type in ["image", "video", "audio"]:
-        value = str(value)
-        external_link = value.startswith("http://") or value.startswith("https://")
-        if not external_link:
-            ext = value.rsplit(".", 1)[-1].lower() if "." in value else ""
-            mime = ALLOWED_MIME_TYPES.get(ext, None)
-            if not mime or not mime.startswith(type):
-                raise ValueError(
-                    f"File extension .{ext} is not allowed for multimedia type {type} in a relative path ({value})."
-                )
-        return value
+        return str(value)
 
     return value
 

@@ -16,7 +16,7 @@ def _get_names(client: TestClient, index, user, **kargs):
     res = client.get(f"index/{index}/multimedia", params=kargs, headers=build_headers(user))
     res.raise_for_status()
     data = res.json()
-    return {obj["key"] for obj in data["items"]}
+    return {obj["filepath"] for obj in data["objects"]}
 
 
 def test_authorisation(client, index, user, reader):
@@ -24,16 +24,16 @@ def test_authorisation(client, index, user, reader):
 
     check(client.get(f"index/{index}/multimedia"), 403)
     check(client.get(f"index/{index}/multimedia/get/image_field/image.png"), 403)
-    check(client.get(f"index/{index}/multimedia/upload/doc1/image"), 403)
+    check(client.post(f"index/{index}/multimedia/upload", json=[]), 403)
 
     create_project_role(user, index, Roles.METAREADER)
     create_project_role(reader, index, Roles.READER)
     check(client.get(f"index/{index}/multimedia", headers=build_headers(user)), 403)
     check(
-        client.get(f"index/{index}/multimedia/doc1/image_field/etag", params=dict(key=""), headers=build_headers(user)),
+        client.get(f"index/{index}/multimedia/get/image_field/image.png", params=dict(key=""), headers=build_headers(user)),
         403,
     )
-    check(client.get(f"index/{index}/multimedia/upload/doc1/image", headers=build_headers(reader)), 403)
+    check(client.post(f"index/{index}/multimedia/upload", json=[], headers=build_headers(reader)), 403)
 
 
 def test_presigned(client, index, user):
@@ -42,12 +42,20 @@ def test_presigned(client, index, user):
 
     assert _get_names(client, index, user) == set()
 
-    post = client.get(f"index/{index}/multimedia/upload/doc1/image_field", headers=build_headers(user)).json()
-    assert set(post.keys()) == {"url", "form_data", "type_prefix"}
+    content = b"my beautiful image bytes"
+
+    body = [{"field": "image_field", "filepath": "image.png", "size": len(content)}]
+    res = client.post(f"index/{index}/multimedia/upload", json=body, headers=build_headers(user)).json()
+    assert set(res.keys()) == {"presigned_posts", "skipped", "max_total_size", "new_total_size"}
+    assert res["new_total_size"] == len(content)
+
+    post = res["presigned_posts"][0]
+    assert set(post.keys()) == {"filepath", "url", "form_data"}
 
     ## TODO: somehow when the upload is forbidden, S3 returns a 307 redirect instead of an error.
     ## Figure out why and how to make it act less stupid.
-    file = {"file": ("dummyname", b"my beautiful image bytes")}
+
+    file = {"file": ("image.png", content)}
 
     ## errors if key doesn't match key prefix
     assert (
@@ -71,7 +79,6 @@ def test_presigned(client, index, user):
     )
 
     ## works with correct (unchanged) key and content type
-    type = post["type_prefix"] + "png"
     res = requests.post(url=post["url"], data={**post["form_data"], "Content-Type": type}, files=file, allow_redirects=False)
 
     ## When successfull, S3 responds with a 303 redirect to the multimedia/{doc}/{field}/refresh endpoint,

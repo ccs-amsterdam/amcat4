@@ -12,7 +12,7 @@ from amcat4.objectstorage.multimedia import (
     presigned_multimedia_post,
     refresh_multimedia_register,
 )
-from amcat4.systemdata.fields import HTTPException_if_invalid_multimedia_field
+from amcat4.systemdata.fields import HTTPException_if_invalid_or_unauthorized_field
 from amcat4.systemdata.objectstorage import list_objects, register_objects
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
@@ -109,7 +109,7 @@ def list_multimedia(
     page_size: int = Query(1000, description="Max number of objects to return per page"),
     directory: str | None = Query(None, description="Path of the directory to list objects from"),
     search: str | None = Query(None, description="Search term to filter multimedia objects"),
-    recursive: bool = Query(False, description="If false, only list objects in the directory for the given prefix"),
+    recursive: bool = Query(default=False, description="If false, only list objects in the directory for the given prefix"),
     scroll_id: str | None = Query(None, description="Scroll ID to continue listing from"),
     user: User = Depends(authenticated_user),
 ) -> ListMultimediaResponse:
@@ -123,24 +123,28 @@ def list_multimedia(
     return ListMultimediaResponse(scroll_id=new_scroll_id, objects=objects)
 
 
-@app_multimedia.get("/index/{ix}/multimedia/bucket")
-def list_multimedia_bucket(
-    ix: str,
-    page_size: int = Query(1000, description="Max number of objects to return per page"),
-    next_page_token: str | None = Query(None, description="Token to continue listing from"),
-    directory: str | None = Query(None, description="Path of the directory to list objects from"),
-    recursive: bool = Query(False, description="If false, only list objects in the directory for the given prefix"),
-    user: User = Depends(authenticated_user),
-):
-    """
-    List all multimedia objects in an index's S3 bucket.
-    """
-    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+# This would now be replaced by using the s3 registry (objectstorage system index).
+# We could also provide a way to list the actual s3 objects, but not sure if needed,
+# and it might be good the keep the s3 part purely internal, so we can also swap it out later.
 
-    try:
-        return list_multimedia_bucket(ix, page_size, next_page_token, directory, recursive)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# @app_multimedia.get("/index/{ix}/multimedia/bucket")
+# def list_multimedia_bucket(
+#     ix: str,
+#     page_size: int = Query(1000, description="Max number of objects to return per page"),
+#     next_page_token: str | None = Query(None, description="Token to continue listing from"),
+#     directory: str | None = Query(None, description="Path of the directory to list objects from"),
+#     recursive: bool = Query(False, description="If false, only list objects in the directory for the given prefix"),
+#     user: User = Depends(authenticated_user),
+# ):
+#     """
+#     List all multimedia objects in an index's S3 bucket.
+#     """
+#     HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+
+#     try:
+#         return list_multimedia_bucket(ix, page_size, next_page_token, directory, recursive)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app_multimedia.get("/index/{ix}/multimedia/refresh")
@@ -170,36 +174,50 @@ def multimedia_get_gatekeeper(
             description="Optional maximum size of the multimedia object in bytes. If the object exceeds this size, a 413 error will be returned.",
         ),
     ] = None,
+    skip_mime_check: Annotated[
+        bool,
+        Query(
+            description="By default, the server checks the mime type of the multimedia object before serving it. Set this to true to skip this check (better performance, but need to trust the stored mime type).",
+        ),
+    ] = True,
     user: User = Depends(authenticated_user),
 ):
     """
     Gatekeeper endpoint for multimedia GET requests.
 
-    When used in browser, the ?cache=true parameter can be set. This triggers a self redirect with a unique cache id for the
-    current version of the multimedia object, and allows the browser to cache the object.
+    When viewed in browser, the ?cache=true parameter should be set. This triggers a self redirect with a unique cache id for the
+    current version of the multimedia object, allowing the browser to cache the object.
     """
 
-    # This avoids fetching head twice in the cache redirect case
+    # We skip these checks if cache is set to a specific etag value, because this should only happen if
+    # the browser already did the initial request with cache=true. Note that this is only possible for
+    # checks that protect the user, and not checks that protect the server (like unauthorized field)
     if cache is None or cache == "true":
-        meta = get_multimedia_meta(ix, field, filepath)
+        meta = get_multimedia_meta(ix, field, filepath, read_mimetype=not skip_mime_check)
 
         if not meta:
-            HTTPException_if_invalid_multimedia_field(ix, field, user)
+            HTTPException_if_invalid_or_unauthorized_field(ix, field, user)
             raise HTTPException(status_code=404, detail="Multimedia object not found")
 
-        if max_size is not None and meta["ContentLength"] > max_size:
-            HTTPException_if_invalid_multimedia_field(ix, field, user)
+        if not skip_mime_check:
+            if meta["real_content_type"] != meta["ext_content_type"]:
+                HTTPException_if_invalid_or_unauthorized_field(ix, field, user)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"The multimedia file extension {meta['ext_content_type']} does not match its real content type {meta['real_content_type']}",
+                )
+
+        if max_size is not None and meta["size"] > max_size:
+            HTTPException_if_invalid_or_unauthorized_field(ix, field, user)
             raise HTTPException(status_code=413, detail="Multimedia object exceeds maximum allowed size")
 
         if cache == "true":
-            etag = meta["ETag"].strip('"')
             return RedirectResponse(
-                url=f"/index/{ix}/multimedia/{field}/{filepath}?cache={etag}",
+                url=f"/index/{ix}/multimedia/{field}/{filepath}?cache={meta['etag']}",
                 status_code=status.HTTP_307_TEMPORARY_REDIRECT,
             )
 
-    ## Check whether user has access to this field
-    HTTPException_if_invalid_multimedia_field(ix, field, user)
+    HTTPException_if_invalid_or_unauthorized_field(ix, field, user)
 
     set_immutable_cache = cache is not None and cache != "true"
     presigned_url = presigned_multimedia_get(ix, field, filepath, immutable_cache=set_immutable_cache)
