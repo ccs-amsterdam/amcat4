@@ -3,13 +3,12 @@ from typing import Tuple
 
 from amcat4.elastic import es
 from amcat4.elastic.util import BulkInsertAction, batched_index_scan, es_bulk_create, es_bulk_upsert
-from amcat4.models import IndexId, ObjectStorage, RegisterObject
+from amcat4.models import AllowedContentType, IndexId, ObjectStorage, RegisterObject
 from amcat4.objectstorage.s3bucket import PRESIGNED_POST_HOURS_VALID, scan_s3_objects
-from amcat4.systemdata.fields import list_fields
+from amcat4.systemdata.fields import get_field
 from amcat4.systemdata.versions import objectstorage_index_id, objectstorage_index_name
 
-## We (can) only check mime types based on file extension.
-ALLOWED_MIME_TYPES = {
+INFER_MIME_TYPE: dict[str, AllowedContentType] = {
     # Images (Inert/Pixel-based)
     "jpg": "image/jpeg",
     "jpeg": "image/jpeg",
@@ -28,7 +27,9 @@ ALLOWED_MIME_TYPES = {
 }
 
 
-def register_objects(index: IndexId, objects: list[RegisterObject], max_bytes: int) -> Tuple[int, list[ObjectStorage]]:
+def register_objects(
+    index: IndexId, field: str, objects: list[RegisterObject], max_bytes: int
+) -> Tuple[int, list[ObjectStorage]]:
     """
     Register a list of ObjectStorage objects in ES. Returns an iterable of the newly registered objects.
 
@@ -37,12 +38,12 @@ def register_objects(index: IndexId, objects: list[RegisterObject], max_bytes: i
     for the (unlikely) case that you need to upload a different file to a filename that happens
     to have the same size as the existing file.
     """
-    existing = _get_current(index, objects)
+    existing = _get_current(index, field, objects)
     new_total_size = _get_total_size(index)
 
     add_objects: dict[str, ObjectStorage] = {}
     for obj in objects:
-        id = objectstorage_index_id(index, obj.field, obj.filepath)
+        id = objectstorage_index_id(index, field, obj.filepath)
 
         existing_size = existing.get(id)
         if existing_size == obj.size and not obj.force:
@@ -52,10 +53,10 @@ def register_objects(index: IndexId, objects: list[RegisterObject], max_bytes: i
         if new_total_size > max_bytes:
             raise ValueError(f"Total size of object storage exceeds maximum allowed size of {max_bytes} bytes.")
 
-        obj = _create_object_doc(index, obj)
+        obj = _create_object_doc(index, field, obj)
         add_objects[id] = obj
 
-    _raise_if_invalid_type(index, add_objects)
+    _raise_if_invalid_type(index, field, add_objects)
 
     def generator():
         for id, obj in add_objects.items():
@@ -105,7 +106,8 @@ def list_objects(
     new_scroll_id, batch = batched_index_scan(
         index=objectstorage_index_name(), query=query, batchsize=page_size, scroll_id=scroll_id
     )
-    return new_scroll_id, [ObjectStorage.model_validate(doc) for doc in batch]
+
+    return new_scroll_id, [ObjectStorage.model_validate(doc) for id, doc in batch]
 
 
 def refresh_objectstorage(
@@ -124,11 +126,16 @@ def refresh_objectstorage(
     def gen():
         for obj in scan_s3_objects(bucket, prefix):
             index, field, filepath = obj["key"].split("/", 2)
+            path, _, _ = split_filepath(filepath)
 
             action = BulkInsertAction(
                 index=objectstorage_index_name(),
                 id=objectstorage_index_id(index, field, filepath),
                 doc={
+                    "index": index,
+                    "field": field,
+                    "filepath": filepath,
+                    "path": path,
                     "size": obj["size"],
                     "last_synced": sync_time,
                 },
@@ -158,9 +165,11 @@ def delete_register(index: IndexId, field: str | None = None):
     return dict(updated=result["deleted"], total=result["total"])
 
 
-def get_content_type(filepath: str) -> str | None:
-    _, _, ext = split_filepath(filepath)
-    return ALLOWED_MIME_TYPES.get(ext, None)
+def delete_objects(index: IndexId, field: str, filepaths: list[str]):
+    ids = [objectstorage_index_id(index, field, fp) for fp in filepaths]
+    result = es().delete_by_query(index=objectstorage_index_name(), query={"ids": {"values": ids}}, refresh=True)
+    print(result)
+    return dict(updated=result["deleted"], total=result["total"])
 
 
 def _clean_register(
@@ -195,13 +204,13 @@ def _clean_register(
     return dict(updated=result["deleted"], total=result["total"])
 
 
-def _get_current(index: IndexId, objects: list[RegisterObject]) -> dict[str, int]:
+def _get_current(index: IndexId, field: str, objects: list[RegisterObject]) -> dict[str, int]:
     """
     Given a list of ObjectStorage objects, get the current versions from ES.
     Existing objects will be returned in a dictionary with id as key and size as value;
     non-existing objects will be omitted.
     """
-    ids = [objectstorage_index_id(index, obj.field, obj.filepath) for obj in objects]
+    ids = [objectstorage_index_id(index, field, obj.filepath) for obj in objects]
     res = es().options(ignore_status=[404]).mget(index=objectstorage_index_name(), ids=ids, source_includes=["size"])
 
     existing: dict[str, int] = dict()
@@ -213,11 +222,7 @@ def _get_current(index: IndexId, objects: list[RegisterObject]) -> dict[str, int
 
 
 def _get_total_size(index: IndexId) -> int:
-    query: dict = {
-        "bool": {
-            "filter": {"term": {"index": index}},
-        }
-    }
+    query: dict = {"term": {"index": index}}
 
     agg = {"total_sum": {"sum": {"field": "size"}}}
     agg = es().search(query=query, index=objectstorage_index_name(), size=0, aggregations=agg)
@@ -225,19 +230,21 @@ def _get_total_size(index: IndexId) -> int:
     return agg["aggregations"]["total_sum"]["value"]
 
 
-def _create_object_doc(index: IndexId, obj: RegisterObject) -> ObjectStorage:
+def _create_object_doc(index: IndexId, field: str, obj: RegisterObject) -> ObjectStorage:
     path, _, ext = split_filepath(obj.filepath)
 
-    content_type = ALLOWED_MIME_TYPES.get(ext, None)
-    if not content_type:
-        raise ValueError(f"File extension .{ext} is not allowed for object storage.")
+    if obj.content_type is None:
+        obj.content_type = INFER_MIME_TYPE.get(ext, None)
+        if obj.content_type is None:
+            raise ValueError(f"Cannot infer content type from file extension .{ext} for file {obj.filepath}")
 
     return ObjectStorage(
         index=index,
-        field=obj.field,
+        field=field,
         filepath=obj.filepath,
         path=path,
         size=obj.size,
+        content_type=obj.content_type,
         registered=datetime.now(UTC),
         last_synced=None,
     )
@@ -253,21 +260,18 @@ def split_filepath(filepath: str) -> Tuple[str, str, str]:
     return path, file, ext
 
 
-def _raise_if_invalid_type(index: IndexId, objects: dict[str, ObjectStorage]) -> None:
-    fields = list_fields(index, auto_repair=False)
+def _raise_if_invalid_type(index: IndexId, field: str, objects: dict[str, ObjectStorage]) -> None:
     allowed_types = ["image", "video", "audio"]
+    f = get_field(index, field)
+    if not f:
+        raise ValueError(f"Field {field} does not exist in index {index}")
+    if f.type not in allowed_types:
+        raise ValueError(f"Field {field} is of type {f.type}, which is not a valid multimedia type")
 
     for obj in objects.values():
-        type = fields[obj.field].type
-
-        if type not in allowed_types:
-            raise ValueError(f"Field {obj.field} is of type {type}, which is not a valid multimedia type")
-
-        content_type = get_content_type(obj.filepath)
-
-        if not content_type:
+        if not obj.content_type:
             raise ValueError(f"File {obj.filepath} has an unsupported file extension.")
-        if not content_type.startswith(type):
+        if not obj.content_type.startswith(f.type):
             raise ValueError(
-                f"Field {obj.field} is of type {type}, but the file extension of {obj.filepath} indicates content type {content_type}."
+                f"File {obj.filepath} with type {obj.content_type} cannot be uploaded for Field {obj.field} of type {f.type}."
             )

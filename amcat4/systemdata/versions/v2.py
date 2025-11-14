@@ -1,4 +1,4 @@
-import hashlib
+import uuid
 from typing import Iterable, Literal
 
 from amcat4.elastic.connection import elastic_connection
@@ -60,8 +60,8 @@ def requests_index_id(type: str, email: str, project_id: str | None) -> str:
 
 
 def objectstorage_index_id(index: str, field: str, filepath: str) -> str:
-    hash = hashlib.md5(filepath.encode("utf-8")).hexdigest()
-    return f"{index}:{field}:{hash}"
+    id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{field}/{filepath}"))
+    return f"{index}:{id}"
 
 
 _contact_field = object_field(
@@ -188,8 +188,8 @@ objectstorage_mapping: ElasticMapping = dict(
     filepath={"type": "wildcard"},
     path={"type": "keyword"},
     size={"type": "long"},
+    content_type={"type": "keyword"},
     registered={"type": "date"},
-    ## After s3 sync
     last_synced={"type": "date"},
 )
 

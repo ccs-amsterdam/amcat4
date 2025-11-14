@@ -134,6 +134,16 @@ def update_fields(index: str, fields: dict[str, UpdateDocumentField]):
     _update_fields(index, current_fields)
 
 
+def get_field(index: str, field: str, ignore_missing: bool = False) -> DocumentField | None:
+    doc = es_get(fields_index_name(), fields_index_id(index, field))
+    if doc is None:
+        if ignore_missing:
+            return None
+        else:
+            raise ValueError(f"Field {field} not found in index {index}")
+    return DocumentField.model_validate(doc["settings"])
+
+
 def list_fields(index: str, auto_repair: bool = True) -> dict[str, DocumentField]:
     """
     Retrieve the fields settings for this index.
@@ -260,7 +270,7 @@ def intersect_fieldspecs(specs: list[FieldSpec | None]) -> FieldSpec | None:
     return min_spec
 
 
-def HTTPException_if_invalid_or_unauthorized_field(index: str, field: str, user: User) -> None:
+def HTTPException_if_invalid_or_unauthorized_multimedia_field(index: str, field: str, user: User) -> None:
     es_field = es_get(fields_index_name(), fields_index_id(index, field))
     if es_field is None:
         raise HTTPException(

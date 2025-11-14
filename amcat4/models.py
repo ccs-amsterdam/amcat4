@@ -289,10 +289,29 @@ class ServerSettings(BaseModel):
 ####################### OBJECT STORAGE SPECIFICATIONS #########################
 
 
+AllowedContentType = Literal[
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/bmp",
+    "image/webp",
+    "video/mp4",
+    "video/quicktime",
+    "video/webm",
+    "audio/mpeg",
+    "audio/wav",
+    "audio/ogg",
+    "audio/m4a",
+]
+
+
 class RegisterObject(BaseModel):
-    field: str = Field(description="The name of the elastic field to upload the multimedia object to")
     filepath: str = Field(description="The original filename of the multimedia object. Can include directories.")
     size: int = Field(gt=0, description="The exact (!) size of the multimedia file in bytes")
+    content_type: AllowedContentType | None = Field(
+        default=None,
+        description="The MIME type of the multimedia file (e.g., image/jpeg, video/mp4). If None, it will be inferred from the file extension.",
+    )
     force: bool = Field(
         default=False,
         description="Whether to force re-uploading the object if it already exists with the same size",
@@ -305,5 +324,6 @@ class ObjectStorage(BaseModel):
     filepath: str
     path: str
     size: int
-    registered: datetime
+    content_type: AllowedContentType | None = None
+    registered: datetime | None = None
     last_synced: datetime | None = None

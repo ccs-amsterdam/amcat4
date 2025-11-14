@@ -201,17 +201,21 @@ def get_s3_object(bucket: str, key: str, first_bytes: int | None = None) -> GetO
     return res
 
 
-def delete_from_bucket(bucket: str, prefix: str):
+def delete_s3_by_prefix(bucket: str, prefix: str):
     s3 = get_s3_client()
 
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         if "Contents" in page:
-            to_delete: list[ObjectIdentifierTypeDef] = [
-                {"Key": obj.get("Key", "[never]")} for obj in page["Contents"] if obj.get("Key") is not None
-            ]
-            if to_delete:
-                s3.delete_objects(Bucket=bucket, Delete={"Objects": to_delete})
+            keys = [obj["Key"] for obj in page["Contents"] if "Key" in obj]
+            delete_s3_by_key(bucket, keys)
+
+
+def delete_s3_by_key(bucket: str, keys: list[str]):
+    s3 = get_s3_client()
+    to_delete: list[ObjectIdentifierTypeDef] = [{"Key": key} for key in keys]
+    if to_delete:
+        s3.delete_objects(Bucket=bucket, Delete={"Objects": to_delete})
 
 
 def add_s3_object(bucket: str, key: str, data: bytes):
@@ -220,15 +224,16 @@ def add_s3_object(bucket: str, key: str, data: bytes):
 
 
 def presigned_post(
-    bucket: str, key: str, type_prefix: str = "", size: int | None = None, redirect: str = ""
+    bucket: str, key: str, content_type: str = "", size: int | None = None, redirect: str = ""
 ) -> tuple[str, dict[str, str]]:
     s3 = get_s3_client()
 
     conditions: list[Any] = [{"bucket": bucket}]
     fields: dict[str, str] = {}
 
-    if type_prefix:
-        conditions.append(["starts-with", "$Content-Type", type_prefix])
+    if content_type:
+        conditions.append(["starts-with", "$Content-Type", content_type])
+        fields["Content-Type"] = content_type
     if size is not None:
         conditions.append(["content-length-range", 0, size])
     if redirect:
@@ -248,6 +253,7 @@ def presigned_post(
 def presigned_get(bucket: str, key: str, hours_valid=24, **kwargs) -> str:
     s3 = get_s3_client()
     params = {"Bucket": bucket, "Key": key, **kwargs}
+    params = {k: v for k, v in params.items() if v is not None}
 
     return s3.generate_presigned_url("get_object", Params=params, ExpiresIn=hours_valid * 3600)
 

@@ -7,12 +7,13 @@ from pydantic import BaseModel, Field
 from amcat4.api.auth import authenticated_user
 from amcat4.models import ObjectStorage, RegisterObject, Roles, User
 from amcat4.objectstorage.multimedia import (
+    delete_multimedia_by_key,
     get_multimedia_meta,
     presigned_multimedia_get,
     presigned_multimedia_post,
     refresh_multimedia_register,
 )
-from amcat4.systemdata.fields import HTTPException_if_invalid_or_unauthorized_field
+from amcat4.systemdata.fields import HTTPException_if_invalid_or_unauthorized_multimedia_field
 from amcat4.systemdata.objectstorage import list_objects, register_objects
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
@@ -23,28 +24,6 @@ app_multimedia = APIRouter(prefix="", tags=["multimedia"])
 ## and should be able to change them later. (and via requests)
 ## Project admins cannot change these limits, only server devs can.
 S3_MAX_BYTES_PER_PROJECT = 1 * 1024 * 1024 * 1024  # 1 GB
-
-## TODO:
-#
-# ALTERNATIVE APPROACH:
-# - Write S3 files to pending_multimedia bucket
-# - On refresh, loop over all pending files for this bucket, write them to elastic and move to multimedia bucket
-# - DONT do the redirect refresh per upload, just do it once at the end.
-# -
-#
-
-# @app_multimedia.get("/index/{ix}/multimedia/presigned_get")
-# def presigned_get(ix: str, key: str, user: User = Depends(authenticated_user)):
-#     HTTPException_if_not_project_index_role(user, ix, Roles.READER)
-
-#     try:
-#         bucket = s3bucket.bucket_name(ix)
-#         url = s3bucket.presigned_get(bucket, key)
-#         obj = s3bucket.stat_s3_object(bucket, key)
-#         return dict(url=url, content_type=(obj["ContentType"],), size=obj["ContentLength"])
-#     except Exception as e:
-#         raise HTTPException(status_code=404, detail=str(e))
-#     return None
 
 
 class PresignedPost(BaseModel):
@@ -65,9 +44,10 @@ class ListMultimediaResponse(BaseModel):
     objects: list[ObjectStorage] = Field(description="List of registered multimedia objects")
 
 
-@app_multimedia.post("/index/{ix}/multimedia/upload")
+@app_multimedia.post("/index/{ix}/multimedia/upload/{field}")
 def upload_multimedia(
     ix: str,
+    field: str,
     body: Annotated[list[RegisterObject], Body(...)],
     user: User = Depends(authenticated_user),
 ):
@@ -82,7 +62,7 @@ def upload_multimedia(
     HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
 
     max_size = S3_MAX_BYTES_PER_PROJECT
-    new_total_size, add_objects = register_objects(ix, body, max_bytes=max_size)
+    new_total_size, add_objects = register_objects(ix, field, body, max_bytes=max_size)
 
     presigned_posts: list[PresignedPost] = []
     for obj in add_objects:
@@ -103,6 +83,22 @@ def upload_multimedia(
     )
 
 
+@app_multimedia.post("/index/{ix}/multimedia/{field}")
+def delete_multimedia(
+    ix: str,
+    field: str,
+    filepaths: list[str] = Body(
+        ..., max_length=100, description="List of filepaths to delete from the multimedia register and storage"
+    ),
+    user: User = Depends(authenticated_user),
+):
+    """
+    Delete a multimedia object from the register and the storage.
+    """
+    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    delete_multimedia_by_key(ix, field, filepaths)
+
+
 @app_multimedia.get("/index/{ix}/multimedia")
 def list_multimedia(
     ix: str,
@@ -118,12 +114,15 @@ def list_multimedia(
     """
     HTTPException_if_not_project_index_role(user, ix, Roles.READER)
 
-    new_scroll_id, objects = list_objects(ix, page_size, directory, search, recursive, scroll_id)
+    try:
+        new_scroll_id, objects = list_objects(ix, page_size, directory, search, recursive, scroll_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     return ListMultimediaResponse(scroll_id=new_scroll_id, objects=objects)
 
 
-# This would now be replaced by using the s3 registry (objectstorage system index).
+# This is now be replaced by using the s3 registry (objectstorage system index).
 # We could also provide a way to list the actual s3 objects, but not sure if needed,
 # and it might be good the keep the s3 part purely internal, so we can also swap it out later.
 
@@ -150,7 +149,7 @@ def list_multimedia(
 @app_multimedia.get("/index/{ix}/multimedia/refresh")
 def refresh_multimedia(
     ix: str,
-    field: str | None = Query(None, description="Limit refresh to specific elastic field"),
+    field: str | None = Query(default=None, description="Limit refresh to specific elastic field"),
     user: User = Depends(authenticated_user),
 ) -> dict:
     HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
@@ -163,11 +162,11 @@ def multimedia_get_gatekeeper(
     field: Annotated[str, Path(description="The name of the elastic field containing the multimedia object")],
     filepath: Annotated[str, Path(description="The filepath of the multimedia object")],
     cache: Annotated[
-        str | None,
+        bool,
         Query(
-            description="Used for browser caching (do not set yourself)",
+            description="Only use in browser. If true, the server will respond with a redirect to a unique cached version of the multimedia object, allowing the browser to cache it. If set to a specific etag value, the server will serve that specific version of the multimedia object with immutable caching.",
         ),
-    ] = None,
+    ] = False,
     max_size: Annotated[
         int | None,
         Query(
@@ -179,7 +178,19 @@ def multimedia_get_gatekeeper(
         Query(
             description="By default, the server checks the mime type of the multimedia object before serving it. Set this to true to skip this check (better performance, but need to trust the stored mime type).",
         ),
-    ] = True,
+    ] = False,
+    etag: Annotated[
+        str | None,
+        Query(
+            include_in_schema=False,
+        ),
+    ] = None,
+    version_id: Annotated[
+        str | None,
+        Query(
+            include_in_schema=False,
+        ),
+    ] = None,
     user: User = Depends(authenticated_user),
 ):
     """
@@ -188,37 +199,38 @@ def multimedia_get_gatekeeper(
     When viewed in browser, the ?cache=true parameter should be set. This triggers a self redirect with a unique cache id for the
     current version of the multimedia object, allowing the browser to cache the object.
     """
+    if etag:
+        # If an is given, we assume that all checks EXCEPT FOR AUTHORIZATION have already
+        # been done, and that we can cache the redirected response from s3 indefinitely.
+        HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
+        presigned_url = presigned_multimedia_get(ix, field, filepath, version_id=version_id, immutable_cache=True)
+        return RedirectResponse(url=presigned_url, status_code=status.HTTP_303_SEE_OTHER)
 
-    # We skip these checks if cache is set to a specific etag value, because this should only happen if
-    # the browser already did the initial request with cache=true. Note that this is only possible for
-    # checks that protect the user, and not checks that protect the server (like unauthorized field)
-    if cache is None or cache == "true":
-        meta = get_multimedia_meta(ix, field, filepath, read_mimetype=not skip_mime_check)
+    meta = get_multimedia_meta(ix, field, filepath, read_mimetype=not skip_mime_check)
 
-        if not meta:
-            HTTPException_if_invalid_or_unauthorized_field(ix, field, user)
-            raise HTTPException(status_code=404, detail="Multimedia object not found")
+    if not meta:
+        HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
+        raise HTTPException(status_code=404, detail="Multimedia object not found")
 
-        if not skip_mime_check:
-            if meta["real_content_type"] != meta["ext_content_type"]:
-                HTTPException_if_invalid_or_unauthorized_field(ix, field, user)
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"The multimedia file extension {meta['ext_content_type']} does not match its real content type {meta['real_content_type']}",
-                )
+    if not skip_mime_check and meta["real_content_type"] != meta["content_type"]:
+        HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
+        raise HTTPException(
+            status_code=400,
+            detail=f"The multimedia file extension {meta['content_type']} does not match its real content type {meta['real_content_type']}",
+        )
 
-        if max_size is not None and meta["size"] > max_size:
-            HTTPException_if_invalid_or_unauthorized_field(ix, field, user)
-            raise HTTPException(status_code=413, detail="Multimedia object exceeds maximum allowed size")
+    if max_size is not None and meta["size"] > max_size:
+        HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
+        raise HTTPException(status_code=413, detail="Multimedia object exceeds maximum allowed size")
 
-        if cache == "true":
-            return RedirectResponse(
-                url=f"/index/{ix}/multimedia/{field}/{filepath}?cache={meta['etag']}",
-                status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            )
+    if cache:
+        ## If cache is true, we redirect to this same endpoint with the version_id set,
+        ## so that the browser can cache the unique version of this object.
+        return RedirectResponse(
+            url=f"/index/{ix}/multimedia/{field}/{filepath}?version_id={meta['etag']}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
 
-    HTTPException_if_invalid_or_unauthorized_field(ix, field, user)
-
-    set_immutable_cache = cache is not None and cache != "true"
-    presigned_url = presigned_multimedia_get(ix, field, filepath, immutable_cache=set_immutable_cache)
-    return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
+    presigned_url = presigned_multimedia_get(ix, field, filepath, version_id=meta["version_id"], immutable_cache=False)
+    return RedirectResponse(url=presigned_url, status_code=status.HTTP_303_SEE_OTHER)
