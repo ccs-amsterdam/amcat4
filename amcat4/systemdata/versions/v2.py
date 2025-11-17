@@ -140,31 +140,24 @@ roles_mapping: ElasticMapping = dict(
     email={"type": "keyword"},  # can also be *@domain.com (domain match) or * (guest match)
     role_context={"type": "keyword"},  # either _server or an index name
     role={"type": "keyword"},  # "NONE", "LISTER", "METAREADER", "READER", "WRITER", "ADMIN"
-    # API KEY PROPOSAL:
-    # Users can create an API key for their _server and index roles
-    # The API key is stored hashed in the roles document.
-    # The unhashed key is only shown once, when created.
-    # A bearer token header with the API key can be used instead of middlecat auth.
-    # a _server api key gives full user rights. An index api key gives rights only for that index
-    # the api_key_role is the role that the api key has been granted, which has to be equal or lower than the users role
-    api_key=object_field(
-        hash={"type": "keyword"},
-        expires={"type": "date"},
-        role={"type": "keyword"},
-        dpop_public_key={"type": "text"},  # for DPoP-bound API keys
-    ),
 )
 
 apikey_mapping: ElasticMapping = dict(
     email={"type": "keyword"},  # api key is always linked to user email
     name={"type": "keyword"},  # user-given name. Has to be unique per user
     secret_key={"type": "keyword"},  # random unique key
-    role_context={"type": "keyword"},  # either _server or an index name
-    max_role={"type": "keyword"},  # role is min(user role, max_role)
     expires={"type": "date"},  # hard expiration date
     last_used={"type": "date"},  # update with a 15 minute debounce on use
     timeout_minutes={"type": "integer"},  # expire if now > last_used + timeout_minutes + 15 (debounce)
     dpop_public_key={"type": "keyword"},  # for DPoP-bound API keys
+    role_restrictions=object_field(
+        ## API keys share the roles from the user email, but within optional restrictions
+        default={"type": "keyword"},  # default role if no restrictions match
+        roles=nested_field(
+            role_context={"type": "keyword"},
+            role={"type": "keyword"},
+        ),
+    ),
 )
 
 

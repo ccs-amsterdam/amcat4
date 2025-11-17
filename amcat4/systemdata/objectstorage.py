@@ -5,7 +5,7 @@ from amcat4.elastic import es
 from amcat4.elastic.util import BulkInsertAction, batched_index_scan, es_bulk_create, es_bulk_upsert
 from amcat4.models import AllowedContentType, IndexId, ObjectStorage, RegisterObject
 from amcat4.objectstorage.s3bucket import PRESIGNED_POST_HOURS_VALID, scan_s3_objects
-from amcat4.systemdata.fields import get_field
+from amcat4.systemdata.fields import list_fields
 from amcat4.systemdata.versions import objectstorage_index_id, objectstorage_index_name
 
 INFER_MIME_TYPE: dict[str, AllowedContentType] = {
@@ -262,7 +262,7 @@ def split_filepath(filepath: str) -> Tuple[str, str, str]:
 
 def _raise_if_invalid_type(index: IndexId, field: str, objects: dict[str, ObjectStorage]) -> None:
     allowed_types = ["image", "video", "audio"]
-    f = get_field(index, field)
+    f = list_fields(index).get(field)
     if not f:
         raise ValueError(f"Field {field} does not exist in index {index}")
     if f.type not in allowed_types:

@@ -1,7 +1,8 @@
 """AmCAT4 API."""
 
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,9 +12,9 @@ from fastapi.responses import JSONResponse
 from amcat4.api.index import app_index
 from amcat4.api.index_documents import app_index_documents
 from amcat4.api.index_fields import app_index_fields
+from amcat4.api.index_query import app_index_query
 from amcat4.api.index_users import app_index_users
 from amcat4.api.info import app_info
-from amcat4.api.index_query import app_index_query
 from amcat4.api.multimedia import app_multimedia
 from amcat4.api.requests import app_requests
 from amcat4.api.users import app_users

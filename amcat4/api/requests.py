@@ -1,19 +1,22 @@
 """API Endpoints for managing permission requests."""
 
 from typing import Annotated
+
 from fastapi import APIRouter, Body, Depends, HTTPException, status
+from starlette.types import AppType
 
 from amcat4.api.auth import authenticated_user
 from amcat4.models import AdminPermissionRequest, PermissionRequest, Roles, User
 from amcat4.systemdata.requests import (
-    update_request,
+    delete_request,
     list_admin_requests,
     list_user_requests,
     process_request,
+    update_request,
 )
 from amcat4.systemdata.roles import (
-    get_user_server_role,
     HTTPException_if_not_project_index_role,
+    get_user_server_role,
     role_is_at_least,
 )
 
@@ -63,7 +66,7 @@ def post_admin_requests(requests: list[AdminPermissionRequest] = Body(...), user
 
 
 @app_requests.get("/", response_model=list[AdminPermissionRequest])
-def get_requests(user: User = Depends(authenticated_user)):
+def get_my_requests(user: User = Depends(authenticated_user)):
     """Lists any active role request from this user."""
     if user.email is None:
         raise HTTPException(401, detail="Anonymous guests have no permission requests.")
@@ -80,3 +83,15 @@ def post_requests(request: Annotated[PermissionRequest, Body(...)], user: User =
         )
 
     update_request(AdminPermissionRequest(email=user.email, request=request))
+
+
+@app_requests.delete("/", status_code=status.HTTP_204_NO_CONTENT)
+def delete_my_request(request: Annotated[PermissionRequest, Body(...)], user: User = Depends(authenticated_user)):
+    """Delete an existing permission request. The user must be authenticated."""
+    if user.email is None or user.email != request.email:
+        raise HTTPException(
+            status_code=403,
+            detail="Users can only delete their own requests",
+        )
+
+    delete_request(AdminPermissionRequest(email=user.email, request=request))
