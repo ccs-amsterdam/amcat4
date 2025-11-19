@@ -1,15 +1,14 @@
 """Helper methods for authentication and authorization."""
 
-import functools
 import logging
 from datetime import datetime
 
-import requests
+import httpx
+from async_lru import alru_cache
 from authlib.common.errors import AuthlibBaseError
 from authlib.jose import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from starlette.status import HTTP_401_UNAUTHORIZED
 
 from amcat4.config import AuthOptions, get_settings
 from amcat4.models import User
@@ -21,20 +20,21 @@ class InvalidToken(ValueError):
     pass
 
 
-@functools.lru_cache()
-def get_middlecat_config(middlecat_url) -> dict:
-    r = requests.get(f"{middlecat_url}/api/configuration")
-    r.raise_for_status()
-    return r.json()
+@alru_cache(maxsize=1)
+async def get_middlecat_config(middlecat_url) -> dict:
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{middlecat_url}/api/configuration")
+        r.raise_for_status()
+        return r.json()
 
 
-def verify_token(token: str) -> dict:
+async def verify_token(token: str) -> dict:
     """
     Verifies the given token and returns the payload
 
     raises a InvalidToken exception if the token could not be validated
     """
-    payload = decode_middlecat_token(token)
+    payload = await decode_middlecat_token(token)
     if missing := {"email", "resource", "exp"} - set(payload.keys()):
         raise InvalidToken(f"Invalid token, missing keys {missing}")
     now = int(datetime.now().timestamp())
@@ -45,14 +45,14 @@ def verify_token(token: str) -> dict:
     return payload
 
 
-def decode_middlecat_token(token: str) -> dict:
+async def decode_middlecat_token(token: str) -> dict:
     """
     Verifies a midddlecat token
     """
     url = get_settings().middlecat_url
     if not url:
         raise InvalidToken("No middlecat defined, cannot decrypt middlecat token")
-    public_key = get_middlecat_config(url)["public_key"]
+    public_key = (await get_middlecat_config(url))["public_key"]
     try:
         return jwt.decode(token, public_key)
     except AuthlibBaseError as e:
@@ -73,7 +73,7 @@ async def authenticated_user(token: str | None = Depends(oauth2_scheme)) -> User
                 detail="This instance requires guests to be authenticated. Please provide a valid bearer token",
             )
     try:
-        email = verify_token(token)["email"]
+        email = (await verify_token(token))["email"]
     except Exception:
         logging.exception("Login failed")
         raise HTTPException(status_code=401, detail="Invalid token")

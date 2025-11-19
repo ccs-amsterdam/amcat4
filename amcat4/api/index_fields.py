@@ -8,12 +8,12 @@ from pydantic import BaseModel, Field
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
     CreateDocumentField,
+    DocumentField,
     FieldType,
     IndexId,
     Roles,
     UpdateDocumentField,
     User,
-    DocumentField,
 )
 from amcat4.systemdata.fields import (
     create_fields,
@@ -22,7 +22,7 @@ from amcat4.systemdata.fields import (
     list_fields,
     update_fields,
 )
-from amcat4.systemdata.roles import get_user_project_role, HTTPException_if_not_project_index_role, role_is_at_least
+from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, get_user_project_role, role_is_at_least
 
 app_index_fields = APIRouter(prefix="", tags=["project index fields"])
 
@@ -48,7 +48,7 @@ class FieldStatsResponse(BaseModel):
 
 
 @app_index_fields.post("/index/{ix}/fields", status_code=status.HTTP_204_NO_CONTENT)
-def add_fields(
+async def add_fields(
     ix: IndexId,
     fields: Annotated[
         dict[str, FieldType | CreateDocumentField],
@@ -63,21 +63,21 @@ def add_fields(
     """
     Create one or more fields in an index. Requires WRITER role on the index.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    create_fields(ix, fields)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    await create_fields(ix, fields)
 
 
 @app_index_fields.get("/index/{ix}/fields")
-def get_project_fields(ix: IndexId, user: User = Depends(authenticated_user)) -> dict[str, DocumentField]:
+async def get_project_fields(ix: IndexId, user: User = Depends(authenticated_user)) -> dict[str, DocumentField]:
     """
     Get the fields (columns) used in this index. Requires METAREADER role on the index.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.METAREADER)
-    return list_fields(ix)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.METAREADER)
+    return await list_fields(ix)
 
 
 @app_index_fields.put("/index/{ix}/fields", status_code=status.HTTP_204_NO_CONTENT)
-def modify_fields(
+async def modify_fields(
     ix: IndexId,
     fields: Annotated[dict[str, UpdateDocumentField], Body(description="")],
     user: User = Depends(authenticated_user),
@@ -85,20 +85,20 @@ def modify_fields(
     """
     Update the settings of one or more fields. Requires WRITER role on the index.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    update_fields(ix, fields)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    await update_fields(ix, fields)
 
 
 @app_index_fields.get("/index/{ix}/fields/{field}/values")
-def get_field_values(ix: IndexId, field: str, user: User = Depends(authenticated_user)) -> list[Any]:
+async def get_field_values(ix: IndexId, field: str, user: User = Depends(authenticated_user)) -> list[Any]:
     """
     Get unique values for a specific field. Requires READER role on the index.
 
     This is intended for fields with a limited number of unique values (e.g., tag fields).
     It will return an error if the field has more than 2000 unique values.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
-    values = field_values(ix, field, size=2001)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+    values = await field_values(ix, field, size=2001)
     if len(values) > 2000:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -108,16 +108,16 @@ def get_field_values(ix: IndexId, field: str, user: User = Depends(authenticated
 
 
 @app_index_fields.get("/index/{ix}/fields/{field}/stats")
-def get_field_stats(ix: IndexId, field: str, user: User = Depends(authenticated_user)):
+async def get_field_stats(ix: IndexId, field: str, user: User = Depends(authenticated_user)):
     """Get statistics for a specific field. Only works for numeric (incl date) fields. Requires READER or METAREADER role."""
-    role = get_user_project_role(user, ix)
+    role = await get_user_project_role(user, ix)
     if role_is_at_least(role, Roles.READER):
-        return field_stats(ix, field)
+        return await field_stats(ix, field)
     elif role_is_at_least(role, Roles.METAREADER):
-        fields = list_fields(ix)
+        fields = await list_fields(ix)
         if fields[field].metareader.access != "read":
             raise HTTPException(403, detail=f"Metareader cannot access field stats for field {field} in index {ix}")
-        return field_stats(ix, field)
+        return await field_stats(ix, field)
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

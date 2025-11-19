@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from typing import Tuple
+from typing import AsyncGenerator, Tuple
 
 from amcat4.elastic import es
 from amcat4.elastic.util import BulkInsertAction, batched_index_scan, es_bulk_create, es_bulk_upsert
@@ -27,7 +27,7 @@ INFER_MIME_TYPE: dict[str, AllowedContentType] = {
 }
 
 
-def register_objects(
+async def register_objects(
     index: IndexId, field: str, objects: list[RegisterObject], max_bytes: int
 ) -> Tuple[int, list[ObjectStorage]]:
     """
@@ -38,8 +38,8 @@ def register_objects(
     for the (unlikely) case that you need to upload a different file to a filename that happens
     to have the same size as the existing file.
     """
-    existing = _get_current(index, field, objects)
-    new_total_size = _get_total_size(index)
+    existing = await _get_current(index, field, objects)
+    new_total_size = await _get_total_size(index)
 
     add_objects: dict[str, ObjectStorage] = {}
     for obj in objects:
@@ -56,26 +56,27 @@ def register_objects(
         obj = _create_object_doc(index, field, obj)
         add_objects[id] = obj
 
-    _raise_if_invalid_type(index, field, add_objects)
+    await _raise_if_invalid_type(index, field, add_objects)
 
-    def generator():
+    async def generator() -> AsyncGenerator[BulkInsertAction, None]:
         for id, obj in add_objects.items():
             yield BulkInsertAction(index=objectstorage_index_name(), id=id, doc=obj.model_dump())
 
-    es_bulk_create(generator(), overwrite=True)
+    await es_bulk_create(generator(), overwrite=True)
 
     return new_total_size, list(add_objects.values())
 
 
-def get_object(index: IndexId, field: str, filepath: str) -> ObjectStorage | None:
+async def get_object(index: IndexId, field: str, filepath: str) -> ObjectStorage | None:
     id = objectstorage_index_id(index, field, filepath)
-    doc = es().options(ignore_status=[404]).get(index=objectstorage_index_name(), id=id)
+    elastic = await es()
+    doc = await elastic.options(ignore_status=[404]).get(index=objectstorage_index_name(), id=id)
     if not doc["found"]:
         return None
     return ObjectStorage.model_validate(doc["_source"])
 
 
-def list_objects(
+async def list_objects(
     index: IndexId,
     page_size: int = 1000,
     directory: str | None = None,
@@ -103,14 +104,14 @@ def list_objects(
     if search:
         query["bool"]["must"].append({"wildcard": {"filepath": f"*{search}*"}})
 
-    new_scroll_id, batch = batched_index_scan(
+    new_scroll_id, batch = await batched_index_scan(
         index=objectstorage_index_name(), query=query, batchsize=page_size, scroll_id=scroll_id
     )
 
     return new_scroll_id, [ObjectStorage.model_validate(doc) for id, doc in batch]
 
 
-def refresh_objectstorage(
+async def refresh_objectstorage(
     bucket: str,
     index: IndexId,
     field: str | None = None,
@@ -123,8 +124,8 @@ def refresh_objectstorage(
 
     ## First, we bulk upsert everything from S3 to ES. Adding the sync time,
     ## and also creating the document if it doesn't exist yet.
-    def gen():
-        for obj in scan_s3_objects(bucket, prefix):
+    async def gen() -> AsyncGenerator[BulkInsertAction, None]:
+        async for obj in scan_s3_objects(bucket, prefix):
             index, field, filepath = obj["key"].split("/", 2)
             path, _, _ = split_filepath(filepath)
 
@@ -142,12 +143,12 @@ def refresh_objectstorage(
             )
             yield action
 
-    es_bulk_upsert(gen(), batchsize=2500)
+    await es_bulk_upsert(gen(), batchsize=2500)
 
-    return _clean_register(index, field=field, min_sync=sync_time)
+    return await _clean_register(index, field=field, min_sync=sync_time)
 
 
-def delete_register(index: IndexId, field: str | None = None):
+async def delete_register(index: IndexId, field: str | None = None):
     """
     Delete all ObjectStorage entries from ES for the given index and optional field.
     """
@@ -160,19 +161,20 @@ def delete_register(index: IndexId, field: str | None = None):
     }
     if field:
         query["bool"]["must"].append({"term": {"field": field}})
-
-    result = es().delete_by_query(index=objectstorage_index_name(), query=query)
+    elastic = await es()
+    result = await elastic.delete_by_query(index=objectstorage_index_name(), query=query)
     return dict(updated=result["deleted"], total=result["total"])
 
 
-def delete_objects(index: IndexId, field: str, filepaths: list[str]):
+async def delete_objects(index: IndexId, field: str, filepaths: list[str]):
     ids = [objectstorage_index_id(index, field, fp) for fp in filepaths]
-    result = es().delete_by_query(index=objectstorage_index_name(), query={"ids": {"values": ids}}, refresh=True)
+    elastic = await es()
+    result = await elastic.delete_by_query(index=objectstorage_index_name(), query={"ids": {"values": ids}}, refresh=True)
     print(result)
     return dict(updated=result["deleted"], total=result["total"])
 
 
-def _clean_register(
+async def _clean_register(
     index: IndexId, field: str | None = None, min_sync: datetime | None = None, keep_pending: bool = True
 ) -> dict:
     """
@@ -199,19 +201,20 @@ def _clean_register(
     if keep_pending:
         pending_time = datetime.now(UTC) - timedelta(hours=PRESIGNED_POST_HOURS_VALID + 1)
         query["bool"]["must"].append({"range": {"registered": {"lte": pending_time.isoformat()}}})
-
-    result = es().delete_by_query(index=objectstorage_index_name(), query=query)
+    elastic = await es()
+    result = await elastic.delete_by_query(index=objectstorage_index_name(), query=query)
     return dict(updated=result["deleted"], total=result["total"])
 
 
-def _get_current(index: IndexId, field: str, objects: list[RegisterObject]) -> dict[str, int]:
+async def _get_current(index: IndexId, field: str, objects: list[RegisterObject]) -> dict[str, int]:
     """
     Given a list of ObjectStorage objects, get the current versions from ES.
     Existing objects will be returned in a dictionary with id as key and size as value;
     non-existing objects will be omitted.
     """
     ids = [objectstorage_index_id(index, field, obj.filepath) for obj in objects]
-    res = es().options(ignore_status=[404]).mget(index=objectstorage_index_name(), ids=ids, source_includes=["size"])
+    elastic = await es()
+    res = await elastic.options(ignore_status=[404]).mget(index=objectstorage_index_name(), ids=ids, source_includes=["size"])
 
     existing: dict[str, int] = dict()
     for doc in res["docs"]:
@@ -221,11 +224,12 @@ def _get_current(index: IndexId, field: str, objects: list[RegisterObject]) -> d
     return existing
 
 
-def _get_total_size(index: IndexId) -> int:
+async def _get_total_size(index: IndexId) -> int:
     query: dict = {"term": {"index": index}}
 
     agg = {"total_sum": {"sum": {"field": "size"}}}
-    agg = es().search(query=query, index=objectstorage_index_name(), size=0, aggregations=agg)
+    elastic = await es()
+    agg = await elastic.search(query=query, index=objectstorage_index_name(), size=0, aggregations=agg)
 
     return agg["aggregations"]["total_sum"]["value"]
 
@@ -260,9 +264,9 @@ def split_filepath(filepath: str) -> Tuple[str, str, str]:
     return path, file, ext
 
 
-def _raise_if_invalid_type(index: IndexId, field: str, objects: dict[str, ObjectStorage]) -> None:
+async def _raise_if_invalid_type(index: IndexId, field: str, objects: dict[str, ObjectStorage]) -> None:
     allowed_types = ["image", "video", "audio"]
-    f = list_fields(index).get(field)
+    f = (await list_fields(index)).get(field)
     if not f:
         raise ValueError(f"Field {field} does not exist in index {index}")
     if f.type not in allowed_types:

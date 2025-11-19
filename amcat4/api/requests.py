@@ -2,8 +2,8 @@
 
 from typing import Annotated
 
+from elasticsearch import NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, status
-from starlette.types import AppType
 
 from amcat4.api.auth import authenticated_user
 from amcat4.models import AdminPermissionRequest, PermissionRequest, Roles, User
@@ -24,19 +24,19 @@ app_requests = APIRouter(tags=["requests"], prefix="/permission_requests")
 
 
 @app_requests.get("/admin")
-def get_admin_requests(user: User = Depends(authenticated_user)) -> list[AdminPermissionRequest]:
+async def get_admin_requests(user: User = Depends(authenticated_user)) -> list[AdminPermissionRequest]:
     """
     Get all requests that this user can resolve.
     Server and project ADMINs can resolve role requests.
     Server ADMINs and WRITERs can resolve project creation requests.
     """
-    return list(list_admin_requests(user=user))
+    return [r async for r in list_admin_requests(user=user)]
 
 
 @app_requests.post("/admin", status_code=status.HTTP_204_NO_CONTENT)
-def post_admin_requests(requests: list[AdminPermissionRequest] = Body(...), user: User = Depends(authenticated_user)):
+async def post_admin_requests(requests: list[AdminPermissionRequest] = Body(...), user: User = Depends(authenticated_user)):
     """Resolve (approve, enact, and remove) the listed role requests. Requires appropriate admin/writer roles."""
-    server_role = get_user_server_role(user)
+    server_role = await get_user_server_role(user)
 
     for r in requests:
         if r.request.type == "create_project":
@@ -52,12 +52,12 @@ def post_admin_requests(requests: list[AdminPermissionRequest] = Body(...), user
                     detail="Only server ADMINs can process server role requests",
                 )
         if r.request.type == "project_role":
-            HTTPException_if_not_project_index_role(
+            await HTTPException_if_not_project_index_role(
                 user, r.request.project_id, Roles.ADMIN, message="Only project ADMINs can process project role requests"
             )
 
         try:
-            process_request(r)
+            await process_request(r)
         except Exception as e:
             raise HTTPException(
                 status_code=400,
@@ -66,15 +66,15 @@ def post_admin_requests(requests: list[AdminPermissionRequest] = Body(...), user
 
 
 @app_requests.get("/", response_model=list[AdminPermissionRequest])
-def get_my_requests(user: User = Depends(authenticated_user)):
+async def get_my_requests(user: User = Depends(authenticated_user)):
     """Lists any active role request from this user."""
     if user.email is None:
         raise HTTPException(401, detail="Anonymous guests have no permission requests.")
-    return list_user_requests(user=user)
+    return [r async for r in list_user_requests(user=user)]
 
 
 @app_requests.post("/", status_code=status.HTTP_204_NO_CONTENT)
-def post_requests(request: Annotated[PermissionRequest, Body(...)], user: User = Depends(authenticated_user)):
+async def post_requests(request: Annotated[PermissionRequest, Body(...)], user: User = Depends(authenticated_user)):
     """Create a new permission request. The user must be authenticated."""
     if user.email is None:
         raise HTTPException(
@@ -82,16 +82,22 @@ def post_requests(request: Annotated[PermissionRequest, Body(...)], user: User =
             detail="Anonymous guests cannot make access requests",
         )
 
-    update_request(AdminPermissionRequest(email=user.email, request=request))
+    await update_request(AdminPermissionRequest(email=user.email, request=request))
 
 
 @app_requests.delete("/", status_code=status.HTTP_204_NO_CONTENT)
-def delete_my_request(request: Annotated[PermissionRequest, Body(...)], user: User = Depends(authenticated_user)):
+async def delete_my_request(request: Annotated[PermissionRequest, Body(...)], user: User = Depends(authenticated_user)):
     """Delete an existing permission request. The user must be authenticated."""
-    if user.email is None or user.email != request.email:
+    if user.email is None:
         raise HTTPException(
-            status_code=403,
-            detail="Users can only delete their own requests",
+            status_code=401,
+            detail="You can only delete your own requests as an authenticated user",
         )
-
-    delete_request(AdminPermissionRequest(email=user.email, request=request))
+    try:
+        ## authentication is implicit, because users can only delete their own requests
+        await delete_request(AdminPermissionRequest(email=user.email, request=request))
+    except NotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Request not found",
+        )

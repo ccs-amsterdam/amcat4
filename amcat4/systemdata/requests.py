@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import AsyncIterable
 
 from amcat4.elastic import es
 from amcat4.elastic.util import index_scan
@@ -21,13 +21,13 @@ from amcat4.systemdata.roles import (
 from amcat4.systemdata.versions import requests_index_id, requests_index_name
 
 
-def update_request(request: AdminPermissionRequest):
+async def update_request(request: AdminPermissionRequest):
     # TODO add timestamp=datetime.now().isoformat())
     # Index requests  by type+email+index
     doc = _request_to_elastic(request)
     id = requests_index_id(doc.get("type"), doc.get("email"), doc.get("project_id", None))
-
-    es().update(
+    elastic = await es()
+    await elastic.update(
         index=requests_index_name(),
         id=id,
         doc=doc,
@@ -36,23 +36,24 @@ def update_request(request: AdminPermissionRequest):
     )
 
 
-def delete_request(request: AdminPermissionRequest):
+async def delete_request(request: AdminPermissionRequest):
     doc = _request_to_elastic(request)
     id = requests_index_id(doc["type"], doc["email"], doc["project_id"])
-    es().delete(index=requests_index_name(), id=id, refresh=True)
+    elastic = await es()
+    await elastic.delete(index=requests_index_name(), id=id, refresh=True)
 
 
-def list_user_requests(user: User) -> Iterable[AdminPermissionRequest]:
+async def list_user_requests(user: User) -> AsyncIterable[AdminPermissionRequest]:
     """List all requests for this user"""
     if user.email is None:
-        return []
+        return
 
     docs = index_scan(requests_index_name(), query={"term": {"email": user.email}})
-    for id, doc in docs:
+    async for id, doc in docs:
         yield _request_from_elastic(doc)
 
 
-def list_admin_requests(user: User) -> Iterable[AdminPermissionRequest]:
+async def list_admin_requests(user: User) -> AsyncIterable[AdminPermissionRequest]:
     """
     List all requests that this user can administrate.
     - For role requests, this means having ADMIN role on the relevant context.
@@ -60,59 +61,59 @@ def list_admin_requests(user: User) -> Iterable[AdminPermissionRequest]:
     - only returns pending requests
     """
     if user.email is None:
-        return []
+        return
 
-    server_role = get_user_server_role(user)
+    server_role = await get_user_server_role(user)
 
     # Create project requests
     if role_is_at_least(server_role, Roles.WRITER):
         query = {"bool": {"must": [{"term": {"type": "create_project"}}, {"term": {"status": "pending"}}]}}
-        for id, doc in index_scan(requests_index_name(), query=query):
+        async for id, doc in index_scan(requests_index_name(), query=query):
             yield _request_from_elastic(doc)
 
     # Server role requests
     if role_is_at_least(server_role, Roles.ADMIN):
         query = {"bool": {"must": [{"term": {"type": "server_role"}}, {"term": {"status": "pending"}}]}}
-        for id, doc in index_scan(requests_index_name(), query=query):
+        async for id, doc in index_scan(requests_index_name(), query=query):
             yield _request_from_elastic(doc)
 
     # Project role requests
-    role_contexts = [r.role_context for r in list_user_project_roles(user, required_role=Roles.ADMIN)]
-    if role_contexts:
+    roles = await list_user_project_roles(user, required_role=Roles.ADMIN)
+    if roles:
         query = {
             "bool": {
                 "must": [
-                    {"terms": {"project_id": role_contexts}},
+                    {"terms": {"project_id": [r.role_context for r in roles]}},
                     {"terms": {"type": ["server_role", "project_role"]}},
                     {"term": {"status": "pending"}},
                 ]
             }
         }
 
-        for id, doc in index_scan(requests_index_name(), query=query):
+        async for id, doc in index_scan(requests_index_name(), query=query):
             yield _request_from_elastic(doc)
 
 
-def process_request(request: AdminPermissionRequest):
+async def process_request(request: AdminPermissionRequest):
     if request.status == "pending":
         return None
     elif request.status == "approved":
-        _approve_request(request)
+        await _approve_request(request)
     elif request.status == "rejected":
         pass
     else:
         raise ValueError(f"Unknown request status {request.status}")
 
-    update_request(request)
+    await update_request(request)
 
 
-def _approve_request(ar: AdminPermissionRequest):
+async def _approve_request(ar: AdminPermissionRequest):
     match ar.request.type:
         case "server_role":
-            update_server_role(ar.email, Roles[ar.request.role], ignore_missing=True)
+            await update_server_role(ar.email, Roles[ar.request.role], ignore_missing=True)
         case "project_role":
             assert isinstance(ar.request, ProjectRoleRequest)
-            update_project_role(ar.email, ar.request.project_id, Roles[ar.request.role], ignore_missing=True)
+            await update_project_role(ar.email, ar.request.project_id, Roles[ar.request.role], ignore_missing=True)
         case "create_project":
             assert isinstance(ar.request, CreateProjectRequest)
             new_index = ProjectSettings(
@@ -121,7 +122,7 @@ def _approve_request(ar: AdminPermissionRequest):
                 description=ar.request.description,
                 folder=ar.request.folder,
             )
-            create_project_index(new_index, admin_email=ar.email)
+            await create_project_index(new_index, admin_email=ar.email)
 
 
 def _request_to_elastic(request: AdminPermissionRequest) -> dict:
@@ -152,18 +153,18 @@ def _request_from_elastic(d: dict) -> AdminPermissionRequest:
 # ================================ USED IN TESTS ONLY =========================================
 
 
-def clear_requests():
+async def clear_requests():
     """
     TEST ONLY!!
     """
-    es().delete_by_query(index=requests_index_name(), query={"match_all": {}}, refresh=True)
+    await (await es()).delete_by_query(index=requests_index_name(), query={"match_all": {}}, refresh=True)
 
 
-def list_all_requests(statuses: list[str] | None = None) -> Iterable[AdminPermissionRequest]:
+async def list_all_requests(statuses: list[str] | None = None) -> AsyncIterable[AdminPermissionRequest]:
     """
     TESTS ONLY
     """
     query = {"terms": {"status": statuses}} if statuses else {"match_all": {}}
 
-    for id, doc in index_scan(requests_index_name(), query=query):
+    async for id, doc in index_scan(requests_index_name(), query=query):
         yield _request_from_elastic(doc)

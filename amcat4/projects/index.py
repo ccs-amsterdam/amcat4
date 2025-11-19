@@ -1,10 +1,10 @@
-from typing import Iterable, Mapping
+from typing import AsyncIterable, Mapping
 
 from amcat4.elastic import es
 from amcat4.elastic.util import index_scan
 from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, RoleRule, Roles, User
+from amcat4.objectstorage.client import s3_enabled
 from amcat4.objectstorage.multimedia import delete_project_multimedia
-from amcat4.objectstorage.s3bucket import s3_enabled
 from amcat4.systemdata.fields import create_fields, list_fields
 from amcat4.systemdata.roles import list_user_project_roles
 from amcat4.systemdata.settings import (
@@ -23,13 +23,14 @@ class IndexAlreadyExists(ValueError):
     pass
 
 
-def create_project_index(new_index: ProjectSettings, admin_email: str | None = None):
+async def create_project_index(new_index: ProjectSettings, admin_email: str | None = None):
     """
     An index needs to exist in two places: as an elasticsearch index, and as a document in the settings index.
     This function creates the elasticsearch index first, and then creates the settings document.
     """
-    index_exists = es().indices.exists(index=new_index.id)
-    project_exists = es().exists(index=settings_index_name(), id=settings_index_id(new_index.id))
+    elastic = await es()
+    index_exists = await elastic.indices.exists(index=new_index.id)
+    project_exists = await elastic.exists(index=settings_index_name(), id=settings_index_id(new_index.id))
     if index_exists and project_exists:
         raise IndexAlreadyExists(f'Project "{new_index.id}" already exists')
     if index_exists and not project_exists:
@@ -44,11 +45,11 @@ def create_project_index(new_index: ProjectSettings, admin_email: str | None = N
             f'Project index "{new_index.id}" is already registered, but the elasticsearch index does not exist',
         )
 
-    create_es_index(new_index.id)
-    register_project_index(new_index, admin_email)
+    await create_es_index(new_index.id)
+    await register_project_index(new_index, admin_email)
 
 
-def register_project_index(
+async def register_project_index(
     index: ProjectSettings,
     admin_email: str | None = None,
     mappings: Mapping[str, FieldType | CreateDocumentField] | None = None,
@@ -61,85 +62,90 @@ def register_project_index(
     You can optionally provide field mappings to specify the field types before they are inferred.
     NOTE: the mappings argument is not yet used, but we need it if we want to support importing properly
     """
-    create_project_settings(index, admin_email)
+    await create_project_settings(index, admin_email)
     if mappings:
-        create_fields(index.id, mappings)
-    list_fields(index.id)  # This will infer field types from the existing mappings
+        await create_fields(index.id, mappings)
+    await list_fields(index.id)  # This will infer field types from the existing mappings
 
 
-def deregister_project_index(index_id: str):
-    delete_project_settings(index_id)
+async def deregister_project_index(index_id: str):
+    await delete_project_settings(index_id)
 
 
-def update_project_index(update_index: ProjectSettings):
+async def update_project_index(update_index: ProjectSettings):
     """
     Update index settings
     """
-    update_project_settings(update_index)
+    await update_project_settings(update_index)
 
 
-def delete_project_index(index_id: str, ignore_missing: bool = False):
+async def delete_project_index(index_id: str, ignore_missing: bool = False):
     """
     Delete both the index and the index settings, and the index bucket if any.
     """
-    _es = es().options(ignore_status=404) if ignore_missing else es()
-    _es.indices.delete(index=index_id)
+    elastic = await es()
+    _es = elastic.options(ignore_status=404) if ignore_missing else elastic
+    await _es.indices.delete(index=index_id)
 
     # important, because otherwise new project with same name will inherit old bucket
     # (buckets are always optional)
     # TODO: should we actually use unique index ids?
     if s3_enabled():
-        delete_project_multimedia(index_id)
+        await delete_project_multimedia(index_id)
 
-    delete_project_settings(index_id, ignore_missing)
+    await delete_project_settings(index_id, ignore_missing)
 
 
-def list_project_indices(ids: list[str] | None = None) -> Iterable[ProjectSettings]:
+async def list_project_indices(ids: list[str] | None = None) -> AsyncIterable[ProjectSettings]:
     """
     List all project indices, or only those with the given ids.
     """
     query = {"terms": {"_id": ids}} if ids is not None else None
     exclude_source = ["project_settings.image.base64", "server_settings.icon.base64"]
 
-    for id, ix in index_scan(settings_index_name(), query=query, exclude_source=exclude_source):
+    async for id, ix in index_scan(settings_index_name(), query=query, exclude_source=exclude_source):
         project_settings = ix["project_settings"]
         yield ProjectSettings.model_validate(project_settings)
 
 
-def create_es_index(index_id: str):
-    es().indices.create(index=index_id, mappings={"dynamic": "strict", "properties": {}})
+async def create_es_index(index_id: str):
+    elastic = await es()
+    await elastic.indices.create(index=index_id, mappings={"dynamic": "strict", "properties": {}})
 
 
-def refresh_index(index: str):
+async def refresh_index(index: str):
     """
     Refresh the elasticsearch index
     """
-    es().indices.refresh(index=index)
+    elastic = await es()
+    await elastic.indices.refresh(index=index)
 
 
-def list_user_project_indices(user: User, show_all=False) -> Iterable[tuple[ProjectSettings, RoleRule | None]]:
+async def list_user_project_indices(user: User, show_all=False) -> AsyncIterable[tuple[ProjectSettings, RoleRule | None]]:
     """
     List all indices that a user has any role on.
     Return both the index and RoleRule that the user matched for that index (can be None if show_all is True)
     TODO: add pagination and search here
     """
     if show_all:
-        for index in list_project_indices():
+        async for index in list_project_indices():
             yield index, RoleRule(role=Roles.ADMIN.name, role_context=index.id, email=user.email or "*")
         return
 
     project_role_lookup: dict[str, RoleRule] = {}
     user_indices: list[str] = []
-    for role in list_user_project_roles(user, required_role=Roles.LISTER):
+    roles = await list_user_project_roles(user, required_role=Roles.READER)
+    for role in roles:
         project_role_lookup[role.role_context] = role
         user_indices.append(role.role_context)
 
-    for index in list_project_indices(ids=user_indices):
+    async for index in list_project_indices(ids=user_indices):
         yield index, project_role_lookup[index.id]
 
 
-def index_size_in_bytes(index_id: IndexId) -> int:
-    response = es().indices.stats(
+async def index_size_in_bytes(index_id: IndexId) -> int:
+    elastic = await es()
+    response = await elastic.indices.stats(
         index=index_id,
         metric="store",
     )

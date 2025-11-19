@@ -1,13 +1,15 @@
-from typing import Any, Tuple
+from typing import Any
+
 import pytest
-import responses
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from amcat4 import api
-from amcat4.config import get_settings, AuthOptions
+from amcat4.api.auth import get_middlecat_config
+from amcat4.config import AuthOptions, get_settings
 from amcat4.elastic import es
+from amcat4.elastic.connection import close_elastic
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles
-from amcat4.objectstorage.s3bucket import s3_enabled
+from amcat4.objectstorage.client import close_s3_session
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
 from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
@@ -22,148 +24,161 @@ from tests.middlecat_keypair import PUBLIC_KEY
 AMCAT_TESTS_PREFIX = "amcat4_unittest"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def mock_requests():
-    get_settings().middlecat_url = "http://localhost:5000"
-    get_settings().host = "http://localhost:3000"
+@pytest.fixture(scope="session")
+def anyio_backend():
+    return "asyncio"
 
-    passthru: Tuple[str, ...] = ()
-    if s3_enabled():
-        passthru = (get_settings().s3_host or "",)
 
-    with responses.RequestsMock(assert_all_requests_are_fired=False, passthru_prefixes=passthru) as resp:
-        resp.get("http://localhost:5000/api/configuration", json={"public_key": PUBLIC_KEY})
-        yield None
+@pytest.fixture(scope="session")
+async def client():
+    async with AsyncClient(transport=ASGITransport(app=api.app), base_url="http://test", follow_redirects=False) as client:
+        yield client
 
 
 @pytest.fixture(scope="session", autouse=True)
-def my_setup():
+async def my_setup():
     # Override system db
+    get_settings().auth = AuthOptions.allow_guests
     get_settings().use_test_db = True
-    system_index_version = create_or_update_systemdata()
+    system_index_version = await create_or_update_systemdata()
 
-    es.cache_clear()
-    yield None
-    delete_systemdata_version(system_index_version)
+    # es.cache_clear()
+    # get_middlecat_config.cache_clear()
+
+    yield
+
+    await close_s3_session()
+    await close_elastic()
+    await delete_systemdata_version(system_index_version)
     get_settings().use_test_db = False
 
 
-@pytest.fixture(scope="session", autouse=True)
-def default_settings():
-    # Set default settings so tests are free to change the auth setting
-    get_settings().auth = AuthOptions.allow_guests
+@pytest.fixture(autouse=True)
+def mock_middlecat(httpx_mock):
+    get_settings().middlecat_url = "http://mock_middlecat.net"
+    get_settings().host = "http://localhost:3000"
+
+    httpx_mock.add_response(
+        url="http://mock_middlecat.net/api/configuration", method="GET", json={"public_key": PUBLIC_KEY}, is_optional=True
+    )
 
 
-@pytest.fixture()
-def client():
-    return TestClient(api.app)
+def is_s3_request(request):
+    s3_host = get_settings().s3_host
+    return s3_host and request.url.host == s3_host
 
 
-@pytest.fixture()
-def admin():
+@pytest.mark.httpx_mock(should_mock=is_s3_request)
+def allow_s3_passthru(httpx_mock):
+    """Pass through S3 requests"""
+    httpx_mock.add_response
+
+
+@pytest.fixture(scope="module")
+async def admin():
     email = "admin@amcat.nl"
-    update_server_role(email, Roles.ADMIN, ignore_missing=True)
+    await update_server_role(email, Roles.ADMIN, ignore_missing=True)
     yield email
-    delete_server_role(email, ignore_missing=True)
+    await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture()
-def writer():
+@pytest.fixture(scope="module")
+async def writer():
     email = "writer@amcat.nl"
-    update_server_role(email, Roles.WRITER, ignore_missing=True)
+    await update_server_role(email, Roles.WRITER, ignore_missing=True)
     yield email
-    delete_server_role(email, ignore_missing=True)
+    await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture()
-def reader():
+@pytest.fixture(scope="module")
+async def reader():
     email = "reader@amcat.nl"
-    update_server_role(email, Roles.READER, ignore_missing=True)
+    await update_server_role(email, Roles.READER, ignore_missing=True)
     yield email
-    delete_server_role(email, ignore_missing=True)
+    await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture()
-def writer2():
+@pytest.fixture(scope="module")
+async def writer2():
     email = "writer2@amcat.nl"
-    update_server_role(email, Roles.WRITER, ignore_missing=True)
+    await update_server_role(email, Roles.WRITER, ignore_missing=True)
     yield email
-    delete_server_role(email, ignore_missing=True)
+    await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture()
-def user():
+@pytest.fixture(scope="module")
+async def user():
     email = "test_user@amcat.nl"
-    update_server_role(email, Roles.READER, ignore_missing=True)
+    await update_server_role(email, Roles.READER, ignore_missing=True)
     yield email
-    delete_server_role(email, ignore_missing=True)
+    await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture()
-def username():
+@pytest.fixture(scope="module")
+async def username():
     """A name to create a user which will be deleted afterwards if needed"""
     email = "test_username@amcat.nl"
-    delete_server_role(email, ignore_missing=True)
+    await delete_server_role(email, ignore_missing=True)
     yield email
-    delete_server_role(email, ignore_missing=True)
+    await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture()
-def index():
+@pytest.fixture(scope="module")
+async def index():
     index = "amcat4_unittest_index"
-    delete_project_index(index, ignore_missing=True)
-    create_project_index(ProjectSettings(id=index, name="Unittest Index"))
+    await delete_project_index(index, ignore_missing=True)
+    await create_project_index(ProjectSettings(id=index, name="Unittest Index"))
     yield index
-    # delete_project_index(index, ignore_missing=True)
+    # await delete_project_index(index, ignore_missing=True)
 
 
-@pytest.fixture()
-def index_name():
+@pytest.fixture(scope="module")
+async def index_name():
     """An index name that is guaranteed not to exist and will be cleaned up after the test"""
     index = "amcat4_unittest_indexname"
-    delete_project_index(index, ignore_missing=True)
+    await delete_project_index(index, ignore_missing=True)
     yield index
-    delete_project_index(index, ignore_missing=True)
+    await delete_project_index(index, ignore_missing=True)
 
 
-@pytest.fixture()
-def guest_index():
+@pytest.fixture(scope="module")
+async def guest_index():
     index = "amcat4_unittest_guest_index"
-    delete_project_index(index, ignore_missing=True)
-    create_project_index(ProjectSettings(id=index))
-    set_project_guest_role(index, Roles.READER)
+    await delete_project_index(index, ignore_missing=True)
+    await create_project_index(ProjectSettings(id=index))
+    await set_project_guest_role(index, Roles.READER)
     yield index
-    delete_project_index(index, ignore_missing=True)
+    await delete_project_index(index, ignore_missing=True)
 
 
-@pytest.fixture()
-def clean_requests():
+@pytest.fixture(scope="module")
+async def clean_requests():
     """Clean up requests before and after the test"""
-    clear_requests()
+    await clear_requests()
     yield
-    clear_requests()
+    await clear_requests()
 
 
 # @pytest.fixture()
-# def index_with_multimedia():
+# async def index_with_multimedia():
 #     if not s3_enabled():
 #         pytest.skip("S3 not configured, skipping tests needing object storage")
 
 #     index = "amcat4_unittest_index_bucket"
-#     delete_project_index(index, ignore_missing=True)
-#     delete_project_multimedia(index)
-#     create_project_index(ProjectSettings(id=index, name="Unittest Index"))
+#     await delete_project_index(index, ignore_missing=True)
+#     await delete_project_multimedia(index)
+#     await create_project_index(ProjectSettings(id=index, name="Unittest Index"))
 #     yield index
-#     # delete_project_index(index, ignore_missing=True)
-#     # delete_index_bucket(index, ignore_missing=True)
+#     # await delete_project_index(index, ignore_missing=True)
+#     # await delete_index_bucket(index, ignore_missing=True)
 
 
-def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType | CreateDocumentField] | None = None):
+async def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType | CreateDocumentField] | None = None):
     """
     Upload these docs to the index, giving them an incremental id, and flush
     """
-    create_or_update_documents(index, docs, fields)
-    refresh_index(index)
+    await create_or_update_documents(index, docs, fields)
+    await refresh_index(index)
 
 
 TEST_DOCUMENTS = [
@@ -190,8 +205,8 @@ TEST_DOCUMENTS = [
 ]
 
 
-def populate_index(index):
-    upload(
+async def populate_index(index):
+    await upload(
         index,
         TEST_DOCUMENTS,
         fields={
@@ -206,31 +221,31 @@ def populate_index(index):
     return TEST_DOCUMENTS
 
 
-@pytest.fixture()
-def index_docs():
+@pytest.fixture(scope="module")
+async def index_docs():
     index = "amcat4_unittest_indexdocs"
-    delete_project_index(index, ignore_missing=True)
-    create_project_index(ProjectSettings(id=index, name="Unittest Index with Docs"))
-    populate_index(index)
+    await delete_project_index(index, ignore_missing=True)
+    await create_project_index(ProjectSettings(id=index, name="Unittest Index with Docs"))
+    await populate_index(index)
     yield index
-    delete_project_index(index, ignore_missing=True)
+    await delete_project_index(index, ignore_missing=True)
 
 
-@pytest.fixture()
-def index_many():
+@pytest.fixture(scope="module")
+async def index_many():
     index = "amcat4_unittest_indexmany"
-    delete_project_index(index, ignore_missing=True)
-    create_project_index(ProjectSettings(id=index))
-    set_project_guest_role(index, Roles.READER)
-    upload(
+    await delete_project_index(index, ignore_missing=True)
+    await create_project_index(ProjectSettings(id=index))
+    await set_project_guest_role(index, Roles.READER)
+    await upload(
         index,
         [dict(id=i, pagenr=abs(10 - i), text=text) for (i, text) in enumerate(["odd", "even"] * 10)],
         fields={"id": "integer", "pagenr": "integer", "text": "text"},
     )
     yield index
-    delete_project_index(index, ignore_missing=True)
+    await delete_project_index(index, ignore_missing=True)
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def app():
     return api.app

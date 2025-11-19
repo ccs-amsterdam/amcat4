@@ -6,12 +6,11 @@ import logging
 from math import ceil
 from typing import Any, Dict, Literal, Tuple, Union
 
-from amcat4.systemdata.fields import create_fields, list_fields
-from amcat4.projects.documents import delete_documents_by_query, update_documents_by_query, update_document_tag_by_query
-from amcat4.models import FieldSpec, FieldType, FilterSpec, SortSpec
-
-from amcat4.projects.date_mappings import mappings
 from amcat4.elastic import es
+from amcat4.models import FieldSpec, FieldType, FilterSpec, SortSpec
+from amcat4.projects.date_mappings import mappings
+from amcat4.projects.documents import delete_documents_by_query, update_document_tag_by_query, update_documents_by_query
+from amcat4.systemdata.fields import create_fields, list_fields
 
 
 def build_body(
@@ -114,7 +113,7 @@ class QueryResult:
         return dict(meta=meta, results=self.data)
 
 
-def query_documents(
+async def query_documents(
     index: Union[str, list[str]],
     fields: list[FieldSpec] | None = None,
     queries: dict[str, str] | None = None,
@@ -166,9 +165,9 @@ def query_documents(
         for s in sort:
             for k, v in s.items():
                 kwargs["sort"].append({k: dict(v)})
-
+    elastic = await es()
     if scroll_id:
-        result = es().scroll(scroll_id=scroll_id, **kwargs)
+        result = await elastic.scroll(scroll_id=scroll_id, **kwargs)
         # TODO: check why we return None here instead of just an empty result
         if not result["hits"]["hits"]:
             return None
@@ -186,14 +185,14 @@ def query_documents(
 
         if not scroll:
             kwargs["from_"] = page * per_page
-        result = es().search(index=index, size=per_page, **body, **kwargs)
+        result = await elastic.search(index=index, size=per_page, **body, **kwargs)
 
         n = result["hits"]["total"]["value"]
         if n == 10000 and not scroll:
             # Default elastic max on non-scrolled values. I think we should return the actual count,
             # even if elastic will error (I think) if the user ever retrieves a page > 1000
             # TODO: can we not hard-code the 10k limit?
-            res = es().count(index=index, query=body["query"])
+            res = await elastic.count(index=index, query=body["query"])
             n = res["count"]
 
     data = []
@@ -261,7 +260,7 @@ def overwrite_highlight_results(hit: dict, hitdict: dict):
     return hitdict
 
 
-def update_tag_query(
+async def update_tag_query(
     index: str | list[str],
     action: Literal["add", "remove"],
     field: str,
@@ -273,11 +272,11 @@ def update_tag_query(
     """Add or remove tags using a query"""
     body = build_body(queries, filters, ids=ids)
 
-    update_result = update_document_tag_by_query(index, action, body, field, tag)
+    update_result = await update_document_tag_by_query(index, action, body, field, tag)
     return update_result
 
 
-def update_query(
+async def update_query(
     index: str | list[str],
     field: str,
     value: Any,
@@ -286,20 +285,20 @@ def update_query(
     ids: list[str] | None = None,
 ):
     query = build_body(queries, filters, ids=ids)
-    return update_documents_by_query(index=index, query=query["query"], field=field, value=value)
+    return await update_documents_by_query(index=index, query=query["query"], field=field, value=value)
 
 
-def delete_query(
+async def delete_query(
     index: str | list[str],
     queries: dict[str, str] | None = None,
     filters: dict[str, FilterSpec] | None = None,
     ids: list[str] | None = None,
 ):
     query = build_body(queries, filters, ids=ids)
-    return delete_documents_by_query(index=index, query=query["query"])
+    return await delete_documents_by_query(index=index, query=query["query"])
 
 
-def reindex(
+async def reindex(
     source_index: str,
     destination_index: str,
     queries: dict[str, str] | None = None,
@@ -310,25 +309,27 @@ def reindex(
     This will first create any fields missing in the target index, and then start the reindex task.
     If wait_for_completion is False (default), returns a {'task': task_id} dict
     """
-    if not es().indices.exists(index=destination_index):
+    elastic = await es()
+    if not await elastic.indices.exists(index=destination_index):
         # Note: We could automatically create, but then also need to think about
         #       name, roles, etc., so for now let client create first
         raise Exception("Please create index before re-indexing!")
 
-    dest_fields = list_fields(destination_index)
+    dest_fields = await list_fields(destination_index)
     fields: dict[str, FieldType] = {
-        field: definition.type for (field, definition) in list_fields(source_index).items() if field not in dest_fields
+        field: definition.type for (field, definition) in (await list_fields(source_index)).items() if field not in dest_fields
     }
     if fields:
         logging.info(f"Creating fields {fields}")
-        create_fields(destination_index, fields)
+        await create_fields(destination_index, fields)
     source: dict = {"index": source_index}
     if queries or filters:
         source.update(build_body(queries, filters))
 
-    return es().reindex(dest=dict(index=destination_index), source=source, wait_for_completion=wait_for_completion)
+    return await elastic.reindex(dest=dict(index=destination_index), source=source, wait_for_completion=wait_for_completion)
 
 
-def get_task_status(task_id):
-    res = es().tasks.get(task_id=task_id)
+async def get_task_status(task_id):
+    elastic = await es()
+    res = await elastic.tasks.get(task_id=task_id)
     return res

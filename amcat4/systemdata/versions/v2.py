@@ -1,5 +1,5 @@
 import uuid
-from typing import Iterable, Literal
+from typing import AsyncGenerator, Literal
 
 from amcat4.elastic.connection import elastic_connection
 from amcat4.elastic.mapping import ElasticMapping, nested_field, object_field
@@ -187,12 +187,13 @@ objectstorage_mapping: ElasticMapping = dict(
 )
 
 
-def check_deprecated_version(index: str):
+async def check_deprecated_version(index: str):
     """
     The v1 system has a deprecated form of versioning, where the version number was stored in the _global document.
     The oldest versions should (pretty please...) no longer be used, so we don't support automatic migration from them.
     """
-    global_doc = elastic_connection().get(index=index, id="_global", source_includes="version")
+    elastic = await elastic_connection()
+    global_doc = await elastic.get(index=index, id="_global", source_includes="version")
     version = global_doc["_source"].get("version", 0)
     if version != 2:
         raise ValueError(
@@ -202,7 +203,7 @@ def check_deprecated_version(index: str):
         )
 
 
-def migrate_server_settings(doc: dict):
+async def migrate_server_settings(doc: dict):
     return BulkInsertAction(
         index=settings_index_name(),
         id=settings_index_id("_server"),
@@ -212,7 +213,7 @@ def migrate_server_settings(doc: dict):
                 "description": None,
                 "external_url": doc.get("external_url"),
                 "welcome_text": doc.get("welcome_text"),
-                "icon": create_image_from_url(doc.get("server_icon")),
+                "icon": await create_image_from_url(doc.get("server_icon")),
                 "information_links": doc.get("information_links"),
                 "welcome_buttons": doc.get("welcome_buttons"),
                 "contact": doc.get("contact"),
@@ -221,7 +222,7 @@ def migrate_server_settings(doc: dict):
     )
 
 
-def migrate_project_settings(index: str, doc: dict):
+async def migrate_project_settings(index: str, doc: dict):
     return BulkInsertAction(
         index=settings_index_name(),
         id=settings_index_id(index),
@@ -232,7 +233,7 @@ def migrate_project_settings(index: str, doc: dict):
                 "contact": doc.get("contact"),
                 "archived": doc.get("archived"),
                 "folder": doc.get("folder"),
-                "image": create_image_from_url(doc.get("image_url")),
+                "image": await create_image_from_url(doc.get("image_url")),
             }
         },
     )
@@ -281,23 +282,23 @@ SYSTEM_INDICES = [
 ]
 
 
-def migrate():
+async def migrate():
     # v1 had just one big, bad index that used (whats now) the system indices prefix without version or path
     v1_system_index = system_index_name(1, "")
-    check_deprecated_version(v1_system_index)
+    await check_deprecated_version(v1_system_index)
 
-    def bulk_generator() -> Iterable[BulkInsertAction]:
-        for id, doc in index_scan(v1_system_index):
+    async def bulk_generator() -> AsyncGenerator[BulkInsertAction]:
+        async for id, doc in index_scan(v1_system_index):
             # The _global document in the v1 index contained server settings, server roles and all requests
             if id == "_global":
-                yield migrate_server_settings(doc)
+                yield await migrate_server_settings(doc)
 
                 for role in doc.get("roles", []):
                     yield migrate_roles(role, None)
 
             # The other documents had the index name as id, and contained index settings, index roles and fields
             else:
-                yield migrate_project_settings(id, doc)
+                yield await migrate_project_settings(id, doc)
 
                 for role in doc.get("roles", []):
                     yield migrate_roles(role, id)
@@ -305,4 +306,4 @@ def migrate():
                 for field in doc.get("fields", []):
                     yield migrate_fields(id, field)
 
-    es_bulk_create(bulk_generator(), overwrite=True)
+    await es_bulk_create(bulk_generator(), overwrite=True)

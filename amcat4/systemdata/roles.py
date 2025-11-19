@@ -1,8 +1,8 @@
-from typing import Iterable
+from typing import AsyncIterable
 
 from fastapi import HTTPException
 
-from amcat4.elastic.connection import elastic_connection
+from amcat4.elastic import es
 from amcat4.elastic.util import index_scan
 from amcat4.models import (
     GuestRole,
@@ -16,55 +16,55 @@ from amcat4.models import (
 from amcat4.systemdata.versions import roles_index_id, roles_index_name
 
 
-def create_project_role(email: RoleEmailPattern, project_id: IndexId, role: Roles):
-    _create_role(email=email, role_context=project_id, role=role)
+async def create_project_role(email: RoleEmailPattern, project_id: IndexId, role: Roles):
+    await _create_role(email=email, role_context=project_id, role=role)
 
 
-def create_server_role(email: RoleEmailPattern, role: Roles):
-    _create_role(email=email, role_context="_server", role=role)
+async def create_server_role(email: RoleEmailPattern, role: Roles):
+    await _create_role(email=email, role_context="_server", role=role)
 
 
-def update_project_role(email: RoleEmailPattern, project_id: IndexId, role: Roles, ignore_missing: bool = False):
-    _update_role(email=email, role_context=project_id, role=role, ignore_missing=ignore_missing)
+async def update_project_role(email: RoleEmailPattern, project_id: IndexId, role: Roles, ignore_missing: bool = False):
+    await _update_role(email=email, role_context=project_id, role=role, ignore_missing=ignore_missing)
 
 
-def update_server_role(email: RoleEmailPattern, role: Roles, ignore_missing: bool = False):
-    _update_role(email=email, role_context="_server", role=role, ignore_missing=ignore_missing)
+async def update_server_role(email: RoleEmailPattern, role: Roles, ignore_missing: bool = False):
+    await _update_role(email=email, role_context="_server", role=role, ignore_missing=ignore_missing)
 
 
-def delete_project_role(email: RoleEmailPattern, project_id: IndexId, ignore_missing: bool = False):
-    _delete_role(email=email, role_context=project_id, ignore_missing=ignore_missing)
+async def delete_project_role(email: RoleEmailPattern, project_id: IndexId, ignore_missing: bool = False):
+    await _delete_role(email=email, role_context=project_id, ignore_missing=ignore_missing)
 
 
-def delete_server_role(email: RoleEmailPattern, ignore_missing: bool = False):
-    _delete_role(email=email, role_context="_server", ignore_missing=ignore_missing)
+async def delete_server_role(email: RoleEmailPattern, ignore_missing: bool = False):
+    await _delete_role(email=email, role_context="_server", ignore_missing=ignore_missing)
 
 
 def list_project_roles(
     emails: list[RoleEmailPattern] | None = None,
     project_ids: list[IndexId] | None = None,
     min_role: Roles | None = None,
-) -> Iterable[RoleRule]:
+) -> AsyncIterable[RoleRule]:
     return _list_roles(emails=emails, role_contexts=project_ids, min_role=min_role, only_projects=True)
 
 
 def list_server_roles(
     emails: list[RoleEmailPattern] | None = None,
     min_role: Roles | None = None,
-) -> Iterable[RoleRule]:
+) -> AsyncIterable[RoleRule]:
     return _list_roles(emails=emails, role_contexts=["_server"], min_role=min_role)
 
 
-def list_user_roles(
+async def list_user_roles(
     user: User,
     role_contexts: list[RoleContext] | None = None,
     required_role: Roles | None = None,
 ) -> list[RoleRule]:
     all_matches = _list_roles(emails=_user_to_role_emails(user), role_contexts=role_contexts, min_role=required_role)
-    return _get_strongest_matches(all_matches)
+    return await _get_strongest_matches(all_matches)
 
 
-def list_user_project_roles(
+async def list_user_project_roles(
     user: User,
     project_ids: list[IndexId] | None = None,
     required_role: Roles | None = None,
@@ -74,11 +74,11 @@ def list_user_project_roles(
     This gives the most exact matching role for each project (guest, domain or full email).
     This does not (!!) take server role into account (see get_user_project_role)
     """
-    all_matches = list(list_project_roles(emails=_user_to_role_emails(user), project_ids=project_ids, min_role=required_role))
-    return _get_strongest_matches(all_matches)
+    all_matches = list_project_roles(emails=_user_to_role_emails(user), project_ids=project_ids, min_role=required_role)
+    return await _get_strongest_matches(all_matches)
 
 
-def get_user_project_role(user: User, project_index: IndexId, global_admin: bool = True) -> RoleRule:
+async def get_user_project_role(user: User, project_index: IndexId, global_admin: bool = True) -> RoleRule:
     """
     Get the role for the given user and context.
     This gives the most exact matching role on the given context.
@@ -99,13 +99,13 @@ def get_user_project_role(user: User, project_index: IndexId, global_admin: bool
 
     # If we just need the project role, its a simple lookup
     if not global_admin:
-        project_role = list_user_roles(user, role_contexts=[project_index])
+        project_role = await list_user_roles(user, role_contexts=[project_index])
         project_role = project_role[0] if project_role else None
 
     # If we need to consider global admin, we fetch both roles in one go
     # and overwrite the project role if the server role is ADMIN
     else:
-        user_roles = list_user_roles(user, role_contexts=[project_index, "_server"])
+        user_roles = await list_user_roles(user, role_contexts=[project_index, "_server"])
         project_role = next((ur for ur in user_roles if ur.role_context == project_index), None)
         server_role = next((ur for ur in user_roles if ur.role_context == "_server"), None)
 
@@ -119,7 +119,7 @@ def get_user_project_role(user: User, project_index: IndexId, global_admin: bool
         return RoleRule(email="*", role_context=project_index, role="NONE")
 
 
-def get_user_server_role(user: User) -> RoleRule:
+async def get_user_server_role(user: User) -> RoleRule:
     """
     Get the most exact server role match for the given user.
     returns a RoleRule with Role.NONE if no role exists.
@@ -127,30 +127,30 @@ def get_user_server_role(user: User) -> RoleRule:
     if user.superadmin:
         return RoleRule(email=user.email or "*", role_context="_server", role=Roles.ADMIN.name)
 
-    user_roles = list_user_roles(user, role_contexts=["_server"])
+    user_roles = await list_user_roles(user, role_contexts=["_server"])
     if user_roles:
         return user_roles[0]
     else:
         return RoleRule(email="*", role_context="_server", role="NONE")
 
 
-def HTTPException_if_not_project_index_role(
+async def HTTPException_if_not_project_index_role(
     user: User, role_context: RoleContext, required_role: Roles, global_admin: bool = True, message: str | None = None
 ):
     """
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
-    role = get_user_project_role(user, role_context, global_admin=global_admin)
+    role = await get_user_project_role(user, role_context, global_admin=global_admin)
     if not role_is_at_least(role, required_role):
         detail = message or f"{user.email or 'GUEST'} does not have {required_role.name} permissions on project {role_context}"
         raise HTTPException(403, detail)
 
 
-def HTTPException_if_not_server_role(user: User, required_role: Roles, message: str | None = None):
+async def HTTPException_if_not_server_role(user: User, required_role: Roles, message: str | None = None):
     """
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
-    role = get_user_server_role(user)
+    role = await get_user_server_role(user)
     if not role_is_at_least(role, required_role):
         detail = message or f"{user.email or 'GUEST'} does not have {required_role.name} permissions on the server"
         raise HTTPException(403, detail)
@@ -164,22 +164,22 @@ def role_is_at_least(user_role: RoleRule | None, required_role: Roles) -> bool:
     return Roles[user_role.role] >= required_role
 
 
-def set_project_guest_role(index_id: IndexId, role: Roles):
+async def set_project_guest_role(index_id: IndexId, role: Roles):
     """
     Helper to set the guest role for an index.
     """
-    _update_role(email="*", role_context=index_id, role=role, ignore_missing=True)
+    await _update_role(email="*", role_context=index_id, role=role, ignore_missing=True)
 
 
-def get_project_guest_role(index_id: IndexId) -> GuestRole:
+async def get_project_guest_role(index_id: IndexId) -> GuestRole:
     """Get the guest role for an index. Note that this returns the Role not RoleRule!"""
-    role = get_user_project_role(user=User(email=None), project_index=index_id).role
+    role = (await get_user_project_role(user=User(email=None), project_index=index_id)).role
     if role == Roles.ADMIN.name:
         return Roles.WRITER.name  # guests cannot be ADMIN.
     return role
 
 
-def _create_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles):
+async def _create_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles):
     """
     Creates a role for a given email pattern and role context.
     Raises an error if a role for this email in this context already exists.
@@ -189,34 +189,37 @@ def _create_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles
         raise HTTPException(422, "Cannot create a role with Role.NONE.")
 
     user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-    elastic_connection().create(index=roles_index_name(), id=id, document=user_role.model_dump(), refresh=True)
+    elastic = await es()
+    await elastic.create(index=roles_index_name(), id=id, document=user_role.model_dump(), refresh=True)
 
 
-def _update_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles, ignore_missing: bool = False):
+async def _update_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles, ignore_missing: bool = False):
     """
     Updates (or creates) a role for a given email pattern and role context.
     """
     id = roles_index_id(email, role_context)
     if role == Roles.NONE:
-        _delete_role(email, role_context, ignore_missing=ignore_missing)
+        await _delete_role(email, role_context, ignore_missing=ignore_missing)
 
     user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-    elastic_connection().update(
+    elastic = await es()
+    await elastic.update(
         index=roles_index_name(), id=id, doc=user_role.model_dump(), doc_as_upsert=ignore_missing, refresh=True
     )
 
 
-def _delete_role(email: RoleEmailPattern, role_context: RoleContext, ignore_missing: bool = False):
-    elastic = elastic_connection().options(ignore_status=404) if ignore_missing else elastic_connection()
-    elastic.delete(index=roles_index_name(), id=roles_index_id(email, role_context), refresh=True)
+async def _delete_role(email: RoleEmailPattern, role_context: RoleContext, ignore_missing: bool = False):
+    elastic = await es()
+    elastic = elastic.options(ignore_status=404) if ignore_missing else elastic
+    await elastic.delete(index=roles_index_name(), id=roles_index_id(email, role_context), refresh=True)
 
 
-def _list_roles(
+async def _list_roles(
     emails: list[RoleEmailPattern] | None = None,
     role_contexts: list[RoleContext] | None = None,
     min_role: Roles | None = None,
     only_projects: bool = False,
-) -> Iterable[RoleRule]:
+) -> AsyncIterable[RoleRule]:
     """
     List roles, optionally filtered by user, minimum role, role contexts, and minimum match quality.
 
@@ -239,7 +242,7 @@ def _list_roles(
     if only_projects:
         query["bool"]["must"].append({"bool": {"must_not": {"term": {"role_context": "_server"}}}})
 
-    for id, user_role in index_scan(roles_index_name(), query=query):
+    async for id, user_role in index_scan(roles_index_name(), query=query):
         yield RoleRule.model_validate(user_role)
 
 
@@ -269,14 +272,14 @@ def _match_strength(email: RoleEmailPattern) -> int:
         return 3
 
 
-def _get_strongest_matches(role_matches: Iterable[RoleRule]) -> list[RoleRule]:
+async def _get_strongest_matches(role_matches: AsyncIterable[RoleRule]) -> list[RoleRule]:
     """
     From a list of roles, return the strongest match for each role context.
     """
     # use tuples of (strength, RoleRule) for each role context to sort out the strongest matches
     strongest_matches: dict[RoleContext, tuple[int, RoleRule]] = {}
 
-    for match in role_matches:
+    async for match in role_matches:
         context = match.role_context
         strength = _match_strength(match.email)
 

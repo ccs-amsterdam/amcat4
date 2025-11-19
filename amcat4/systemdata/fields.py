@@ -15,7 +15,7 @@ We need to make sure that:
 """
 
 import datetime
-from typing import Any, Iterable, Iterator, Mapping, TypedDict, cast, get_args
+from typing import Any, AsyncGenerator, Iterable, Mapping, TypedDict, cast, get_args
 
 from elasticsearch import NotFoundError
 from fastapi import HTTPException
@@ -46,8 +46,8 @@ class UpdateFieldMapping(TypedDict):
     elastic_type: ElasticType
 
 
-def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocumentField]):
-    current_fields = list_fields(index)
+async def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocumentField]):
+    current_fields = await list_fields(index)
 
     sfields = _standardize_createfields(fields)
     old_identifiers = any(f.identifier for f in current_fields.values())
@@ -96,16 +96,16 @@ def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocumentFie
 
     if new_identifiers:
         # new identifiers are only allowed if the index had identifiers, or if it is a new index (i.e. no documents)
-        has_docs = es().count(index=index)["count"] > 0
+        has_docs = (await (await es()).count(index=index))["count"] > 0
         if has_docs and not old_identifiers:
             raise ValueError("Cannot add identifiers. Index already has documents with no identifiers.")
 
     if update_mapping:
-        _update_index_fields_mappings(index, current_fields)
+        await _update_index_fields_mappings(index, current_fields)
 
 
-def update_fields(index: str, fields: dict[str, UpdateDocumentField]):
-    current_fields = list_fields(index)
+async def update_fields(index: str, fields: dict[str, UpdateDocumentField]):
+    current_fields = await list_fields(index)
 
     for field, new_settings in fields.items():
         current = current_fields.get(field)
@@ -131,10 +131,10 @@ def update_fields(index: str, fields: dict[str, UpdateDocumentField]):
         if new_settings.client_settings is not None:
             current_fields[field].client_settings = new_settings.client_settings
 
-    _update_fields(index, current_fields)
+    await _update_fields(index, current_fields)
 
 
-def list_fields(index: str, auto_repair: bool = True) -> dict[str, DocumentField]:
+async def list_fields(index: str, auto_repair: bool = True) -> dict[str, DocumentField]:
     """
     Retrieve the fields settings for this index.
 
@@ -142,24 +142,24 @@ def list_fields(index: str, auto_repair: bool = True) -> dict[str, DocumentField
     and (2) the field mappings in the index itself. If these are not in sync, fix them.
     """
     if auto_repair:
-        return list_and_repair_fields(index)
+        return await list_and_repair_fields(index)
     else:
-        return _list_fields(index)
+        return await _list_fields(index)
 
 
-def list_and_repair_fields(
+async def list_and_repair_fields(
     index: str,
 ):
     fields: dict[str, DocumentField] = {}
 
     try:
-        system_index_fields = _list_fields(index)
+        system_index_fields = await _list_fields(index)
     except NotFoundError:
         system_index_fields = {}
 
     # check if all fields in elastic are registered in the system index, and otherwise add them (update_system_index=True)
     update_system_index = False
-    inferred_fields = _infer_es_index_fields(index)
+    inferred_fields = await _infer_es_index_fields(index)
     for name, inferred_field in inferred_fields.items():
         if name not in system_index_fields:
             update_system_index = True
@@ -184,28 +184,28 @@ def list_and_repair_fields(
             update_mapping = True
 
     if update_mapping:
-        _update_index_fields_mappings(index, fields)
+        await _update_index_fields_mappings(index, fields)
 
     if update_system_index:
-        _update_fields(index, fields)
+        await _update_fields(index, fields)
 
     return fields
 
 
-def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSpec]:
+async def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSpec]:
     """
     Returns the intersection of allowed fieldspecs across multiple indices for the given user.
     """
 
     fields_across_indices: dict[str, list[FieldSpec | None]] = {}
 
-    roles = list_user_project_roles(user, project_ids=indices)
+    roles = await list_user_project_roles(user, project_ids=indices)
     role_dict: dict[str, RoleRule] = {role.role_context: role for role in roles}
 
     # Note that we NEED to use list_fields and not _list_fields,
     # because we need to be certain the es fields are all registered in the system index.
     for index in indices:
-        for field_name, field in list_fields(index).items():
+        for field_name, field in (await list_fields(index)).items():
             if field_name not in fields_across_indices:
                 fields_across_indices[field_name] = []
             role = role_dict.get(index)
@@ -260,8 +260,8 @@ def intersect_fieldspecs(specs: list[FieldSpec | None]) -> FieldSpec | None:
     return min_spec
 
 
-def HTTPException_if_invalid_or_unauthorized_multimedia_field(index: str, field: str, user: User) -> None:
-    es_field = es_get(fields_index_name(), fields_index_id(index, field))
+async def HTTPException_if_invalid_or_unauthorized_multimedia_field(index: str, field: str, user: User) -> None:
+    es_field = await es_get(fields_index_name(), fields_index_id(index, field))
     if es_field is None:
         raise HTTPException(
             status_code=400,
@@ -277,17 +277,17 @@ def HTTPException_if_invalid_or_unauthorized_multimedia_field(index: str, field:
         )
 
     min_role = Roles.METAREADER if docfield.metareader.access == "read" else Roles.READER
-    HTTPException_if_not_project_index_role(user, index, min_role)
+    await HTTPException_if_not_project_index_role(user, index, min_role)
 
 
-def HTTPException_if_invalid_field_access(indices: list[str], user: User, fields: list[FieldSpec]) -> None:
+async def HTTPException_if_invalid_field_access(indices: list[str], user: User, fields: list[FieldSpec]) -> None:
     """
     Check for the given field specifications whether the user has required access on all given indices.
     """
     if len(fields) == 0:
         return None
 
-    roles = list_user_project_roles(user, project_ids=indices)
+    roles = await list_user_project_roles(user, project_ids=indices)
     role_dict = {role.role_context: role for role in roles}
 
     for index in indices:
@@ -300,7 +300,7 @@ def HTTPException_if_invalid_field_access(indices: list[str], user: User, fields
         if role_is_at_least(role, Roles.READER):
             continue
 
-        index_fields = list_fields(index)
+        index_fields = await list_fields(index)
         for field in fields:
             if field.name not in index_fields:
                 continue
@@ -374,7 +374,7 @@ def coerce_type(value: Any, type: FieldType):
     return value
 
 
-def create_or_verify_tag_field(index: str | list[str], field: str):
+async def create_or_verify_tag_field(index: str | list[str], field: str):
     """
     Create a special type of field that can be used to tag documents.
     Since adding/removing tags supports multiple indices, we first check whether the field name is valid for all indices
@@ -383,7 +383,7 @@ def create_or_verify_tag_field(index: str | list[str], field: str):
     indices = [index] if isinstance(index, str) else index
     add_to_indices = []
     for i in indices:
-        current_fields = list_fields(i)
+        current_fields = await list_fields(i)
         if field in current_fields:
             if current_fields[field].type != "tag":
                 raise ValueError(f"Field '{field}' already exists in index '{i}' and is not a tag field")
@@ -391,13 +391,13 @@ def create_or_verify_tag_field(index: str | list[str], field: str):
             add_to_indices.append(i)
 
     for i in add_to_indices:
-        current_fields = list_fields(i)
+        current_fields = await list_fields(i)
         current_fields[field] = _get_default_field("tag")
-        es().indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
-        _update_fields(i, current_fields)
+        await (await es()).indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
+        await _update_fields(i, current_fields)
 
 
-def field_values(index: str, field: str, size: int) -> list[str]:
+async def field_values(index: str, field: str, size: int) -> list[str]:
     """
     Get the values for a given field (e.g. to populate list of filter values on keyword field)
     Results are sorted descending by document frequency
@@ -409,18 +409,18 @@ def field_values(index: str, field: str, size: int) -> list[str]:
     :return: A list of values
     """
     aggs = {"unique_values": {"terms": {"field": field, "size": size}}}
-    r = es().search(index=index, size=0, aggs=aggs)
+    r = await (await es()).search(index=index, size=0, aggs=aggs)
     return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]
 
 
-def field_stats(index: str, field: str):
+async def field_stats(index: str, field: str):
     """
     :param index: The index
     :param field: The field name
     :return: A list of values
     """
     aggs = {"facets": {"stats": {"field": field}}}
-    r = es().search(index=index, size=0, aggs=aggs)
+    r = await (await es()).search(index=index, size=0, aggs=aggs)
     return r["aggregations"]["facets"]
 
 
@@ -467,31 +467,31 @@ def _check_forbidden_type(field: DocumentField, type: FieldType):
                 raise ValueError(f"Field {field} is an identifier field, which cannot be a {forbidden_type} field")
 
 
-def _update_fields(index: str, fields: dict[str, DocumentField]):
-    def insert_fields():
+async def _update_fields(index: str, fields: dict[str, DocumentField]):
+    async def insert_fields() -> AsyncGenerator[BulkInsertAction, None]:
         for field, settings in fields.items():
             id = fields_index_id(index, field)
             field_doc = {"index": index, "name": field, "settings": settings.model_dump()}
             yield BulkInsertAction(index=fields_index_name(), id=id, doc=field_doc)
 
-    es_bulk_upsert(insert_fields())
+    await es_bulk_upsert(insert_fields())
 
 
-def _list_fields(index: str) -> dict[str, DocumentField]:
+async def _list_fields(index: str) -> dict[str, DocumentField]:
     docs = index_scan(fields_index_name(), query={"term": {"index": index}})
-    return {doc["name"]: DocumentField.model_validate(doc["settings"]) for id, doc in docs}
+    return {doc["name"]: DocumentField.model_validate(doc["settings"]) async for id, doc in docs}
 
 
-def _get_es_index_fields(index: str) -> Iterator[tuple[str, dict]]:
-    r = es().indices.get_mapping(index=index)
+async def _get_es_index_fields(index: str) -> AsyncGenerator[tuple[str, dict], None]:
+    r = await (await es()).indices.get_mapping(index=index)
     if "properties" in r[index]["mappings"]:
         for name, mapping in r[index]["mappings"]["properties"].items():
             yield name, mapping
 
 
-def _infer_es_index_fields(index: str) -> dict[str, DocumentField]:
+async def _infer_es_index_fields(index: str) -> dict[str, DocumentField]:
     fields: dict[str, DocumentField] = {}
-    for name, mapping in _get_es_index_fields(index):
+    async for name, mapping in _get_es_index_fields(index):
         elastic_type = mapping.get("type", "object")
         nested_props = mapping.get("properties", None)
         type = infer_field_type(elastic_type, nested_props)
@@ -500,7 +500,7 @@ def _infer_es_index_fields(index: str) -> dict[str, DocumentField]:
     return fields
 
 
-def _update_index_fields_mappings(index: str, fields: dict[str, DocumentField]) -> None:
+async def _update_index_fields_mappings(index: str, fields: dict[str, DocumentField]) -> None:
     """
     Update the elasticsearch index mapping for the given fields.
     Note that we can only add new fields or change certain properties of existing fields.
@@ -514,5 +514,5 @@ def _update_index_fields_mappings(index: str, fields: dict[str, DocumentField]) 
         if field.type == "date":
             mapping_updates[field_name]["format"] = "strict_date_optional_time"
 
-    es().indices.put_mapping(index=index, properties=mapping_updates)
-    _update_fields(index, fields)
+    await (await es()).indices.put_mapping(index=index, properties=mapping_updates)
+    await _update_fields(index, fields)

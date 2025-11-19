@@ -4,13 +4,13 @@ Aggregate queries
 
 import copy
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
+from typing import Any, AsyncGenerator, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
 
-from amcat4.projects.date_mappings import interval_mapping
 from amcat4.elastic import es
-from amcat4.systemdata.fields import list_fields
 from amcat4.models import DocumentField, FilterSpec, SortSpec
+from amcat4.projects.date_mappings import interval_mapping
 from amcat4.projects.query import build_body
+from amcat4.systemdata.fields import list_fields
 
 
 def _combine_mappings(mappings):
@@ -174,7 +174,7 @@ class AggregateResult:
             yield dict(zip(keys, row))
 
 
-def _bare_aggregate(
+async def _bare_aggregate(
     index: str | list[str], queries, filters, aggregations: Sequence[Aggregation | TopHitsAggregation]
 ) -> Tuple[int, dict]:
     """
@@ -183,12 +183,12 @@ def _bare_aggregate(
     """
     body = build_body(queries=queries, filters=filters) if filters or queries else {}
     index = index if isinstance(index, str) else ",".join(index)
-    aresult = es().search(index=index, size=0, aggregations=aggregation_dsl(aggregations), **body)
-    cresult = es().count(index=index, **body)
+    aresult = await (await es()).search(index=index, size=0, aggregations=aggregation_dsl(aggregations), **body)
+    cresult = await (await es()).count(index=index, **body)
     return cresult["count"], aresult["aggregations"]
 
 
-def _elastic_aggregate(
+async def _elastic_aggregate(
     index: str | list[str],
     sources,
     axes,
@@ -213,7 +213,7 @@ def _elastic_aggregate(
     if filters or queries:
         q = build_body(queries=queries, filters=filters)
         kargs["query"] = q["query"]
-    result = es().search(
+    result = await (await es()).search(
         index=index if isinstance(index, str) else ",".join(index),
         size=0,
         aggregations=aggr,
@@ -237,22 +237,22 @@ def _elastic_aggregate(
     return rows, after_key
 
 
-def _aggregate_results(
+async def _aggregate_results(
     index: Union[str, List[str]],
     axes: List[Axis],
     queries: dict[str, str] | None,
     filters: dict[str, FilterSpec] | None,
     aggregations: List[Aggregation | TopHitsAggregation],
     after: dict[str, Any] | None = None,
-):
+) -> AsyncGenerator[Tuple[list, dict | None], None]:
     if not axes or len(axes) == 0:
         # Path 1
         # No axes, so return aggregations (or total count) only
         if aggregations:
-            count, results = _bare_aggregate(index, queries, filters, aggregations)
+            count, results = await _bare_aggregate(index, queries, filters, aggregations)
             rows = [(count,) + tuple(a.get_value(results) for a in aggregations)]
         else:
-            result = es().count(
+            result = await (await es()).count(
                 index=index if isinstance(index, str) else ",".join(index), **build_body(queries=queries, filters=filters)
             )
             rows = [(result["count"],)]
@@ -281,7 +281,9 @@ def _aggregate_results(
                     continue
                 after.pop("_query", None)
 
-            for rows, after_buckets in _aggregate_results(index, _axes, {label: query}, filters, aggregations, after=after):
+            async for rows, after_buckets in _aggregate_results(
+                index, _axes, {label: query}, filters, aggregations, after=after
+            ):
                 after_buckets = copy.deepcopy(after_buckets)
 
                 # insert label into the right position on the result tuple
@@ -306,15 +308,15 @@ def _aggregate_results(
         sources = [axis.query() for axis in axes]
         runtime_mappings = _combine_mappings(axis.runtime_mappings() for axis in axes)
 
-        rows, after = _elastic_aggregate(index, sources, axes, queries, filters, aggregations, runtime_mappings, after)
+        rows, after = await _elastic_aggregate(index, sources, axes, queries, filters, aggregations, runtime_mappings, after)
         yield rows, after
 
         if after is not None:
-            for rows, after in _aggregate_results(index, axes, queries, filters, aggregations, after):
+            async for rows, after in _aggregate_results(index, axes, queries, filters, aggregations, after):
                 yield rows, after
 
 
-def query_aggregate(
+async def query_aggregate(
     index: str | list[str],
     axes: list[Axis] | None = None,
     aggregations: list[Aggregation | TopHitsAggregation] | None = None,
@@ -342,14 +344,14 @@ def query_aggregate(
     all_fields: dict[str, DocumentField] = dict()
     indices = index if isinstance(index, list) else [index]
     for index in indices:
-        index_fields = list_fields(index)
+        index_fields = await list_fields(index)
         for field_name, field in index_fields.items():
             if field_name not in all_fields:
                 all_fields[field_name] = field
             else:
                 if field.type != all_fields[field_name].type:
                     raise ValueError(f"Type of {field_name} is not the same in all indices")
-        all_fields.update(list_fields(index))
+        all_fields.update(await list_fields(index))
 
     if not axes:
         axes = []
@@ -368,9 +370,9 @@ def query_aggregate(
     gen = _aggregate_results(indices, axes, queries, filters, aggregations, after)
     data = list()
     last_after = None
-    for rows, after in gen:
+    async for rows, after in gen:
         data += rows
         last_after = after
         if len(data) > stop_after:
-            gen.close()
+            break
     return AggregateResult(axes, aggregations, data, count_column="n", after=last_after)

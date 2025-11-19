@@ -9,12 +9,12 @@ from pydantic import BaseModel, Field
 from amcat4.api.auth import authenticated_user, get_middlecat_config
 from amcat4.config import get_settings, validate_settings
 from amcat4.elastic.connection import connect_elastic
-from amcat4.objectstorage.s3bucket import s3_enabled
-from amcat4.projects.query import get_task_status
 from amcat4.models import ContactInfo, Links, LinksGroup, Roles, ServerSettings, User
+from amcat4.objectstorage.client import s3_enabled
 from amcat4.objectstorage.image_processing import create_image_from_url
+from amcat4.projects.query import get_task_status
 from amcat4.systemdata.roles import HTTPException_if_not_server_role
-from amcat4.systemdata.settings import upsert_server_settings, get_server_settings
+from amcat4.systemdata.settings import get_server_settings, upsert_server_settings
 
 templates = Jinja2Templates(directory="templates")
 
@@ -52,10 +52,10 @@ class AuthConfigResponse(BaseModel):
 
 
 @app_info.get("/")
-def index(request: Request):
+async def index(request: Request):
     """Returns an HTML page with information about this AmCAT instance."""
     host = get_settings().host
-    es_alive = connect_elastic().ping()
+    es_alive = await (await connect_elastic()).ping()
     auth = get_settings().auth
     has_admin_email = bool(get_settings().admin_email)
     middlecat_url = get_settings().middlecat_url
@@ -64,7 +64,7 @@ def index(request: Request):
     api_version = version("amcat4")
     if middlecat_url:
         try:
-            get_middlecat_config(middlecat_url)
+            await get_middlecat_config(middlecat_url)
             # middlecat_alive = True
         except OSError:
             pass
@@ -88,24 +88,24 @@ def get_auth_config() -> AuthConfigResponse:
 
 
 @app_info.get("/config/branding")
-def read_branding() -> BrandingResponse:
+async def read_branding() -> BrandingResponse:
     """Get the server branding settings."""
-    settings = get_server_settings()
+    settings = await get_server_settings()
     d = settings.model_dump(exclude={"icon"})
     d["icon_id"] = settings.icon.id if settings.icon else None
     return BrandingResponse(**d)
 
 
 @app_info.put("/config/branding", status_code=status.HTTP_204_NO_CONTENT)
-def change_branding(data: UpdateBrandingBody, user: User = Depends(authenticated_user)):
+async def change_branding(data: UpdateBrandingBody, user: User = Depends(authenticated_user)):
     """Update the server branding settings. Requires ADMIN server role."""
-    HTTPException_if_not_server_role(user, Roles.ADMIN)
+    await HTTPException_if_not_server_role(user, Roles.ADMIN)
     d = data.model_dump(exclude_unset=True, exclude={"icon_url"})
-    d["icon"] = create_image_from_url(data.icon_url) if data.icon_url else None
-    upsert_server_settings(ServerSettings(**d))
+    d["icon"] = await create_image_from_url(data.icon_url) if data.icon_url else None
+    await upsert_server_settings(ServerSettings(**d))
 
 
 @app_info.get("/task/{taskId}")
-def task_status(taskId: str, _user: User = Depends(authenticated_user)):
+async def task_status(taskId: str, _user: User = Depends(authenticated_user)):
     """Get the status of a background task."""
-    return get_task_status(taskId)
+    return await get_task_status(taskId)

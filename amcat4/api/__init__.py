@@ -12,20 +12,27 @@ from fastapi.responses import JSONResponse
 from amcat4.api.index import app_index
 from amcat4.api.index_documents import app_index_documents
 from amcat4.api.index_fields import app_index_fields
+from amcat4.api.index_multimedia import app_multimedia
 from amcat4.api.index_query import app_index_query
 from amcat4.api.index_users import app_index_users
 from amcat4.api.info import app_info
-from amcat4.api.multimedia import app_multimedia
 from amcat4.api.requests import app_requests
 from amcat4.api.users import app_users
+from amcat4.elastic.connection import close_elastic
+from amcat4.objectstorage.client import close_s3_session
 from amcat4.systemdata.manage import create_or_update_systemdata
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.info("Initializing system data...")
-    create_or_update_systemdata()
+    await create_or_update_systemdata()
+
     yield
+    ## cleanup should happen here
+    print("cleaninging08solfjalskjdflkasjdlfkjasldo4asdfa")
+    await close_s3_session()
+    await close_elastic()
 
 
 app = FastAPI(

@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from typing import Any, Literal, Mapping
+from typing import Any, AsyncGenerator, Literal, Mapping
 
 import elasticsearch.helpers
 
@@ -10,7 +10,7 @@ from amcat4.models import CreateDocumentField, DocumentFieldDefinition, FieldTyp
 from amcat4.systemdata.fields import coerce_type, create_fields, create_or_verify_tag_field, list_fields
 
 
-def create_or_update_documents(
+async def create_or_update_documents(
     index: str,
     documents: list[dict[str, Any]],
     fields: Mapping[str, FieldType | DocumentFieldDefinition] | None = None,
@@ -33,12 +33,13 @@ def create_or_update_documents(
             else:
                 create_fields_dict[k] = CreateDocumentField(**v.model_dump())
 
-        create_fields(index, create_fields_dict)
+        await create_fields(index, create_fields_dict)
 
-    actions = list(upload_document_es_actions(index, documents, op_type))
+    actions = [a async for a in upload_document_es_actions(index, documents, op_type)]
     try:
-        successes, failures = elasticsearch.helpers.bulk(
-            es(),
+        elastic = await es()
+        successes, failures = await elasticsearch.helpers.async_bulk(
+            elastic,
             actions,
             stats_only=False,
             raise_on_error=raise_on_error,
@@ -54,8 +55,8 @@ def create_or_update_documents(
     return dict(successes=successes, failures=failures)
 
 
-def upload_document_es_actions(index, documents, op_type):
-    field_settings = list_fields(index)
+async def upload_document_es_actions(index, documents, op_type) -> AsyncGenerator[dict, None]:
+    field_settings = await list_fields(index)
     identifiers = [k for k, v in field_settings.items() if v.identifier is True]
     for document in documents:
         doc = dict()
@@ -87,7 +88,7 @@ def upload_document_es_actions(index, documents, op_type):
         yield action
 
 
-def fetch_document(index: str, doc_id: str, **kargs) -> dict:
+async def fetch_document(index: str, doc_id: str, **kargs) -> dict:
     """
     Get a single document from this index.
 
@@ -95,10 +96,11 @@ def fetch_document(index: str, doc_id: str, **kargs) -> dict:
     :param doc_id: The document id (hash)
     :return: the source dict of the document
     """
-    return es().get(index=index, id=doc_id, **kargs)["_source"]
+    elastic = await es()
+    return (await elastic.get(index=index, id=doc_id, **kargs))["_source"]
 
 
-def update_document(
+async def update_document(
     index: str, doc_id: str, fields: dict, ignore_missing: bool = False, get_source: bool | Mapping[str, Any] = False
 ):
     """
@@ -110,17 +112,19 @@ def update_document(
     :param ignore_missing: If True, create the document if it does not exist
     :param get_source: If True, return the updated document source
     """
-    es().update(index=index, id=doc_id, doc=fields, source=get_source, doc_as_upsert=ignore_missing)  # type: ignore
+    elastic = await es()
+    await elastic.update(index=index, id=doc_id, doc=fields, source=get_source, doc_as_upsert=ignore_missing)  # type: ignore
 
 
-def delete_document(index: str, doc_id: str, ignore_missing: bool = False):
+async def delete_document(index: str, doc_id: str, ignore_missing: bool = False):
     """
     Delete a single document
 
     :param index: The Pname of the index
     :param doc_id: The document id (hash)
     """
-    es().delete(index=index, id=doc_id)
+    elastic = await es()
+    await elastic.delete(index=index, id=doc_id)
 
 
 UPDATE_SCRIPTS = dict(
@@ -141,31 +145,30 @@ UPDATE_SCRIPTS = dict(
       if (ctx._source[params.field].size() == 0) {
         ctx._source.remove(params.field);
       }
-    } else {
-      ctx.op = 'noop';
     }
     """,
 )
 
 
-def update_document_tag_by_query(
+async def update_document_tag_by_query(
     index: str | list[str],
     action: Literal["add", "remove"],
     query: dict,
     field: str,
     tag: str,
 ):
-    create_or_verify_tag_field(index, field)
+    await create_or_verify_tag_field(index, field)
     script = dict(
         source=UPDATE_SCRIPTS[action],
         lang="painless",
         params=dict(field=field, tag=tag),
     )
-    result = es().update_by_query(index=index, script=script, **query, refresh=True)
+    elastic = await es()
+    result = await elastic.update_by_query(index=index, script=script, **query, refresh=True)
     return dict(updated=result["updated"], total=result["total"])
 
 
-def update_documents_by_query(index: str | list[str], query: dict, field: str, value: Any):
+async def update_documents_by_query(index: str | list[str], query: dict, field: str, value: Any):
     if value is None:
         script = dict(
             source="ctx._source.remove(params.field)",
@@ -178,13 +181,14 @@ def update_documents_by_query(index: str | list[str], query: dict, field: str, v
             lang="painless",
             params=dict(field=field, value=value),
         )
-
-    result = es().update_by_query(index=index, query=query, script=script, refresh=True)
+    elastic = await es()
+    result = await elastic.update_by_query(index=index, query=query, script=script, refresh=True)
     return dict(updated=result["updated"], total=result["total"])
 
 
-def delete_documents_by_query(index: str | list[str], query: dict):
-    result = es().delete_by_query(index=index, query=query)
+async def delete_documents_by_query(index: str | list[str], query: dict):
+    elastic = await es()
+    result = await elastic.delete_by_query(index=index, query=query)
     return dict(updated=result["deleted"], total=result["total"])
 
 

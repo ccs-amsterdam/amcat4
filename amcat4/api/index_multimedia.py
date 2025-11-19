@@ -45,7 +45,7 @@ class ListMultimediaResponse(BaseModel):
 
 
 @app_multimedia.post("/index/{ix}/multimedia/upload/{field}")
-def upload_multimedia(
+async def upload_multimedia(
     ix: str,
     field: str,
     body: Annotated[list[RegisterObject], Body(...)],
@@ -59,14 +59,14 @@ def upload_multimedia(
 
     If a file already exists, it will be overwritten.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
 
     max_size = S3_MAX_BYTES_PER_PROJECT
-    new_total_size, add_objects = register_objects(ix, field, body, max_bytes=max_size)
+    new_total_size, add_objects = await register_objects(ix, field, body, max_bytes=max_size)
 
     presigned_posts: list[PresignedPost] = []
     for obj in add_objects:
-        url, form = presigned_multimedia_post(ix, obj)
+        url, form = await presigned_multimedia_post(ix, obj)
         presigned_posts.append(
             PresignedPost(
                 filepath=obj.filepath,
@@ -84,7 +84,7 @@ def upload_multimedia(
 
 
 @app_multimedia.post("/index/{ix}/multimedia/{field}")
-def delete_multimedia(
+async def delete_multimedia(
     ix: str,
     field: str,
     filepaths: list[str] = Body(
@@ -95,12 +95,12 @@ def delete_multimedia(
     """
     Delete a multimedia object from the register and the storage.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    delete_multimedia_by_key(ix, field, filepaths)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    await delete_multimedia_by_key(ix, field, filepaths)
 
 
 @app_multimedia.get("/index/{ix}/multimedia")
-def list_multimedia(
+async def list_multimedia(
     ix: str,
     page_size: int = Query(1000, description="Max number of objects to return per page"),
     directory: str | None = Query(None, description="Path of the directory to list objects from"),
@@ -112,10 +112,10 @@ def list_multimedia(
     """
     List all registered multimedia objects.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.READER)
 
     try:
-        new_scroll_id, objects = list_objects(ix, page_size, directory, search, recursive, scroll_id)
+        new_scroll_id, objects = await list_objects(ix, page_size, directory, search, recursive, scroll_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -127,7 +127,7 @@ def list_multimedia(
 # and it might be good the keep the s3 part purely internal, so we can also swap it out later.
 
 # @app_multimedia.get("/index/{ix}/multimedia/bucket")
-# def list_multimedia_bucket(
+# async def list_multimedia_bucket(
 #     ix: str,
 #     page_size: int = Query(1000, description="Max number of objects to return per page"),
 #     next_page_token: str | None = Query(None, description="Token to continue listing from"),
@@ -138,26 +138,26 @@ def list_multimedia(
 #     """
 #     List all multimedia objects in an index's S3 bucket.
 #     """
-#     HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+#     await HTTPException_if_not_project_index_role(user, ix, Roles.READER)
 
 #     try:
-#         return list_multimedia_bucket(ix, page_size, next_page_token, directory, recursive)
+#         return await list_multimedia_bucket(ix, page_size, next_page_token, directory, recursive)
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app_multimedia.get("/index/{ix}/multimedia/refresh")
-def refresh_multimedia(
+async def refresh_multimedia(
     ix: str,
     field: str | None = Query(default=None, description="Limit refresh to specific elastic field"),
     user: User = Depends(authenticated_user),
 ) -> dict:
-    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    return refresh_multimedia_register(ix, field)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    return await refresh_multimedia_register(ix, field)
 
 
 @app_multimedia.get("/index/{ix}/multimedia/get/{field}/{filepath:path}")
-def multimedia_get_gatekeeper(
+async def multimedia_get_gatekeeper(
     ix: str,
     field: Annotated[str, Path(description="The name of the elastic field containing the multimedia object")],
     filepath: Annotated[str, Path(description="The filepath of the multimedia object")],
@@ -202,25 +202,25 @@ def multimedia_get_gatekeeper(
     if etag:
         # If an is given, we assume that all checks EXCEPT FOR AUTHORIZATION have already
         # been done, and that we can cache the redirected response from s3 indefinitely.
-        HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
-        presigned_url = presigned_multimedia_get(ix, field, filepath, version_id=version_id, immutable_cache=True)
+        await HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
+        presigned_url = await presigned_multimedia_get(ix, field, filepath, version_id=version_id, immutable_cache=True)
         return RedirectResponse(url=presigned_url, status_code=status.HTTP_303_SEE_OTHER)
 
-    meta = get_multimedia_meta(ix, field, filepath, read_mimetype=not skip_mime_check)
+    meta = await get_multimedia_meta(ix, field, filepath, read_mimetype=not skip_mime_check)
 
     if not meta:
-        HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
+        await HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
         raise HTTPException(status_code=404, detail="Multimedia object not found")
 
     if not skip_mime_check and meta["real_content_type"] != meta["content_type"]:
-        HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
+        await HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
         raise HTTPException(
             status_code=400,
             detail=f"The multimedia file extension {meta['content_type']} does not match its real content type {meta['real_content_type']}",
         )
 
     if max_size is not None and meta["size"] > max_size:
-        HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
+        await HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
         raise HTTPException(status_code=413, detail="Multimedia object exceeds maximum allowed size")
 
     if cache:
@@ -231,6 +231,6 @@ def multimedia_get_gatekeeper(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
         )
 
-    HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
-    presigned_url = presigned_multimedia_get(ix, field, filepath, version_id=meta["version_id"], immutable_cache=False)
+    await HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
+    presigned_url = await presigned_multimedia_get(ix, field, filepath, version_id=meta["version_id"], immutable_cache=False)
     return RedirectResponse(url=presigned_url, status_code=status.HTTP_303_SEE_OTHER)

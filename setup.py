@@ -33,8 +33,12 @@ setup(
         "class_doc",
         "mypy",
         "jsonpath_ng",
-        "boto3",
-        "boto3-stubs[essential]",
+        # "boto3",
+        # "boto3-stubs[essential]",
+        "async-lru",
+        "aioboto3",
+        "aiobotocore",
+        "types-aiobotocore[essential]",
     ],
     extras_require={
         "dev": [
@@ -45,7 +49,7 @@ setup(
             "responses",
             "pre-commit",
             "types-requests",
-            "pytest-asyncio",
+            "pytest-anyio",
         ]
     },
     entry_points={"console_scripts": ["amcat4 = amcat4.__main__:main"]},

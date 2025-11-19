@@ -13,15 +13,14 @@ without FastAPI still needs to ensure that the system indices are present.
 in scripts that need it, instead of doing it implicitly here.
 """
 
-import functools
-from elasticsearch import Elasticsearch
+from async_lru import alru_cache
+from elasticsearch import AsyncElasticsearch
 
-from amcat4.config import get_settings
 from amcat4.elastic.connection import elastic_connection
 from amcat4.systemdata.manage import create_or_update_systemdata
 
 
-@functools.lru_cache()
-def es() -> Elasticsearch:
-    create_or_update_systemdata()
-    return elastic_connection()
+@alru_cache(maxsize=1)
+async def es() -> AsyncElasticsearch:
+    await create_or_update_systemdata()
+    return await elastic_connection()

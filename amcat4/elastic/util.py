@@ -1,11 +1,11 @@
-from typing import Any, Iterable, Literal, Tuple
+from typing import Any, AsyncGenerator, AsyncIterable, Iterable, Literal, Tuple
 
 import elasticsearch.helpers
 from elasticsearch.helpers.errors import BulkIndexError
 from pydantic import BaseModel
 
 from amcat4.config import get_settings
-from amcat4.elastic.connection import elastic_connection
+from amcat4.elastic.connection import connect_elastic
 from amcat4.elastic.mapping import ElasticMapping
 from amcat4.models import IndexId
 
@@ -42,25 +42,29 @@ class BulkInsertAction(BaseModel):
     doc: dict
 
 
-def es_get(index: str, id: str) -> dict | None:
-    return elastic_connection().get(index=index, id=id)["_source"]
+async def es_get(index: str, id: str) -> dict | None:
+    elastic = await connect_elastic()
+    return (await elastic.get(index=index, id=id))["_source"]
 
 
-def es_upsert(index: str, id: str, doc: dict, refresh: bool = True) -> None:
-    elastic_connection().update(index=index, id=id, doc=doc, doc_as_upsert=True, refresh=refresh)
+async def es_upsert(index: str, id: str, doc: dict, refresh: bool = True) -> None:
+    elastic = await connect_elastic()
+    await elastic.update(index=index, id=id, doc=doc, doc_as_upsert=True, refresh=refresh)
 
 
-def es_bulk_create(generator: Iterable[BulkInsertAction], batchsize: int = 1000, overwrite: bool = False) -> None:
+async def es_bulk_create(
+    generator: AsyncGenerator[BulkInsertAction, None], batchsize: int = 1000, overwrite: bool = False
+) -> None:
     op_type = "index" if overwrite else "create"
-    return es_bulk_action(generator, op_type=op_type, batchsize=batchsize)
+    return await es_bulk_action(generator, op_type=op_type, batchsize=batchsize)
 
 
-def es_bulk_upsert(generator: Iterable[BulkInsertAction], batchsize: int = 1000) -> None:
-    return es_bulk_action(generator, op_type="update", batchsize=batchsize)
+async def es_bulk_upsert(generator: AsyncGenerator[BulkInsertAction, None], batchsize: int = 1000) -> None:
+    return await es_bulk_action(generator, op_type="update", batchsize=batchsize)
 
 
-def es_bulk_action(
-    generator: Iterable[BulkInsertAction],
+async def es_bulk_action(
+    generator: AsyncGenerator[BulkInsertAction, None],
     op_type: Literal["index", "create", "update"],
     batchsize: int = 1000,
     refresh: bool = True,
@@ -87,7 +91,7 @@ def es_bulk_action(
         - use "update" to create or update documents (i.e. upsert)
     """
     actions: list[dict] = []
-    for item in generator:
+    async for item in generator:
         action: dict = {"_op_type": op_type, "_index": item.index, "_id": item.id}
 
         if op_type == "update":
@@ -98,19 +102,20 @@ def es_bulk_action(
         actions.append(action)
 
         if len(actions) >= batchsize:
-            bulk_helper_with_errors(actions, refresh=refresh)
+            await bulk_helper_with_errors(actions, refresh=refresh)
             actions = []
 
     if len(actions) > 0:
-        bulk_helper_with_errors(actions, refresh=refresh)
+        await bulk_helper_with_errors(actions, refresh=refresh)
 
 
-def bulk_helper_with_errors(actions: Iterable[dict], **kwargs) -> None:
+async def bulk_helper_with_errors(actions: Iterable[dict], **kwargs) -> None:
     """
     elastic bulk but printing the reason for the first error if any
     """
     try:
-        elasticsearch.helpers.bulk(elastic_connection(), actions, stats_only=False, **kwargs)
+        elastic = await connect_elastic()
+        await elasticsearch.helpers.async_bulk(elastic, actions, stats_only=False, **kwargs)
 
     except BulkIndexError as e:
         if e.errors:
@@ -120,7 +125,7 @@ def bulk_helper_with_errors(actions: Iterable[dict], **kwargs) -> None:
         raise
 
 
-def index_scan(
+async def index_scan(
     index: str,
     batchsize: int = 1000,
     query: dict | None = None,
@@ -128,7 +133,7 @@ def index_scan(
     source: list[str] | None = None,
     exclude_source: list[str] | None = None,
     scroll: str = "5m",
-) -> Iterable[tuple[str, dict]]:
+) -> AsyncIterable[tuple[str, dict]]:
     """
     Scan an index in batches of the given size. Yields documents one by one (batching behind the scenes).
     Helpers scan is much faster without sorting (which sets preserve_order to TRUE), so avoid it if you can.
@@ -143,9 +148,9 @@ def index_scan(
         query_body["_source_includes"] = source
     if exclude_source is not None:
         query_body["_source_excludes"] = exclude_source
-
-    for hit in elasticsearch.helpers.scan(
-        elastic_connection(),
+    elastic = await connect_elastic()
+    async for hit in elasticsearch.helpers.async_scan(
+        elastic,
         index=index,
         query=query_body,
         scroll=scroll,
@@ -155,7 +160,7 @@ def index_scan(
         yield hit["_id"], hit["_source"]
 
 
-def batched_index_scan(
+async def batched_index_scan(
     index: str,
     batchsize: int = 1000,
     query: dict | None = None,
@@ -168,9 +173,9 @@ def batched_index_scan(
     """
     Like index scan, but returns a batch at a time and a scroll id for manual scrolling
     """
-
+    elastic = await connect_elastic()
     if scroll_id is None:
-        res = elastic_connection().search(
+        res = await elastic.search(
             index=index,
             query=query,
             sort=sort,
@@ -180,14 +185,14 @@ def batched_index_scan(
             size=batchsize,
         )
     else:
-        res = elastic_connection().scroll(scroll_id=scroll_id, scroll=scroll)
+        res = await elastic.scroll(scroll_id=scroll_id, scroll=scroll)
 
     new_scroll_id: str | None = res.get("_scroll_id", None)
     hits = res["hits"]["hits"]
 
     if not hits:
         if new_scroll_id:
-            elastic_connection().clear_scroll(scroll_id=new_scroll_id)
+            await elastic.clear_scroll(scroll_id=new_scroll_id)
         return None, []
 
     batch_data: list[Tuple[str, dict[str, Any]]] = [(hit["_id"], hit["_source"]) for hit in hits]

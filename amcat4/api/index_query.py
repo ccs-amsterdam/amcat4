@@ -5,10 +5,10 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from amcat4.projects.aggregate import Aggregation, Axis, TopHitsAggregation, query_aggregate
 from amcat4.api.auth import authenticated_user
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, IndexIds, Roles, SortSpec, User
-from amcat4.projects.query import delete_query, update_query, update_tag_query, query_documents
+from amcat4.projects.aggregate import Aggregation, Axis, TopHitsAggregation, query_aggregate
+from amcat4.projects.query import delete_query, query_documents, update_query, update_tag_query
 from amcat4.systemdata.fields import (
     HTTPException_if_invalid_field_access,
     allowed_fieldspecs,
@@ -215,7 +215,7 @@ class TaskResponse(BaseModel):
 
 
 @app_index_query.post("/{index}/query")
-def query_documents_post(
+async def query_documents_post(
     index: IndexIds,
     body: Annotated[QueryDocumentsBody, Body(...)],
     user: User = Depends(authenticated_user),
@@ -229,11 +229,11 @@ def query_documents_post(
 
     fieldspecs = _standardize_fieldspecs(body.fields)
     if fieldspecs:
-        HTTPException_if_invalid_field_access(indices, user, fieldspecs)
+        await HTTPException_if_invalid_field_access(indices, user, fieldspecs)
     else:
-        fieldspecs = allowed_fieldspecs(user, indices)
+        fieldspecs = await allowed_fieldspecs(user, indices)
 
-    r = query_documents(
+    r = await query_documents(
         indices,
         queries=_standardize_queries(body.queries),
         filters=_standardize_filters(body.filters),
@@ -251,7 +251,7 @@ def query_documents_post(
 
 
 @app_index_query.post("/{index}/aggregate", response_model=AggregateResult)
-def query_aggregate_post(
+async def query_aggregate_post(
     index: IndexIds,
     body: Annotated[QueryAggregateBody, Body(...)],
     user: User = Depends(authenticated_user),
@@ -276,11 +276,11 @@ def query_aggregate_post(
                 fields_to_check += [FieldSpec(name=f) for f in agg.fields]
 
     if fields_to_check:
-        HTTPException_if_invalid_field_access(indices, user, fields_to_check)
+        await HTTPException_if_invalid_field_access(indices, user, fields_to_check)
 
     _axes = [Axis(**x.model_dump()) for x in body.axes] if body.axes else []
     _aggregations = [a.instantiate() for a in body.aggregations] if body.aggregations else []
-    results = query_aggregate(
+    results = await query_aggregate(
         indices,
         _axes,
         _aggregations,
@@ -300,7 +300,7 @@ def query_aggregate_post(
 
 
 @app_index_query.post("/{index}/tags_update")
-def query_update_tags(
+async def query_update_tags(
     index: IndexIds,
     body: Annotated[UpdateTagsBody, Body(...)],
     user: User = Depends(authenticated_user),
@@ -310,19 +310,19 @@ def query_update_tags(
     """
     indices = index.split(",")
     for i in indices:
-        HTTPException_if_not_project_index_role(user, i, Roles.WRITER)
+        await HTTPException_if_not_project_index_role(user, i, Roles.WRITER)
 
     ids = body.ids
     if isinstance(ids, (str, int)):
         ids = [ids]
-    response = update_tag_query(
+    response = await update_tag_query(
         indices, body.action, body.field, body.tag, _standardize_queries(body.queries), _standardize_filters(body.filters), ids
     )
     return QueryUpdateResponse(**response)
 
 
 @app_index_query.post("/{index}/update_by_query")
-def update_by_query(
+async def update_by_query(
     index: IndexIds,
     body: Annotated[UpdateByQueryBody, Body(...)],
     user: User = Depends(authenticated_user),
@@ -332,16 +332,16 @@ def update_by_query(
     """
     indices = index.split(",")
     for ix in indices:
-        HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+        await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
 
-    response = update_query(
+    response = await update_query(
         indices, body.field, body.value, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids
     )
     return QueryUpdateResponse(**response)
 
 
 @app_index_query.post("/{index}/delete_by_query")
-def delete_by_query(
+async def delete_by_query(
     index: IndexIds,
     body: Annotated[DeleteByQueryBody, Body(...)],
     user: User = Depends(authenticated_user),
@@ -351,8 +351,8 @@ def delete_by_query(
     """
     indices = index.split(",")
     for ix in indices:
-        HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    response = delete_query(indices, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids)
+        await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    response = await delete_query(indices, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids)
     return QueryUpdateResponse.model_validate(response)
 
 

@@ -1,29 +1,27 @@
-from amcat4.models import Roles, User
-from amcat4.systemdata.roles import get_user_project_role, update_project_role
-from tests.tools import post_json, build_headers, get_json, check
+import pytest
+
+from amcat4.models import Roles
+from amcat4.systemdata.roles import update_project_role
+from tests.tools import adelete, build_headers, get_json, post_json, put_json
 
 
-def test_documents_unauthorized(client, index, user):
+@pytest.mark.anyio
+async def test_documents_unauthorized(client, index, user):
     """Anonymous and unauthorized user cannot get, put, or post documents"""
     docs = {"documents": []}
-    check(client.post(f"index/{index}/documents", json=docs), 403)
-    check(
-        client.post(f"index/{index}/documents", json=docs, headers=build_headers(user=user)),
-        403,
-    )
-    check(client.put(f"index/{index}/documents/1", json={}), 403)
-    check(
-        client.put(f"index/{index}/documents/1", json={}, headers=build_headers(user=user)),
-        403,
-    )
-    check(client.get(f"index/{index}/documents/1"), 403)
-    check(client.get(f"index/{index}/documents/1", headers=build_headers(user=user)), 403)
+    await post_json(client, f"index/{index}/documents", json=docs, expected=403)
+    await post_json(client, f"index/{index}/documents", json=docs, headers=build_headers(user=user), expected=403)
+    await put_json(client, f"index/{index}/documents/1", json={}, expected=403)
+    await put_json(client, f"index/{index}/documents/1", json={}, headers=build_headers(user=user), expected=403)
+    await get_json(client, f"index/{index}/documents/1", expected=403)
+    await get_json(client, f"index/{index}/documents/1", headers=build_headers(user=user), expected=403)
 
 
-def test_documents(client, index, user):
+@pytest.mark.anyio
+async def test_documents(client, index, user):
     """Test uploading, modifying, deleting, and retrieving documents"""
-    update_project_role(user, index, Roles.WRITER, ignore_missing=True)
-    post_json(
+    await update_project_role(user, index, Roles.WRITER, ignore_missing=True)
+    await post_json(
         client,
         f"index/{index}/documents",
         user=user,
@@ -37,11 +35,8 @@ def test_documents(client, index, user):
         },
     )
     url = f"index/{index}/documents/id"
-    assert get_json(client, url, user=user)["title"] == "a title"
-    check(
-        client.put(url, json={"title": "the headline"}, headers=build_headers(user)),
-        204,
-    )
-    assert get_json(client, url, user=user)["title"] == "the headline"
-    check(client.delete(url, headers=build_headers(user)), 204)
-    check(client.get(url, headers=build_headers(user)), 404)
+    assert (await get_json(client, url, user=user))["title"] == "a title"
+    await put_json(client, url, json={"title": "the headline"}, headers=build_headers(user), expected=204)
+    assert (await get_json(client, url, user=user))["title"] == "the headline"
+    await adelete(client, url, headers=build_headers(user), expected=204)
+    await get_json(client, url, headers=build_headers(user), expected=404)

@@ -3,7 +3,9 @@ AmCAT4 REST API
 """
 
 import argparse
+import asyncio
 import csv
+import inspect
 import io
 import logging
 import os
@@ -21,26 +23,26 @@ from uvicorn.config import LOGGING_CONFIG
 from amcat4.config import AuthOptions, get_settings, validate_settings
 from amcat4.elastic.connection import connect_elastic
 from amcat4.models import FieldType, ProjectSettings, Roles
-from amcat4.projects.index import create_project_index, delete_project_index
-from amcat4.projects.documents import create_or_update_documents
 from amcat4.objectstorage.image_processing import create_image_from_url
+from amcat4.projects.documents import create_or_update_documents
+from amcat4.projects.index import create_project_index, delete_project_index
 from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
 from amcat4.systemdata.roles import list_server_roles, update_server_role
 
 SOTU_INDEX = "state_of_the_union"
 
 
-def upload_test_data() -> str:
+async def upload_test_data() -> str:
     url = "https://raw.githubusercontent.com/ccs-amsterdam/example-text-data/master/sotu.csv"
     url_open = urllib.request.urlopen(url)
     csv.field_size_limit(sys.maxsize)
     csvfile = csv.DictReader(io.TextIOWrapper(url_open, encoding="utf-8"))
 
     img_url = "https://preview.redd.it/president-bill-clintons-cat-socks-sitting-at-the-podium-in-v0-51wrybd3iabe1.jpeg?width=640&crop=smart&auto=webp&s=21b9f7787017f3fa1ab0fdba58839a42ca0a9cd2"
-    image = create_image_from_url(img_url)
+    image = await create_image_from_url(img_url)
 
     # creates the index info on the sqlite db
-    create_project_index(
+    await create_project_index(
         ProjectSettings(
             id=SOTU_INDEX,
             name="State of the Union Speeches",
@@ -68,8 +70,14 @@ def upload_test_data() -> str:
         "party": "keyword",
         "year": "integer",
     }
-    create_or_update_documents(SOTU_INDEX, docs, fields)
+    await create_or_update_documents(SOTU_INDEX, docs, fields)
     return SOTU_INDEX
+
+
+async def _check_elastic_connection():
+    elastic = await connect_elastic()
+    if await elastic.ping():
+        logging.info(f"Connect to elasticsearch {get_settings().elastic_host}")
 
 
 def run(args):
@@ -87,9 +95,7 @@ def run(args):
         f"{' ' * 26}You can also run `python -m amcat4 config` to create the .env settings file interactively\n"
     )
 
-    elastic = connect_elastic()
-    if elastic.ping():
-        logging.info(f"Connect to elasticsearch {get_settings().elastic_host}")
+    asyncio.run(_check_elastic_connection())
     log_config = "logging.yml" if Path("logging.yml").exists() else LOGGING_CONFIG
     uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port, log_config=log_config)
 
@@ -102,20 +108,20 @@ def val(val_or_list):
     return val_or_list
 
 
-def migrate_systemdata(args) -> None:
+async def migrate_systemdata(args) -> None:
     settings = get_settings()
-    elastic = connect_elastic()
-    if not elastic.ping():
+    elastic = await connect_elastic()
+    if not await elastic.ping():
         logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
         sys.exit(1)
 
-    create_or_update_systemdata(rm_pending_migrations=args.rm_pending)
+    await create_or_update_systemdata(rm_pending_migrations=args.rm_pending)
 
 
-def dangerously_destroy_systemdata(args) -> None:
+async def dangerously_destroy_systemdata(args) -> None:
     settings = get_settings()
-    elastic = connect_elastic()
-    if not elastic.ping():
+    elastic = await connect_elastic()
+    if not await elastic.ping():
         logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
         sys.exit(1)
 
@@ -124,7 +130,7 @@ def dangerously_destroy_systemdata(args) -> None:
         logging.error("You must specify a version to delete using --version")
         sys.exit(1)
 
-    delete_systemdata_version(int(version))
+    await delete_systemdata_version(int(version))
 
 
 def base_env():
@@ -149,22 +155,22 @@ def create_env(args):
     print("*** Created .env file ***")
 
 
-def create_test_index(_args):
+async def create_test_index(_args):
     logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
-    delete_project_index(SOTU_INDEX, ignore_missing=True)
-    upload_test_data()
+    await delete_project_index(SOTU_INDEX, ignore_missing=True)
+    await upload_test_data()
 
 
-def add_admin(args):
+async def add_admin(args):
     logging.info(f"**** Setting {args.email} to ADMIN ****")
-    update_server_role(args.email, role=Roles.ADMIN)
+    await update_server_role(args.email, role=Roles.ADMIN)
 
 
-def list_users(_args):
+async def list_users(_args):
     roles = list_server_roles()
 
     if roles:
-        for role in roles:
+        async for role in roles:
             print(f"{role.role}: {role.email}")
     if not roles:
         print("(No users defined yet, use add-admin to add users by email)")
@@ -298,7 +304,11 @@ def main():
     logging.basicConfig(format="[%(levelname)-7s:%(name)-15s] %(message)s", level=logging.INFO)
     es_logger = logging.getLogger("elasticsearch")
     es_logger.setLevel(logging.WARNING)
-    args.func(args)
+
+    if inspect.iscoroutinefunction(args.func):
+        asyncio.run(args.func(args))
+    else:
+        args.func(args)
 
 
 if __name__ == "__main__":

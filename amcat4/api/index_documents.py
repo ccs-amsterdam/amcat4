@@ -3,21 +3,18 @@
 from typing import Annotated, Any, Literal
 
 from elasticsearch import NotFoundError
-from fastapi import APIRouter, Body, Depends, HTTPException, Header, Path, Query, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
 from amcat4.models import (
-    CreateDocumentField,
     DocumentFieldDefinition,
     FieldType,
     IndexId,
     Roles,
     User,
 )
-from amcat4.objectstorage import s3bucket
-from amcat4.projects.documents import delete_document, fetch_document, update_document, create_or_update_documents
+from amcat4.projects.documents import create_or_update_documents, delete_document, fetch_document, update_document
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_index_documents = APIRouter(prefix="", tags=["documents"])
@@ -52,7 +49,7 @@ class UploadResult(BaseModel):
 
 
 @app_index_documents.post("/index/{ix}/documents", status_code=status.HTTP_201_CREATED)
-def upload_documents(
+async def upload_documents(
     ix: Annotated[IndexId, Path(description="The index id")],
     body: Annotated[UploadDocumentsBody, Body(...)],
     user: User = Depends(authenticated_user),
@@ -60,14 +57,14 @@ def upload_documents(
     """
     Upload documents to an index. Requires WRITER role on the index.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
 
-    result = create_or_update_documents(ix, body.documents, body.fields, body.operation)
+    result = await create_or_update_documents(ix, body.documents, body.fields, body.operation)
     return UploadResult.model_validate(result)
 
 
 @app_index_documents.get("/index/{ix}/documents/{docid}")
-def get_document(
+async def get_document(
     ix: Annotated[IndexId, Path(description="The index id")],
     docid: Annotated[str, Path(description="The document id")],
     fields: Annotated[str | None, Query(description="Comma-separated list of fields to retrieve")] = None,
@@ -76,12 +73,12 @@ def get_document(
     """
     Get a single document by id. Requires READER role on the index.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.READER)
     kargs = {}
     if fields:
         kargs["_source"] = fields
     try:
-        return fetch_document(ix, docid, **kargs)
+        return await fetch_document(ix, docid, **kargs)
     except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -93,7 +90,7 @@ def get_document(
     "/index/{ix}/documents/{docid}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def modify_document(
+async def modify_document(
     ix: Annotated[IndexId, Path(description="The index id")],
     docid: Annotated[str, Path(description="The document id")],
     update: Annotated[dict[str, Any], Body(..., description="A (partial) document. All given fields will be updated.")],
@@ -103,9 +100,9 @@ def modify_document(
     """
     Update a document. Requires WRITER role on the index.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
     try:
-        update_document(ix, docid, update, ignore_missing=upsert)
+        await update_document(ix, docid, update, ignore_missing=upsert)
     except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -117,7 +114,7 @@ def modify_document(
     "/index/{ix}/documents/{docid}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def remove_document(
+async def remove_document(
     ix: Annotated[IndexId, Path(description="The index id")],
     docid: Annotated[str, Path(description="The document id")],
     user: User = Depends(authenticated_user),
@@ -125,9 +122,9 @@ def remove_document(
     """
     Delete a document. Requires WRITER role on the index.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
     try:
-        delete_document(ix, docid)
+        await delete_document(ix, docid)
     except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

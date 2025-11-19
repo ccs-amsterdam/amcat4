@@ -1,7 +1,7 @@
 import json
 from contextlib import contextmanager
-from datetime import datetime, date
-from typing import Set, Iterable, Optional
+from datetime import date, datetime
+from typing import Iterable, Optional, Set
 
 from authlib.jose import jwt
 from fastapi.testclient import TestClient
@@ -31,15 +31,7 @@ def build_headers(user=None, headers=None):
     return headers
 
 
-def get_json(client: TestClient, url: str, expected=200, headers=None, user=None, **kargs) -> dict:
-    """Get the given URL. If expected is 2xx, return the result as parsed json"""
-    response = client.get(url, headers=build_headers(user, headers), **kargs)
-    content = response.json() if response.content else None
-    assert response.status_code == expected, f"GET {url} returned {response.status_code}, expected {expected}, {content}"
-    return {} if content is None else content
-
-
-async def aget_json(client: AsyncClient, url: str, expected=200, headers=None, user=None, **kargs) -> dict:
+async def get_json(client: AsyncClient, url: str, expected=200, headers=None, user=None, **kargs) -> dict:
     """Get the given URL. If expected is 2xx, return the result as parsed json"""
     response = await client.get(url, headers=build_headers(user, headers), **kargs)
     content = response.json() if response.content else None
@@ -47,8 +39,8 @@ async def aget_json(client: AsyncClient, url: str, expected=200, headers=None, u
     return {} if content is None else content
 
 
-def post_json(client: TestClient, url, expected=201, headers=None, user=None, **kargs):
-    response = client.post(url, headers=build_headers(user, headers), **kargs)
+async def post_json(client: AsyncClient, url, expected=201, headers=None, user=None, **kargs):
+    response = await client.post(url, headers=build_headers(user, headers), **kargs)
     assert response.status_code == expected, (
         f"POST {url} returned {response.status_code}, expected {expected}\n{response.json()}"
     )
@@ -58,10 +50,21 @@ def post_json(client: TestClient, url, expected=201, headers=None, user=None, **
         return response.json()
 
 
-def put_json(client: TestClient, url, expected=200, headers=None, user=None, **kargs):
-    response = client.put(url, headers=build_headers(user, headers), **kargs)
+async def put_json(client: AsyncClient, url, expected=200, headers=None, user=None, **kargs):
+    response = await client.put(url, headers=build_headers(user, headers), **kargs)
     assert response.status_code == expected, (
-        f"POST {url} returned {response.status_code}, expected {expected}\n{response.json()}"
+        f"PUT {url} returned {response.status_code}, expected {expected}\n{response.json()}"
+    )
+    if expected == 204:
+        return {}
+    else:
+        return response.json()
+
+
+async def adelete(client: AsyncClient, url, expected=204, headers=None, user=None, **kargs):
+    response = await client.delete(url, headers=build_headers(user, headers), **kargs)
+    assert response.status_code == expected, (
+        f"DELETE {url} returned {response.status_code}, expected {expected}\n{response.json()}"
     )
     if expected == 204:
         return {}
@@ -81,7 +84,7 @@ def dictset(dicts: Iterable[dict]) -> Set[str]:
     return {json.dumps(dict(sorted(d.items())), cls=DateTimeEncoder) for d in dicts}
 
 
-def check(response, expected: int, msg: Optional[str] = None):
+async def check(response, expected: int, msg: Optional[str] = None):
     try:
         content = response.json()
     except Exception:

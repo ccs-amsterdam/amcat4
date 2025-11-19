@@ -9,17 +9,6 @@ from elasticsearch import NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel, Field
 
-
-from amcat4.projects.index import (
-    IndexAlreadyExists,
-    IndexDoesNotExist,
-    create_project_index,
-    delete_project_index,
-    index_size_in_bytes,
-    list_user_project_indices,
-    refresh_index,
-    update_project_index,
-)
 from amcat4.api.auth import authenticated_user
 from amcat4.api.index_query import FiltersType, QueriesType, _standardize_filters, _standardize_queries
 from amcat4.models import (
@@ -32,13 +21,23 @@ from amcat4.models import (
     Roles,
     User,
 )
-from amcat4.projects.query import reindex
 from amcat4.objectstorage.image_processing import create_image_from_url
+from amcat4.projects.index import (
+    IndexAlreadyExists,
+    IndexDoesNotExist,
+    create_project_index,
+    delete_project_index,
+    index_size_in_bytes,
+    list_user_project_indices,
+    refresh_index,
+    update_project_index,
+)
+from amcat4.projects.query import reindex
 from amcat4.systemdata.roles import (
-    get_project_guest_role,
-    get_user_project_role,
     HTTPException_if_not_project_index_role,
     HTTPException_if_not_server_role,
+    get_project_guest_role,
+    get_user_project_role,
     set_project_guest_role,
 )
 from amcat4.systemdata.settings import get_project_image, get_project_settings
@@ -97,7 +96,7 @@ class IndexViewResponse(IndexListResponse):
 
 
 @app_index.get("/index/")
-def index_list(
+async def index_list(
     show_all: Annotated[
         bool, Query(..., description="Also show indices user has no role on (requires ADMIN server role)")
     ] = False,
@@ -107,11 +106,12 @@ def index_list(
     List indices from this server that the user has access to. Returns a list of dicts with index details, including the user role.
     Requires at least LISTER role on the index. If show_all is true, requires ADMIN server role and shows all indices.
     """
+    print("whta the acutal fujdfkljsdlfjaslkdjflkasjdf")
     if show_all:
-        HTTPException_if_not_server_role(user, Roles.ADMIN)
+        await HTTPException_if_not_server_role(user, Roles.ADMIN)
 
     ix_list: list = []
-    for ix, role in list_user_project_indices(user, show_all=show_all):
+    async for ix, role in list_user_project_indices(user, show_all=show_all):
         ix_list.append(
             dict(
                 id=ix.id,
@@ -129,22 +129,22 @@ def index_list(
 
 
 @app_index.post("/index/", status_code=status.HTTP_201_CREATED)
-def create_index(
+async def create_index(
     body: Annotated[CreateIndexBody, Body(...)],
     user: User = Depends(authenticated_user),
 ):
     """
     Create a new index with the current user (you) as admin. Requires WRITER role on the server.
     """
-    HTTPException_if_not_server_role(
+    await HTTPException_if_not_server_role(
         user, Roles.WRITER, message="Creating a new project requires WRITER permission on the server"
     )
 
     d = body.model_dump(exclude={"image_url"})
-    d["image"] = create_image_from_url(body.image_url) if body.image_url else None
+    d["image"] = await create_image_from_url(body.image_url) if body.image_url else None
 
     try:
-        create_project_index(
+        await create_project_index(
             ProjectSettings(**d),
             user.email,
         )
@@ -157,11 +157,11 @@ def create_index(
         )
 
     if body.guest_role:
-        set_project_guest_role(body.id, Roles[body.guest_role])
+        await set_project_guest_role(body.id, Roles[body.guest_role])
 
 
 @app_index.put("/index/{ix}", status_code=status.HTTP_204_NO_CONTENT)
-def modify_index(
+async def modify_index(
     ix: Annotated[IndexId, Path(..., description="ID of the index to modify")],
     body: Annotated[UpdateIndexBody, Body(...)],
     user: User = Depends(authenticated_user),
@@ -169,48 +169,48 @@ def modify_index(
     """
     Modify an existing index. Requires ADMIN role on the index.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
 
     try:
-        update_project_index(
+        await update_project_index(
             ProjectSettings(
                 id=ix,
                 **body.model_dump(exclude={"image_url"}),
-                image=create_image_from_url(body.image_url) if body.image_url else None,
+                image=await create_image_from_url(body.image_url) if body.image_url else None,
             )
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail=f"Index {ix} does not exist")
 
     if body.guest_role:
-        set_project_guest_role(ix, Roles[body.guest_role])
+        await set_project_guest_role(ix, Roles[body.guest_role])
 
 
 @app_index.get("/index/{ix}")
-def view_index(
+async def view_index(
     ix: IndexId = Path(..., description="ID of the index to view"), user: User = Depends(authenticated_user)
 ) -> IndexViewResponse:
     """
     Get details of a single index, including the user role. Requires at least LISTER role on the index.
     """
     try:
-        d = get_project_settings(ix)
+        d = await get_project_settings(ix)
     except NotFoundError:
         raise HTTPException(status_code=404, detail=f"Index {ix} does not exist")
     except Exception:
         raise HTTPException(status_code=500, detail=f"Error reading index {ix} settings")
 
-    HTTPException_if_not_project_index_role(user, ix, Roles.LISTER)
-    role = get_user_project_role(user, project_index=ix, global_admin=False)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.LISTER)
+    role = await get_user_project_role(user, project_index=ix, global_admin=False)
 
-    bytes = index_size_in_bytes(ix)
+    bytes = await index_size_in_bytes(ix)
 
     return IndexViewResponse(
         id=d.id,
         name=d.name or "",
         user_role=role.role if role else None,
         user_role_match=role.email if role else None,
-        guest_role=get_project_guest_role(d.id),
+        guest_role=await get_project_guest_role(d.id),
         description=d.description or "",
         archived=d.archived or "",
         folder=d.folder or "",
@@ -221,7 +221,7 @@ def view_index(
 
 
 @app_index.post("/index/{ix}/archive", status_code=status.HTTP_204_NO_CONTENT)
-def archive_index(
+async def archive_index(
     ix: Annotated[IndexId, Path(..., description="ID of the index to (un)archive")],
     archived: Annotated[bool, Body(..., description="Boolean for setting archived to true or false")],
     user: User = Depends(authenticated_user),
@@ -230,58 +230,58 @@ def archive_index(
     Archive or unarchive the index. When an index is archived, it restricts usage, and adds a timestamp for when
     it was archived. Requires ADMIN role on the index.
     """
-    HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
-        d = get_project_settings(ix)
+        d = await get_project_settings(ix)
         is_archived = d.archived is not None
         if is_archived == archived:
             return
         archived_date = str(datetime.now()) if archived else None
-        update_project_index(ProjectSettings(id=ix, archived=archived_date))
+        await update_project_index(ProjectSettings(id=ix, archived=archived_date))
 
     except IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
 
 @app_index.delete("/index/{ix}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_index(ix: IndexId, user: User = Depends(authenticated_user)):
+async def delete_index(ix: IndexId, user: User = Depends(authenticated_user)):
     """Delete the index. Requires ADMIN role on the index."""
-    HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
-        delete_project_index(ix)
+        await delete_project_index(ix)
     except IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
 
 @app_index.get("/index/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT)
-def refresh(ix: str):
+async def refresh(ix: str):
     """Refresh the elastic index. Use this if you need to make recently added documents searchable immediately."""
-    refresh_index(ix)
+    await refresh_index(ix)
 
 
 @app_index.post("/index/{ix}/reindex")
-def start_reindex(
+async def start_reindex(
     ix: IndexId,
     body: Annotated[ReindexBody, Body(...)],
     user: User = Depends(authenticated_user),
 ):
-    HTTPException_if_not_project_index_role(user, ix, Roles.READER)
-    HTTPException_if_not_project_index_role(user, body.destination, Roles.WRITER)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.READER)
+    await HTTPException_if_not_project_index_role(user, body.destination, Roles.WRITER)
     filters = _standardize_filters(body.filters)
 
     queries = _standardize_queries(body.queries)
-    return reindex(source_index=ix, destination_index=body.destination, queries=queries, filters=filters)
+    return await reindex(source_index=ix, destination_index=body.destination, queries=queries, filters=filters)
 
 
 @app_index.get("/index/{ix}/image/{id}")
-def get_index_image(ix: IndexId, id: str):
+async def get_index_image(ix: IndexId, id: str):
     """
     Get the image associated with the index. This endpoint doesn't require authentication,
     and only requires knowing the index ID and image ID.
     """
 
     try:
-        image = get_project_image(ix)
+        image = await get_project_image(ix)
     except NotFoundError:
         raise HTTPException(status_code=404, detail=f"Index {ix} does not exist")
     except Exception:
