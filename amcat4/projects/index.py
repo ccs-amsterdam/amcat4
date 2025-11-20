@@ -1,10 +1,10 @@
 from typing import AsyncIterable, Mapping
 
-from amcat4.elastic import es
+from amcat4.elastic.connection import es
 from amcat4.elastic.util import index_scan
 from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, RoleRule, Roles, User
-from amcat4.objectstorage.client import s3_enabled
 from amcat4.objectstorage.multimedia import delete_project_multimedia
+from amcat4.objectstorage.s3client import s3_enabled
 from amcat4.systemdata.fields import create_fields, list_fields
 from amcat4.systemdata.roles import list_user_project_roles
 from amcat4.systemdata.settings import (
@@ -134,7 +134,7 @@ async def list_user_project_indices(user: User, show_all=False) -> AsyncIterable
 
     project_role_lookup: dict[str, RoleRule] = {}
     user_indices: list[str] = []
-    roles = await list_user_project_roles(user, required_role=Roles.READER)
+    roles = await list_user_project_roles(user, required_role=Roles.LISTER)
     for role in roles:
         project_role_lookup[role.role_context] = role
         user_indices.append(role.role_context)

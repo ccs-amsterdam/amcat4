@@ -10,8 +10,8 @@ from amcat4.api.auth import authenticated_user, get_middlecat_config
 from amcat4.config import get_settings, validate_settings
 from amcat4.elastic.connection import connect_elastic
 from amcat4.models import ContactInfo, Links, LinksGroup, Roles, ServerSettings, User
-from amcat4.objectstorage.client import s3_enabled
 from amcat4.objectstorage.image_processing import create_image_from_url
+from amcat4.objectstorage.s3client import s3_enabled
 from amcat4.projects.query import get_task_status
 from amcat4.systemdata.roles import HTTPException_if_not_server_role
 from amcat4.systemdata.settings import get_server_settings, upsert_server_settings

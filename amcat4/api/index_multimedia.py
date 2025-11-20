@@ -174,7 +174,7 @@ async def multimedia_get_gatekeeper(
         ),
     ] = None,
     skip_mime_check: Annotated[
-        bool,
+        bool | None,
         Query(
             description="By default, the server checks the mime type of the multimedia object before serving it. Set this to true to skip this check (better performance, but need to trust the stored mime type).",
         ),
@@ -207,6 +207,7 @@ async def multimedia_get_gatekeeper(
         return RedirectResponse(url=presigned_url, status_code=status.HTTP_303_SEE_OTHER)
 
     meta = await get_multimedia_meta(ix, field, filepath, read_mimetype=not skip_mime_check)
+    print(meta)
 
     if not meta:
         await HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)

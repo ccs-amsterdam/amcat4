@@ -106,7 +106,6 @@ async def index_list(
     List indices from this server that the user has access to. Returns a list of dicts with index details, including the user role.
     Requires at least LISTER role on the index. If show_all is true, requires ADMIN server role and shows all indices.
     """
-    print("whta the acutal fujdfkljsdlfjaslkdjflkasjdf")
     if show_all:
         await HTTPException_if_not_server_role(user, Roles.ADMIN)
 

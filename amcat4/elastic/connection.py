@@ -19,13 +19,18 @@ class ESConnectionHolder:
 ES_CONNECTION = ESConnectionHolder()
 
 
-async def elastic_connection() -> AsyncElasticsearch:
+async def es() -> AsyncElasticsearch:
     """
     Get the elasticsearch connection.
     This function is cached, so multiple calls return the same connection.
     """
     if ES_CONNECTION.active is None:
-        ES_CONNECTION.active = await setup_elastic()
+        raise ConnectionError("Elasticsearch connection not initialized")
+    return ES_CONNECTION.active
+
+
+async def start_elastic() -> AsyncElasticsearch:
+    ES_CONNECTION.active = await setup_elastic()
     return ES_CONNECTION.active
 
 

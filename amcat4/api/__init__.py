@@ -18,21 +18,19 @@ from amcat4.api.index_users import app_index_users
 from amcat4.api.info import app_info
 from amcat4.api.requests import app_requests
 from amcat4.api.users import app_users
-from amcat4.elastic.connection import close_elastic
-from amcat4.objectstorage.client import close_s3_session
+from amcat4.connections import close_amcat_connections, start_amcat_connections
 from amcat4.systemdata.manage import create_or_update_systemdata
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.info("Initializing system data...")
+    await start_amcat_connections()
     await create_or_update_systemdata()
 
     yield
     ## cleanup should happen here
-    print("cleaninging08solfjalskjdflkasjdlfkjasldo4asdfa")
-    await close_s3_session()
-    await close_elastic()
+    await close_amcat_connections()
 
 
 app = FastAPI(

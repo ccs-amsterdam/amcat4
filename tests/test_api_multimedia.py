@@ -3,9 +3,10 @@ import pytest
 from httpx import AsyncClient
 
 from amcat4.models import Roles
-from amcat4.objectstorage.client import s3_enabled
+from amcat4.objectstorage.s3client import s3_enabled
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.systemdata.roles import create_project_role
+from tests.conftest import not_localhost
 from tests.tools import build_headers, check
 
 if not s3_enabled():
@@ -42,6 +43,7 @@ async def test_authorisation(client, index, user, reader):
 
 
 @pytest.mark.anyio
+@pytest.mark.httpx_mock(should_mock=not_localhost)
 async def test_presigned(client, index, user):
     await create_or_update_documents(
         index, documents=[{"_id": "doc1", "image_field": "image.png"}], fields={"image_field": "image"}
@@ -84,7 +86,6 @@ async def test_presigned(client, index, user):
                 url=post["url"],
                 data={**post["form_data"], "key": "forbidden/file.png", "Content-Type": "image/png"},
                 files=file,
-                follow_redirects=False,
             )
         ).status_code == 307
         ## errors if content type doesn't match type prefix
@@ -93,7 +94,6 @@ async def test_presigned(client, index, user):
                 url=post["url"],
                 data={**post["form_data"], "Content-Type": "application/pdf"},
                 files=file,
-                follow_redirects=False,
             )
         ).status_code == 307
 
@@ -109,7 +109,6 @@ async def test_presigned(client, index, user):
         f"index/{index}/multimedia/get/image_field/image.png",
         params=dict(skip_mime_check=True),
         headers=build_headers(user),
-        follow_redirects=False,
     )
     assert res.status_code == 303
     presigned_get = res.headers["location"]
@@ -119,7 +118,10 @@ async def test_presigned(client, index, user):
 
     ## If we do not disable mime checking, we should get an error. This is the default because its safer.
     await check(
-        await client.get(f"index/{index}/multimedia/get/image_field/image.png", headers=build_headers(user)),
+        await client.get(
+            f"index/{index}/multimedia/get/image_field/image.png",
+            headers=build_headers(user),
+        ),
         400,
         msg="does not match its real content type",
     )

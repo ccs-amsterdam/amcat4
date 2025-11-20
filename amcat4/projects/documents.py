@@ -5,7 +5,7 @@ from typing import Any, AsyncGenerator, Literal, Mapping
 
 import elasticsearch.helpers
 
-from amcat4.elastic import es
+from amcat4.elastic.connection import es
 from amcat4.models import CreateDocumentField, DocumentFieldDefinition, FieldType
 from amcat4.systemdata.fields import coerce_type, create_fields, create_or_verify_tag_field, list_fields
 

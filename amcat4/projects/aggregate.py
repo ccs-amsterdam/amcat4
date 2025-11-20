@@ -6,7 +6,7 @@ import copy
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
 
-from amcat4.elastic import es
+from amcat4.elastic.connection import es
 from amcat4.models import DocumentField, FilterSpec, SortSpec
 from amcat4.projects.date_mappings import interval_mapping
 from amcat4.projects.query import build_body

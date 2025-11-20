@@ -6,7 +6,7 @@ import logging
 from math import ceil
 from typing import Any, Dict, Literal, Tuple, Union
 
-from amcat4.elastic import es
+from amcat4.elastic.connection import es
 from amcat4.models import FieldSpec, FieldType, FilterSpec, SortSpec
 from amcat4.projects.date_mappings import mappings
 from amcat4.projects.documents import delete_documents_by_query, update_document_tag_by_query, update_documents_by_query

@@ -20,7 +20,7 @@ from typing import Any, AsyncGenerator, Iterable, Mapping, TypedDict, cast, get_
 from elasticsearch import NotFoundError
 from fastapi import HTTPException
 
-from amcat4.elastic import es
+from amcat4.elastic.connection import es
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, es_get, index_scan
 from amcat4.models import (
     CreateDocumentField,
@@ -68,13 +68,14 @@ async def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocum
             settings.elastic_type = _get_default_field(settings.type).elastic_type
 
         current = current_fields.get(field)
+
         if current is not None:
             # fields can already exist. For example, a scraper might include the field types in every
             # upload request. If a field already exists, we'll ignore the new settings, and we will throw an error
             # if static settings (elastic type, identifier) do not match.
             if current.elastic_type != settings.elastic_type:
                 raise ValueError(f"Field '{field}' already exists with elastic type '{current.elastic_type}'. ")
-            if current.identifier != settings.identifier:
+            if current.identifier != bool(settings.identifier):
                 raise ValueError(f"Field '{field}' already exists with identifier '{current.identifier}'. ")
             continue
 

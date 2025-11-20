@@ -1,6 +1,6 @@
 from elasticsearch import NotFoundError
 
-from amcat4.elastic import es
+from amcat4.elastic.connection import es
 from amcat4.models import ImageObject, IndexId, ProjectSettings, Roles, ServerSettings
 from amcat4.systemdata.roles import create_project_role
 from amcat4.systemdata.versions import roles_index_name, settings_index_id, settings_index_name

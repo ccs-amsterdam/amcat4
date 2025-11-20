@@ -21,7 +21,7 @@ from pydantic.fields import FieldInfo
 from uvicorn.config import LOGGING_CONFIG
 
 from amcat4.config import AuthOptions, get_settings, validate_settings
-from amcat4.elastic.connection import connect_elastic
+from amcat4.connections import amcat_connections
 from amcat4.models import FieldType, ProjectSettings, Roles
 from amcat4.objectstorage.image_processing import create_image_from_url
 from amcat4.projects.documents import create_or_update_documents
@@ -42,42 +42,44 @@ async def upload_test_data() -> str:
     image = await create_image_from_url(img_url)
 
     # creates the index info on the sqlite db
-    await create_project_index(
-        ProjectSettings(
-            id=SOTU_INDEX,
-            name="State of the Union Speeches",
-            description="State of the Union speeches from 1790 to 2020",
-            image=image,
+    async with amcat_connections():
+        await create_or_update_systemdata()
+        await create_project_index(
+            ProjectSettings(
+                id=SOTU_INDEX,
+                name="State of the Union Speeches",
+                description="State of the Union speeches from 1790 to 2020",
+                image=image,
+            )
         )
-    )
 
-    docs = [
-        dict(
-            title="{Year}: {President}".format(**row),
-            text=row["Text"],
-            date=row["Date"],
-            president=row["President"],
-            year=row["Year"],
-            party=row["Party"],
-        )
-        for row in csvfile
-    ]
-    fields: dict[str, FieldType] = {
-        "text": "text",
-        "title": "text",
-        "date": "date",
-        "president": "keyword",
-        "party": "keyword",
-        "year": "integer",
-    }
-    await create_or_update_documents(SOTU_INDEX, docs, fields)
-    return SOTU_INDEX
+        docs = [
+            dict(
+                title="{Year}: {President}".format(**row),
+                text=row["Text"],
+                date=row["Date"],
+                president=row["President"],
+                year=row["Year"],
+                party=row["Party"],
+            )
+            for row in csvfile
+        ]
+        fields: dict[str, FieldType] = {
+            "text": "text",
+            "title": "text",
+            "date": "date",
+            "president": "keyword",
+            "party": "keyword",
+            "year": "integer",
+        }
+        await create_or_update_documents(SOTU_INDEX, docs, fields)
+        return SOTU_INDEX
 
 
 async def _check_elastic_connection():
-    elastic = await connect_elastic()
-    if await elastic.ping():
-        logging.info(f"Connect to elasticsearch {get_settings().elastic_host}")
+    async with amcat_connections() as ac:
+        if await ac.elastic.ping():
+            logging.info(f"Connect to elasticsearch {get_settings().elastic_host}")
 
 
 def run(args):
@@ -110,27 +112,27 @@ def val(val_or_list):
 
 async def migrate_systemdata(args) -> None:
     settings = get_settings()
-    elastic = await connect_elastic()
-    if not await elastic.ping():
-        logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
-        sys.exit(1)
+    async with amcat_connections() as ac:
+        if not await ac.elastic.ping():
+            logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
+            sys.exit(1)
 
-    await create_or_update_systemdata(rm_pending_migrations=args.rm_pending)
+        await create_or_update_systemdata(rm_pending_migrations=args.rm_pending)
 
 
 async def dangerously_destroy_systemdata(args) -> None:
     settings = get_settings()
-    elastic = await connect_elastic()
-    if not await elastic.ping():
-        logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
-        sys.exit(1)
+    async with amcat_connections() as ac:
+        if not await ac.elastic.ping():
+            logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
+            sys.exit(1)
 
-    version = args.version
-    if not version:
-        logging.error("You must specify a version to delete using --version")
-        sys.exit(1)
+        version = args.version
+        if not version:
+            logging.error("You must specify a version to delete using --version")
+            sys.exit(1)
 
-    await delete_systemdata_version(int(version))
+        await delete_systemdata_version(int(version))
 
 
 def base_env():
@@ -157,16 +159,19 @@ def create_env(args):
 
 async def create_test_index(_args):
     logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
+    await create_or_update_systemdata()
     await delete_project_index(SOTU_INDEX, ignore_missing=True)
     await upload_test_data()
 
 
 async def add_admin(args):
     logging.info(f"**** Setting {args.email} to ADMIN ****")
+    await create_or_update_systemdata()
     await update_server_role(args.email, role=Roles.ADMIN)
 
 
 async def list_users(_args):
+    await create_or_update_systemdata()
     roles = list_server_roles()
 
     if roles:
@@ -180,7 +185,7 @@ def config_amcat(args):
     settings = get_settings()
     # Not a useful entry in an actual env_file
     print(f"Reading/writing settings from {settings.env_file}")
-    for fieldname, fieldinfo in settings.model_fields.items():
+    for fieldname, fieldinfo in type(settings).model_fields.items():
         if fieldname == "env_file":
             continue
 
@@ -193,7 +198,7 @@ def config_amcat(args):
             setattr(settings, fieldname, value)
 
     with settings.env_file.open("w") as f:
-        for fieldname, fieldinfo in settings.model_fields.items():
+        for fieldname, fieldinfo in type(settings).model_fields.items():
             value = getattr(settings, fieldname)
             if doc := fieldinfo.description:
                 f.write(f"# {doc}\n")

@@ -1,7 +1,7 @@
 import pytest
 from httpx import AsyncClient
 
-from amcat4 import elastic
+from amcat4.elastic.connection import es
 from amcat4.models import Roles
 from amcat4.systemdata.roles import (
     create_project_role,
@@ -128,7 +128,7 @@ async def test_fields_upload(client: AsyncClient, user: str, index: str):
     ) == {"title"}
     assert (await get_json(client, f"/index/{index}/fields", user=user) or {})["x"]["type"] == "keyword"
 
-    es_conn = await elastic.es()
+    es_conn = await es()
     await es_conn.indices.refresh()
     assert set(await get_json(client, f"/index/{index}/fields/x/values", user=user) or []) == {
         "a",
@@ -255,7 +255,7 @@ async def test_name_description(client, index, index_name, user, admin):
 
     await check(
         await client.post(
-            "/index",
+            "/index/",
             json=dict(
                 id=index_name,
                 description="test2",
@@ -268,7 +268,6 @@ async def test_name_description(client, index, index_name, user, admin):
 
     assert (await get_json(client, f"/index/{index_name}", user=user) or {})["description"] == "test2"
 
-    # name and description should be present in list of indices
-    indices = {ix["id"]: ix for ix in await get_json(client, "/index") or []}
+    indices = {ix["id"]: ix for ix in await get_json(client, "/index/", user=user) or []}
     assert indices[index]["description"] == "ooktest"
     assert indices[index_name]["description"] == "test2"

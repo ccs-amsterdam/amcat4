@@ -1,15 +1,14 @@
 from typing import Any
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 
 from amcat4 import api
-from amcat4.api.auth import get_middlecat_config
 from amcat4.config import AuthOptions, get_settings
-from amcat4.elastic import es
-from amcat4.elastic.connection import close_elastic
+from amcat4.connections import close_amcat_connections, start_amcat_connections
+from amcat4.elastic.connection import close_elastic, es
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles
-from amcat4.objectstorage.client import close_s3_session
+from amcat4.objectstorage.s3client import close_s3_session
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
 from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
@@ -40,17 +39,13 @@ async def my_setup():
     # Override system db
     get_settings().auth = AuthOptions.allow_guests
     get_settings().use_test_db = True
-    system_index_version = await create_or_update_systemdata()
-
-    # es.cache_clear()
-    # get_middlecat_config.cache_clear()
+    await start_amcat_connections()
+    systemdata_version = await create_or_update_systemdata()
 
     yield
 
-    await close_s3_session()
-    await close_elastic()
-    await delete_systemdata_version(system_index_version)
-    get_settings().use_test_db = False
+    await delete_systemdata_version(systemdata_version)
+    await close_amcat_connections()
 
 
 @pytest.fixture(autouse=True)
@@ -63,18 +58,16 @@ def mock_middlecat(httpx_mock):
     )
 
 
-def is_s3_request(request):
-    s3_host = get_settings().s3_host
-    return s3_host and request.url.host == s3_host
+def not_localhost(request):
+    """
+    This is currently the only way I know to NOT mock httpx requests to
+    localhost (which we use for s3 presigned testing)
+    @pytest.mark.httpx_mock(should_mock=not_localhost)
+    """
+    return request.url.host != "localhost"
 
 
-@pytest.mark.httpx_mock(should_mock=is_s3_request)
-def allow_s3_passthru(httpx_mock):
-    """Pass through S3 requests"""
-    httpx_mock.add_response
-
-
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def admin():
     email = "admin@amcat.nl"
     await update_server_role(email, Roles.ADMIN, ignore_missing=True)
@@ -82,7 +75,7 @@ async def admin():
     await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def writer():
     email = "writer@amcat.nl"
     await update_server_role(email, Roles.WRITER, ignore_missing=True)
@@ -90,7 +83,7 @@ async def writer():
     await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def reader():
     email = "reader@amcat.nl"
     await update_server_role(email, Roles.READER, ignore_missing=True)
@@ -98,7 +91,7 @@ async def reader():
     await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def writer2():
     email = "writer2@amcat.nl"
     await update_server_role(email, Roles.WRITER, ignore_missing=True)
@@ -106,7 +99,7 @@ async def writer2():
     await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def user():
     email = "test_user@amcat.nl"
     await update_server_role(email, Roles.READER, ignore_missing=True)
@@ -114,7 +107,7 @@ async def user():
     await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def username():
     """A name to create a user which will be deleted afterwards if needed"""
     email = "test_username@amcat.nl"
@@ -123,7 +116,7 @@ async def username():
     await delete_server_role(email, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def index():
     index = "amcat4_unittest_index"
     await delete_project_index(index, ignore_missing=True)
@@ -132,7 +125,7 @@ async def index():
     # await delete_project_index(index, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def index_name():
     """An index name that is guaranteed not to exist and will be cleaned up after the test"""
     index = "amcat4_unittest_indexname"
@@ -141,7 +134,7 @@ async def index_name():
     await delete_project_index(index, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def guest_index():
     index = "amcat4_unittest_guest_index"
     await delete_project_index(index, ignore_missing=True)
@@ -151,7 +144,7 @@ async def guest_index():
     await delete_project_index(index, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def clean_requests():
     """Clean up requests before and after the test"""
     await clear_requests()
@@ -221,7 +214,7 @@ async def populate_index(index):
     return TEST_DOCUMENTS
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def index_docs():
     index = "amcat4_unittest_indexdocs"
     await delete_project_index(index, ignore_missing=True)
@@ -231,7 +224,7 @@ async def index_docs():
     await delete_project_index(index, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 async def index_many():
     index = "amcat4_unittest_indexmany"
     await delete_project_index(index, ignore_missing=True)
@@ -246,6 +239,6 @@ async def index_many():
     await delete_project_index(index, ignore_missing=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def app():
     return api.app

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import AsyncGenerator, Tuple
 
-from amcat4.elastic import es
+from amcat4.elastic.connection import es
 from amcat4.elastic.util import BulkInsertAction, batched_index_scan, es_bulk_create, es_bulk_upsert
 from amcat4.models import AllowedContentType, IndexId, ObjectStorage, RegisterObject
 from amcat4.objectstorage.s3bucket import PRESIGNED_POST_HOURS_VALID, scan_s3_objects

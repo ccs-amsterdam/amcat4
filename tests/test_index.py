@@ -2,7 +2,7 @@ from typing import List
 
 import pytest
 
-from amcat4.elastic import es
+from amcat4.elastic.connection import es
 from amcat4.models import ProjectSettings, Roles, User
 from amcat4.projects.index import (
     create_project_index,

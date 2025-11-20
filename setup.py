@@ -33,12 +33,11 @@ setup(
         "class_doc",
         "mypy",
         "jsonpath_ng",
-        # "boto3",
-        # "boto3-stubs[essential]",
+        "asyncio",
         "async-lru",
         "aioboto3",
         "aiobotocore",
-        "types-aiobotocore[essential]",
+        "types-aiobotocore[s3]",
     ],
     extras_require={
         "dev": [

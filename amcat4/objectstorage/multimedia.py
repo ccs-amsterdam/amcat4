@@ -1,8 +1,9 @@
+import logging
 from typing import Tuple, TypedDict
 
 import magic
 
-from amcat4.elastic import es
+from amcat4.elastic.connection import es
 from amcat4.models import ObjectStorage
 from amcat4.objectstorage.s3bucket import (
     delete_s3_by_key,
@@ -48,8 +49,8 @@ async def get_multimedia_meta(ix: str, field: str, filepath: str, read_mimetype:
     try:
         if read_mimetype:
             obj = await get_s3_object(bucket, key, first_bytes=32)
-            body = await obj["Body"]
-            real_content_type = str(magic.from_buffer(body.read(32), mime=True))
+            first_bytes = await obj["Body"].read(32)
+            real_content_type = str(magic.from_buffer(first_bytes, mime=True))
         else:
             obj = await get_object_head(bucket, key)
             real_content_type = None
@@ -63,7 +64,9 @@ async def get_multimedia_meta(ix: str, field: str, filepath: str, read_mimetype:
         )
         return meta
 
-    except Exception:
+    except Exception as e:
+        print(e)
+        logging.debug(f"Could not get multimedia metadata for {key} in bucket {bucket}: {e}")
         return None
 
 

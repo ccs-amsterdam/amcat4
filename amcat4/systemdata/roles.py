@@ -2,7 +2,7 @@ from typing import AsyncIterable
 
 from fastapi import HTTPException
 
-from amcat4.elastic import es
+from amcat4.elastic.connection import es
 from amcat4.elastic.util import index_scan
 from amcat4.models import (
     GuestRole,
