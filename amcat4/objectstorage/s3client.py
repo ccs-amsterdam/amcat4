@@ -1,3 +1,4 @@
+from contextlib import AsyncExitStack
 from typing import Any, Callable
 
 from aiobotocore.config import AioConfig
@@ -8,7 +9,7 @@ from amcat4.config import get_settings
 
 
 class S3SessionHolder:
-    close: Callable[..., Any] | None = None
+    context_stack: AsyncExitStack | None = None
     client: S3Client | None = None
 
 
@@ -21,7 +22,10 @@ def get_s3_client() -> S3Client:
     return S3_SESSION.client
 
 
-async def start_s3_client() -> S3Client:
+async def start_s3_client() -> S3Client | None:
+    if s3_enabled() is False:
+        return None  # type: ignore
+
     settings = get_settings()
 
     if settings.s3_host is None:
@@ -30,6 +34,7 @@ async def start_s3_client() -> S3Client:
         raise ValueError("s3_access_key or s3_secret_key not specified")
 
     ## It seems aioboto3 uses some of the sync boto3 types, so we need to hack around typing here.
+
     session = get_session()
     client = session.create_client(
         service_name="s3",
@@ -39,17 +44,18 @@ async def start_s3_client() -> S3Client:
         config=AioConfig(signature_version="s3v4"),
     )
 
-    ## It seems we only get a context manager, so we take
-    ## it apart here to handle the lifecycle ourselves.
-    S3_SESSION.client = await client.__aenter__()
-    S3_SESSION.close = client.__aexit__
+    # client is an async context manager, so we use an AsyncExitStack to manage its lifetime
+    S3_SESSION.context_stack = AsyncExitStack()
+    S3_SESSION.client = await S3_SESSION.context_stack.enter_async_context(client)
 
     return S3_SESSION.client
 
 
 async def close_s3_session():
-    if S3_SESSION.close is not None:
-        await S3_SESSION.close()
+    if S3_SESSION.context_stack is not None:
+        await S3_SESSION.context_stack.aclose()
+        S3_SESSION.context_stack = None
+        S3_SESSION.client = None
 
 
 def s3_enabled() -> bool:

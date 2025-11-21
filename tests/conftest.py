@@ -1,14 +1,12 @@
 from typing import Any
 
 import pytest
-from httpx import ASGITransport, AsyncClient, Response
+from httpx import ASGITransport, AsyncClient
 
 from amcat4 import api
 from amcat4.config import AuthOptions, get_settings
-from amcat4.connections import close_amcat_connections, start_amcat_connections
-from amcat4.elastic.connection import close_elastic, es
+from amcat4.connections import amcat_connections
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles
-from amcat4.objectstorage.s3client import close_s3_session
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
 from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
@@ -39,13 +37,15 @@ async def my_setup():
     # Override system db
     get_settings().auth = AuthOptions.allow_guests
     get_settings().use_test_db = True
-    await start_amcat_connections()
-    systemdata_version = await create_or_update_systemdata()
 
-    yield
+    async with amcat_connections():
+        systemdata_version = await create_or_update_systemdata()
+        yield
+        await delete_systemdata_version(systemdata_version)
 
-    await delete_systemdata_version(systemdata_version)
-    await close_amcat_connections()
+    # print("close down test session")
+    # await delete_systemdata_version(systemdata_version)
+    # await close_amcat_connections()
 
 
 @pytest.fixture(autouse=True)
@@ -60,8 +60,9 @@ def mock_middlecat(httpx_mock):
 
 def not_localhost(request):
     """
-    This is currently the only way I know to NOT mock httpx requests to
-    localhost (which we use for s3 presigned testing)
+    For test that need to make calls to localhost (e.g., s3 presigned urls),
+    and bypass the httpx_mock for those requests, add this decorator
+
     @pytest.mark.httpx_mock(should_mock=not_localhost)
     """
     return request.url.host != "localhost"
@@ -122,6 +123,7 @@ async def index():
     await delete_project_index(index, ignore_missing=True)
     await create_project_index(ProjectSettings(id=index, name="Unittest Index"))
     yield index
+    print("close index fixture")
     # await delete_project_index(index, ignore_missing=True)
 
 

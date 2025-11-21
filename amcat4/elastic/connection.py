@@ -36,6 +36,7 @@ async def start_elastic() -> AsyncElasticsearch:
 
 async def close_elastic() -> None:
     if ES_CONNECTION.active is not None:
+        print("closing elastic")
         await ES_CONNECTION.active.close()
 
 

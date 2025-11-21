@@ -9,10 +9,10 @@ from amcat4.objectstorage.s3client import close_s3_session, start_s3_client
 
 
 class AmcatConnections:
-    s3_client: S3Client
+    s3_client: S3Client | None
     elastic: AsyncElasticsearch
 
-    def __init__(self, s3_client: S3Client, elastic: AsyncElasticsearch):
+    def __init__(self, s3_client: S3Client | None, elastic: AsyncElasticsearch):
         self.s3_client = s3_client
         self.elastic = elastic
 
@@ -31,7 +31,6 @@ async def close_amcat_connections():
 @asynccontextmanager
 async def amcat_connections() -> AsyncGenerator[AmcatConnections, None]:
     try:
-        connections = await start_amcat_connections()
-        yield connections
+        yield await start_amcat_connections()
     finally:
         await close_amcat_connections()

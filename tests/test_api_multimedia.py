@@ -145,6 +145,7 @@ async def test_presigned(client, index, user):
 
 
 @pytest.mark.anyio
+@pytest.mark.httpx_mock(should_mock=not_localhost)
 async def test_list_pagination(client, index, reader, user):
     await create_project_role(user, index, Roles.WRITER)
 
