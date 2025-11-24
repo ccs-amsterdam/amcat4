@@ -167,7 +167,11 @@ async def test_api_post_admin_requests(clean_requests, client, guest_index, inde
         json=dict(type="project_role", project_id=guest_index, role="ADMIN"),
     )
     await post_json(
-        client, "/permission_requests", expected=204, user=user, json=dict(type="project_role", project_id=index, role="ADMIN")
+        client,
+        "/permission_requests",
+        expected=204,
+        user=user,
+        json=dict(type="project_role", project_id=index, role="ADMIN"),
     )
     await post_json(
         client, "/permission_requests", expected=204, user=user, json=dict(type="create_project", project_id=index_name)

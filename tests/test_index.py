@@ -2,7 +2,7 @@ from typing import List
 
 import pytest
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.models import ProjectSettings, Roles, User
 from amcat4.projects.index import (
     create_project_index,
@@ -32,8 +32,7 @@ async def list_es_indices() -> List[str]:
     """
     List all indices on the connected elastic cluster.
     """
-    elastic = await es()
-    return list((await elastic.indices.get(index="*")).keys())
+    return list((await es().indices.get(index="*")).keys())
 
 
 async def list_index_ids(email: str | None = None) -> List[str]:
@@ -66,8 +65,7 @@ async def test_import_index():
     # To import an existing es index, we create the index settings
     index = "amcat4_unittest"
     await delete_project_index(index, ignore_missing=True)
-    elastic = await es()
-    await elastic.indices.create(index=index)
+    await es().indices.create(index=index)
     assert index in await list_es_indices()
     assert index not in await list_index_ids()
     await register_project_index(ProjectSettings(id=index))

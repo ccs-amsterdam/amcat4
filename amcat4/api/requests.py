@@ -65,7 +65,7 @@ async def post_admin_requests(requests: list[AdminPermissionRequest] = Body(...)
             )
 
 
-@app_requests.get("/", response_model=list[AdminPermissionRequest])
+@app_requests.get("", response_model=list[AdminPermissionRequest])
 async def get_my_requests(user: User = Depends(authenticated_user)):
     """Lists any active role request from this user."""
     if user.email is None:
@@ -73,7 +73,7 @@ async def get_my_requests(user: User = Depends(authenticated_user)):
     return [r async for r in list_user_requests(user=user)]
 
 
-@app_requests.post("/", status_code=status.HTTP_204_NO_CONTENT)
+@app_requests.post("", status_code=status.HTTP_204_NO_CONTENT)
 async def post_requests(request: Annotated[PermissionRequest, Body(...)], user: User = Depends(authenticated_user)):
     """Create a new permission request. The user must be authenticated."""
     if user.email is None:
@@ -85,7 +85,7 @@ async def post_requests(request: Annotated[PermissionRequest, Body(...)], user: 
     await update_request(AdminPermissionRequest(email=user.email, request=request))
 
 
-@app_requests.delete("/", status_code=status.HTTP_204_NO_CONTENT)
+@app_requests.delete("", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_my_request(request: Annotated[PermissionRequest, Body(...)], user: User = Depends(authenticated_user)):
     """Delete an existing permission request. The user must be authenticated."""
     if user.email is None:

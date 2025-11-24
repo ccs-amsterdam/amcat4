@@ -95,7 +95,7 @@ class IndexViewResponse(IndexListResponse):
     bytes: int = Field(description="Size of the index in bytes")
 
 
-@app_index.get("/index/")
+@app_index.get("/index")
 async def index_list(
     show_all: Annotated[
         bool, Query(..., description="Also show indices user has no role on (requires ADMIN server role)")
@@ -127,7 +127,7 @@ async def index_list(
     return ix_list
 
 
-@app_index.post("/index/", status_code=status.HTTP_201_CREATED)
+@app_index.post("/index", status_code=status.HTTP_201_CREATED)
 async def create_index(
     body: Annotated[CreateIndexBody, Body(...)],
     user: User = Depends(authenticated_user),

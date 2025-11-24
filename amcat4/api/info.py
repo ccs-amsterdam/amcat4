@@ -8,10 +8,9 @@ from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user, get_middlecat_config
 from amcat4.config import get_settings, validate_settings
-from amcat4.elastic.connection import connect_elastic
+from amcat4.connections import es, s3_enabled
 from amcat4.models import ContactInfo, Links, LinksGroup, Roles, ServerSettings, User
 from amcat4.objectstorage.image_processing import create_image_from_url
-from amcat4.objectstorage.s3client import s3_enabled
 from amcat4.projects.query import get_task_status
 from amcat4.systemdata.roles import HTTPException_if_not_server_role
 from amcat4.systemdata.settings import get_server_settings, upsert_server_settings
@@ -55,7 +54,7 @@ class AuthConfigResponse(BaseModel):
 async def index(request: Request):
     """Returns an HTML page with information about this AmCAT instance."""
     host = get_settings().host
-    es_alive = await (await connect_elastic()).ping()
+    es_alive = await (es()).ping()
     auth = get_settings().auth
     has_admin_email = bool(get_settings().admin_email)
     middlecat_url = get_settings().middlecat_url
@@ -68,7 +67,7 @@ async def index(request: Request):
             # middlecat_alive = True
         except OSError:
             pass
-    return templates.TemplateResponse("index.html", locals())
+    return templates.TemplateResponse(request, "index.html", locals())
 
 
 @app_info.get("/config")

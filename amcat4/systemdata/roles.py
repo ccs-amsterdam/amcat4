@@ -2,7 +2,7 @@ from typing import AsyncIterable
 
 from fastapi import HTTPException
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.elastic.util import index_scan
 from amcat4.models import (
     GuestRole,
@@ -189,8 +189,7 @@ async def _create_role(email: RoleEmailPattern, role_context: RoleContext, role:
         raise HTTPException(422, "Cannot create a role with Role.NONE.")
 
     user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-    elastic = await es()
-    await elastic.create(index=roles_index_name(), id=id, document=user_role.model_dump(), refresh=True)
+    await es().create(index=roles_index_name(), id=id, document=user_role.model_dump(), refresh=True)
 
 
 async def _update_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles, ignore_missing: bool = False):
@@ -202,15 +201,11 @@ async def _update_role(email: RoleEmailPattern, role_context: RoleContext, role:
         await _delete_role(email, role_context, ignore_missing=ignore_missing)
 
     user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-    elastic = await es()
-    await elastic.update(
-        index=roles_index_name(), id=id, doc=user_role.model_dump(), doc_as_upsert=ignore_missing, refresh=True
-    )
+    await es().update(index=roles_index_name(), id=id, doc=user_role.model_dump(), doc_as_upsert=ignore_missing, refresh=True)
 
 
 async def _delete_role(email: RoleEmailPattern, role_context: RoleContext, ignore_missing: bool = False):
-    elastic = await es()
-    elastic = elastic.options(ignore_status=404) if ignore_missing else elastic
+    elastic = es().options(ignore_status=404) if ignore_missing else es()
     await elastic.delete(index=roles_index_name(), id=roles_index_id(email, role_context), refresh=True)
 
 

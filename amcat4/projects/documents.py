@@ -5,7 +5,7 @@ from typing import Any, AsyncGenerator, Literal, Mapping
 
 import elasticsearch.helpers
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.models import CreateDocumentField, DocumentFieldDefinition, FieldType
 from amcat4.systemdata.fields import coerce_type, create_fields, create_or_verify_tag_field, list_fields
 
@@ -37,9 +37,8 @@ async def create_or_update_documents(
 
     actions = [a async for a in upload_document_es_actions(index, documents, op_type)]
     try:
-        elastic = await es()
         successes, failures = await elasticsearch.helpers.async_bulk(
-            elastic,
+            es(),
             actions,
             stats_only=False,
             raise_on_error=raise_on_error,
@@ -96,8 +95,7 @@ async def fetch_document(index: str, doc_id: str, **kargs) -> dict:
     :param doc_id: The document id (hash)
     :return: the source dict of the document
     """
-    elastic = await es()
-    return (await elastic.get(index=index, id=doc_id, **kargs))["_source"]
+    return (await es().get(index=index, id=doc_id, **kargs))["_source"]
 
 
 async def update_document(
@@ -112,8 +110,7 @@ async def update_document(
     :param ignore_missing: If True, create the document if it does not exist
     :param get_source: If True, return the updated document source
     """
-    elastic = await es()
-    await elastic.update(index=index, id=doc_id, doc=fields, source=get_source, doc_as_upsert=ignore_missing)  # type: ignore
+    await es().update(index=index, id=doc_id, doc=fields, source=get_source, doc_as_upsert=ignore_missing)  # type: ignore
 
 
 async def delete_document(index: str, doc_id: str, ignore_missing: bool = False):
@@ -123,8 +120,7 @@ async def delete_document(index: str, doc_id: str, ignore_missing: bool = False)
     :param index: The Pname of the index
     :param doc_id: The document id (hash)
     """
-    elastic = await es()
-    await elastic.delete(index=index, id=doc_id)
+    await es().delete(index=index, id=doc_id)
 
 
 UPDATE_SCRIPTS = dict(
@@ -163,8 +159,7 @@ async def update_document_tag_by_query(
         lang="painless",
         params=dict(field=field, tag=tag),
     )
-    elastic = await es()
-    result = await elastic.update_by_query(index=index, script=script, **query, refresh=True)
+    result = await es().update_by_query(index=index, script=script, **query, refresh=True)
     return dict(updated=result["updated"], total=result["total"])
 
 
@@ -181,14 +176,12 @@ async def update_documents_by_query(index: str | list[str], query: dict, field: 
             lang="painless",
             params=dict(field=field, value=value),
         )
-    elastic = await es()
-    result = await elastic.update_by_query(index=index, query=query, script=script, refresh=True)
+    result = await es().update_by_query(index=index, query=query, script=script, refresh=True)
     return dict(updated=result["updated"], total=result["total"])
 
 
 async def delete_documents_by_query(index: str | list[str], query: dict):
-    elastic = await es()
-    result = await elastic.delete_by_query(index=index, query=query)
+    result = await es().delete_by_query(index=index, query=query)
     return dict(updated=result["deleted"], total=result["total"])
 
 

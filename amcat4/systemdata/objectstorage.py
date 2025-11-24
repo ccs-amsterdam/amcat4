@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import AsyncGenerator, Tuple
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.elastic.util import BulkInsertAction, batched_index_scan, es_bulk_create, es_bulk_upsert
 from amcat4.models import AllowedContentType, IndexId, ObjectStorage, RegisterObject
 from amcat4.objectstorage.s3bucket import PRESIGNED_POST_HOURS_VALID, scan_s3_objects
@@ -69,8 +69,7 @@ async def register_objects(
 
 async def get_object(index: IndexId, field: str, filepath: str) -> ObjectStorage | None:
     id = objectstorage_index_id(index, field, filepath)
-    elastic = await es()
-    doc = await elastic.options(ignore_status=[404]).get(index=objectstorage_index_name(), id=id)
+    doc = await es().options(ignore_status=[404]).get(index=objectstorage_index_name(), id=id)
     if not doc["found"]:
         return None
     return ObjectStorage.model_validate(doc["_source"])
@@ -161,15 +160,13 @@ async def delete_register(index: IndexId, field: str | None = None):
     }
     if field:
         query["bool"]["must"].append({"term": {"field": field}})
-    elastic = await es()
-    result = await elastic.delete_by_query(index=objectstorage_index_name(), query=query)
+    result = await es().delete_by_query(index=objectstorage_index_name(), query=query, refresh=True, conflicts="proceed")
     return dict(updated=result["deleted"], total=result["total"])
 
 
 async def delete_objects(index: IndexId, field: str, filepaths: list[str]):
     ids = [objectstorage_index_id(index, field, fp) for fp in filepaths]
-    elastic = await es()
-    result = await elastic.delete_by_query(index=objectstorage_index_name(), query={"ids": {"values": ids}}, refresh=True)
+    result = await es().delete_by_query(index=objectstorage_index_name(), query={"ids": {"values": ids}}, refresh=True)
     print(result)
     return dict(updated=result["deleted"], total=result["total"])
 
@@ -201,8 +198,7 @@ async def _clean_register(
     if keep_pending:
         pending_time = datetime.now(UTC) - timedelta(hours=PRESIGNED_POST_HOURS_VALID + 1)
         query["bool"]["must"].append({"range": {"registered": {"lte": pending_time.isoformat()}}})
-    elastic = await es()
-    result = await elastic.delete_by_query(index=objectstorage_index_name(), query=query)
+    result = await es().delete_by_query(index=objectstorage_index_name(), query=query)
     return dict(updated=result["deleted"], total=result["total"])
 
 
@@ -213,8 +209,7 @@ async def _get_current(index: IndexId, field: str, objects: list[RegisterObject]
     non-existing objects will be omitted.
     """
     ids = [objectstorage_index_id(index, field, obj.filepath) for obj in objects]
-    elastic = await es()
-    res = await elastic.options(ignore_status=[404]).mget(index=objectstorage_index_name(), ids=ids, source_includes=["size"])
+    res = await es().options(ignore_status=[404]).mget(index=objectstorage_index_name(), ids=ids, source_includes=["size"])
 
     existing: dict[str, int] = dict()
     for doc in res["docs"]:
@@ -228,8 +223,7 @@ async def _get_total_size(index: IndexId) -> int:
     query: dict = {"term": {"index": index}}
 
     agg = {"total_sum": {"sum": {"field": "size"}}}
-    elastic = await es()
-    agg = await elastic.search(query=query, index=objectstorage_index_name(), size=0, aggregations=agg)
+    agg = await es().search(query=query, index=objectstorage_index_name(), size=0, aggregations=agg)
 
     return agg["aggregations"]["total_sum"]["value"]
 

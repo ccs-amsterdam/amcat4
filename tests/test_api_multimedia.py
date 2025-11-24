@@ -2,8 +2,8 @@ import httpx
 import pytest
 from httpx import AsyncClient
 
+from amcat4.connections import s3_enabled
 from amcat4.models import Roles
-from amcat4.objectstorage.s3client import s3_enabled
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.systemdata.roles import create_project_role
 from tests.conftest import not_localhost

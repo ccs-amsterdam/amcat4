@@ -1,6 +1,6 @@
 from typing import AsyncIterable
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.elastic.util import index_scan
 from amcat4.models import (
     AdminPermissionRequest,
@@ -26,8 +26,7 @@ async def update_request(request: AdminPermissionRequest):
     # Index requests  by type+email+index
     doc = _request_to_elastic(request)
     id = requests_index_id(doc.get("type"), doc.get("email"), doc.get("project_id", None))
-    elastic = await es()
-    await elastic.update(
+    await es().update(
         index=requests_index_name(),
         id=id,
         doc=doc,
@@ -39,8 +38,7 @@ async def update_request(request: AdminPermissionRequest):
 async def delete_request(request: AdminPermissionRequest):
     doc = _request_to_elastic(request)
     id = requests_index_id(doc["type"], doc["email"], doc["project_id"])
-    elastic = await es()
-    await elastic.delete(index=requests_index_name(), id=id, refresh=True)
+    await es().delete(index=requests_index_name(), id=id, refresh=True)
 
 
 async def list_user_requests(user: User) -> AsyncIterable[AdminPermissionRequest]:
@@ -157,7 +155,7 @@ async def clear_requests():
     """
     TEST ONLY!!
     """
-    await (await es()).delete_by_query(index=requests_index_name(), query={"match_all": {}}, refresh=True)
+    await (es()).delete_by_query(index=requests_index_name(), query={"match_all": {}}, refresh=True)
 
 
 async def list_all_requests(statuses: list[str] | None = None) -> AsyncIterable[AdminPermissionRequest]:

@@ -54,13 +54,13 @@ async def test_get_user(client: AsyncClient, writer, user):
 async def test_create_user(client: AsyncClient, user, writer, admin, username):
     # anonymous or unprivileged users cannot create new users
     new_user = dict(email=username, role="WRITER")
-    assert (await client.post("/users/", json=new_user)).status_code == 403, "Creating user should require auth"
-    assert (await client.post("/users/", json=new_user, headers=build_headers(writer))).status_code == 403, (
+    assert (await client.post("/users", json=new_user)).status_code == 403, "Creating user should require auth"
+    assert (await client.post("/users", json=new_user, headers=build_headers(writer))).status_code == 403, (
         "Creating user should require admin"
     )
     # admin can add new users
-    assert (await client.post("/users/", json=new_user, headers=build_headers(admin))).status_code == 201
-    assert (await client.post("/users/", json=new_user, headers=build_headers(admin))).status_code == 409, (
+    assert (await client.post("/users", json=new_user, headers=build_headers(admin))).status_code == 201
+    assert (await client.post("/users", json=new_user, headers=build_headers(admin))).status_code == 409, (
         "Duplicate create should return 409"
     )
 

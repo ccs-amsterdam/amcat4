@@ -4,11 +4,9 @@ from datetime import date, datetime
 from typing import Iterable, Optional, Set
 
 from authlib.jose import jwt
-from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
 from amcat4.config import AuthOptions, get_settings
-from amcat4.projects.index import refresh_index
 from tests.middlecat_keypair import PRIVATE_KEY
 
 
@@ -42,7 +40,7 @@ async def get_json(client: AsyncClient, url: str, expected=200, headers=None, us
 async def post_json(client: AsyncClient, url, expected=201, headers=None, user=None, **kargs):
     response = await client.post(url, headers=build_headers(user, headers), **kargs)
     assert response.status_code == expected, (
-        f"POST {url} returned {response.status_code}, expected {expected}\n{response.json()}"
+        f"POST {url} returned {response.status_code}, expected {expected}\n{response.json() if response.content else ''}"
     )
     if expected == 204:
         return {}

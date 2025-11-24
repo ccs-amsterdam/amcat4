@@ -6,7 +6,7 @@ import copy
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.models import DocumentField, FilterSpec, SortSpec
 from amcat4.projects.date_mappings import interval_mapping
 from amcat4.projects.query import build_body
@@ -183,8 +183,9 @@ async def _bare_aggregate(
     """
     body = build_body(queries=queries, filters=filters) if filters or queries else {}
     index = index if isinstance(index, str) else ",".join(index)
-    aresult = await (await es()).search(index=index, size=0, aggregations=aggregation_dsl(aggregations), **body)
-    cresult = await (await es()).count(index=index, **body)
+    client = es()
+    aresult = await client.search(index=index, size=0, aggregations=aggregation_dsl(aggregations), **body)
+    cresult = await client.count(index=index, **body)
     return cresult["count"], aresult["aggregations"]
 
 
@@ -213,7 +214,8 @@ async def _elastic_aggregate(
     if filters or queries:
         q = build_body(queries=queries, filters=filters)
         kargs["query"] = q["query"]
-    result = await (await es()).search(
+    client = es()
+    result = await client.search(
         index=index if isinstance(index, str) else ",".join(index),
         size=0,
         aggregations=aggr,
@@ -252,7 +254,8 @@ async def _aggregate_results(
             count, results = await _bare_aggregate(index, queries, filters, aggregations)
             rows = [(count,) + tuple(a.get_value(results) for a in aggregations)]
         else:
-            result = await (await es()).count(
+            client = es()
+            result = await client.count(
                 index=index if isinstance(index, str) else ",".join(index), **build_body(queries=queries, filters=filters)
             )
             rows = [(result["count"],)]

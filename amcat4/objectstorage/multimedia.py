@@ -3,7 +3,7 @@ from typing import Tuple, TypedDict
 
 import magic
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.models import ObjectStorage
 from amcat4.objectstorage.s3bucket import (
     delete_s3_by_key,
@@ -119,5 +119,4 @@ async def presigned_multimedia_post(ix: str, object: ObjectStorage) -> Tuple[str
 
 
 async def update_multimedia_field(ix: str, doc: str, field: str, hash: str, size: int):
-    elastic = await es()
-    await elastic.update(index=ix, id=doc, doc={field: {"hash": hash, "size": size}}, refresh=True)
+    await es().update(index=ix, id=doc, doc={field: {"hash": hash, "size": size}}, refresh=True)

@@ -1,7 +1,7 @@
 import uuid
 from typing import AsyncGenerator, Literal
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.elastic.mapping import ElasticMapping, nested_field, object_field
 from amcat4.elastic.util import (
     BulkInsertAction,
@@ -192,8 +192,7 @@ async def check_deprecated_version(index: str):
     The v1 system has a deprecated form of versioning, where the version number was stored in the _global document.
     The oldest versions should (pretty please...) no longer be used, so we don't support automatic migration from them.
     """
-    elastic = await es()
-    global_doc = await elastic.get(index=index, id="_global", source_includes="version")
+    global_doc = await es().get(index=index, id="_global", source_includes="version")
     version = global_doc["_source"].get("version", 0)
     if version != 2:
         raise ValueError(

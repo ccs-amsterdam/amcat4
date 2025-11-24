@@ -1,10 +1,9 @@
 from typing import AsyncIterable, Mapping
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es, s3_enabled
 from amcat4.elastic.util import index_scan
 from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, RoleRule, Roles, User
 from amcat4.objectstorage.multimedia import delete_project_multimedia
-from amcat4.objectstorage.s3client import s3_enabled
 from amcat4.systemdata.fields import create_fields, list_fields
 from amcat4.systemdata.roles import list_user_project_roles
 from amcat4.systemdata.settings import (
@@ -28,9 +27,8 @@ async def create_project_index(new_index: ProjectSettings, admin_email: str | No
     An index needs to exist in two places: as an elasticsearch index, and as a document in the settings index.
     This function creates the elasticsearch index first, and then creates the settings document.
     """
-    elastic = await es()
-    index_exists = await elastic.indices.exists(index=new_index.id)
-    project_exists = await elastic.exists(index=settings_index_name(), id=settings_index_id(new_index.id))
+    index_exists = await es().indices.exists(index=new_index.id)
+    project_exists = await es().exists(index=settings_index_name(), id=settings_index_id(new_index.id))
     if index_exists and project_exists:
         raise IndexAlreadyExists(f'Project "{new_index.id}" already exists')
     if index_exists and not project_exists:
@@ -83,15 +81,14 @@ async def delete_project_index(index_id: str, ignore_missing: bool = False):
     """
     Delete both the index and the index settings, and the index bucket if any.
     """
-    elastic = await es()
-    _es = elastic.options(ignore_status=404) if ignore_missing else elastic
-    await _es.indices.delete(index=index_id)
-
     # important, because otherwise new project with same name will inherit old bucket
     # (buckets are always optional)
     # TODO: should we actually use unique index ids?
     if s3_enabled():
         await delete_project_multimedia(index_id)
+
+    _es = es().options(ignore_status=404) if ignore_missing else es()
+    await _es.indices.delete(index=index_id)
 
     await delete_project_settings(index_id, ignore_missing)
 
@@ -109,16 +106,14 @@ async def list_project_indices(ids: list[str] | None = None) -> AsyncIterable[Pr
 
 
 async def create_es_index(index_id: str):
-    elastic = await es()
-    await elastic.indices.create(index=index_id, mappings={"dynamic": "strict", "properties": {}})
+    await es().indices.create(index=index_id, mappings={"dynamic": "strict", "properties": {}})
 
 
 async def refresh_index(index: str):
     """
     Refresh the elasticsearch index
     """
-    elastic = await es()
-    await elastic.indices.refresh(index=index)
+    await es().indices.refresh(index=index)
 
 
 async def list_user_project_indices(user: User, show_all=False) -> AsyncIterable[tuple[ProjectSettings, RoleRule | None]]:
@@ -144,8 +139,7 @@ async def list_user_project_indices(user: User, show_all=False) -> AsyncIterable
 
 
 async def index_size_in_bytes(index_id: IndexId) -> int:
-    elastic = await es()
-    response = await elastic.indices.stats(
+    response = await es().indices.stats(
         index=index_id,
         metric="store",
     )

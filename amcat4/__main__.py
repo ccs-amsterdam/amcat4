@@ -21,7 +21,7 @@ from pydantic.fields import FieldInfo
 from uvicorn.config import LOGGING_CONFIG
 
 from amcat4.config import AuthOptions, get_settings, validate_settings
-from amcat4.connections import amcat_connections
+from amcat4.connections import amcat_connections, es
 from amcat4.models import FieldType, ProjectSettings, Roles
 from amcat4.objectstorage.image_processing import create_image_from_url
 from amcat4.projects.documents import create_or_update_documents
@@ -77,8 +77,8 @@ async def upload_test_data() -> str:
 
 
 async def _check_elastic_connection():
-    async with amcat_connections() as ac:
-        if await ac.elastic.ping():
+    async with amcat_connections():
+        if await es().ping():
             logging.info(f"Connect to elasticsearch {get_settings().elastic_host}")
 
 
@@ -112,8 +112,8 @@ def val(val_or_list):
 
 async def migrate_systemdata(args) -> None:
     settings = get_settings()
-    async with amcat_connections() as ac:
-        if not await ac.elastic.ping():
+    async with amcat_connections():
+        if not await es().ping():
             logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
             sys.exit(1)
 
@@ -122,8 +122,8 @@ async def migrate_systemdata(args) -> None:
 
 async def dangerously_destroy_systemdata(args) -> None:
     settings = get_settings()
-    async with amcat_connections() as ac:
-        if not await ac.elastic.ping():
+    async with amcat_connections():
+        if not await es().ping():
             logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
             sys.exit(1)
 

@@ -6,7 +6,7 @@ import logging
 from math import ceil
 from typing import Any, Dict, Literal, Tuple, Union
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.models import FieldSpec, FieldType, FilterSpec, SortSpec
 from amcat4.projects.date_mappings import mappings
 from amcat4.projects.documents import delete_documents_by_query, update_document_tag_by_query, update_documents_by_query
@@ -165,9 +165,8 @@ async def query_documents(
         for s in sort:
             for k, v in s.items():
                 kwargs["sort"].append({k: dict(v)})
-    elastic = await es()
     if scroll_id:
-        result = await elastic.scroll(scroll_id=scroll_id, **kwargs)
+        result = await es().scroll(scroll_id=scroll_id, **kwargs)
         # TODO: check why we return None here instead of just an empty result
         if not result["hits"]["hits"]:
             return None
@@ -185,14 +184,14 @@ async def query_documents(
 
         if not scroll:
             kwargs["from_"] = page * per_page
-        result = await elastic.search(index=index, size=per_page, **body, **kwargs)
+        result = await es().search(index=index, size=per_page, **body, **kwargs)
 
         n = result["hits"]["total"]["value"]
         if n == 10000 and not scroll:
             # Default elastic max on non-scrolled values. I think we should return the actual count,
             # even if elastic will error (I think) if the user ever retrieves a page > 1000
             # TODO: can we not hard-code the 10k limit?
-            res = await elastic.count(index=index, query=body["query"])
+            res = await es().count(index=index, query=body["query"])
             n = res["count"]
 
     data = []
@@ -309,8 +308,7 @@ async def reindex(
     This will first create any fields missing in the target index, and then start the reindex task.
     If wait_for_completion is False (default), returns a {'task': task_id} dict
     """
-    elastic = await es()
-    if not await elastic.indices.exists(index=destination_index):
+    if not await es().indices.exists(index=destination_index):
         # Note: We could automatically create, but then also need to think about
         #       name, roles, etc., so for now let client create first
         raise Exception("Please create index before re-indexing!")
@@ -326,10 +324,9 @@ async def reindex(
     if queries or filters:
         source.update(build_body(queries, filters))
 
-    return await elastic.reindex(dest=dict(index=destination_index), source=source, wait_for_completion=wait_for_completion)
+    return await es().reindex(dest=dict(index=destination_index), source=source, wait_for_completion=wait_for_completion)
 
 
 async def get_task_status(task_id):
-    elastic = await es()
-    res = await elastic.tasks.get(task_id=task_id)
+    res = await es().tasks.get(task_id=task_id)
     return res

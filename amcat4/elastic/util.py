@@ -5,7 +5,7 @@ from elasticsearch.helpers.errors import BulkIndexError
 from pydantic import BaseModel
 
 from amcat4.config import get_settings
-from amcat4.elastic.connection import connect_elastic
+from amcat4.connections import es
 from amcat4.elastic.mapping import ElasticMapping
 from amcat4.models import IndexId
 
@@ -43,13 +43,11 @@ class BulkInsertAction(BaseModel):
 
 
 async def es_get(index: str, id: str) -> dict | None:
-    elastic = await connect_elastic()
-    return (await elastic.get(index=index, id=id))["_source"]
+    return (await es().get(index=index, id=id))["_source"]
 
 
 async def es_upsert(index: str, id: str, doc: dict, refresh: bool = True) -> None:
-    elastic = await connect_elastic()
-    await elastic.update(index=index, id=id, doc=doc, doc_as_upsert=True, refresh=refresh)
+    await es().update(index=index, id=id, doc=doc, doc_as_upsert=True, refresh=refresh)
 
 
 async def es_bulk_create(
@@ -114,8 +112,7 @@ async def bulk_helper_with_errors(actions: Iterable[dict], **kwargs) -> None:
     elastic bulk but printing the reason for the first error if any
     """
     try:
-        elastic = await connect_elastic()
-        await elasticsearch.helpers.async_bulk(elastic, actions, stats_only=False, **kwargs)
+        await elasticsearch.helpers.async_bulk(es(), actions, stats_only=False, **kwargs)
 
     except BulkIndexError as e:
         if e.errors:
@@ -148,9 +145,8 @@ async def index_scan(
         query_body["_source_includes"] = source
     if exclude_source is not None:
         query_body["_source_excludes"] = exclude_source
-    elastic = await connect_elastic()
     async for hit in elasticsearch.helpers.async_scan(
-        elastic,
+        es(),
         index=index,
         query=query_body,
         scroll=scroll,
@@ -173,9 +169,8 @@ async def batched_index_scan(
     """
     Like index scan, but returns a batch at a time and a scroll id for manual scrolling
     """
-    elastic = await connect_elastic()
     if scroll_id is None:
-        res = await elastic.search(
+        res = await es().search(
             index=index,
             query=query,
             sort=sort,
@@ -185,14 +180,14 @@ async def batched_index_scan(
             size=batchsize,
         )
     else:
-        res = await elastic.scroll(scroll_id=scroll_id, scroll=scroll)
+        res = await es().scroll(scroll_id=scroll_id, scroll=scroll)
 
     new_scroll_id: str | None = res.get("_scroll_id", None)
     hits = res["hits"]["hits"]
 
     if not hits:
         if new_scroll_id:
-            await elastic.clear_scroll(scroll_id=new_scroll_id)
+            await es().clear_scroll(scroll_id=new_scroll_id)
         return None, []
 
     batch_data: list[Tuple[str, dict[str, Any]]] = [(hit["_id"], hit["_source"]) for hit in hits]

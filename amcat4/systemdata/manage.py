@@ -4,7 +4,7 @@ from typing import Literal
 from elasticsearch import BadRequestError
 from pydantic import BaseModel
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.elastic.util import (
     SystemIndexMapping,
     system_index_name,
@@ -124,7 +124,6 @@ async def migrate_to_version(version: int):
 
 async def create_systemdata_mappings(version: int, migration_pending: bool) -> None:
     indices: list[SystemIndexMapping] = VERSIONS[version].SYSTEM_INDICES
-    elastic = await es()
     for index in indices:
         body = {
             "dynamic": "strict",
@@ -135,15 +134,14 @@ async def create_systemdata_mappings(version: int, migration_pending: bool) -> N
                 "migration_pending": True,
             }
         index = system_index_name(version, index.name)
-        await elastic.indices.create(index=index, mappings=body)
+        await es().indices.create(index=index, mappings=body)
 
 
 async def update_systemdata_mappings(version: int) -> None:
     indices: list[SystemIndexMapping] = VERSIONS[version].SYSTEM_INDICES
-    elastic = await es()
     for index in indices:
         id = system_index_name(version, index.name)
-        await elastic.indices.put_mapping(index=id, properties=index.mapping)
+        await es().indices.put_mapping(index=id, properties=index.mapping)
 
 
 class SystemIndexVersionStatus(BaseModel):
@@ -184,11 +182,10 @@ async def systemdata_version_status(version: int) -> SystemIndexVersionStatus:
 
 async def delete_pending_migrations(version: int) -> None:
     indices: list[SystemIndexMapping] = VERSIONS[version].SYSTEM_INDICES
-    elastic = await es()
     for index in indices:
         index_name = system_index_name(version, index.name)
 
-        mapping = await elastic.indices.get_mapping(index=index_name)
+        mapping = await es().indices.get_mapping(index=index_name)
         if not mapping:
             raise InvalidSystemIndex(
                 f"delete_pending_migrations called for system indices version {version} "
@@ -197,23 +194,21 @@ async def delete_pending_migrations(version: int) -> None:
 
         meta = mapping[index_name]["mappings"].get("_meta", {})
         if meta.get("migration_pending", True):
-            await elastic.indices.delete(index=index_name)
+            await es().indices.delete(index=index_name)
 
 
 async def delete_systemdata_version(version: int) -> None:
     indices: list[SystemIndexMapping] = VERSIONS[version].SYSTEM_INDICES
-    elastic = await es()
     for index in indices:
         index_name = system_index_name(version, index.name)
-        await elastic.indices.delete(index=index_name, ignore_unavailable=True)
+        await es().indices.delete(index=index_name, ignore_unavailable=True)
 
 
 async def set_migration_successfull(version) -> None:
     update_meta_body = {"_meta": {"migration_pending": None}}
-    elastic = await es()
     for system_index in VERSIONS[version].SYSTEM_INDICES:
         index = system_index_name(version, system_index["name"])
-        await elastic.indices.put_mapping(index=index, body=update_meta_body)
+        await es().indices.put_mapping(index=index, body=update_meta_body)
 
         # verify, because it's important
         if await check_index_status(index) != "ready":
@@ -221,16 +216,14 @@ async def set_migration_successfull(version) -> None:
 
 
 async def check_migration_flag(index: str) -> bool:
-    elastic = await es()
-    mapping = await elastic.indices.get_mapping(index=index)
+    mapping = await es().indices.get_mapping(index=index)
     meta = mapping[index]["mappings"].get("_meta", {})
     return meta.get("migration_pending", False)
 
 
 async def check_index_status(index: str) -> Literal["missing", "migrating", "ready"]:
     try:
-        elastic = await es()
-        mapping = await elastic.indices.get_mapping(index=index)
+        mapping = await es().indices.get_mapping(index=index)
         meta = mapping[index]["mappings"].get("_meta", {})
         if meta.get("migration_pending", False):
             return "migrating"

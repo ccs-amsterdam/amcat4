@@ -21,12 +21,12 @@ async def test_documents_unauthorized(
     client,
     index,
 ):
-    await check(client, "/index/", 403, "requires writer permission", json=dict(id=index))
+    await check(client, "/index", 403, "requires writer permission", json=dict(id=index))
     await check(client, f"/index/{index}", 403, "does not have", method="get")
 
 
 @pytest.mark.anyio
 async def test_error_index_create(client, writer, index):
     for name in ("Test", "_test", "test test"):
-        await check(client, "/index/", 422, "there was an issue with the data you sent", json=dict(id=name), user=writer)
-    await check(client, "/index/", 409, "already exists", json=dict(id=index), user=writer)
+        await check(client, "/index", 422, "there was an issue with the data you sent", json=dict(id=name), user=writer)
+    await check(client, "/index", 409, "already exists", json=dict(id=index), user=writer)

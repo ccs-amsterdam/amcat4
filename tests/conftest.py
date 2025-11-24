@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 import pytest
@@ -5,7 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from amcat4 import api
 from amcat4.config import AuthOptions, get_settings
-from amcat4.connections import amcat_connections
+from amcat4.connections import amcat_connections, es
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
@@ -42,10 +43,6 @@ async def my_setup():
         systemdata_version = await create_or_update_systemdata()
         yield
         await delete_systemdata_version(systemdata_version)
-
-    # print("close down test session")
-    # await delete_systemdata_version(systemdata_version)
-    # await close_amcat_connections()
 
 
 @pytest.fixture(autouse=True)
@@ -123,8 +120,7 @@ async def index():
     await delete_project_index(index, ignore_missing=True)
     await create_project_index(ProjectSettings(id=index, name="Unittest Index"))
     yield index
-    print("close index fixture")
-    # await delete_project_index(index, ignore_missing=True)
+    await delete_project_index(index, ignore_missing=True)
 
 
 @pytest.fixture(scope="function")

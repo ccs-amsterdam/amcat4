@@ -1,7 +1,7 @@
 import pytest
 from httpx import AsyncClient
 
-from amcat4.elastic.connection import es
+from amcat4.connections import es
 from amcat4.models import Roles
 from amcat4.systemdata.roles import (
     create_project_role,
@@ -19,16 +19,16 @@ async def test_create_list_delete_index(client, index_name, user, writer, writer
     new_index = dict(id=index_name, name=index_name)
 
     # Anonymous or Unprivileged users cannot create indices
-    await check(await client.post("/index/", json=new_index), 403)
-    await check(await client.post("/index/", json=new_index, headers=build_headers(user=user)), 403)
+    await check(await client.post("/index", json=new_index), 403)
+    await check(await client.post("/index", json=new_index, headers=build_headers(user=user)), 403)
 
     # Authorized users should get 404 if index does not exist
     await check(await client.get(f"/index/{index_name}"), 404)
     await check(await client.get(f"/index/{index_name}", headers=build_headers(user=writer)), 404)
 
     # Writers can create indices
-    await post_json(client, "/index/", user=writer, json=new_index)
-    assert index_name in {x["name"] for x in await get_json(client, "/index/", user=writer) or []}
+    await post_json(client, "/index", user=writer, json=new_index)
+    assert index_name in {x["name"] for x in await get_json(client, "/index", user=writer) or []}
 
     # Users can GET their own index, admins can GET all indices, others cannot GET non-public indices
     await check(await client.get(f"/index/{index_name}"), 403)
@@ -38,9 +38,9 @@ async def test_create_list_delete_index(client, index_name, user, writer, writer
     await check(await client.get(f"/index/{index_name}", headers=build_headers(user=admin)), 200)
 
     # Users can only see indices that they have a role in or that have a guest role
-    assert index_name not in {x["name"] for x in await get_json(client, "/index/", user=user) or []}
-    assert index_name not in {x["name"] for x in await get_json(client, "/index/", user=writer2) or []}
-    assert index_name in {x["name"] for x in await get_json(client, "/index/", user=writer) or []}
+    assert index_name not in {x["name"] for x in await get_json(client, "/index", user=user) or []}
+    assert index_name not in {x["name"] for x in await get_json(client, "/index", user=writer2) or []}
+    assert index_name in {x["name"] for x in await get_json(client, "/index", user=writer) or []}
 
     # (Only) index admin can change index guest role
     await check(await client.put(f"/index/{index_name}", json={"guest_role": "METAREADER"}), 403)
@@ -71,7 +71,7 @@ async def test_create_list_delete_index(client, index_name, user, writer, writer
     assert await get_project_guest_role(index_name) == Roles.READER.name
 
     # Index should now be visible to non-authorized users
-    assert index_name in {x["name"] for x in await get_json(client, "/index/", user=writer) or []}
+    assert index_name in {x["name"] for x in await get_json(client, "/index", user=writer) or []}
     await check(await client.get(f"/index/{index_name}", headers=build_headers(user=user)), 200)
 
 
@@ -128,7 +128,7 @@ async def test_fields_upload(client: AsyncClient, user: str, index: str):
     ) == {"title"}
     assert (await get_json(client, f"/index/{index}/fields", user=user) or {})["x"]["type"] == "keyword"
 
-    es_conn = await es()
+    es_conn = es()
     await es_conn.indices.refresh()
     assert set(await get_json(client, f"/index/{index}/fields/x/values", user=user) or []) == {
         "a",
@@ -255,7 +255,7 @@ async def test_name_description(client, index, index_name, user, admin):
 
     await check(
         await client.post(
-            "/index/",
+            "/index",
             json=dict(
                 id=index_name,
                 description="test2",
@@ -268,6 +268,6 @@ async def test_name_description(client, index, index_name, user, admin):
 
     assert (await get_json(client, f"/index/{index_name}", user=user) or {})["description"] == "test2"
 
-    indices = {ix["id"]: ix for ix in await get_json(client, "/index/", user=user) or []}
+    indices = {ix["id"]: ix for ix in await get_json(client, "/index", user=user) or []}
     assert indices[index]["description"] == "ooktest"
     assert indices[index_name]["description"] == "test2"

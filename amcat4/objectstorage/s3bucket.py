@@ -15,7 +15,7 @@ from types_aiobotocore_s3.type_defs import (
 )
 
 from amcat4.config import get_settings
-from amcat4.objectstorage.s3client import get_s3_client
+from amcat4.connections import s3
 
 PRESIGNED_POST_HOURS_VALID = 6
 
@@ -49,13 +49,12 @@ async def get_bucket(bucket: Literal["multimedia", "backup"]) -> str:
 
 @async_lru.alru_cache(maxsize=1000)
 async def _create_or_get_bucket_name(bucket: str) -> str:
-    s3 = get_s3_client()
     try:
-        await s3.head_bucket(Bucket=bucket)
+        await s3().head_bucket(Bucket=bucket)
     except ClientError as e:
         error = e.response.get("Error", {})
         if error.get("Code") in ("404", "NoSuchBucket"):
-            await s3.create_bucket(Bucket=bucket)
+            await s3().create_bucket(Bucket=bucket)
         else:
             raise
     return bucket
@@ -69,8 +68,6 @@ async def list_s3_objects(
     recursive=True,
     presigned: bool = False,
 ) -> ListResults:
-    s3 = get_s3_client()
-
     params: ListObjectsV2RequestTypeDef = {
         "Bucket": bucket,
         "MaxKeys": page_size,
@@ -82,7 +79,7 @@ async def list_s3_objects(
     if not recursive:
         params["Delimiter"] = "/"
 
-    res = await s3.list_objects_v2(**params)
+    res = await s3().list_objects_v2(**params)
 
     objects: list[ListObject] = []
 
@@ -121,8 +118,7 @@ async def list_s3_objects(
 
 
 async def scan_s3_objects(bucket: str, prefix: str = "", page_size=5000) -> AsyncIterable[ListObject]:
-    s3 = get_s3_client()
-    paginator = s3.get_paginator("list_objects_v2")
+    paginator = s3().get_paginator("list_objects_v2")
 
     async for page in paginator.paginate(Bucket=bucket, Prefix=prefix, PaginationConfig={"PageSize": page_size}):
         if "Contents" in page:
@@ -139,9 +135,8 @@ async def scan_s3_objects(bucket: str, prefix: str = "", page_size=5000) -> Asyn
 
 
 async def stat_s3_object(bucket: str, key: str) -> HeadObjectOutputTypeDef:
-    s3 = get_s3_client()
     try:
-        return await s3.head_object(Bucket=bucket, Key=key)
+        return await s3().head_object(Bucket=bucket, Key=key)
     except ClientError as e:
         error = e.response.get("Error", {})
         if error.get("Code") == "404":
@@ -151,18 +146,16 @@ async def stat_s3_object(bucket: str, key: str) -> HeadObjectOutputTypeDef:
 
 
 async def get_s3_object(bucket: str, key: str, first_bytes: int | None = None) -> GetObjectOutputTypeDef:
-    s3 = get_s3_client()
     if first_bytes is not None:
-        res = await s3.get_object(Bucket=bucket, Key=key, Range=f"bytes=0-{first_bytes - 1}")
+        res = await s3().get_object(Bucket=bucket, Key=key, Range=f"bytes=0-{first_bytes - 1}")
     else:
-        res = await s3.get_object(Bucket=bucket, Key=key)
+        res = await s3().get_object(Bucket=bucket, Key=key)
 
     return res
 
 
 async def delete_s3_by_prefix(bucket: str, prefix: str):
-    s3 = get_s3_client()
-    paginator = s3.get_paginator("list_objects_v2")
+    paginator = s3().get_paginator("list_objects_v2")
     async for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         if "Contents" in page:
             keys = [obj["Key"] for obj in page["Contents"] if "Key" in obj]
@@ -170,21 +163,18 @@ async def delete_s3_by_prefix(bucket: str, prefix: str):
 
 
 async def delete_s3_by_key(bucket: str, keys: list[str]):
-    s3 = get_s3_client()
     to_delete: list[ObjectIdentifierTypeDef] = [{"Key": key} for key in keys]
     if to_delete:
-        await s3.delete_objects(Bucket=bucket, Delete={"Objects": to_delete})
+        await s3().delete_objects(Bucket=bucket, Delete={"Objects": to_delete})
 
 
 async def add_s3_object(bucket: str, key: str, data: bytes):
-    s3 = get_s3_client()
-    await s3.put_object(Bucket=bucket, Key=key, Body=data)
+    await s3().put_object(Bucket=bucket, Key=key, Body=data)
 
 
 async def presigned_post(
     bucket: str, key: str, content_type: str = "", size: int | None = None, redirect: str = ""
 ) -> tuple[str, dict[str, str]]:
-    s3 = get_s3_client()
     conditions: list[Any] = [{"bucket": bucket}]
     fields: dict[str, str] = {}
 
@@ -197,7 +187,7 @@ async def presigned_post(
         conditions.append({"success_action_redirect": redirect})
         fields["success_action_redirect"] = redirect
 
-    pp = await s3.generate_presigned_post(
+    pp = await s3().generate_presigned_post(
         Bucket=bucket,
         Key=key,
         Fields=fields,
@@ -208,14 +198,12 @@ async def presigned_post(
 
 
 async def presigned_get(bucket: str, key: str, hours_valid=24, **kwargs) -> str:
-    s3 = get_s3_client()
     params = {"Bucket": bucket, "Key": key, **kwargs}
     params = {k: v for k, v in params.items() if v is not None}
 
-    return await s3.generate_presigned_url("get_object", Params=params, ExpiresIn=hours_valid * 3600)
+    return await s3().generate_presigned_url("get_object", Params=params, ExpiresIn=hours_valid * 3600)
 
 
 async def get_object_head(bucket: str, key: str) -> HeadObjectOutputTypeDef:
-    s3 = get_s3_client()
-    res = await s3.head_object(Bucket=bucket, Key=key)
+    res = await s3().head_object(Bucket=bucket, Key=key)
     return res
