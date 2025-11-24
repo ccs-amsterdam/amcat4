@@ -6,7 +6,7 @@ from typing import Annotated
 
 from elastic_transport import ApiError
 from elasticsearch import NotFoundError
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth import authenticated_user
@@ -86,7 +86,7 @@ class IndexListResponse(BaseModel):
     user_role_match: RoleEmailPattern | None = Field(description="Email pattern that determined the user role")
     archived: str | None = Field(description="Timestamp of when the index was archived, or null if not archived")
     folder: str | None = Field(description="Folder for the index")
-    image_id: str | None = Field(description="Image ID for the index")
+    image_url: str | None = Field(description="URL of the index thumbnail image")
 
 
 class IndexViewResponse(IndexListResponse):
@@ -97,6 +97,7 @@ class IndexViewResponse(IndexListResponse):
 
 @app_index.get("/index")
 async def index_list(
+    request: Request,
     show_all: Annotated[
         bool, Query(..., description="Also show indices user has no role on (requires ADMIN server role)")
     ] = False,
@@ -109,8 +110,12 @@ async def index_list(
     if show_all:
         await HTTPException_if_not_server_role(user, Roles.ADMIN)
 
+    domain_url = str(request.base_url).rstrip("/")
+
     ix_list: list = []
     async for ix, role in list_user_project_indices(user, show_all=show_all):
+        image_url = f"{domain_url}/index/{ix.id}/image/{ix.image.id}" if ix.image else None
+
         ix_list.append(
             dict(
                 id=ix.id,
@@ -120,7 +125,7 @@ async def index_list(
                 description=ix.description or "",
                 archived=ix.archived or "",
                 folder=ix.folder or "",
-                image_id=ix.image.id if ix.image else None,
+                image_url=image_url,
             )
         )
 
@@ -170,6 +175,14 @@ async def modify_index(
     """
     await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
 
+    print(body.image_url)
+    if body.image_url:
+        current = await get_project_image(ix)
+        if current and current.id == body.image_url.split("/")[-1]:
+            body.image_url = None  # no change
+
+    print(body.image_url)
+
     try:
         await update_project_index(
             ProjectSettings(
@@ -187,7 +200,7 @@ async def modify_index(
 
 @app_index.get("/index/{ix}")
 async def view_index(
-    ix: IndexId = Path(..., description="ID of the index to view"), user: User = Depends(authenticated_user)
+    request: Request, ix: IndexId = Path(..., description="ID of the index to view"), user: User = Depends(authenticated_user)
 ) -> IndexViewResponse:
     """
     Get details of a single index, including the user role. Requires at least LISTER role on the index.
@@ -204,6 +217,9 @@ async def view_index(
 
     bytes = await index_size_in_bytes(ix)
 
+    domain_url = str(request.base_url).rstrip("/")
+    image_url = f"{domain_url}/index/{ix}/image/{d.image.id}" if d.image else None
+
     return IndexViewResponse(
         id=d.id,
         name=d.name or "",
@@ -213,7 +229,7 @@ async def view_index(
         description=d.description or "",
         archived=d.archived or "",
         folder=d.folder or "",
-        image_id=d.image.id if d.image else None,
+        image_url=image_url,
         contact=d.contact or [],
         bytes=bytes,
     )
@@ -290,7 +306,7 @@ async def get_index_image(ix: IndexId, id: str):
         raise HTTPException(status_code=404, detail=f"Image {id} does not exist for index {ix}")
 
     headers = {
-        "X-Content-Type-Options": "nosniff",  ## security measure
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "public, max-age=31536000, immutable",  ## browser caching for unique URLs
     }
 

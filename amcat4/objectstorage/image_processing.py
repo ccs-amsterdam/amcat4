@@ -19,18 +19,18 @@ async def create_image_from_url(url: str | None) -> ImageObject | None:
         hash = hashlib.sha256(base64.encode("utf-8")).hexdigest() if base64 else "missing"
         return ImageObject(id=hash[:16], base64=base64)
     except Exception as e:
-        print(f"Error creating image from URL '{url}': {e}")
+        raise ValueError(f"Error creating image from URL '{url}': {e}") from e
         return None
 
 
 async def _compress_image_from_url_to_base64(
-    url: str, max_kb: int = 100, format: str = "JPEG", max_download_kb: int = 1024 * 10
+    url: str, max_kb: int = 50, format: str = "JPEG", max_download_kb: int = 1024 * 10
 ) -> str:
     """
     Loads an image from a URL, compresses it, and returns the Base64 string.
     """
     img = await _load_image_from_url(url, max_download_kb * 1024)
-    compressed_data = _iterative_compress(img, max_kb * 1024, format)
+    compressed_data = _iterative_compress(img, max_kb * 1024, format, max_quality=80)
     return _encode_to_base64(compressed_data)
 
 
@@ -38,15 +38,15 @@ def _compress_image_from_bytes_to_base64(image_data: bytes, max_kb: int = 100, f
     """
     Loads an image from binary data, compresses it, and returns the Base64 string.
     """
-    img = _load_image_from_bytes(image_data)
-    compressed_data = _iterative_compress(img, max_kb * 1024, format)
+    img = _load_image_from_bytes(image_data, max_kb * 1024)
+    compressed_data = _iterative_compress(img, max_kb * 1024, format, max_quality=95)
     return _encode_to_base64(compressed_data)
 
 
 async def _load_image_from_url(url: str, max_bytes: int) -> Image.Image:
     """Fetches and loads an image from a URL into a PIL Image object."""
     image_data = await _chunked_download(url, max_bytes)
-    return _load_image_from_bytes(image_data)
+    return _load_image_from_bytes(image_data, max_bytes)
 
 
 async def _chunked_download(url: str, max_bytes: int, chunk_size=8192):
@@ -73,16 +73,16 @@ async def _chunked_download(url: str, max_bytes: int, chunk_size=8192):
     return b"".join(chunks)
 
 
-def _load_image_from_bytes(image_data: bytes, max_height=2000, max_width=2000) -> Image.Image:
+def _load_image_from_bytes(image_data: bytes, max_bytes: int) -> Image.Image:
     """Loads an image from raw binary data into a PIL Image object."""
 
     allowed_mime_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 
     img = Image.open(io.BytesIO(image_data))
-    width, height = img.size
+    bytes = len(image_data)
 
-    if width > max_width or height > max_height:
-        raise ValueError(f"Image dimensions {width}x{height} exceed maximum allowed size of {max_width}x{max_height}.")
+    if bytes > max_bytes:
+        raise ValueError(f"Image size {bytes / 1024:.2f} KB exceeds maximum allowed size of {max_bytes / 1024:.2f} KB.")
 
     if img.get_format_mimetype() not in allowed_mime_types:
         raise ValueError(
@@ -96,30 +96,34 @@ def _load_image_from_bytes(image_data: bytes, max_height=2000, max_width=2000) -
     return img
 
 
-def _iterative_compress(img: Image.Image, max_bytes: int, format: str, initial_quality: int = 95) -> bytes:
+def _iterative_compress(
+    img: Image.Image,
+    max_bytes: int,
+    format: str,
+    initial_quality: int = 95,
+    max_dim: tuple[float, float] = (600, 337.5),
+    max_quality: int = 100,
+) -> bytes:
     """
     Iteratively compresses a PIL Image until its size is <= max_bytes.
     Returns the compressed image binary data.
     """
+
+    img.thumbnail(max_dim)
     quality = initial_quality
     compressed_data: bytes = b""
 
     for _iter in range(20):
         output_buffer = io.BytesIO()
-
-        # Save the image to the in-memory buffer with the current quality setting
         img.save(output_buffer, format=format, quality=quality, optimize=True)
-
         compressed_data = output_buffer.getvalue()
         current_size = len(compressed_data)
 
         # Check if the size is acceptable
-        if current_size <= max_bytes:
+        if current_size <= max_bytes and quality <= max_quality:
             return compressed_data
 
-        # If the size is too large, decrease quality and try again
         quality -= 5
-
         if quality < 10:
             # Fallback for images that can't meet the target size even at low quality
             print(
