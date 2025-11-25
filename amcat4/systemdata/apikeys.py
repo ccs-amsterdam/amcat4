@@ -3,6 +3,7 @@ import secrets
 from datetime import UTC, datetime
 from typing import AsyncIterable
 
+from fastapi import HTTPException
 from pydantic import EmailStr
 
 from amcat4.connections import es
@@ -14,8 +15,8 @@ from amcat4.systemdata.versions.v2 import apikeys_index_name
 async def get_api_key(api_key: str) -> ApiKey:
     hashed_key = hash_api_key(api_key)
 
-    q = {"query": {"term": {"hashed_key": hashed_key}}}
-    res = await es().search(index=apikeys_index_name(), body=q, size=1)
+    q = {"term": {"hashed_key": hashed_key}}
+    res = await es().search(index=apikeys_index_name(), query=q, size=1)
 
     if res["hits"]["total"]["value"] == 0:
         raise KeyError("API key not found")
@@ -28,13 +29,13 @@ async def get_api_key(api_key: str) -> ApiKey:
 
 
 async def list_api_keys(user: User) -> AsyncIterable[tuple[str, ApiKey]]:
-    q = {"query": {"term": {"email": user.email}}}
+    q = {"term": {"email": user.email}}
     async for id, doc in index_scan(index=apikeys_index_name(), query=q):
         yield id, _apikey_from_elastic(doc)
 
 
 async def create_api_key(
-    email: EmailStr, name: str, expires_at: datetime, role_restrictions: ApiKeyRestrictions
+    email: EmailStr, name: str, expires_at: datetime, restrictions: ApiKeyRestrictions
 ) -> tuple[str, str]:
     api_key = await generate_api_key()
 
@@ -43,7 +44,7 @@ async def create_api_key(
         name=name,
         hashed_key=hash_api_key(api_key),
         expires_at=expires_at,
-        restrictions=role_restrictions,
+        restrictions=restrictions,
         jkt=None,
     )
 
@@ -71,7 +72,7 @@ async def update_api_key(
     if expires_at is not None:
         doc["expires_at"] = expires_at
     if restrictions is not None:
-        doc["role_restrictions"] = restrictions.model_dump()
+        doc["restrictions"] = restrictions.model_dump(exclude_none=True)
     if new_api_key is not None:
         doc["hashed_key"] = hash_api_key(new_api_key)
 
@@ -91,8 +92,8 @@ async def generate_api_key() -> str:
         prefix = "ak"  # prefix for identifying api keys
         api_key = f"{prefix}.{bytes}"
 
-        q = {"query": {"term": {"hashed_key": hash_api_key(api_key)}}}
-        res = await es().search(index=apikeys_index_name(), body=q, size=0)
+        q = {"term": {"hashed_key": hash_api_key(api_key)}}
+        res = await es().search(index=apikeys_index_name(), query=q, size=0)
         if res["hits"]["total"]["value"] > 0:
             continue  # collision, try again
 
@@ -108,21 +109,23 @@ def hash_api_key(api_key: str) -> str:
 
 def HTTPException_if_cannot_edit_api_keys(user: User) -> None:
     if not user.email:
-        raise ValueError("User must be authenticated to create an API key")
+        raise HTTPException(401, "User must be authenticated to create an API key")
     if user.api_key_restrictions and not user.api_key_restrictions.edit_api_keys:
-        raise PermissionError(f"API key '{user.api_key_name}' is not allowed to create API keys")
+        raise HTTPException(403, f"API key '{user.api_key_name}' is not allowed to edit API keys")
 
 
 def _apikey_from_elastic(d: dict) -> ApiKey:
-    if "restrictions" in d and "project_roles" in d["restrictions"]:
-        d["restrictions"]["project_roles"] = {item["project_id"]: item["role"] for item in d["restrictions"]["project_roles"]}
+    if "restrictions" in d:
+        pr = d["restrictions"].get("project_roles")
+        if pr is not None:
+            d["restrictions"]["project_roles"] = {item["project_id"]: item["role"] for item in pr}
     return ApiKey.model_validate(d)
 
 
 def _apikey_to_elastic(api_key: ApiKey) -> dict:
     d = api_key.model_dump()
-    if "restrictions" in d and "project_roles" in d["restrictions"]:
-        d["restrictions"]["project_roles"] = [
-            dict(project_id=k, role=v) for k, v in d["restrictions"]["project_roles"].items()
-        ]
+    if "restrictions" in d:
+        pr = d["restrictions"].get("project_roles")
+        if pr is not None:
+            d["restrictions"]["project_roles"] = [dict(project_id=k, role=v) for k, v in pr.items()]
     return d

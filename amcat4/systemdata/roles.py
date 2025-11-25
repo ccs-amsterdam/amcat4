@@ -328,7 +328,8 @@ def restrict_role(user: User, role_rule: RoleRule) -> RoleRule:
         return role_rule
 
     default_project_role = user.api_key_restrictions.default_project_role or None
-    project_role = user.api_key_restrictions.project_roles.get(role_rule.role_context, None)
+    project_roles = user.api_key_restrictions.project_roles or None
+    project_role = project_roles.get(role_rule.role_context, None) if project_roles else None
 
     if project_role:
         if Roles[role_rule.role] > Roles[project_role]:

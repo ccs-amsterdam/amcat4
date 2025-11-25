@@ -29,6 +29,7 @@ class ApiKeyListResponse(BaseModel):
 class ApiKeyUpdateResponse(BaseModel):
     """Response model for creating or updating an API key."""
 
+    id: str = Field(..., description="The ID of the API key.")
     api_key: str | None = Field(
         None,
         description="The API key if it was created or regenerated (otherwise None). This is only shown once.",
@@ -69,10 +70,10 @@ async def post_api_key(
         email=user.email or "",
         name=name,
         expires_at=iso_to_datetime(expires_at),
-        role_restrictions=restrictions or ApiKeyRestrictions(),
+        restrictions=restrictions or ApiKeyRestrictions(),
     )
 
-    return ApiKeyUpdateResponse(api_key=api_key)
+    return ApiKeyUpdateResponse(id=id, api_key=api_key)
 
 
 @app_api_keys.delete("/api_keys/{api_key_id}")
@@ -112,7 +113,7 @@ async def put_api_key(
         regenerate_key=regenerate_key,
     )
 
-    return ApiKeyUpdateResponse(api_key=new_api_key)
+    return ApiKeyUpdateResponse(id=api_key_id, api_key=new_api_key)
 
 
 def iso_to_datetime(iso_str: str) -> datetime:

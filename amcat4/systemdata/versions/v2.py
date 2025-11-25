@@ -146,6 +146,7 @@ apikey_mapping: ElasticMapping = dict(
     jkt={"type": "keyword"},  # JSON web key thumbprint for DPoP
     restrictions=object_field(
         ## API keys share the roles from the user email, but within optional restrictions
+        # restrictions
         edit_api_keys={"type": "boolean"},  # can create and modify the user's own api keys
         server_role={"type": "keyword"},  # max role on server
         default_project_role={"type": "keyword"},  # max role on projects without specific role

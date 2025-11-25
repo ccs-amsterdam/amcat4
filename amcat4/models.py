@@ -50,10 +50,10 @@ class RoleRule(BaseModel):
 
 
 class ApiKeyRestrictions(BaseModel):
-    edit_api_keys: bool = False
+    edit_api_keys: bool | None = None
     server_role: Role | None = None
     default_project_role: Role | None = None
-    project_roles: dict[IndexId, Role] = {}
+    project_roles: dict[IndexId, Role] | None = None
 
 
 class ApiKey(BaseModel):

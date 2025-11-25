@@ -122,7 +122,6 @@ async def authenticated_user(
                 email=t["email"],
                 auth_disabled=auth_disabled,
                 superadmin=t["email"] == settings.admin_email,
-                api_key_restrictions=None,
                 auth_method="middlecat",
             )
         except Exception as e:
@@ -136,7 +135,6 @@ async def authenticated_user(
                 email=t["email"],
                 auth_disabled=auth_disabled,
                 superadmin=t["email"] == settings.admin_email,
-                api_key_restrictions=None,
                 auth_method="oidc",
             )
         except Exception as e:
@@ -150,6 +148,7 @@ async def authenticated_user(
                 email=a.email,
                 auth_disabled=auth_disabled,
                 superadmin=a.email == settings.admin_email,
+                api_key_name=a.name,
                 api_key_restrictions=a.restrictions,
                 auth_method="api_key",
             )
@@ -166,7 +165,5 @@ async def authenticated_user(
         return User(
             email=None,
             auth_disabled=auth_disabled,
-            superadmin=False,
-            api_key_restrictions=None,
             auth_method="none",
         )
