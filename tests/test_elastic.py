@@ -27,7 +27,7 @@ async def test_upload_retrieve_document(index):
         _id="test",
         term_tfidf=[{"term": "test", "value": 0.2}, {"term": "value", "value": 0.3}],
     )
-    test = await create_or_update_documents(
+    await create_or_update_documents(
         index, [a], fields={"text": "text", "title": "text", "date": "date", "term_tfidf": "object"}
     )
     await refresh_index(index)

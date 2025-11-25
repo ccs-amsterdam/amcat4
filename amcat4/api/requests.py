@@ -16,8 +16,7 @@ from amcat4.systemdata.requests import (
 )
 from amcat4.systemdata.roles import (
     HTTPException_if_not_project_index_role,
-    get_user_server_role,
-    role_is_at_least,
+    HTTPException_if_not_server_role,
 )
 
 app_requests = APIRouter(tags=["requests"], prefix="/permission_requests")
@@ -36,21 +35,18 @@ async def get_admin_requests(user: User = Depends(authenticated_user)) -> list[A
 @app_requests.post("/admin", status_code=status.HTTP_204_NO_CONTENT)
 async def post_admin_requests(requests: list[AdminPermissionRequest] = Body(...), user: User = Depends(authenticated_user)):
     """Resolve (approve, enact, and remove) the listed role requests. Requires appropriate admin/writer roles."""
-    server_role = await get_user_server_role(user)
 
     for r in requests:
         if r.request.type == "create_project":
-            if not role_is_at_least(server_role, Roles.WRITER):
-                raise HTTPException(
-                    status_code=403,
-                    detail="Only server WRITERs and ADMINs can process project creation requests",
-                )
+            await HTTPException_if_not_server_role(
+                user,
+                Roles.WRITER,
+                message="Only server ADMINs and WRITERs can process project creation requests",
+            )
         if r.request.type == "server_role":
-            if not role_is_at_least(server_role, Roles.ADMIN):
-                raise HTTPException(
-                    status_code=403,
-                    detail="Only server ADMINs can process server role requests",
-                )
+            await HTTPException_if_not_server_role(
+                user, Roles.ADMIN, message="Only server ADMINs can process server role requests"
+            )
         if r.request.type == "project_role":
             await HTTPException_if_not_project_index_role(
                 user, r.request.project_id, Roles.ADMIN, message="Only project ADMINs can process project role requests"

@@ -210,7 +210,7 @@ async def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSp
             if field_name not in fields_across_indices:
                 fields_across_indices[field_name] = []
             role = role_dict.get(index)
-            fieldspec = get_fieldspec_for_role(role, field_name, field)
+            fieldspec = get_fieldspec_for_role(user, role, field_name, field)
             fields_across_indices[field_name].append(fieldspec)
 
     fieldspecs: list[FieldSpec] = []
@@ -222,11 +222,11 @@ async def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSp
     return fieldspecs
 
 
-def get_fieldspec_for_role(role: RoleRule | None, field_name: str, field: DocumentField) -> FieldSpec | None:
-    if not role_is_at_least(role, Roles.METAREADER):
+def get_fieldspec_for_role(user: User, role: RoleRule | None, field_name: str, field: DocumentField) -> FieldSpec | None:
+    if not role_is_at_least(user, role, Roles.METAREADER):
         return None
 
-    if role_is_at_least(role, Roles.READER):
+    if role_is_at_least(user, role, Roles.READER):
         return FieldSpec(name=field_name)
 
     metareader = field.metareader
@@ -293,12 +293,12 @@ async def HTTPException_if_invalid_field_access(indices: list[str], user: User, 
 
     for index in indices:
         role = role_dict.get(index)
-        if not role_is_at_least(role, Roles.METAREADER):
+        if not role_is_at_least(user, role, Roles.METAREADER):
             raise HTTPException(
                 status_code=403,
                 detail=f"User '{user.email}' does not have permission to access index {index}",
             )
-        if role_is_at_least(role, Roles.READER):
+        if role_is_at_least(user, role, Roles.READER):
             continue
 
         index_fields = await list_fields(index)

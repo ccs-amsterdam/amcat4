@@ -15,6 +15,5 @@ objectstorage_index_name = VERSIONS[LATEST_VERSION].objectstorage_index_name
 settings_index_id = VERSIONS[LATEST_VERSION].settings_index_id
 roles_index_id = VERSIONS[LATEST_VERSION].roles_index_id
 requests_index_id = VERSIONS[LATEST_VERSION].requests_index_id
-apikeys_index_id = VERSIONS[LATEST_VERSION].apikeys_index_id
 fields_index_id = VERSIONS[LATEST_VERSION].fields_index_id
 objectstorage_index_id = VERSIONS[LATEST_VERSION].objectstorage_index_id

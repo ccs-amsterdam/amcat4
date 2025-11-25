@@ -47,10 +47,6 @@ def roles_index_id(email: str, role_context: str | Literal["_server"]) -> str:
     return f"{role_context}:{email}"
 
 
-def apikeys_index_id(email: str, name: str) -> str:
-    return f"{email}:{name}"
-
-
 def fields_index_id(index: str, name: str) -> str:
     return f"{index}:{name}"
 
@@ -145,16 +141,16 @@ roles_mapping: ElasticMapping = dict(
 apikey_mapping: ElasticMapping = dict(
     email={"type": "keyword"},  # api key is always linked to user email
     name={"type": "keyword"},  # user-given name. Has to be unique per user
-    secret_key={"type": "keyword"},  # random unique key
-    expires={"type": "date"},  # hard expiration date
-    last_used={"type": "date"},  # update with a 15 minute debounce on use
-    timeout_minutes={"type": "integer"},  # expire if now > last_used + timeout_minutes + 15 (debounce)
-    dpop_public_key={"type": "keyword"},  # for DPoP-bound API keys
-    role_restrictions=object_field(
+    hashed_key={"type": "keyword"},
+    expires_at={"type": "date"},  # hard expiration date
+    jkt={"type": "keyword"},  # JSON web key thumbprint for DPoP
+    restrictions=object_field(
         ## API keys share the roles from the user email, but within optional restrictions
-        default={"type": "keyword"},  # default role if no restrictions match
-        roles=nested_field(
-            role_context={"type": "keyword"},
+        edit_api_keys={"type": "boolean"},  # can create and modify the user's own api keys
+        server_role={"type": "keyword"},  # max role on server
+        default_project_role={"type": "keyword"},  # max role on projects without specific role
+        project_roles=nested_field(  # max role on specific projects
+            project_id={"type": "keyword"},
             role={"type": "keyword"},
         ),
     ),

@@ -9,14 +9,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
+from amcat4.api.api_keys import app_api_keys
 from amcat4.api.index import app_index
 from amcat4.api.index_documents import app_index_documents
 from amcat4.api.index_fields import app_index_fields
 from amcat4.api.index_multimedia import app_multimedia
 from amcat4.api.index_query import app_index_query
 from amcat4.api.index_users import app_index_users
-from amcat4.api.info import app_info
 from amcat4.api.requests import app_requests
+from amcat4.api.server import app_info
 from amcat4.api.users import app_users
 from amcat4.connections import amcat_connections
 from amcat4.systemdata.manage import create_or_update_systemdata
@@ -45,6 +46,7 @@ app = FastAPI(
         dict(name="project fields", description="Endpoints to list, create, and modify project index fields"),
         dict(name="query", description="Endpoints to list or query documents or run aggregate queries"),
         dict(name="middlecat", description="MiddleCat authentication"),
+        dict(name="api keys", description="Endpoints for API key management"),
     ],
     lifespan=lifespan,
 )
@@ -57,6 +59,7 @@ app.include_router(app_index_users)
 app.include_router(app_index_query)
 app.include_router(app_requests)
 app.include_router(app_multimedia)
+app.include_router(app_api_keys)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

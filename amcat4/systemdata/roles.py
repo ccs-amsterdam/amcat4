@@ -16,6 +16,23 @@ from amcat4.models import (
 from amcat4.systemdata.versions import roles_index_id, roles_index_name
 
 
+def role_is_at_least(user: User, user_role: RoleRule | None, required_role: Roles, ignore_restrictions: bool = False) -> bool:
+    """
+    !!!
+    This function should be used for any permission checks, because it correctly handles user.role_restrictions.
+    So even if you just want to check if a user has exactly ADMIN role, you should use this function.
+
+    In most cases you can also use the higher-level HTTPException_if_not... functions.
+    """
+    if user_role is None:
+        if required_role == Roles.NONE:
+            return True
+        return False
+
+    restricted_role = restrict_role(user, user_role) if not ignore_restrictions else user_role
+    return Roles[restricted_role.role] >= required_role
+
+
 async def create_project_role(email: RoleEmailPattern, project_id: IndexId, role: Roles):
     await _create_role(email=email, role_context=project_id, role=role)
 
@@ -61,7 +78,7 @@ async def list_user_roles(
     required_role: Roles | None = None,
 ) -> list[RoleRule]:
     all_matches = _list_roles(emails=_user_to_role_emails(user), role_contexts=role_contexts, min_role=required_role)
-    return await _get_strongest_matches(all_matches)
+    return await _get_user_matches(user, all_matches)
 
 
 async def list_user_project_roles(
@@ -75,7 +92,7 @@ async def list_user_project_roles(
     This does not (!!) take server role into account (see get_user_project_role)
     """
     all_matches = list_project_roles(emails=_user_to_role_emails(user), project_ids=project_ids, min_role=required_role)
-    return await _get_strongest_matches(all_matches)
+    return await _get_user_matches(user, all_matches)
 
 
 async def get_user_project_role(user: User, project_index: IndexId, global_admin: bool = True) -> RoleRule:
@@ -124,7 +141,7 @@ async def get_user_server_role(user: User) -> RoleRule:
     Get the most exact server role match for the given user.
     returns a RoleRule with Role.NONE if no role exists.
     """
-    if user.superadmin:
+    if user.superadmin or user.auth_disabled:
         return RoleRule(email=user.email or "*", role_context="_server", role=Roles.ADMIN.name)
 
     user_roles = await list_user_roles(user, role_contexts=["_server"])
@@ -141,9 +158,16 @@ async def HTTPException_if_not_project_index_role(
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
     role = await get_user_project_role(user, role_context, global_admin=global_admin)
-    if not role_is_at_least(role, required_role):
-        detail = message or f"{user.email or 'GUEST'} does not have {required_role.name} permissions on project {role_context}"
-        raise HTTPException(403, detail)
+
+    if message:
+        detail = f"does not have persmission. {message}"
+    else:
+        detail = f"does not have {required_role.name} permissions on project {role_context}"
+
+    if not role_is_at_least(user, role, required_role, ignore_restrictions=True):
+        raise HTTPException(403, f"{user.email or 'GUEST'} {detail}")
+    if not role_is_at_least(user, role, required_role, ignore_restrictions=False):
+        raise HTTPException(403, f"API key '{user.api_key_name}' {detail}")
 
 
 async def HTTPException_if_not_server_role(user: User, required_role: Roles, message: str | None = None):
@@ -151,17 +175,17 @@ async def HTTPException_if_not_server_role(user: User, required_role: Roles, mes
     Raise an HTTP Exception if the user does not have the required role for the given context.
     """
     role = await get_user_server_role(user)
-    if not role_is_at_least(role, required_role):
+
+    if message:
+        detail = f"does not have persmission. {message}"
+    else:
+        detail = f"does not have {required_role.name} permissions on the server"
+
+    if not role_is_at_least(user, role, required_role, ignore_restrictions=True):
+        raise HTTPException(403, f"{user.email or 'GUEST'} {detail}")
+    if not role_is_at_least(user, role, required_role, ignore_restrictions=False):
         detail = message or f"{user.email or 'GUEST'} does not have {required_role.name} permissions on the server"
-        raise HTTPException(403, detail)
-
-
-def role_is_at_least(user_role: RoleRule | None, required_role: Roles) -> bool:
-    if user_role is None:
-        if required_role == Roles.NONE:
-            return True
-        return False
-    return Roles[user_role.role] >= required_role
+        raise HTTPException(403, f"API key '{user.api_key_name}' {detail}")
 
 
 async def set_project_guest_role(index_id: IndexId, role: Roles):
@@ -267,9 +291,11 @@ def _match_strength(email: RoleEmailPattern) -> int:
         return 3
 
 
-async def _get_strongest_matches(role_matches: AsyncIterable[RoleRule]) -> list[RoleRule]:
+async def _get_user_matches(user: User, role_matches: AsyncIterable[RoleRule]) -> list[RoleRule]:
     """
-    From a list of roles, return the strongest match for each role context.
+    From a list of role matches for an email address, return the correct role for the user.
+    - If there are multiple matches, use the strongest match (exact > domain > guest)
+    - If the user has role restrictions, do not return roles stronger than the maximum allowed role for that context.
     """
     # use tuples of (strength, RoleRule) for each role context to sort out the strongest matches
     strongest_matches: dict[RoleContext, tuple[int, RoleRule]] = {}
@@ -286,3 +312,29 @@ async def _get_strongest_matches(role_matches: AsyncIterable[RoleRule]) -> list[
             strongest_matches[context] = (strength, match)
 
     return [match for strength, match in strongest_matches.values()]
+
+
+def restrict_role(user: User, role_rule: RoleRule) -> RoleRule:
+    """
+    Apply API key role restrictions
+    """
+    if role_rule.role == Roles.NONE or user.api_key_restrictions is None:
+        return role_rule
+
+    if role_rule.role_context == "_server":
+        server_role = user.api_key_restrictions.server_role or None
+        if server_role and Roles[role_rule.role] > Roles[server_role]:
+            role_rule.role = server_role
+        return role_rule
+
+    default_project_role = user.api_key_restrictions.default_project_role or None
+    project_role = user.api_key_restrictions.project_roles.get(role_rule.role_context, None)
+
+    if project_role:
+        if Roles[role_rule.role] > Roles[project_role]:
+            role_rule.role = project_role
+    elif default_project_role:
+        if Roles[role_rule.role] > Roles[default_project_role]:
+            role_rule.role = default_project_role
+
+    return role_rule

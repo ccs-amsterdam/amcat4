@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any
 
 import pytest
@@ -6,7 +5,7 @@ from httpx import ASGITransport, AsyncClient
 
 from amcat4 import api
 from amcat4.config import AuthOptions, get_settings
-from amcat4.connections import amcat_connections, es
+from amcat4.connections import amcat_connections
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import create_project_index, delete_project_index, refresh_index

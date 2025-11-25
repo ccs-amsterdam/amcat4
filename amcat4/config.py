@@ -11,9 +11,10 @@ import functools
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any
+
 from class_doc import extract_docs_from_cls_obj
 from dotenv import load_dotenv
-from pydantic import model_validator, Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_PREFIX = "amcat4_"
@@ -110,6 +111,13 @@ class Settings(BaseSettings):
     s3_host: Annotated[str | None, Field(description="S3-compatible object storage host")] = None
     s3_access_key: Annotated[str | None, Field(description="S3 access key")] = None
     s3_secret_key: Annotated[str | None, Field(description="S3 secret key")] = None
+
+    oidc_url: Annotated[
+        str | None,
+        Field(
+            description="OIDC provider URL (if using OIDC for authentication)",
+        ),
+    ] = None
 
     use_test_db: Annotated[
         bool,

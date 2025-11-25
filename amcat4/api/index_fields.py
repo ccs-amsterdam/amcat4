@@ -111,9 +111,9 @@ async def get_field_values(ix: IndexId, field: str, user: User = Depends(authent
 async def get_field_stats(ix: IndexId, field: str, user: User = Depends(authenticated_user)):
     """Get statistics for a specific field. Only works for numeric (incl date) fields. Requires READER or METAREADER role."""
     role = await get_user_project_role(user, ix)
-    if role_is_at_least(role, Roles.READER):
+    if role_is_at_least(user, role, Roles.READER):
         return await field_stats(ix, field)
-    elif role_is_at_least(role, Roles.METAREADER):
+    elif role_is_at_least(user, role, Roles.METAREADER):
         fields = await list_fields(ix)
         if fields[field].metareader.access != "read":
             raise HTTPException(403, detail=f"Metareader cannot access field stats for field {field} in index {ix}")

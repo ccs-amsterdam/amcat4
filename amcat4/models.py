@@ -5,15 +5,6 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing_extensions import Self
 
-
-class User(BaseModel):
-    """For internal use only. Represents an authenticated user."""
-
-    email: EmailStr | None  # this can only be an authenticed, full email address or None for unauthenticated users
-    superadmin: bool = False  # if auth is disabled, or if the user is the hardcoded admin email
-    auth_disabled: bool = False  # if auth is disabled on this server
-
-
 IndexId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]*$", title="Index ID")]
 IndexIds = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*$", title="Index ID or comma-separated IDs")]
 
@@ -53,6 +44,39 @@ class RoleRule(BaseModel):
         if self.role == Roles.ADMIN and uses_wildcard:
             raise ValueError(f"Cannot create ADMIN role for {self.email}. Only exact email matches can have ADMIN role")
         return self
+
+
+###################### USER AND API KEY SPECIFICATIONS ##########################
+
+
+class ApiKeyRestrictions(BaseModel):
+    edit_api_keys: bool = False
+    server_role: Role | None = None
+    default_project_role: Role | None = None
+    project_roles: dict[IndexId, Role] = {}
+
+
+class ApiKey(BaseModel):
+    email: EmailStr
+    name: str
+    hashed_key: str
+    restrictions: ApiKeyRestrictions
+    expires_at: datetime
+    jkt: str | None = None
+
+
+type AuthMethod = Literal["middlecat", "api_key", "oidc", "none"]
+
+
+class User(BaseModel):
+    """For internal use only. Represents an authenticated user."""
+
+    email: EmailStr | None  # this can only be an authenticed, full email address or None for unauthenticated users
+    superadmin: bool = False  # if auth is disabled, or if the user is the hardcoded admin email
+    auth_disabled: bool = False  # if auth is disabled on this server
+    api_key_name: str | None = None  # if logged in via API key, what is its name
+    api_key_restrictions: ApiKeyRestrictions | None = None  # If logged in via API key, what are the role restrictions
+    auth_method: AuthMethod = "none"
 
 
 ######################## DOCUMENT FIELD SPECIFICATIONS #########################

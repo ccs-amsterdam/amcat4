@@ -64,13 +64,13 @@ async def list_admin_requests(user: User) -> AsyncIterable[AdminPermissionReques
     server_role = await get_user_server_role(user)
 
     # Create project requests
-    if role_is_at_least(server_role, Roles.WRITER):
+    if role_is_at_least(user, server_role, Roles.WRITER):
         query = {"bool": {"must": [{"term": {"type": "create_project"}}, {"term": {"status": "pending"}}]}}
         async for id, doc in index_scan(requests_index_name(), query=query):
             yield _request_from_elastic(doc)
 
     # Server role requests
-    if role_is_at_least(server_role, Roles.ADMIN):
+    if role_is_at_least(user, server_role, Roles.ADMIN):
         query = {"bool": {"must": [{"term": {"type": "server_role"}}, {"term": {"status": "pending"}}]}}
         async for id, doc in index_scan(requests_index_name(), query=query):
             yield _request_from_elastic(doc)
