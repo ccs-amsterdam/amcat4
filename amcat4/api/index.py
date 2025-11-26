@@ -105,9 +105,11 @@ async def index_list(
         bool, Query(..., description="Also show indices user has no role on (requires ADMIN server role)")
     ] = False,
     show_archived: Annotated[bool, Query(..., description="If true, include archived indices in the list")] = False,
-    minimal: Annotated[bool, Query(..., description="If true, only return index IDs")] = False,
+    minimal: Annotated[
+        bool, Query(..., description="If true, return a dictionary with index ids as keys and roles as values")
+    ] = False,
     user: User = Depends(authenticated_user),
-) -> list[IndexListResponse] | list[str]:
+) -> list[IndexListResponse] | dict[IndexId, Role | None]:
     """
     List indices from this server that the user has access to. Returns a list of dicts with index details, including the user role.
     Requires at least LISTER role on the index. If show_all is true, requires ADMIN server role and shows all indices.
@@ -118,11 +120,12 @@ async def index_list(
     domain_url = str(request.base_url).rstrip("/")
 
     ix_list: list = []
+    ix_dict: dict[IndexId, Role | None] = {}
     async for ix, role in list_user_project_indices(user, show_all=show_all, show_archived=show_archived):
         image_url = f"{domain_url}/index/{ix.id}/image/{ix.image.id}" if ix.image else None
 
         if minimal:
-            ix_list.append(ix.id)
+            ix_dict[ix.id] = role.role if role else None
         else:
             ix_list.append(
                 IndexListResponse(
@@ -137,7 +140,10 @@ async def index_list(
                 )
             )
 
-    return ix_list
+    if minimal:
+        return ix_dict
+    else:
+        return ix_list
 
 
 @app_index.post("/index", status_code=status.HTTP_201_CREATED)

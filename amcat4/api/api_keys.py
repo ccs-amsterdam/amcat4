@@ -12,7 +12,13 @@ from amcat4.models import (
     ApiKeyRestrictions,
     User,
 )
-from amcat4.systemdata.apikeys import HTTPException_if_cannot_edit_api_keys, create_api_key, list_api_keys, update_api_key
+from amcat4.systemdata.apikeys import (
+    HTTPException_if_cannot_edit_api_keys,
+    create_api_key,
+    delete_api_key,
+    list_api_keys,
+    update_api_key,
+)
 
 app_api_keys = APIRouter(prefix="", tags=["api keys"])
 
@@ -77,7 +83,7 @@ async def post_api_key(
 
 
 @app_api_keys.delete("/api_keys/{api_key_id}")
-async def delete_api_key(
+async def rm_api_key(
     api_key_id: Annotated[str, Path(description="The ID of the API key to delete.")],
     user: User = Depends(authenticated_user),
 ):

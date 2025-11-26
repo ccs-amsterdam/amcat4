@@ -83,7 +83,7 @@ async def update_api_key(
 
 
 async def delete_api_key(api_key_id: str) -> None:
-    await es().delete(index=apikeys_index_name(), id=api_key_id)
+    await es().delete(index=apikeys_index_name(), id=api_key_id, refresh=True)
 
 
 async def generate_api_key() -> str:

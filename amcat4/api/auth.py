@@ -24,14 +24,10 @@ middlecat_scheme = OAuth2AuthorizationCodeBearer(
     scheme_name="OAuth2 Scheme",
 )
 
-oidc_scheme = (
-    OpenIdConnect(
-        openIdConnectUrl=get_settings().oidc_url or "",
-        auto_error=False,
-        scheme_name="OIDC Scheme",
-    )
-    if get_settings().oidc_url is not None
-    else None
+oidc_scheme = OpenIdConnect(
+    openIdConnectUrl=get_settings().oidc_url or "",
+    auto_error=False,
+    scheme_name="OIDC Scheme",
 )
 
 api_key_scheme = APIKeyHeader(name="X-API-Key", scheme_name="API Key Header", auto_error=False)
