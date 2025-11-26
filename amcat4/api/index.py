@@ -1,7 +1,7 @@
 """API Endpoints for document and index management."""
 
 import base64
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from elastic_transport import ApiError
@@ -25,6 +25,7 @@ from amcat4.objectstorage.image_processing import create_image_from_url
 from amcat4.projects.index import (
     IndexAlreadyExists,
     IndexDoesNotExist,
+    archive_project_index,
     create_project_index,
     delete_project_index,
     index_size_in_bytes,
@@ -78,13 +79,15 @@ class ReindexBody(BaseModel):
 
 
 # RESPONSE MODELS
+
+
 class IndexListResponse(BaseModel):
     id: IndexId = Field(description="ID of the index")
     name: str | None = Field(description="Name of the index")
-    description: str = Field(description="Description of the index")
     user_role: Role | None = Field(description="Role of the current user on this index")
-    user_role_match: RoleEmailPattern | None = Field(description="Email pattern that determined the user role")
     archived: str | None = Field(description="Timestamp of when the index was archived, or null if not archived")
+    description: str | None = Field(description="Description of the index")
+    user_role_match: RoleEmailPattern | None = Field(description="Email pattern that determined the user role")
     folder: str | None = Field(description="Folder for the index")
     image_url: str | None = Field(description="URL of the index thumbnail image")
 
@@ -101,8 +104,10 @@ async def index_list(
     show_all: Annotated[
         bool, Query(..., description="Also show indices user has no role on (requires ADMIN server role)")
     ] = False,
+    show_archived: Annotated[bool, Query(..., description="If true, include archived indices in the list")] = False,
+    minimal: Annotated[bool, Query(..., description="If true, only return index IDs")] = False,
     user: User = Depends(authenticated_user),
-) -> list[IndexListResponse]:
+) -> list[IndexListResponse] | list[str]:
     """
     List indices from this server that the user has access to. Returns a list of dicts with index details, including the user role.
     Requires at least LISTER role on the index. If show_all is true, requires ADMIN server role and shows all indices.
@@ -113,21 +118,24 @@ async def index_list(
     domain_url = str(request.base_url).rstrip("/")
 
     ix_list: list = []
-    async for ix, role in list_user_project_indices(user, show_all=show_all):
+    async for ix, role in list_user_project_indices(user, show_all=show_all, show_archived=show_archived):
         image_url = f"{domain_url}/index/{ix.id}/image/{ix.image.id}" if ix.image else None
 
-        ix_list.append(
-            dict(
-                id=ix.id,
-                name=ix.name or "",
-                user_role=role.role if role else None,
-                user_role_match=role.email if role else None,
-                description=ix.description or "",
-                archived=ix.archived or "",
-                folder=ix.folder or "",
-                image_url=image_url,
+        if minimal:
+            ix_list.append(ix.id)
+        else:
+            ix_list.append(
+                IndexListResponse(
+                    id=ix.id,
+                    name=ix.name or "",
+                    user_role=role.role if role else None,
+                    archived=str(ix.archived or ""),
+                    description=ix.description or "",
+                    folder=ix.folder or "",
+                    image_url=image_url,
+                    user_role_match=role.email if role else None,
+                )
             )
-        )
 
     return ix_list
 
@@ -175,13 +183,10 @@ async def modify_index(
     """
     await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
 
-    print(body.image_url)
     if body.image_url:
         current = await get_project_image(ix)
         if current and current.id == body.image_url.split("/")[-1]:
             body.image_url = None  # no change
-
-    print(body.image_url)
 
     try:
         await update_project_index(
@@ -227,7 +232,7 @@ async def view_index(
         user_role_match=role.email if role else None,
         guest_role=await get_project_guest_role(d.id),
         description=d.description or "",
-        archived=d.archived or "",
+        archived=str(d.archived or ""),
         folder=d.folder or "",
         image_url=image_url,
         contact=d.contact or [],
@@ -238,7 +243,7 @@ async def view_index(
 @app_index.post("/index/{ix}/archive", status_code=status.HTTP_204_NO_CONTENT)
 async def archive_index(
     ix: Annotated[IndexId, Path(..., description="ID of the index to (un)archive")],
-    archived: Annotated[bool, Body(..., description="Boolean for setting archived to true or false")],
+    archived: Annotated[bool, Body(..., description="Boolean for setting archived to true or false", embed=True)],
     user: User = Depends(authenticated_user),
 ):
     """
@@ -247,13 +252,7 @@ async def archive_index(
     """
     await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
-        d = await get_project_settings(ix)
-        is_archived = d.archived is not None
-        if is_archived == archived:
-            return
-        archived_date = str(datetime.now()) if archived else None
-        await update_project_index(ProjectSettings(id=ix, archived=archived_date))
-
+        await archive_project_index(ix, archived=archived)
     except IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 

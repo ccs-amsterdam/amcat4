@@ -296,7 +296,7 @@ class ProjectSettings(BaseModel):
     folder: str | None = None
     image: ImageObject | None = None
     contact: list[ContactInfo] | None = None
-    archived: str | None = None
+    archived: datetime | None = None
 
 
 class ServerSettings(BaseModel):

@@ -34,6 +34,7 @@ async def create_project_settings(index_settings: ProjectSettings, admin_email: 
 async def update_project_settings(index_settings: ProjectSettings, ignore_missing: bool = False):
     id = settings_index_id(index_settings.id)
     doc = dict(project_settings=index_settings.model_dump(exclude_none=True))
+    print(doc)
     await es().update(index=settings_index_name(), id=id, doc=doc, doc_as_upsert=ignore_missing, refresh=True)
 
 

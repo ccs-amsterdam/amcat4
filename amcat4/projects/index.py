@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import AsyncIterable, Mapping
 
 from amcat4.connections import es, s3_enabled
@@ -9,6 +10,7 @@ from amcat4.systemdata.roles import list_user_project_roles
 from amcat4.systemdata.settings import (
     create_project_settings,
     delete_project_settings,
+    get_project_settings,
     update_project_settings,
 )
 from amcat4.systemdata.versions import settings_index_id, settings_index_name
@@ -77,6 +79,28 @@ async def update_project_index(update_index: ProjectSettings):
     await update_project_settings(update_index)
 
 
+async def archive_project_index(index_id: str, archived: bool):
+    d = await get_project_settings(index_id)
+    if d.archived is not None and archived:
+        return
+
+    if archived:
+        archived_at = datetime.now(UTC)
+        await es().update(
+            index=settings_index_name(),
+            id=settings_index_id(index_id),
+            doc={"project_settings": {"archived": archived_at}},
+            refresh=True,
+        )
+    else:
+        await es().update(
+            index=settings_index_name(),
+            id=settings_index_id(index_id),
+            script={"source": "ctx._source.project_settings.remove('archived')", "lang": "painless"},
+            refresh=True,
+        )
+
+
 async def delete_project_index(index_id: str, ignore_missing: bool = False):
     """
     Delete both the index and the index settings, and the index bucket if any.
@@ -93,14 +117,21 @@ async def delete_project_index(index_id: str, ignore_missing: bool = False):
     await delete_project_settings(index_id, ignore_missing)
 
 
-async def list_project_indices(ids: list[str] | None = None) -> AsyncIterable[ProjectSettings]:
+async def list_project_indices(ids: list[str] | None = None, skip_archived: bool = True) -> AsyncIterable[ProjectSettings]:
     """
     List all project indices, or only those with the given ids.
     """
-    query = {"terms": {"_id": ids}} if ids is not None else None
-    exclude_source = ["project_settings.image.base64", "server_settings.icon.base64"]
+    query = {"bool": {}}
+    if ids is not None:
+        query["bool"]["must"] = {"terms": {"_id": ids}}
+    if skip_archived:
+        query["bool"]["must_not"] = {"exists": {"field": "project_settings.archived"}}
+
+    exclude_source = ["project_settings.image.base64", "server_settings"]
 
     async for id, ix in index_scan(settings_index_name(), query=query, exclude_source=exclude_source):
+        if id.startswith("_"):
+            continue
         project_settings = ix["project_settings"]
         yield ProjectSettings.model_validate(project_settings)
 
@@ -116,14 +147,16 @@ async def refresh_index(index: str):
     await es().indices.refresh(index=index)
 
 
-async def list_user_project_indices(user: User, show_all=False) -> AsyncIterable[tuple[ProjectSettings, RoleRule | None]]:
+async def list_user_project_indices(
+    user: User, show_all=False, show_archived=False
+) -> AsyncIterable[tuple[ProjectSettings, RoleRule | None]]:
     """
     List all indices that a user has any role on.
     Return both the index and RoleRule that the user matched for that index (can be None if show_all is True)
     TODO: add pagination and search here
     """
     if show_all:
-        async for index in list_project_indices():
+        async for index in list_project_indices(skip_archived=not show_archived):
             yield index, RoleRule(role=Roles.ADMIN.name, role_context=index.id, email=user.email or "*")
         return
 
@@ -134,7 +167,7 @@ async def list_user_project_indices(user: User, show_all=False) -> AsyncIterable
         project_role_lookup[role.role_context] = role
         user_indices.append(role.role_context)
 
-    async for index in list_project_indices(ids=user_indices):
+    async for index in list_project_indices(ids=user_indices, skip_archived=not show_archived):
         yield index, project_role_lookup[index.id]
 
 
