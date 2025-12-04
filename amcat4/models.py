@@ -65,7 +65,7 @@ class ApiKey(BaseModel):
     jkt: str | None = None
 
 
-type AuthMethod = Literal["middlecat", "api_key", "oidc", "none"]
+AuthMethod = Literal["middlecat", "api_key", "oidc", "none"]
 
 
 class User(BaseModel):

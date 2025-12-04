@@ -15,7 +15,8 @@ We need to make sure that:
 """
 
 import datetime
-from typing import Any, AsyncGenerator, Iterable, Mapping, TypedDict, cast, get_args
+from typing import Any, AsyncGenerator, Iterable, Mapping, cast, get_args
+from typing_extensions import TypedDict
 
 from elasticsearch import NotFoundError
 from fastapi import HTTPException

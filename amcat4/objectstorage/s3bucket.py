@@ -3,7 +3,8 @@ Interact with S3-compatible object storage (e.g., AWS S3, MinIO, SeaweedFS, Clou
 """
 
 from datetime import datetime
-from typing import Any, AsyncIterable, Literal, Optional, TypedDict
+from typing import Any, AsyncIterable, Literal, Optional
+from typing_extensions import TypedDict
 
 import async_lru
 from botocore.exceptions import ClientError

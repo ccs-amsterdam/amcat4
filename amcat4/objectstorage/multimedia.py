@@ -1,5 +1,6 @@
 import logging
-from typing import Tuple, TypedDict
+from typing import Tuple
+from typing_extensions import TypedDict
 
 import magic
 
