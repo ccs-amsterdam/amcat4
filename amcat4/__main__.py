@@ -84,7 +84,6 @@ async def _check_elastic_connection():
 
 def run(args):
     auth = get_settings().auth
-    logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}, auth={auth}")
     if auth == AuthOptions.no_auth:
         logging.warning(
             "Warning: No authentication is set up - everyone who can access this service can view and change all data"
@@ -98,6 +97,10 @@ def run(args):
     )
 
     asyncio.run(_check_elastic_connection())
+
+    asyncio.run(do_migrate_systemdata())
+
+    logging.info(f"Starting server at port {args.port}, debug={not args.nodebug}, auth={auth}")
     log_config = "logging.yml" if Path("logging.yml").exists() else LOGGING_CONFIG
     uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port, log_config=log_config)
 
@@ -111,13 +114,16 @@ def val(val_or_list):
 
 
 async def migrate_systemdata(args) -> None:
+    await do_migrate_systemdata(rm_pending_migrations=args.rm_pending)
+
+
+async def do_migrate_systemdata(rm_pending_migrations=True) -> None:
     settings = get_settings()
     async with amcat_connections():
         if not await es().ping():
             logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
             sys.exit(1)
-
-        await create_or_update_systemdata(rm_pending_migrations=args.rm_pending)
+        await create_or_update_systemdata(rm_pending_migrations=rm_pending_migrations)
 
 
 async def dangerously_destroy_systemdata(args) -> None:

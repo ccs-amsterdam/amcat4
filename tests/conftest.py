@@ -149,20 +149,6 @@ async def clean_requests():
     await clear_requests()
 
 
-# @pytest.fixture()
-# async def index_with_multimedia():
-#     if not s3_enabled():
-#         pytest.skip("S3 not configured, skipping tests needing object storage")
-
-#     index = "amcat4_unittest_index_bucket"
-#     await delete_project_index(index, ignore_missing=True)
-#     await delete_project_multimedia(index)
-#     await create_project_index(ProjectSettings(id=index, name="Unittest Index"))
-#     yield index
-#     # await delete_project_index(index, ignore_missing=True)
-#     # await delete_index_bucket(index, ignore_missing=True)
-
-
 async def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType | CreateDocumentField] | None = None):
     """
     Upload these docs to the index, giving them an incremental id, and flush

@@ -31,6 +31,7 @@ async def create_or_update_systemdata(rm_pending_migrations: bool = True) -> int
     # Check the current version of the system indices exists
     active_version = await active_systemdata_status(LATEST_VERSION, rm_pending_migrations)
 
+
     if active_version is None:
         logging.info("No active system index version exists. Creating latest version mappings.")
         # No active system indices version exists, so we don't need to migrate. Just create the mappings.
@@ -74,7 +75,7 @@ async def active_systemdata_status(latest_version: int, rm_pending_migrations: b
     or use the dangerously_destroy_systemdata function in the manage module to remove
     this version (obviously, you will lose all data in the system indices of this version).
     """
-    for i in range(latest_version, 1, -1):
+    for i in range(latest_version, 0, -1):
         status = await systemdata_version_status(i)
 
         if status.broken:
@@ -207,7 +208,7 @@ async def delete_systemdata_version(version: int) -> None:
 async def set_migration_successfull(version) -> None:
     update_meta_body = {"_meta": {"migration_pending": None}}
     for system_index in VERSIONS[version].SYSTEM_INDICES:
-        index = system_index_name(version, system_index["name"])
+        index = system_index_name(version, system_index.name)
         await es().indices.put_mapping(index=index, body=update_meta_body)
 
         # verify, because it's important

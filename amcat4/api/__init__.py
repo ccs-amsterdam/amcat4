@@ -81,5 +81,5 @@ async def value_error_exception_handler(request: Request, exc: ValueError):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc) -> JSONResponse:
     return JSONResponse(
-        status_code=422, content={"message": "There was an issue with the data you sent.", "fields_invalid": exc.errors()}
+        status_code=422, content={"message": "There was an issue with the data you sent.", "detail": exc.errors()}
     )

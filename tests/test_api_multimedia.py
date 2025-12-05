@@ -1,5 +1,6 @@
 import httpx
 import pytest
+import asyncio
 from httpx import AsyncClient
 
 from amcat4.connections import s3_enabled
@@ -105,11 +106,15 @@ async def test_presigned(client, index, user):
     ## This redirects to a presigned S3 GET url.
     ## We need to manually handle the redirect because of the testing client
     ## (we need to turn of mime checking, because the content we provided was not a proper image/png)
+    print(post['url'])
+    print(post['form_data'])
+    await asyncio.sleep(10)
     res = await client.get(
         f"index/{index}/multimedia/get/image_field/image.png",
         params=dict(skip_mime_check=True),
         headers=build_headers(user),
     )
+
     assert res.status_code == 303
     presigned_get = res.headers["location"]
     async with httpx.AsyncClient() as downloader:

@@ -205,6 +205,7 @@ async def migrate_server_settings(doc: dict):
         id=settings_index_id("_server"),
         doc={
             "server_settings": {
+                "id": "_server",
                 "name": doc.get("name"),
                 "description": None,
                 "external_url": doc.get("external_url"),
@@ -219,17 +220,21 @@ async def migrate_server_settings(doc: dict):
 
 
 async def migrate_project_settings(index: str, doc: dict):
+    image = await create_image_from_url(doc.get("image_url"))
+    if image:
+        image = image.model_dump()
     return BulkInsertAction(
         index=settings_index_name(),
         id=settings_index_id(index),
         doc={
             "project_settings": {
+                "id": index,
                 "name": doc.get("name"),
                 "description": doc.get("description"),
                 "contact": doc.get("contact"),
                 "archived": doc.get("archived"),
                 "folder": doc.get("folder"),
-                "image": await create_image_from_url(doc.get("image_url")),
+                "image": image,
             }
         },
     )
@@ -241,31 +246,29 @@ def migrate_roles(role: dict, in_index: str | None):
         "role_context": in_index if in_index else "_server",
         "email": email,
         "role": role.get("role"),
-        "role_match": "DOMAIN" if email.startswith("*@") else "EXACT",
     }
 
-    return BulkInsertAction(index=roles_index_name(), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
+    return BulkInsertAction(index=roles_index_name(), id=roles_index_id(doc["email"], doc["role_context"]), doc=doc)
 
 
 def migrate_guest_roles(role: dict, in_index: str | None):
     # these used to be index settings, but are now roles
     doc = {
-        "index": in_index if in_index else "_server",
+        "role_context": in_index if in_index else "_server",
         "email": role.get("email"),
         "role": "*",
-        "role_match": "ANY",
     }
 
-    return BulkInsertAction(index=roles_index_name(), id=roles_index_id(doc["email"], doc["index"]), doc=doc)
+    return BulkInsertAction(index=roles_index_name(), id=roles_index_id(doc["email"], doc["role_context"]), doc=doc)
 
 
 def migrate_fields(index: str, field: dict):
     doc = {
         "index": index,
-        "field": field.get("field"),
+        "name": field.get("field"),
         "settings": field.get("settings", {}),
     }
-    return BulkInsertAction(index=fields_index_name(), id=fields_index_id(index, doc["field"]), doc=doc)
+    return BulkInsertAction(index=fields_index_name(), id=fields_index_id(index, doc["name"]), doc=doc)
 
 
 SYSTEM_INDICES = [
@@ -283,7 +286,7 @@ async def migrate():
     v1_system_index = system_index_name(1, "")
     await check_deprecated_version(v1_system_index)
 
-    async def bulk_generator() -> AsyncGenerator[BulkInsertAction]:
+    async def bulk_generator() -> AsyncGenerator[BulkInsertAction, None]:
         async for id, doc in index_scan(v1_system_index):
             # The _global document in the v1 index contained server settings, server roles and all requests
             if id == "_global":

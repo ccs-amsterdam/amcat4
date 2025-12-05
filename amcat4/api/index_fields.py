@@ -2,6 +2,7 @@
 
 from typing import Annotated, Any
 
+from elasticsearch import NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -73,7 +74,10 @@ async def get_project_fields(ix: IndexId, user: User = Depends(authenticated_use
     Get the fields (columns) used in this index. Requires METAREADER role on the index.
     """
     await HTTPException_if_not_project_index_role(user, ix, Roles.METAREADER)
-    return await list_fields(ix)
+    try:
+        return await list_fields(ix)
+    except NotFoundError:
+        raise HTTPException(404, f"Project {ix} does not exist, sorry")
 
 
 @app_index_fields.put("/index/{ix}/fields", status_code=status.HTTP_204_NO_CONTENT)
