@@ -389,12 +389,13 @@ def query_update_tags(
     Add or remove tags by query or by id
     """
     indices = index.split(",")
-    for i in indices:
-        if get_role(i, user) < Role.WRITER:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"User {user} does not have permission to update tags on index {i}",
-            )
+    if get_settings().auth != AuthOptions.no_auth:
+        for i in indices:
+            if get_role(i, user) < Role.WRITER:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"User {user} does not have permission to update tags on index {i}",
+                )
 
     if isinstance(ids, (str, int)):
         ids = [ids]
