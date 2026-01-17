@@ -582,11 +582,17 @@ UDATE_SCRIPTS = dict(
     if (ctx._source[params.field] == null) {
       ctx._source[params.field] = [params.tag]
     } else {
-      if (ctx._source[params.field].contains(params.tag)) {
-        ctx.op = 'noop';
-      } else {
-        ctx._source[params.field].add(params.tag)
-      }
+        def value = ctx._source[params.field];
+        // The add code assumes the value is a list. If it's a String, convert it first
+        if (value instanceof String) {
+            ctx._source[params.field] = [ value ];
+            value = ctx._source[params.field];
+        }
+        if (ctx._source[params.field].contains(params.tag)) {
+            ctx.op = 'noop';
+        } else {
+            ctx._source[params.field].add(params.tag)
+        }
     }
     """,
     remove="""
