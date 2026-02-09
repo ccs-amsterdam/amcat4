@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name="amcat4",
-    version="4.0.17",
+    version="4.1.0",
     description="API for AmCAT4 Text Analysis",
     author="Wouter van Atteveldt",
     author_email="wouter@vanatteveldt.com",
