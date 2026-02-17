@@ -9,10 +9,7 @@ from amcat4.api.auth import authenticated_user
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, IndexIds, Roles, SortSpec, User
 from amcat4.projects.aggregate import Aggregation, Axis, TopHitsAggregation, query_aggregate
 from amcat4.projects.query import delete_query, query_documents, update_query, update_tag_query
-from amcat4.systemdata.fields import (
-    HTTPException_if_invalid_field_access,
-    allowed_fieldspecs,
-)
+from amcat4.systemdata.fields import HTTPException_if_invalid_field_access, allowed_fieldspecs
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_index_query = APIRouter(prefix="/index", tags=["query"])
@@ -92,8 +89,8 @@ class QueryDocumentsBody(BaseModel):
     fields: FieldsType
     filters: FiltersType
     sort: SortType
-    per_page: int = Field(10, le=200, description="Number of documents per page.")
-    page: int = Field(0, description="Which page to retrieve.")
+    per_page: int = Field(default=10, le=200, description="Number of documents per page.")
+    page: int = Field(default=0, description="Which page to retrieve.")
     scroll: str | None = Field(
         None,
         description=(
@@ -102,8 +99,10 @@ class QueryDocumentsBody(BaseModel):
             "results will then contain a scroll_id that can be used to retrieve the next batch."
         ),
     )
-    scroll_id: str | None = Field(None, description="Scroll ID as returned by a previous query for getting the next batch.")
-    highlight: bool = Field(False, description="If true, highlight fields.")
+    scroll_id: str | None = Field(
+        default=None, description="Scroll ID as returned by a previous query for getting the next batch."
+    )
+    highlight: bool = Field(default=False, description="If true, highlight fields.")
 
 
 class AggregationSpec(BaseModel):

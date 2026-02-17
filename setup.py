@@ -38,7 +38,7 @@ setup(
         "aioboto3",
         "aiobotocore",
         "types-aiobotocore[s3]",
-        "cryptography"
+        "cryptography",
     ],
     extras_require={
         "dev": [
