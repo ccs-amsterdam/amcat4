@@ -16,10 +16,10 @@ We need to make sure that:
 
 import datetime
 from typing import Any, AsyncGenerator, Iterable, Mapping, cast, get_args
-from typing_extensions import TypedDict
 
 from elasticsearch import NotFoundError
 from fastapi import HTTPException
+from typing_extensions import TypedDict
 
 from amcat4.connections import es
 from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, es_get, index_scan
@@ -98,7 +98,7 @@ async def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocum
 
     if new_identifiers:
         # new identifiers are only allowed if the index had identifiers, or if it is a new index (i.e. no documents)
-        has_docs = (await (es()).count(index=index))["count"] > 0
+        has_docs = (await es().count(index=index))["count"] > 0
         if has_docs and not old_identifiers:
             raise ValueError("Cannot add identifiers. Index already has documents with no identifiers.")
 
@@ -288,7 +288,8 @@ async def HTTPException_if_invalid_field_access(indices: list[str], user: User, 
     """
     if len(fields) == 0:
         return None
-
+    if user.auth_disabled:
+        return None
     roles = await list_user_project_roles(user, project_ids=indices)
     role_dict = {role.role_context: role for role in roles}
 
@@ -395,7 +396,7 @@ async def create_or_verify_tag_field(index: str | list[str], field: str):
     for i in add_to_indices:
         current_fields = await list_fields(i)
         current_fields[field] = _get_default_field("tag")
-        await (es()).indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
+        await es().indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
         await _update_fields(i, current_fields)
 
 
@@ -411,7 +412,7 @@ async def field_values(index: str, field: str, size: int) -> list[str]:
     :return: A list of values
     """
     aggs = {"unique_values": {"terms": {"field": field, "size": size}}}
-    r = await (es()).search(index=index, size=0, aggs=aggs)
+    r = await es().search(index=index, size=0, aggs=aggs)
     return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]
 
 
@@ -422,7 +423,7 @@ async def field_stats(index: str, field: str):
     :return: A list of values
     """
     aggs = {"facets": {"stats": {"field": field}}}
-    r = await (es()).search(index=index, size=0, aggs=aggs)
+    r = await es().search(index=index, size=0, aggs=aggs)
     return r["aggregations"]["facets"]
 
 
@@ -485,7 +486,7 @@ async def _list_fields(index: str) -> dict[str, DocumentField]:
 
 
 async def _get_es_index_fields(index: str) -> AsyncGenerator[tuple[str, dict], None]:
-    r = await (es()).indices.get_mapping(index=index)
+    r = await es().indices.get_mapping(index=index)
     if "properties" in r[index]["mappings"]:
         for name, mapping in r[index]["mappings"]["properties"].items():
             yield name, mapping
@@ -516,5 +517,5 @@ async def _update_index_fields_mappings(index: str, fields: dict[str, DocumentFi
         if field.type == "date":
             mapping_updates[field_name]["format"] = "strict_date_optional_time"
 
-    await (es()).indices.put_mapping(index=index, properties=mapping_updates)
+    await es().indices.put_mapping(index=index, properties=mapping_updates)
     await _update_fields(index, fields)

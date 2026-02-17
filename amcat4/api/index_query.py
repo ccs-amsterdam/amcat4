@@ -259,7 +259,6 @@ async def query_aggregate_post(
     Perform an aggregation query on one or more indices. Requires READER or METAREADER role.
     """
     indices = index.split(",")
-
     fields_to_check = []
 
     if body.axes:
