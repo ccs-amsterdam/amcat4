@@ -5,7 +5,7 @@ from typing import Annotated
 from elasticsearch import NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 
-from amcat4.api.auth import authenticated_user
+from amcat4.api.auth_helpers import authenticated_user
 from amcat4.models import AdminPermissionRequest, PermissionRequest, Roles, User
 from amcat4.systemdata.requests import (
     delete_request,

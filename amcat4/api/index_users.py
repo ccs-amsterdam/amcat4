@@ -6,7 +6,7 @@ from elasticsearch import ConflictError, NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
 from pydantic import BaseModel, Field
 
-from amcat4.api.auth import authenticated_user
+from amcat4.api.auth_helpers import authenticated_user
 from amcat4.models import (
     IndexId,
     Role,

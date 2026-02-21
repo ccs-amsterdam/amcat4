@@ -4,7 +4,6 @@ Interact with S3-compatible object storage (e.g., AWS S3, MinIO, SeaweedFS, Clou
 
 from datetime import datetime
 from typing import Any, AsyncIterable, Literal, Optional
-from typing_extensions import TypedDict
 
 import async_lru
 from botocore.exceptions import ClientError
@@ -14,6 +13,7 @@ from types_aiobotocore_s3.type_defs import (
     ListObjectsV2RequestTypeDef,
     ObjectIdentifierTypeDef,
 )
+from typing_extensions import TypedDict
 
 from amcat4.config import get_settings
 from amcat4.connections import s3
@@ -40,8 +40,8 @@ async def get_bucket(bucket: Literal["multimedia", "backup"]) -> str:
     """
     Get one of the standard buckets, taking into account whether we are using a test database.
     """
-    use_test_db = get_settings().use_test_db
-    if use_test_db:
+    test_mode = get_settings().test_mode
+    if test_mode:
         testbucket = f"test-{bucket}"
         return await _create_or_get_bucket_name(testbucket)
     else:

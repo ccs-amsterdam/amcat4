@@ -5,7 +5,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from amcat4.api.auth import authenticated_user
+from amcat4.api.auth_helpers import authenticated_user
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, IndexIds, Roles, SortSpec, User
 from amcat4.projects.aggregate import Aggregation, Axis, TopHitsAggregation, query_aggregate
 from amcat4.projects.query import delete_query, query_documents, update_query, update_tag_query

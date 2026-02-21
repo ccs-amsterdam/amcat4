@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from amcat4.api.auth import authenticated_user
+from amcat4.api.auth_helpers import authenticated_user
 from amcat4.models import ObjectStorage, RegisterObject, Roles, User
 from amcat4.objectstorage.multimedia import (
     delete_multimedia_by_key,

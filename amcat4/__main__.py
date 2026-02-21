@@ -144,7 +144,6 @@ async def dangerously_destroy_systemdata(args) -> None:
 def base_env():
     return dict(
         amcat4_secret_key=secrets.token_hex(nbytes=32),
-        amcat4_middlecat_url="https://middlecat.net",
     )
 
 

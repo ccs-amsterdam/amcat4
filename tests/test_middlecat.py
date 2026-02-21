@@ -45,5 +45,6 @@ async def test_handler_responses(client: AsyncClient, admin):
 @pytest.mark.anyio
 async def test_config(client: AsyncClient):
     result = await get_json(client, "/config")
+
     assert result["middlecat_url"] == get_settings().middlecat_url
     assert result["authorization"] == get_settings().auth.name

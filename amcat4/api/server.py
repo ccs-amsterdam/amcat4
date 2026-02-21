@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from amcat4.api.auth import authenticated_user, get_middlecat_config
+from amcat4.api.auth_helpers import authenticated_user
 from amcat4.config import get_settings, validate_settings
 from amcat4.connections import es, s3_enabled
 from amcat4.models import ContactInfo, Links, LinksGroup, Roles, ServerSettings, User
@@ -57,16 +57,15 @@ async def index(request: Request):
     es_alive = await (es()).ping()
     auth = get_settings().auth
     has_admin_email = bool(get_settings().admin_email)
+
+    if get_settings().oidc_url:
+        oidc_url = get_settings().oidc_url
+        oidc_client_id = get_settings().oidc_client_id
+        oidc_client_secret = get_settings().oidc_client_secret
+
     middlecat_url = get_settings().middlecat_url
 
-    middlecat_alive = False
     api_version = version("amcat4")
-    if middlecat_url:
-        try:
-            await get_middlecat_config(middlecat_url)
-            # middlecat_alive = True
-        except OSError:
-            pass
     return templates.TemplateResponse(request, "index.html", locals())
 
 

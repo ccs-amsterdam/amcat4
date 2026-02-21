@@ -28,7 +28,7 @@ def anyio_backend():
 
 @pytest.fixture(scope="session")
 async def client():
-    async with AsyncClient(transport=ASGITransport(app=api.app), base_url="http://test", follow_redirects=False) as client:
+    async with AsyncClient(transport=ASGITransport(app=api.app), base_url="http://test/api", follow_redirects=False) as client:
         yield client
 
 
@@ -36,7 +36,7 @@ async def client():
 async def my_setup():
     # Override system db
     get_settings().auth = AuthOptions.allow_guests
-    get_settings().use_test_db = True
+    get_settings().test_mode = True
 
     async with amcat_connections():
         systemdata_version = await create_or_update_systemdata()

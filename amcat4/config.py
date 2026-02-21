@@ -8,6 +8,7 @@ We read configuration from 2 sources, in order of precedence (higher is more pri
 """
 
 import functools
+import secrets
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any
@@ -94,10 +95,17 @@ class Settings(BaseSettings):
 
     auth: Annotated[AuthOptions, Field(description="Do we require authorization?")] = AuthOptions.no_auth
 
+    cookie_secret: Annotated[
+        str,
+        Field(
+            description="Secret key for encrypting session cookies. ",
+        ),
+    ] = "Replace this with a cryptographic random string"
+
     middlecat_url: Annotated[
         str,
         Field(
-            description="Middlecat server to trust as ID provider",
+            description="Middlecat server to trust as ID provider. ",
         ),
     ] = "https://middlecat.net"
 
@@ -115,11 +123,23 @@ class Settings(BaseSettings):
     oidc_url: Annotated[
         str | None,
         Field(
-            description="OIDC provider URL (if using OIDC for authentication)",
+            description="OIDC provider URL (if using OIDC for authentication). This overrides middlecat_url if set",
+        ),
+    ] = None
+    oidc_client_id: Annotated[
+        str | None,
+        Field(
+            description="OIDC client ID (if using OIDC for authentication)",
+        ),
+    ] = None
+    oidc_client_secret: Annotated[
+        str | None,
+        Field(
+            description="OIDC client secret (if using OIDC for authentication)",
         ),
     ] = None
 
-    use_test_db: Annotated[
+    test_mode: Annotated[
         bool,
         Field(
             description="Use a separate test database (for unit tests)",
@@ -147,6 +167,7 @@ def get_settings() -> Settings:
     temp = Settings()
     # WvA: For some reason, it always seems to override environment variables?
     load_dotenv(temp.env_file, override=False)
+
     return Settings()
 
 

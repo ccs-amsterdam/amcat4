@@ -9,7 +9,7 @@ from elasticsearch import NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
-from amcat4.api.auth import authenticated_user
+from amcat4.api.auth_helpers import authenticated_user
 from amcat4.api.index_query import FiltersType, QueriesType, _standardize_filters, _standardize_queries
 from amcat4.models import (
     ContactInfo,

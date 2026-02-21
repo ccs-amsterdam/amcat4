@@ -25,9 +25,9 @@ def system_index_name(version: int, path: str) -> str:
     didn't have versions and only one path)
     """
     index = get_settings().system_index
-    use_test_db = get_settings().use_test_db
+    test_mode = get_settings().test_mode
 
-    if use_test_db:
+    if test_mode:
         index = f"testdb_{index}"
     if version > 1:
         index = f"{index}_v{version}"

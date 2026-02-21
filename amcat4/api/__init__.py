@@ -3,13 +3,15 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
 
 from amcat4.api.api_keys import app_api_keys
+from amcat4.api.auth import app_auth
 from amcat4.api.index import app_index
 from amcat4.api.index_documents import app_index_documents
 from amcat4.api.index_fields import app_index_fields
@@ -19,6 +21,7 @@ from amcat4.api.index_users import app_index_users
 from amcat4.api.requests import app_requests
 from amcat4.api.server import app_info
 from amcat4.api.users import app_users
+from amcat4.config import get_settings
 from amcat4.connections import amcat_connections
 from amcat4.systemdata.manage import create_or_update_systemdata
 
@@ -35,6 +38,7 @@ app = FastAPI(
     title="AmCAT4",
     description=__doc__ if __doc__ else "",
     openapi_tags=[
+        dict(name="auth", description="Endpoints for authentication"),
         dict(name="users", description="Endpoints for server user management"),
         dict(name="requests", description="Endpoints for authorization requests"),
         dict(
@@ -50,16 +54,22 @@ app = FastAPI(
     ],
     lifespan=lifespan,
 )
-app.include_router(app_info)
-app.include_router(app_users)
-app.include_router(app_index)
-app.include_router(app_index_documents)
-app.include_router(app_index_fields)
-app.include_router(app_index_users)
-app.include_router(app_index_query)
-app.include_router(app_requests)
-app.include_router(app_multimedia)
-app.include_router(app_api_keys)
+
+api_router = APIRouter(prefix="/api")
+api_router.include_router(app_auth)
+api_router.include_router(app_info)
+api_router.include_router(app_users)
+api_router.include_router(app_index)
+api_router.include_router(app_index_documents)
+api_router.include_router(app_index_fields)
+api_router.include_router(app_index_users)
+api_router.include_router(app_index_query)
+api_router.include_router(app_requests)
+api_router.include_router(app_multimedia)
+api_router.include_router(app_api_keys)
+app.include_router(api_router)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -68,6 +78,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=get_settings().cookie_secret,
+    session_cookie="amcat_session",
+    same_site="lax",
+    https_only=True,  # Ensure this is True in production
+)
 
 
 @app.exception_handler(ValueError)
