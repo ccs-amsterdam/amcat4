@@ -213,7 +213,7 @@ def config_amcat(args):
                 for option in get_args(fieldinfo.annotation):
                     doc = option.__doc__.replace("\n", " ")
                     f.write(f"# - {option.name}: {doc}\n")
-            if val is None:
+            if value is None:
                 f.write(f"#amcat4_{fieldname}=\n\n")
             else:
                 f.write(f"amcat4_{fieldname}={value}\n\n")
