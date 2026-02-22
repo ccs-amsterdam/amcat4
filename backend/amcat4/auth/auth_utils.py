@@ -1,12 +1,6 @@
 import base64
 import json
-import os
-import secrets
-import time
-from typing import Dict, Optional
-
-import httpx
-from jose import jwt
+from typing import Dict
 
 
 def decode_claims(token: str) -> Dict:

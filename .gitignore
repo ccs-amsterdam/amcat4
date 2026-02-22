@@ -1,87 +1,41 @@
-*.py[cod]
-
-# .env environment variables
-.env
-.venv
-
-# C extensions
-*.so
-
-# Packages
-*.egg
-*.egg-info
-dist
-build
-eggs
-parts
-bin
-var
-sdist
-develop-eggs
-.installed.cfg
-lib
-lib64
-__pycache__
-
-# Installer logs
-pip-log.txt
-
-# Unit test / coverage reports
-.coverage
-.tox
-nosetests.xml
-
-# Translations
-*.mo
-
-# Mr Developer
-.mr.developer.cfg
-.project
-.pydevproject
-
-# Emacs meuk
-*~
-\#*\#
-.\#*
-
-# Vim cruft
-*.sw[op]
-
-# Weird zed thing?
-/tq
-
-# PyCharm meuk
-.idea
-
-# vscode meuk (only include extensions and settings)
+# --- System / IDE ---
+.DS_Store
+.idea/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+!.vscode/launch.json
 
-# dev meuk
-/playground.py
+# --- Backend Recursive (Finds meuk in all subfolders) ---
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/*.egg/
+**/.eggs/
+**/.pytest_cache/
+**/.mypy_cache/
 
-# static files
-navigator/media/static
-static/components/
-env
-.eggs
+# --- Backend Path-Specific (Anchored to backend folder) ---
+backend/.env
+backend/.venv/
+backend/venv/
+backend/env/
+backend/build/
+backend/dist/
+backend/.cache/
+backend/.coverage
+backend/coverage.xml
+backend/playground.py
+backend/testme.db
+backend/*__upload_cache.json
 
+# --- Frontend Path-Specific ---
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*.local
+frontend/*.log*
 
-# R package library
-amcat/scripts/query/r_plugins/package_library
-
-.cache
-
-#upload cache
-*__upload_cache.json
-
-# pypi file
-MANIFEST
-
-amcat4.db
-annotator.db
-coverage.xml
-venv/
-
-testme.db
+# --- Static/Media ---
+backend/static/components/
+backend/navigator/media/static/
