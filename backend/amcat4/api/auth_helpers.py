@@ -7,30 +7,22 @@ import httpx
 from async_lru import alru_cache
 from authlib.common.errors import AuthlibBaseError
 from authlib.jose import JsonWebToken, jwt
-from fastapi import HTTPException, Security
-from fastapi.security import APIKeyHeader, OpenIdConnect
+from fastapi import Depends, HTTPException, Request, Security
+from fastapi.security import APIKeyCookie, APIKeyHeader, OpenIdConnect
 from fastapi.security.oauth2 import OAuth2AuthorizationCodeBearer
 
 from amcat4.config import AuthOptions, get_settings
 from amcat4.models import User
 from amcat4.systemdata.apikeys import get_api_key
 
-middlecat_url = get_settings().middlecat_url
-middlecat_scheme = OAuth2AuthorizationCodeBearer(
-    tokenUrl=f"{middlecat_url}/api/token",
-    authorizationUrl=f"{middlecat_url}/authorize",
-    refreshUrl="/auth/token",
-    auto_error=False,
-    scheme_name="OAuth2 Scheme",
-)
-
-oidc_scheme = OpenIdConnect(
-    openIdConnectUrl=get_settings().oidc_url or "",
-    auto_error=False,
-    scheme_name="OIDC Scheme",
-)
-
 api_key_scheme = APIKeyHeader(name="X-API-Key", scheme_name="API Key Header", auto_error=False)
+
+session_cookie = APIKeyCookie(name="amcat_session", auto_error=False)
+
+
+async def session_cookie_scheme(request: Request, _=Depends(session_cookie)):
+    access_token = request.session.get("access_token")
+    return access_token
 
 
 class InvalidToken(ValueError):
@@ -58,7 +50,30 @@ async def get_oidc_jwks():
         return r.json().get("jwks_uri")
 
 
-async def validate_oidc_token(token: str) -> dict:
+async def verify_middlecat_token(token: str) -> dict:
+    url = get_settings().middlecat_url
+    if not url:
+        raise InvalidToken("No middlecat defined, cannot decrypt middlecat token")
+    public_key = (await get_middlecat_config(url))["public_key"]
+    payload = jwt.decode(token, public_key)
+
+    if missing := {"email", "resource", "exp"} - set(payload.keys()):
+        raise InvalidToken(f"Invalid token, missing keys {missing}")
+    now = int(datetime.now().timestamp())
+    if payload["exp"] < now:
+        raise InvalidToken("Token expired")
+
+    client = get_settings().host
+    if payload["clientId"] != client:
+        raise InvalidToken(f"Invalid client! {payload['clientId']} != {client}")
+
+    resource = client + "/api"
+    if payload["resource"] != resource:
+        raise InvalidToken(f"Wrong host! {payload['resource']} != {resource}")
+    return payload
+
+
+async def verify_oidc_token(token: str) -> dict:
     jwks = await get_oidc_jwks()
     rsa_jwt = JsonWebToken(algorithms=["RS256"])
     options: dict = {
@@ -75,35 +90,15 @@ async def verify_token(token: str) -> dict:
 
     raises a InvalidToken exception if the token could not be validated
     """
-    payload = await decode_middlecat_token(token)
-    if missing := {"email", "resource", "exp"} - set(payload.keys()):
-        raise InvalidToken(f"Invalid token, missing keys {missing}")
-    now = int(datetime.now().timestamp())
-    if payload["exp"] < now:
-        raise InvalidToken("Token expired")
-    if payload["resource"] != get_settings().host:
-        raise InvalidToken(f"Wrong host! {payload['resource']} != {get_settings().host}")
-    return payload
-
-
-async def decode_middlecat_token(token: str) -> dict:
-    """
-    Verifies a midddlecat token
-    """
-    url = get_settings().middlecat_url
-    if not url:
-        raise InvalidToken("No middlecat defined, cannot decrypt middlecat token")
-    public_key = (await get_middlecat_config(url))["public_key"]
-    try:
-        return jwt.decode(token, public_key)
-    except AuthlibBaseError as e:
-        raise InvalidToken(e)
+    if get_settings().oidc_url:
+        return await verify_oidc_token(token)
+    else:
+        return await verify_middlecat_token(token)
 
 
 async def authenticated_user(
     api_key: str | None = Security(api_key_scheme),
-    middlecat: str | None = Security(middlecat_scheme),
-    oidc: str | None = Security(oidc_scheme),
+    access_token: str | None = Security(session_cookie_scheme),
 ) -> User:
     """
     Authenticates the user based on the provided middlecat token, oidc token or api key.
@@ -111,9 +106,9 @@ async def authenticated_user(
     settings = get_settings()
     auth_disabled = settings.auth == AuthOptions.no_auth
 
-    if middlecat is not None:
+    if access_token is not None:
         try:
-            t = await verify_token(middlecat)
+            t = await verify_token(access_token)
             return User(
                 email=t["email"],
                 auth_disabled=auth_disabled,
@@ -121,21 +116,8 @@ async def authenticated_user(
                 auth_method="middlecat",
             )
         except Exception as e:
-            logging.exception("Middlecat Login failed: " + str(e))
-            raise HTTPException(status_code=401, detail="Invalid MiddleCat token: " + str(e)) from e
-
-    elif oidc is not None:
-        try:
-            t = await validate_oidc_token(oidc)
-            return User(
-                email=t["email"],
-                auth_disabled=auth_disabled,
-                superadmin=t["email"] == settings.admin_email,
-                auth_method="oidc",
-            )
-        except Exception as e:
-            logging.exception("OIDC login failed: " + str(e))
-            raise HTTPException(status_code=401, detail="Invalid OIDC token: " + str(e)) from e
+            logging.exception("Login failed: " + str(e))
+            raise HTTPException(status_code=401, detail="Invalid token: " + str(e)) from e
 
     elif api_key is not None:
         try:

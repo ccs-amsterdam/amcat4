@@ -3,11 +3,11 @@ import hashlib
 import json
 import secrets
 import time
-from typing import Optional
+from typing import Annotated, Optional
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from amcat4.config import get_settings
@@ -23,6 +23,8 @@ if OIDC_URL and not (OIDC_ID or OIDC_SECRET):
 
 # TODO: use OIDC discovery endpoint to get the correct endpoints
 
+IS_SECURE_CONTEXT = get_settings().host.startswith("https://")
+
 
 def decode_claims(token: str) -> dict:
     _, payload, _ = token.split(".")
@@ -31,7 +33,10 @@ def decode_claims(token: str) -> dict:
 
 
 @app_auth.get("/auth/login")
-async def login(request: Request, returnTo: Optional[str] = None):
+async def login(
+    request: Request,
+    returnTo: Annotated[str | None, Query(description="URL to redirect to after login")] = None,
+):
     host = get_settings().host
     api = host.rstrip("/") + "/api"
     redirect_back = returnTo or host
@@ -105,45 +110,33 @@ async def callback(request: Request, code: str, state: str):
     claims = decode_claims(tokens["access_token"])
 
     # Create session
-    csrf_token = secrets.token_hex(32)
     session.update(
         {
             "id_token": tokens.get("id_token"),
             "access_token": tokens["access_token"],
             "refresh_token": tokens.get("refresh_token"),
-            "csrf_token": csrf_token,
             "exp": claims.get("exp"),
             "user": {"sub": claims.get("sub"), "name": claims.get("name"), "email": claims.get("email")},
         }
     )
 
-    is_secure_context = get_settings().host.startswith("https://")
-
     # Create the RedirectResponse
     response = RedirectResponse(url=request.session.get("rd") or "/")
 
-    # Set the Non-HttpOnly CSRF cookie
-    response.set_cookie(
-        key="XSRF-TOKEN",
-        value=csrf_token,
-        httponly=False,
-        samesite="lax",
-        secure=is_secure_context,
-    )
-
-    # Set the user_email cookie (also lets UI know user is logged in)
-    response.set_cookie(
-        key="user_email", value=claims.get("email") or "", httponly=False, samesite="lax", secure=is_secure_context
-    )
+    # Session data the client should be able to see
+    value = str(claims.get("exp", "")) + "." + str(claims.get("email"))
+    response.set_cookie(key="client_session", value=value, httponly=False, samesite="lax", secure=IS_SECURE_CONTEXT)
 
     return response
 
 
 @app_auth.post("/auth/logout")
-async def logout(request: Request, returnTo: Optional[str] = None):
-    # CSRF Verification
-    if request.headers.get("X-CSRF-TOKEN") != request.session.get("csrf_token"):
-        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+async def logout(
+    request: Request,
+    returnTo: Annotated[
+        str | None, Body(max_length=100, description="Optionally, a return URL to redirect to after logout", embed=True)
+    ] = None,
+):
 
     refresh_token = request.session.get("refresh_token")
     id_token = request.session.get("id_token")
@@ -178,11 +171,10 @@ async def logout(request: Request, returnTo: Optional[str] = None):
                 },
             )
         # For Middlecat, since it's back-channel, we just tell the UI to refresh/redirect
-        response = JSONResponse({"status": "logged_out", "redirect_to": final_destination})
+        response = JSONResponse({"status": "logged_out", "logout_url": final_destination})
 
     # 4. Clear the non-httponly cookies
-    response.delete_cookie("XSRF-TOKEN")
-    response.delete_cookie("user_email")
+    response.delete_cookie("client_session")
 
     return response
 
@@ -191,15 +183,11 @@ async def logout(request: Request, returnTo: Optional[str] = None):
 async def refresh_token(request: Request):
     session = request.session
 
-    # CSRF Verification
-    if request.headers.get("X-CSRF-TOKEN") != session.get("csrf_token"):
-        raise HTTPException(status_code=403, detail="Invalid CSRF token")
-
     # Check if refresh is actually needed (5-minute buffer)
     now = int(time.time())
     exp = session.get("exp")
     if exp and (exp - now > 5 * 60):
-        return JSONResponse({"exp": exp, "access_token": session.get("access_token"), "csrf_token": session.get("csrf_token")})
+        return JSONResponse({"exp": exp})
 
     refresh_token = session.get("refresh_token")
     if not refresh_token:
@@ -236,36 +224,20 @@ async def refresh_token(request: Request):
     new_access_token = tokens["access_token"]
     new_refresh_token = tokens.get("refresh_token", refresh_token)  # Some providers don't rotate
     claims = decode_claims(new_access_token)
-    new_csrf_token = secrets.token_hex(32)
 
     # Update Session
     session.update(
         {
             "access_token": new_access_token,
             "refresh_token": new_refresh_token,
-            "csrf_token": new_csrf_token,
             "exp": claims.get("exp"),
         }
     )
 
-    # 6. Return Response
-    response = JSONResponse(
-        {
-            "exp": claims.get("exp"),
-            "access_token": new_access_token,
-            "csrf_token": new_csrf_token,
-        }
-    )
-
-    # Update the XSRF-TOKEN cookie so the frontend has the new one
-    is_secure_context = get_settings().host.startswith("https://")
-    response.set_cookie(
-        key="XSRF-TOKEN",
-        value=new_csrf_token,
-        httponly=False,
-        samesite="lax",
-        secure=is_secure_context,
-    )
+    # Update session data the client should be able to see
+    response = JSONResponse({"exp": claims.get("exp")})
+    value = str(claims.get("exp", "")) + "." + str(claims.get("email"))
+    response.set_cookie(key="client_session", value=value, httponly=False, samesite="lax", secure=IS_SECURE_CONTEXT)
 
     return response
 

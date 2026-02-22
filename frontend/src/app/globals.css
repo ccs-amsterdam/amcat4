@@ -1,0 +1,205 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background-fixed: 0, 0%, 14%;
+    --foreground-fixed: 222.2, 84%, 90%;
+
+    --background: 0, 0%, 100%;
+    --foreground: 222.2, 84%, 10%;
+    --foreground-reverse: 222.2, 84%, 90%;
+
+    --card: 0, 0%, 100%;
+    --card-foreground: 222.2, 84%, 4rgb (0, 0, 0) 0.9%;
+
+    --primary: 174, 80%, 30%;
+    --primary-foreground: 222.2, 47.4%, 100%;
+
+    --secondary: 44, 64%, 50%;
+    --secondary-foreground: 222.2, 47.4%, 20%;
+
+    --muted: 0, 0%, 50%;
+    --muted-foreground: 0.4, 16.3%, 46.9%;
+
+    --accent: 174, 40%, 96.1%;
+    --accent-foreground: 174, 47.4%, 11.2%;
+
+    --check: 174, 56%, 40%;
+    --check-foreground: 222.2, 47.4%, 0%;
+
+    --warn: 0, 84.2%, 60.2%;
+    --warn-foreground: 210, 40%, 98%;
+
+    --destructive: 0, 84.2%, 60.2%;
+    --destructive-foreground: 210, 40%, 98%;
+
+    --border: 214.3, 31.8%, 80.4%;
+    --input: 214.3, 31.8%, 80.4%;
+    --ring: 174, 80%, 30%;
+
+    --radius: 0.5rem;
+
+    --navbar-height: 80px;
+    --navbar-height-md: 112px;
+  }
+
+  .dark {
+    --background: 0, 0%, 14%;
+    --foreground: 222.2, 84%, 90%;
+    --foreground-reverse: 222.2, 84%, 10%;
+
+    --card: 0, 0%, 100%;
+    --card-foreground: 222.2, 84%, 4rgb (0, 0, 0) 0.9%;
+
+    --primary: 174, 56%, 50%;
+    --primary-foreground: 222.2, 47.4%, 0%;
+
+    --secondary: 44, 64%, 53%;
+    --secondary-foreground: 222.2, 47.4%, 10%;
+
+    --muted: 0, 0%, 50%;
+    --muted-foreground: 0.4, 16.3%, 46.9%;
+
+    --accent: 0, 0%, 11.1%;
+    --accent-foreground: 0, 0%, 90.2%;
+
+    --check: 174, 56%, 50%;
+    --check-foreground: 222.2, 47.4%, 0%;
+
+    --warn: 0, 84.2%, 60.2%;
+    --warn-foreground: 210, 40%, 98%;
+
+    --destructive: 0, 84.2%, 60.2%;
+    --destructive-foreground: 210, 40%, 98%;
+
+    --border: 214.3, 31.8%, 91.4%;
+    --input: 214.3, 31.8%, 91.4%;
+    --ring: 222.2, 84%, 4.9%;
+
+    --radius: 0.5rem;
+
+    --navbar-height: 80px;
+    --navbar-height-md: 112px;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    transition:
+      color 0.2s,
+      background-color 0.2s;
+    overflow-y: scroll;
+  }
+}
+
+/* width */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 6px;
+  background: hsla(var(--primary), 0.5);
+}
+
+/* Track */
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+/* Handle */
+::-webkit-scrollbar-thumb {
+  background: hsla(var(--primary), 0.5);
+}
+
+/* Handle on hover */
+::-webkit-scrollbar-thumb:hover {
+  background: hsla(var(--foreground));
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.spike-loader {
+  --color: hsl(var(--primary));
+  position: relative;
+  width: 85px;
+  height: 50px;
+  background-repeat: no-repeat;
+  background-image: linear-gradient(var(--color) 50px, transparent 0),
+    linear-gradient(var(--color) 50px, transparent 0), linear-gradient(var(--color) 50px, transparent 0),
+    linear-gradient(var(--color) 50px, transparent 0), linear-gradient(var(--color) 50px, transparent 0),
+    linear-gradient(var(--color) 50px, transparent 0);
+  background-position:
+    0px center,
+    15px center,
+    30px center,
+    45px center,
+    60px center,
+    75px center,
+    90px center;
+  animation: rikSpikeRoll 0.65s linear infinite alternate;
+}
+@keyframes rikSpikeRoll {
+  0% {
+    background-size: 10px 3px;
+  }
+  16% {
+    background-size:
+      10px 50px,
+      10px 3px,
+      10px 3px,
+      10px 3px,
+      10px 3px,
+      10px 3px;
+  }
+  33% {
+    background-size:
+      10px 30px,
+      10px 50px,
+      10px 3px,
+      10px 3px,
+      10px 3px,
+      10px 3px;
+  }
+  50% {
+    background-size:
+      10px 10px,
+      10px 30px,
+      10px 50px,
+      10px 3px,
+      10px 3px,
+      10px 3px;
+  }
+  66% {
+    background-size:
+      10px 3px,
+      10px 10px,
+      10px 30px,
+      10px 50px,
+      10px 3px,
+      10px 3px;
+  }
+  83% {
+    background-size:
+      10px 3px,
+      10px 3px,
+      10px 10px,
+      10px 30px,
+      10px 50px,
+      10px 3px;
+  }
+  100% {
+    background-size:
+      10px 3px,
+      10px 3px,
+      10px 3px,
+      10px 10px,
+      10px 30px,
+      10px 50px;
+  }
+}

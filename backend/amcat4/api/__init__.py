@@ -21,6 +21,7 @@ from amcat4.api.index_users import app_index_users
 from amcat4.api.requests import app_requests
 from amcat4.api.server import app_info
 from amcat4.api.users import app_users
+from amcat4.auth.CSRFMiddleware import CSRFMiddleware
 from amcat4.config import get_settings
 from amcat4.connections import amcat_connections
 from amcat4.systemdata.manage import create_or_update_systemdata
@@ -69,14 +70,14 @@ api_router.include_router(app_multimedia)
 api_router.include_router(app_api_keys)
 app.include_router(api_router)
 
+## TODO: figure out what's best here.
+# Ideally we disable CORS, and only allow own origin. But middlecat currently
+# fetches the server config, and does this via the browser, because if it does
+# it via the server it doesn't work for local amcat servers. Maybe we can
+# disable this call altogether when we simplify middlecat for the new situation
+# (tight integration ui and amcat api)
+app.add_middleware(CORSMiddleware, allow_origins=["https://middlecat.net"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
@@ -86,6 +87,8 @@ app.add_middleware(
     same_site="lax",
     https_only=True,  # Ensure this is True in production
 )
+
+app.add_middleware(CSRFMiddleware)
 
 
 @app.exception_handler(ValueError)
