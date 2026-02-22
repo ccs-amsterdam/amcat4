@@ -32,7 +32,7 @@ interface ArticlesProps {
  */
 export default function Articles({ user, indexId, query, onClick, showOnClick = true }: ArticlesProps) {
   //TODO: add columns to meta OR retrieve fields (prefer the former) and pass the field types on to the table
-  const role = useMyIndexrole(user, indexId);
+  const { role } = useMyIndexrole(user, indexId);
   const [articleId, setArticleId] = useState<string | null>(null);
   const { data: fields, isLoading: loadingFields } = useFields(user, indexId);
 

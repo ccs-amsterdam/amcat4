@@ -10,7 +10,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { useMutateApiKeys } from "@/api/api_keys";
-import { useAmcatIndexRoles } from "@/api/indices";
+import { useAmcatIndexRoles } from "@/api/projects";
 import { AmcatApiKey, AmcatIndexId, AmcatUserRole } from "@/interfaces";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "../ui/select";
 import { roleHigherThan } from "@/api/util";
@@ -46,7 +46,7 @@ export function CreateApiKey({
 }) {
   const { user } = useAmcatSession();
   const { data: userDetails, isLoading: loadingUserDetails } = useCurrentUserDetails(user);
-  const { data: userIndexRoles, isLoading: loadingUserIndices } = useAmcatIndexRoles(user);
+  const { data: userIndexRoles, isLoading: loadingUserProjects } = useAmcatIndexRoles(user);
   const mutateApiKeys = useMutateApiKeys(user);
 
   const apikeyForm = useForm<z.input<typeof amcatApiKeySchema>, unknown, z.output<typeof amcatApiKeySchema>>({
@@ -69,7 +69,7 @@ export function CreateApiKey({
       });
   }
 
-  if (loadingUserDetails || loadingUserIndices) return <Loading />;
+  if (loadingUserDetails || loadingUserProjects) return <Loading />;
 
   return (
     <Form {...apikeyForm}>

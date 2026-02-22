@@ -1,5 +1,3 @@
-"use client";
-
 import { useAmcatBranding } from "@/api/branding";
 import { AmcatBranding } from "@/interfaces";
 import {
@@ -15,16 +13,14 @@ import {
   Slash,
   Users,
 } from "lucide-react";
-import { usePathname } from "next/dist/client/components/navigation";
-import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { Link, useParams, useNavigate, useLocation } from "@tanstack/react-router";
 import AccountMenu from "./AccountMenu";
 import IndexMenu from "./IndexMenu";
 import { Notifications } from "./Notifications";
-import { SubMenu, SubMenuPath } from "./SubMenu.tsx";
+import { SubMenu, SubMenuPath } from "./SubMenu";
 
 const serverSubMenuPaths: SubMenuPath[] = [
-  { href: "indices", label: "Indices", Icon: Library, minServerRole: "NONE" },
+  { href: "projects", label: "Projects", Icon: Library, minServerRole: "NONE" },
   { href: "branding", label: "Branding", Icon: Paintbrush, minServerRole: "ADMIN" },
   { href: "users", label: "Server users", Icon: Users, minServerRole: "ADMIN" },
   { href: "api_keys", label: "API keys", Icon: Bot, minServerRole: "NONE" },
@@ -41,14 +37,15 @@ const indexSubMenuPaths: SubMenuPath[] = [
 ];
 
 export default function Navbar() {
-  const params = useParams<{ index: string }>();
-  const hasIndex = !!params?.index;
-  const path = usePathname();
+  const params = useParams({ strict: false }) as any;
+  const hasIndex = !!params?.project;
+  const location = useLocation();
+  const path = location.pathname;
   const { data: branding } = useAmcatBranding();
 
   function logo() {
     return (
-      <Link href={"/"} className="flex h-14 items-center px-3">
+      <Link to={"/"} className="flex h-14 items-center px-3">
         <img
           className={`mr-0 aspect-auto w-9 min-w-9 sm:w-10 `}
           src={branding?.server_icon || "/logo.png"}
@@ -59,7 +56,7 @@ export default function Navbar() {
   }
 
   function submenu() {
-    if (hasIndex) return <SubMenu paths={indexSubMenuPaths} basePath={`/indices/${params.index}`} />;
+    if (hasIndex) return <SubMenu paths={indexSubMenuPaths} basePath={`/projects/${params.project}`} />;
     if (path !== "/") return <SubMenu paths={serverSubMenuPaths} />;
     return null;
   }
@@ -82,7 +79,8 @@ export default function Navbar() {
 }
 
 function BreadCrumbs({ branding, hasIndex }: { branding?: AmcatBranding; hasIndex: boolean }) {
-  const path = usePathname();
+  const location = useLocation();
+  const path = location.pathname;
   const homepage = path === "/";
 
   const serverLinkLabel = branding?.server_name || "Server";
@@ -90,14 +88,14 @@ function BreadCrumbs({ branding, hasIndex }: { branding?: AmcatBranding; hasInde
   return (
     <>
       <div className="hidden h-full items-center overflow-hidden  text-sm   sm:flex  md:text-lg">
-        <BreadCrumbLink name={serverLinkLabel} href="/indices" active={!homepage && !hasIndex} />
+        <BreadCrumbLink name={serverLinkLabel} href="/projects" active={!homepage && !hasIndex} />
         <ChevronRight className="h-4 w-4 min-w-4 flex-shrink opacity-50" />
         {/*<span className="text-primary/50">|</span>*/}
         {/*<span className=" text-xs text-foreground/50">/</span>*/}
         <IndexMenu />
       </div>
       <div className="flex  flex-col items-start overflow-hidden py-1  pl-2 text-sm sm:hidden  md:text-base">
-        <BreadCrumbLink name={serverLinkLabel} href="/indices" active={!homepage && !hasIndex} />
+        <BreadCrumbLink name={serverLinkLabel} href="/projects" active={!homepage && !hasIndex} />
         <IndexMenu />
       </div>
     </>
@@ -105,12 +103,12 @@ function BreadCrumbs({ branding, hasIndex }: { branding?: AmcatBranding; hasInde
 }
 
 function BreadCrumbLink({ name, href, active = true }: { name: string; href: string; active?: boolean }) {
-  const router = useRouter();
+  const navigate = useNavigate();
   return (
     <button
       className={`${active ? "font-medium" : "text-foreground/90"}
         flex h-full min-w-0  select-none items-center gap-1  text-ellipsis whitespace-nowrap border-primary  px-1 outline-none hover:font-semibold md:px-3`}
-      onClick={() => router.push(href)}
+      onClick={() => navigate({ to: href })}
     >
       {name}
     </button>

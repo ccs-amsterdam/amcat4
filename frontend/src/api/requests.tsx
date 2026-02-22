@@ -80,10 +80,10 @@ export function useResolveRequests(user: AmcatSessionUser | undefined) {
       queryClient.invalidateQueries({ queryKey: ["permission_requests", user] });
       queryClient.invalidateQueries({ queryKey: ["permission_requests/admin", user] });
 
-      // invalidate things that can refer to changed roles or indices
+      // invalidate things that can refer to changed roles or projects
       queryClient.invalidateQueries({ queryKey: ["users", user] });
       queryClient.invalidateQueries({ queryKey: ["currentuserdetails", user] });
-      queryClient.invalidateQueries({ queryKey: ["indices", user] });
+      queryClient.invalidateQueries({ queryKey: ["projects", user] });
 
       for (const r of variables) {
         if ("project_id" in r.request) {

@@ -1,12 +1,12 @@
 import { useCount } from "@/api/aggregate";
-import { useAmcatIndices } from "@/api/indices";
+import { useAmcatProjects } from "@/api/projects";
 import { postReindex } from "@/api/query";
 import { AmcatIndex, AmcatIndexId, AmcatQuery } from "@/interfaces";
 import { DialogDescription, DialogTitle } from "@radix-ui/react-dialog";
 import { DropdownMenuContent } from "@radix-ui/react-dropdown-menu";
 import { ArrowRight, BarChart, CheckCircle, ChevronDown } from "lucide-react";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "../ui/command";
@@ -21,7 +21,7 @@ interface Props {
 
 export default function Reindex({ user, indexId, query }: Props) {
   const { count } = useCount(user, indexId, query);
-  const { data: indices } = useAmcatIndices(user);
+  const { data: projects } = useAmcatProjects(user);
   const [newIndexOpen, setNewIndexOpen] = useState(false);
   const [taskResult, setTaskResult] = useState<string | null>(null);
   const [newIndex, setNewIndex] = useState<AmcatIndex | undefined>(undefined);
@@ -70,11 +70,11 @@ export default function Reindex({ user, indexId, query }: Props) {
             className="ml-2 min-w-[200px] border-[1px] border-foreground bg-background"
           >
             <Command>
-              <CommandInput placeholder="Filter indices" autoFocus={true} className="h-9" />
+              <CommandInput placeholder="Filter projects" autoFocus={true} className="h-9" />
               <CommandList>
                 <CommandEmpty>No index found</CommandEmpty>
                 <CommandGroup>
-                  {indices
+                  {projects
                     ?.sort((a, b) => indexlabel(a).localeCompare(indexlabel(b)))
                     .filter((ix) => !user.authenticated || ix.user_role === "WRITER" || ix.user_role === "ADMIN")
                     .filter((ix) => !ix.archived)
@@ -123,7 +123,7 @@ function CopyOperationDialog({ open, onOpenChange, newIndexId, taskResultId }: C
         </DialogHeader>
         <div className="flex flex-col gap-4 py-4">
           <Button asChild variant="outline" className="justify-between">
-            <Link href={`/indices/${newIndexId}/dashboard`}>
+            <Link href={`/projects/${newIndexId}/dashboard`}>
               View Destination Index
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>

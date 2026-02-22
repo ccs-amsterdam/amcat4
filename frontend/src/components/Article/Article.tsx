@@ -30,7 +30,7 @@ export default React.memo(Article);
 function Article({ user, indexId, id, query, changeArticle, link }: ArticleProps) {
   const { data: fields, isLoading: fieldsLoading } = useFields(user, indexId);
   const documentFields = useMemo(() => fields?.filter((f) => f.client_settings.inDocument), [fields]);
-  const indexRole = useMyIndexrole(user, indexId);
+  const { role: indexRole } = useMyIndexrole(user, indexId);
   const { data: article, isLoading: articleLoading } = useArticle(
     user,
     indexId,

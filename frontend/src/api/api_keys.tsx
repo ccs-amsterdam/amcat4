@@ -3,7 +3,6 @@ import { amcatApiKeySchema } from "@/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
-import { toast } from "sonner";
 import { z } from "zod";
 
 export function useApiKeys(user?: AmcatSessionUser) {

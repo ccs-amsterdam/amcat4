@@ -1,5 +1,3 @@
-"use client";
-
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ThemeProvider } from "next-themes";
@@ -9,8 +7,8 @@ import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthSessionProvider } from "@/components/Contexts/AuthProvider";
-import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { AxiosError } from "axios";
+import { NuqsAdapter } from "nuqs/adapters/tanstack-router";
 
 const defaultOptions = {
   queries: {
@@ -46,8 +44,6 @@ function defaultErrorToast(e: ApiError) {
 }
 
 export default function ClientProviders({ children }: { children: React.ReactNode }) {
-  //const params = useSearchParams();
-
   // allow signing in to local server on specific port. Useful for development,
   // or for running local amcat without having to run a new client
   //const [port] = useState(() => params?.get("port"));

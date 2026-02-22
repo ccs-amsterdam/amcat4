@@ -38,7 +38,7 @@ export function useMutateIndexUser(user?: AmcatSessionUser, indexId?: AmcatIndex
       return mutateIndexUser(user, indexId || "", email, role, action);
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["indices", user] });
+      queryClient.invalidateQueries({ queryKey: ["projects", user] });
       queryClient.invalidateQueries({ queryKey: ["index", user, indexId] });
       queryClient.invalidateQueries({ queryKey: ["indexusers", user, indexId] });
       if (variables.action === "delete") {

@@ -34,8 +34,8 @@ export function JSONForm<T extends FieldValues, Z extends ValidZod>({
       name={name}
       render={({ field }) => {
         const rows = field.value ? field.value : ([] as z.infer<Z>);
-        const rowIndices = rows.map((_, i: number) => i);
-        rowIndices.push(rowIndices.length);
+        const rowProjects = rows.map((_, i: number) => i);
+        rowProjects.push(rowProjects.length);
 
         return (
           <FormItem className="flex flex-col">
@@ -53,7 +53,7 @@ export function JSONForm<T extends FieldValues, Z extends ValidZod>({
                   </TableRow>
                 </TableHeader>
                 <TableBody className="">
-                  {rowIndices.map((row_i: number) => (
+                  {rowProjects.map((row_i: number) => (
                     <Fragment key={row_i}>
                       {flatForms(schema, field, rows, row_i).map((subRow, subrow_i, arr) => {
                         const lastRow = rows.length <= row_i;

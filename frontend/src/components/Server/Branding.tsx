@@ -1,7 +1,5 @@
-"use client";
-
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
 
@@ -44,7 +42,7 @@ export function Branding({
                   <b>More information</b>
                 </a>
               </p>{" "}
-              <Link href="/indices">
+              <Link href="/projects">
                 <Button size="lg">
                   Enter server
                   <ArrowRight className="ml-2 h-5 w-5" />
@@ -52,7 +50,7 @@ export function Branding({
               </Link>
             </>
           ) : user.authenticated ? (
-            <Link href="/indices">
+            <Link href="/projects">
               <Button size="lg" className="">
                 Enter Server
                 <ArrowRight className="ml-2 h-5 w-5" />
@@ -66,7 +64,7 @@ export function Branding({
               </Button>
               &nbsp;
               {require_login ? null : (
-                <Link href="/indices">
+                <Link href="/projects">
                   <Button size="lg">Continue as Guest</Button>
                 </Link>
               )}
@@ -77,7 +75,7 @@ export function Branding({
           className={`${serverBranding.client_data?.welcome_buttons ? "" : "hidden"} mt-3 flex justify-center gap-3`}
         >
           {(serverBranding.client_data?.welcome_buttons ?? []).map((action, i) => (
-            <Link key={i} href={action.href}>
+            <Link key={i} to={action.href}>
               <Button size="lg" className="">
                 {action.label}
               </Button>

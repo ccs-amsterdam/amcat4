@@ -1,13 +1,10 @@
-"use client";
-
-import { useAmcatIndices } from "@/api/indices";
+import { useAmcatProjects } from "@/api/projects";
 import { useHasGlobalRole } from "@/api/userDetails";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Loading } from "@/components/ui/loading";
 import { AmcatIndex } from "@/interfaces";
-import { Folder, FolderOpen, LogInIcon, Search, Settings2, Undo } from "lucide-react";
-import { useQueryState } from "nuqs";
+import { Folder, FolderOpen, LogInIcon, Search, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ErrorMsg } from "../ui/error-message";
 import { InfoMsg } from "../ui/info-message";
@@ -20,16 +17,18 @@ import { FolderBreadcrumbs } from "./FolderBreadcrumbs";
 import { IndexCard } from "./IndexCard";
 import { PendingIndexRequests } from "./PendingIndexRequests";
 import { useAmcatConfig } from "@/api/config";
+import { useQueryState } from "nuqs";
 
 interface Folder {
   folders: Map<string, Folder>;
-  indices: AmcatIndex[];
+  projects: AmcatIndex[];
 }
 
 export function SelectIndex() {
   const { user } = useAmcatSession();
   const { data: config } = useAmcatConfig();
   const [currentPath, setCurrentPath] = useQueryState("folder");
+
   const [search, setSearch] = useState("");
   const [indexMap, setIndexMap] = useState<Map<string, AmcatIndex[]> | null>(null);
   const canCreate = useHasGlobalRole(user, "WRITER");
@@ -37,38 +36,38 @@ export function SelectIndex() {
   const [path, setPath] = useState<string | null>(null);
 
   const [showArchived, setShowArchived] = useState(false);
-  const [showAllIndices, setShowAllIndices] = useState(false);
-  const { data: allIndices, isLoading: loadingIndices } = useAmcatIndices(user, {
-    showAll: showAllIndices,
+  const [showAllProjects, setShowAllProjects] = useState(false);
+  const { data: allProjects, isLoading: loadingProjects } = useAmcatProjects(user, {
+    showAll: showAllProjects,
     showArchived: showArchived,
   });
 
-  // filter indices based on showAllIndices and showArchived.
-  // If no 'own' indices present, show all indices to allow users to request access
-  const myIndices = useMemo(() => {
-    if (!allIndices) return undefined;
+  // filter projects based on showAllProjects and showArchived.
+  // If no 'own' projects present, show all projects to allow users to request access
+  const myProjects = useMemo(() => {
+    if (!allProjects) return undefined;
 
-    const hasOwnedIndices = allIndices.some((ix) => ix.user_role !== "NONE" || ix.guest_role !== "NONE");
+    const hasOwnedProjects = allProjects.some((ix) => ix.user_role !== "NONE" || ix.guest_role !== "NONE");
 
-    return allIndices.filter((ix) => {
-      if (!showAllIndices && hasOwnedIndices && ix.user_role === "NONE" && ix.guest_role === "NONE") return false;
+    return allProjects.filter((ix) => {
+      if (!showAllProjects && hasOwnedProjects && ix.user_role === "NONE" && ix.guest_role === "NONE") return false;
       if (!showArchived && ix.archived) return false;
       return true;
     });
-  }, [allIndices, showAllIndices, showArchived]);
+  }, [allProjects, showAllProjects, showArchived]);
 
-  // In no_auth mode, set showAllIndices to true by default
+  // In no_auth mode, set showAllProjects to true by default
   useEffect(() => {
-    if (config?.authorization === "no_auth" && !showAllIndices) {
-      setShowAllIndices(true);
+    if (config?.authorization === "no_auth" && !showAllProjects) {
+      setShowAllProjects(true);
     }
-  }, [allIndices, config]);
+  }, [allProjects, config]);
 
   useEffect(() => {
     function setVisible() {
-      if (!myIndices) return;
+      if (!myProjects) return;
 
-      const filtered = myIndices.filter((index) => {
+      const filtered = myProjects.filter((index) => {
         if (search) {
           if (index.name.toLowerCase().includes(search.toLowerCase())) return true;
           if (index.id.toLowerCase().includes(search.toLowerCase())) return true;
@@ -102,11 +101,11 @@ export function SelectIndex() {
 
     const timeout = setTimeout(setVisible, 200);
     return () => clearTimeout(timeout);
-  }, [myIndices, search, currentPath, showArchived, showAllIndices]);
+  }, [myProjects, search, currentPath, showArchived, showAllProjects]);
 
   function updatePath(path: string | null) {
     // setVisibleFolders([]);
-    // setVisibleIndices([]);
+    // setVisibleProjects([]);
     setCurrentPath(path);
   }
   function setFolder(folder: string[]) {
@@ -116,7 +115,7 @@ export function SelectIndex() {
     updatePath(currentPath ? currentPath + "/" + add : add);
   }
 
-  if (user && !isAdmin && !user.authenticated && allIndices?.length === 0) return <NoPublicIndicesMessage />;
+  if (user && !isAdmin && !user.authenticated && allProjects?.length === 0) return <NoPublicProjectsMessage />;
   if (indexMap === null) return <Loading />;
   const folderList = [...indexMap.keys()].filter((f) => f !== "");
 
@@ -124,7 +123,7 @@ export function SelectIndex() {
     <div className="flex flex-col gap-3">
       <div className="mb-8 flex flex-col items-start gap-2 md:flex-row">
         <div className="prose-xl mr-auto   flex items-center justify-between">
-          <h3 className="">Indices</h3>
+          <h3 className="">Projects</h3>
         </div>
         <CreateIndex folder={currentPath ?? undefined} request={!canCreate} />
         <PendingIndexRequests />
@@ -137,8 +136,8 @@ export function SelectIndex() {
           setSearch={setSearch}
           showArchived={showArchived}
           setShowArchived={setShowArchived}
-          showPublic={showAllIndices}
-          setShowPublic={setShowAllIndices}
+          showPublic={showAllProjects}
+          setShowPublic={setShowAllProjects}
         />
       </div>
 
@@ -170,20 +169,20 @@ export function SelectIndex() {
         ) : (
           <div className="flex flex-col ">
             <div className="mb-6 mt-3 min-h-[50rem] rounded p-3">
-              {loadingIndices ? <Loading /> : null}
-              {[...indexMap].map(([folder, indices], i) => {
+              {loadingProjects ? <Loading /> : null}
+              {[...indexMap].map(([folder, projects], i) => {
                 // if (search === "" && folder !== "") return null;
-                if (indices.length === 0) {
+                if (projects.length === 0) {
                   return null;
                 }
-                if (loadingIndices) return null;
+                if (loadingProjects) return null;
 
                 return (
                   <div key={folder} className="mb-12">
                     <div
                       className={`${folder === "" ? "hidden" : ""} mb-1 flex items-center gap-1 text-sm text-foreground/60`}
                     >
-                      {/*Indices in folder*/}
+                      {/*Projects in folder*/}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -196,7 +195,7 @@ export function SelectIndex() {
                       </Button>
                     </div>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
-                      {indices.map((index) => (
+                      {projects.map((index) => (
                         <IndexCard key={index.id} index={index} folders={folderList} toFolder={setCurrentPath} />
                       ))}
                     </div>
@@ -246,7 +245,7 @@ function SearchAndFilter({
         <PopoverContent className="flex flex-col gap-2">
           <div className={`${isAdmin ? "" : "hidden"} flex  items-center gap-3`}>
             <Switch className="size-3" id="seeAll" checked={showPublic} onCheckedChange={setShowPublic} />
-            <Label htmlFor="seeAll">show all indices</Label>
+            <Label htmlFor="seeAll">show all projects</Label>
           </div>
           <div className={`flex  items-center gap-3`}>
             <Switch className="size-3" id="seeArchived" checked={showArchived} onCheckedChange={setShowArchived} />
@@ -276,14 +275,14 @@ const ProjectFolder = ({ folder, onClick }: { folder: string; onClick: () => voi
   </Button>
 );
 
-function NoPublicIndicesMessage({}: {}) {
+function NoPublicProjectsMessage({}: {}) {
   const { signIn } = useAmcatSession();
 
   return (
-    <ErrorMsg type="No public indices">
+    <ErrorMsg type="No public projects">
       <p className="w-[500px] max-w-[95vw] text-center">
-        There are no public indices on this server. Please sign-in to see if you have access to any indices. Signed in
-        users can also request the creation of new indices.
+        There are no public projects on this server. Please sign-in to see if you have access to any projects. Signed in
+        users can also request the creation of new projects.
       </p>
       <Button className="mx-auto mt-6 flex items-center gap-2 pr-6" onClick={() => signIn()}>
         <LogInIcon className="mr-2 h-4 w-4" />
@@ -294,11 +293,11 @@ function NoPublicIndicesMessage({}: {}) {
 }
 function NoResultsMessage({ cancreate, issearching }: { cancreate: boolean; issearching: boolean }) {
   return (
-    <InfoMsg type="No indices">
+    <InfoMsg type="No projects">
       <p className="w-[500px] max-w-[95vw] text-center">
         {issearching
-          ? "No indices match your search pattern. Try changing your search terms or filter options. "
-          : "There are currently no indices that you have access to. "}
+          ? "No projects match your search pattern. Try changing your search terms or filter options. "
+          : "There are currently no projects that you have access to. "}
         {cancreate
           ? "To get started, create a new index using the 'create new (index)' button above"
           : "To get started, you can ask a server administrator to create a project for you using the 'Request new (index)' button above "}

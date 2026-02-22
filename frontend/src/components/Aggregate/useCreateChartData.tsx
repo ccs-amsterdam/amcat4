@@ -12,7 +12,7 @@ export default function useCreateChartData(
   const [worker, setWorker] = useState<Worker>();
 
   useEffect(() => {
-    const worker = new Worker(new URL("./createChartDataWorker.ts", import.meta.url));
+    const worker = new Worker(new URL("./createChartDataWorker.ts", import.meta.url), { type: "module" });
     setWorker(worker);
     return () => {
       worker.terminate();

@@ -25,7 +25,7 @@ interface Props {
 export default function DownloadArticles({ user, indexId, query }: Props) {
   const [fields, setFields] = useState<AmcatField[] | undefined>();
 
-  const indexRole = useMyIndexrole(user, indexId);
+  const { role: indexRole } = useMyIndexrole(user, indexId);
   const { data: allFields, isLoading } = useFields(user, indexId);
 
   useEffect(() => {

@@ -1,8 +1,8 @@
+import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { AmcatBranding } from "@/interfaces";
 import { amcatBrandingSchema } from "@/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -24,8 +24,7 @@ async function getAmcatBranding() {
     }
   }
 
-  const res = await axios.get(`api/config/branding`, { timeout: 3000 });
-
+  const res: any = await axios.get(`/api/config/branding`, { timeout: 3000 });
   res.data.client_data = safeParseJson(res.data.client_data);
   const result = amcatBrandingSchema.safeParse(res.data);
   if (result.success) return result.data;
@@ -42,7 +41,7 @@ export function useMutateBranding(user?: AmcatSessionUser) {
   return useMutation({
     mutationFn: (value: z.input<typeof amcatBrandingSchema>) => {
       // AmCAT API expects a single json blob for the client data
-      const body = { ...value, client_data: JSON.stringify(value.client_data) };
+      const body: Record<string, string | null> = { ...value, client_data: JSON.stringify(value.client_data) };
       if (!user) throw new Error("Not logged in");
       return mutateBranding(user, body);
     },
@@ -52,6 +51,6 @@ export function useMutateBranding(user?: AmcatSessionUser) {
   });
 }
 
-async function mutateBranding(user: AmcatSessionUser, value: any) {
+async function mutateBranding(user: AmcatSessionUser, value: Record<string, string | null>) {
   return await user.api.put(`config/branding`, value);
 }

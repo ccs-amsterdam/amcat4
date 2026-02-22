@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { amcatIndexSchema } from "@/schemas";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { useHasGlobalRole } from "@/api/userDetails";
@@ -15,9 +15,10 @@ import { Loader } from "lucide-react";
 import { useQueryState } from "nuqs";
 
 export function CreateIndex({ folder, request }: { folder?: string; request?: boolean }) {
+  const navigate = useNavigate();
   const [open, setOpen] = useQueryState("create_index");
+
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const { user } = useAmcatSession();
   const isAdmin = useHasGlobalRole(user, "ADMIN");
 
@@ -50,7 +51,7 @@ export function CreateIndex({ folder, request }: { folder?: string; request?: bo
     e.preventDefault();
     setLoading(true);
     createIndexAsync(amcatIndexSchema.parse({ id, name, description, folder: folderValue }))
-      .then(() => router.push(`/indices/${id}/data?tab=upload`))
+      .then(() => navigate({ to: `/projects/${id}/data`, search: { tab: "upload" } as any }))
       .catch((e) => {
         setError(e?.response?.data?.message || "An error occurred");
       })

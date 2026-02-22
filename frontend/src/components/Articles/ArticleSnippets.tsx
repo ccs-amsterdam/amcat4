@@ -1,7 +1,7 @@
 import { AmcatArticle, AmcatField, AmcatIndexId, AmcatQuery, AmcatUserRole } from "@/interfaces";
 import { AlertTriangle, Link as LinkIcon, SkipBack, SkipForward } from "lucide-react";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { highlightElasticTags, removeElasticTags } from "../../lib/highlightElasticTags";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -77,7 +77,7 @@ export default function ArticleSnippets({ user, indexId, indexRole, query, field
                   </h4>
                   {row.url ? (
                     <Link
-                      href={row.url}
+                      to={row.url}
                       tabIndex={i}
                       rel="noopener noreferrer"
                       target="_blank"

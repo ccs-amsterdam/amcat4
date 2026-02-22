@@ -2,9 +2,10 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { AmcatIndex } from "@/interfaces";
 import { randomIcon, randomLightColor } from "@/lib/utils";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { useConfirm } from "../ui/confirm";
 import { IndexDropdownMenu } from "./IndexDropdownMenu";
+import { ReactElement } from "react";
 
 export const IndexCard = ({
   index,
@@ -30,12 +31,12 @@ export const IndexCard = ({
     backgroundPositionY: "center",
   };
 
-  const Icon = hasImage ? null : randomIcon(index.id);
+  const Icon = hasImage ? null : (randomIcon(index.id) as any);
 
   return (
     <>
       {confirmDialog}
-      <Link href={`/indices/${index.id}/dashboard`}>
+      <Link to={`/projects/${index.id}/dashboard`}>
         <Card
           style={style}
           className="relative aspect-video w-full max-w-[400px] animate-fade-in justify-self-end  overflow-hidden  shadow-md"

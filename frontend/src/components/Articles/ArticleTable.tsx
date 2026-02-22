@@ -18,7 +18,7 @@ interface Props {
 
 export default function ArticleTable({ user, indexId, query, fields, children }: Props) {
   const [pageSize] = useState(6);
-  const indexRole = useMyIndexrole(user, indexId);
+  const { role: indexRole } = useMyIndexrole(user, indexId);
   const { articles, pageIndex, prevPage, nextPage, isFetching, pageCount } = usePaginatedArticles({
     user,
     indexId,

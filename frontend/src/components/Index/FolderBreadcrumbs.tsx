@@ -24,7 +24,7 @@ export function FolderBreadcrumbs({
             onClick={() => toFolder(null)}
           >
             {/*<FolderOpen className="inline h-5 w-5" />*/}
-            Indices
+            Projects
           </Button>
         </BreadcrumbItem>
         {pathArray.map((folder, i) => (

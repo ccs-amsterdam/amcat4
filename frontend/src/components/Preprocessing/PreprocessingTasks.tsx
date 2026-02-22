@@ -20,7 +20,11 @@ import { z } from "zod";
 import { Button } from "../ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Textarea } from "../ui/textarea";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "@tanstack/react-router";
+const useRouter = () => {
+  const navigate = useNavigate();
+  return { push: (to: string) => navigate({ to }) };
+};
 
 interface Props {
   indexId: AmcatIndexId;
@@ -94,7 +98,7 @@ function TaskForm({
         });
       }
     }
-    const onReady = () => router.push(`/indices/${indexId}/settings`);
+    const onReady = () => router.push(`/projects/${indexId}/settings`);
     if (newFields.length > 0) {
       mutateFields({ fields: newFields, action: "create" })
         .then(() => mutatePreprocessing(instruction))

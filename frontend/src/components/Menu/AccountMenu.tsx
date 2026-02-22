@@ -1,4 +1,4 @@
-"use client";
+
 
 import { useAmcatConfig } from "@/api/config";
 import {
@@ -12,13 +12,13 @@ import {
 import { AmcatConfig } from "@/interfaces";
 import { AlertCircle, Bot, Loader, LogInIcon, LogOut, User } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "@tanstack/react-router";
 import ThemeToggle from "./ThemeToggle";
 
 export default function AccountMenu() {
   const { user, signIn, signOut } = useAmcatSession();
   const { data: config, isLoading: loadingConfig } = useAmcatConfig();
-  const router = useRouter();
+  const navigate = useNavigate();
   function renderAuthStatus() {
     if (config?.authorization === "no_auth") return "Authorization disabled";
     if (!user) return "not signed in";
@@ -65,7 +65,7 @@ export default function AccountMenu() {
       >
         <DropdownMenuLabel>{renderAuthStatus()}</DropdownMenuLabel>
         {renderAuthButtons()}
-        <DropdownMenuItem onClick={() => router.push("/api_keys")} className={user.authenticated ? "" : "hidden"}>
+        <DropdownMenuItem onClick={() => navigate({ to: "/api_keys" })} className={user.authenticated ? "" : "hidden"}>
           <Bot className="mr-3 h-5 w-5" />
           <span>API Keys</span>
         </DropdownMenuItem>

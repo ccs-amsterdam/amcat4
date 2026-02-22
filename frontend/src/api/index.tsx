@@ -1,4 +1,4 @@
-import { AmcatIndex, AmcatIndexId, AmcatUserRole, RecentIndices } from "@/interfaces";
+import { AmcatIndex, AmcatIndexId, AmcatUserRole, RecentProjects } from "@/interfaces";
 import { amcatIndexSchema, amcatIndexUpdateSchema } from "@/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -9,10 +9,10 @@ import { useAmcatConfig } from "./config";
 import useLocalStorage from "@/lib/useLocalStorage";
 
 export function useIndex(user?: AmcatSessionUser, indexId?: AmcatIndexId) {
-  const [recentIndices, setRecentIndices] = useLocalStorage<RecentIndices>("recentIndices", {});
+  const [recentProjects, setRecentProjects] = useLocalStorage<RecentProjects>("recentProjects", {});
 
-  function addToRecentIndices(index: AmcatIndex) {
-    setRecentIndices((prev) => {
+  function addToRecentProjects(index: AmcatIndex) {
+    setRecentProjects((prev) => {
       const key = user?.email || "guest";
       const currentList = prev[key] || [];
       const newList = [index, ...currentList.filter((ix) => ix.id !== index.id)];
@@ -24,22 +24,25 @@ export function useIndex(user?: AmcatSessionUser, indexId?: AmcatIndexId) {
     queryKey: ["index", user, indexId],
     queryFn: async () => {
       const ix = await getIndex(user, indexId);
-      if (ix) addToRecentIndices(ix);
+      if (ix) addToRecentProjects(ix);
       return ix;
     },
     enabled: !!user && !!indexId,
   });
 }
 
-export function useMyIndexrole(user?: AmcatSessionUser, indexId?: AmcatIndexId) {
+export function useMyIndexrole(
+  user?: AmcatSessionUser,
+  indexId?: AmcatIndexId,
+): { role: AmcatUserRole | undefined; isLoading: boolean } {
   const { data: serverConfig } = useAmcatConfig();
-  const { data: index } = useIndex(user, indexId);
-  if (serverConfig?.authorization === "no_auth") return "ADMIN";
-  return index?.user_role;
+  const { data: index, isLoading } = useIndex(user, indexId);
+  if (serverConfig?.authorization === "no_auth") return { role: "ADMIN", isLoading: false };
+  return { role: index?.user_role, isLoading };
 }
 
 export function useHasIndexRole(user: AmcatSessionUser | undefined, indexId: AmcatIndexId, role: AmcatUserRole) {
-  const index_role = useMyIndexrole(user, indexId);
+  const { role: index_role } = useMyIndexrole(user, indexId);
   if (!index_role) return undefined;
   return hasMinAmcatRole(index_role, role);
 }
@@ -58,7 +61,7 @@ export function useCreateIndex(user: AmcatSessionUser | undefined) {
       return createIndex(user, value);
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["indices", user] });
+      queryClient.invalidateQueries({ queryKey: ["projects", user] });
       return variables.id;
     },
   });
@@ -77,7 +80,7 @@ export function useMutateIndex(user: AmcatSessionUser | undefined) {
     mutationFn: (value: z.input<typeof amcatIndexUpdateSchema>) => mutateIndex(user, value),
     onSuccess: (_, value) => {
       queryClient.invalidateQueries({ queryKey: ["index", user, value.id] });
-      queryClient.invalidateQueries({ queryKey: ["indices", user] });
+      queryClient.invalidateQueries({ queryKey: ["projects", user] });
       return value.id;
     },
   });
@@ -98,7 +101,7 @@ export function useArchiveIndex(user: AmcatSessionUser | undefined) {
     },
     onSuccess: (_, value) => {
       queryClient.invalidateQueries({ queryKey: ["index", user, value.indexId] });
-      queryClient.invalidateQueries({ queryKey: ["indices", user] });
+      queryClient.invalidateQueries({ queryKey: ["projects", user] });
     },
   });
 }
@@ -109,7 +112,7 @@ export function useDeleteIndex(user: AmcatSessionUser | undefined) {
   return useMutation({
     mutationFn: (indexId: string) => deleteIndex(user, indexId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["indices", user] });
+      queryClient.invalidateQueries({ queryKey: ["projects", user] });
     },
   });
 }

@@ -1,4 +1,4 @@
-"use client";
+
 
 import { useAmcatBranding, useMutateBranding } from "@/api/branding";
 import { useAmcatConfig } from "@/api/config";

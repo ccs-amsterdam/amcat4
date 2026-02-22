@@ -66,7 +66,8 @@ function longToWide(
   );
   let rowNames = Array.from(new Set(data.map((row) => String(row[primary.name]))));
   if (interval === "year") rowNames = daterange(rowNames, interval);
-  let rows = rowNames.map((rowName) => {
+
+  const rows = rowNames.map((rowName) => {
     const row: Record<string, string | number> = { [primary.name]: rowName };
     columnNames.forEach((colName) => {
       const key = JSON.stringify([rowName, colName]);
@@ -138,7 +139,7 @@ function add_zeroes(
       min = Math.floor(min / 10) * 10;
       max = Math.floor(max / 10) * 10;
     }
-    const result = [];
+    const result: string[] = [];
     for (let y = min; y <= max; decade ? (y += 10) : y++) {
       result.push(String(y));
     }

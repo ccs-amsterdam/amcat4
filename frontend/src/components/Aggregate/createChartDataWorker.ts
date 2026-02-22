@@ -1,5 +1,4 @@
 import { AggregateData } from "@/interfaces";
-
 import { createChartData } from "./createChartData";
 
 interface Input {

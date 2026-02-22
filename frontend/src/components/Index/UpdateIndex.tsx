@@ -1,4 +1,4 @@
-"use client";
+
 
 import { useMutateIndex } from "@/api";
 import {

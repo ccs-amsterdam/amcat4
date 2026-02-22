@@ -20,7 +20,7 @@ export function useMutateTags(user: AmcatSessionUser, indexId: AmcatIndexId) {
       const amcatQuery = asPostAmcatQuery(query);
       return user.api.post(`/index/${indexId}/tags_update`, { ...amcatQuery, tag, action, field });
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (data: any, variables: any) => {
       queryClient.invalidateQueries({ queryKey: ["fields", user, indexId] });
       queryClient.invalidateQueries({ queryKey: ["article", user, indexId] });
       queryClient.invalidateQueries({ queryKey: ["articles", user, indexId] });

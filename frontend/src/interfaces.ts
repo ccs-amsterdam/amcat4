@@ -167,4 +167,4 @@ export type UploadOperation = "create" | "update" | "index";
 
 export type MultimediaType = "image" | "video" | "audio";
 
-export type RecentIndices = Record<string, AmcatIndex[]>;
+export type RecentProjects = Record<string, AmcatIndex[]>;

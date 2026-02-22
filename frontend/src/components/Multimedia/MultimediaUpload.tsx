@@ -127,6 +127,7 @@ function Dropzone({ data, onChange }: { data?: FileWithPath[]; onChange: (files:
 const PAGESIZE = 10;
 function ItemPreview({ data }: { data?: FileWithPath[] }) {
   const [dataOffset, setDataOffset] = useState(0);
+
   useEffect(() => {
     setDataOffset(0);
   }, [data]);
@@ -199,11 +200,11 @@ const validator = (file: FileWithPath | DataTransferItem) => {
 };
 
 const listFiles = async (acceptedFiles: FileWithPath[]) => {
-  const files = [];
-  for (let af of acceptedFiles) {
+  const files: FileWithPath[] = [];
+  for (const af of acceptedFiles) {
     if (/\.zip$/.test(af.name.toLowerCase())) {
       const zippedfiles = await listZippedFiles(af);
-      for (let zfile of zippedfiles) files.push(zfile);
+      for (const zfile of zippedfiles) files.push(zfile);
     } else {
       files.push(af);
     }
@@ -213,12 +214,12 @@ const listFiles = async (acceptedFiles: FileWithPath[]) => {
 };
 
 const listZippedFiles = async (file: FileWithPath) => {
-  let newZip = new JSZip();
+  const newZip = new JSZip();
 
   const zipped = await newZip.loadAsync(file);
   const zippedfiles = Object.values(zipped.files);
   const files: FileWithPath[] = [];
-  for (let zobj of zippedfiles) {
+  for (const zobj of zippedfiles) {
     if (zobj.dir) continue;
     const zblob = await zobj.async("blob");
     const name = zobj.name.split("/").splice(-1)[0];

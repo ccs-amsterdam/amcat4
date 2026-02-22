@@ -1,7 +1,5 @@
-"use client";
-import { ReactNode, createContext, useCallback, useContext, useEffect, useEffectEvent, useState } from "react";
-import { useRouter } from "next/navigation";
-import axios, { Axios } from "axios";
+import { ReactNode, createContext, useCallback, useContext, useEffect, useState } from "react";
+import axios, { Axios, InternalAxiosRequestConfig } from "axios";
 import { toast } from "sonner";
 import Cookies from "js-cookie";
 
@@ -21,12 +19,6 @@ export interface AmcatSession {
 }
 
 async function createUser(): Promise<AmcatSessionUser> {
-  const baseURL = "/api/";
-
-  if (typeof window === undefined) {
-    return { loading: true, authenticated: false, api: axios.create({ baseURL }) };
-  }
-
   const { email } = parseClientSessionCookie();
   const api = axios.create({
     baseURL: "/api/",
@@ -36,8 +28,8 @@ async function createUser(): Promise<AmcatSessionUser> {
   // We use a promise to avoid multiple requests performing the refresh flow
   let refreshQueue: Promise<null> | undefined;
 
-  // Inject csrf token on every request, because the server updates it on refresh flow
-  api.interceptors.request.use(async (config) => {
+  // Inject csrf token on every request, because server updates it on refresh flow
+  api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
     const csrf = Cookies.get("CSRF-TOKEN") || "";
     config.headers["X-CSRF-TOKEN"] = csrf;
 
@@ -93,8 +85,10 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     try {
       await user.api.post("auth/logout");
-      window.location.href = window.location.href;
+      const currentPage = window.location.href;
+      window.location.href = currentPage; //refresh
     } catch (e) {
+      console.log(e);
       toast.error("An error occurred during logout.");
     }
   }, [user]);
