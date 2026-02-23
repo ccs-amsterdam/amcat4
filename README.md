@@ -32,19 +32,17 @@ sudo docker run --name elastic8 -dp 9200:9200 -e "xpack.security.enabled=false" 
 
 ## Installing from source
 
-To install AmCAT4 from github and create a virtual environment, run:
+To install AmCAT4 from github, run:
 
 ```
 git clone https://github.com/ccs-amsterdam/amcat4
 cd amcat4
-python3 -m venv env
-env/bin/pip install -e .[dev]
 ```
 
-Now, you can run the backend server:
+You can now directly run AmCAT4 with `uv`, which will install a virtual environment and all needed packages:
 
 ```
-env/bin/amcat4 run
+uv run amcat4 run
 ```
 
 This will run the API at (default) locahost port 5000.
@@ -54,7 +52,7 @@ Of course, this new instance is still completely empty, so there is little to se
 If you want to add some test data, you can use the `create-test-data` command, which will upload some State of the Union speeches:
 
 ```
-env/bin/amcat4 create-test-index
+uv run amcat4 create-test-index
 ```
 
 (Note: if you get an SSL error, especially on a mac, try running `env/bin/pip install -U certifi`
@@ -67,7 +65,7 @@ AmCAT reads its configuration from environment variables, so you can either pass
 You can modify the [example .env file](.env.example) or interactively create the .env file using:
 
 ```
-env/bin/amcat4 config
+uv run amcat4 config
 ```
 
 ## Using AmCAT
@@ -80,13 +78,10 @@ To use this, you probably want to look at either the [react-based web client](ht
 
 ## Unit tests
 
-To run the unit tests and linting:
+To run the unit tests:
 
 ```
-env/bin/flake8 . --max-line-length=127 --exclude=env
-env/bin/pytest
+uv run pytest
 ```
 
 Please make sure to run these tests before making any commits!
-
-(obviously, feel free to place your virtual environment in any other location, this is just how I set things up)

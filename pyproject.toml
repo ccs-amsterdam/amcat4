@@ -29,7 +29,6 @@ dependencies = [
     "python-magic",
     "class-doc",
     "jsonpath-ng",
-    "asyncio",
     "async-lru",
     "aioboto3",
     "aiobotocore",
@@ -37,7 +36,14 @@ dependencies = [
     "cryptography",
 ]
 
-[project.optional-dependencies]
+[project.scripts]
+amcat4 = "amcat4.__main__:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
 dev = [
     "pytest",
     "pytest-httpx",
@@ -49,24 +55,8 @@ dev = [
     "pytest-anyio",
 ]
 
-[project.scripts]
-amcat4 = "amcat4.__main__:main"
-
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
 [tool.uv]
-dev-dependencies = [
-    "pytest",
-    "pytest-httpx",
-    "mypy",
-    "flake8",
-    "responses",
-    "pre-commit",
-    "types-requests",
-    "pytest-anyio",
-]
+default-groups = ["dev"]
 
 [tool.setuptools.packages.find]
 include = ["amcat4*"]  # This captures amcat4 and amcat4.api
