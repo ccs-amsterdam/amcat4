@@ -1,3 +1,72 @@
+[project]
+name = "amcat4"
+version = "4.1.0"
+description = "API for AmCAT4 Text Analysis"
+readme = "README.md"
+authors = [
+    { name = "Wouter van Atteveldt", email = "wouter@vanatteveldt.com" }
+]
+license = "MIT"
+keywords = ["API", "text"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Text Processing",
+    "Programming Language :: Python :: 3",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[all]",
+    "elasticsearch>=8.6,<8.7",
+    "python-multipart",
+    "python-dotenv",
+    "requests",
+    "authlib",
+    "pydantic[email]",
+    "pydantic-settings",
+    "typing-extensions",
+    "uvicorn",
+    "Pillow",
+    "python-magic",
+    "class-doc",
+    "jsonpath-ng",
+    "asyncio",
+    "async-lru",
+    "aioboto3",
+    "aiobotocore",
+    "types-aiobotocore[s3]",
+    "cryptography",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-httpx",
+    "mypy",
+    "flake8",
+    "responses",
+    "pre-commit",
+    "types-requests",
+    "pytest-anyio",
+]
+
+[project.scripts]
+amcat4 = "amcat4.__main__:main"
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "pytest-httpx",
+    "mypy",
+    "flake8",
+    "responses",
+    "pre-commit",
+    "types-requests",
+    "pytest-anyio",
+]
+
+[tool.setuptools.packages.find]
+include = ["amcat4*"]  # This captures amcat4 and amcat4.api
