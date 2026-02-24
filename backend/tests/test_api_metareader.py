@@ -2,19 +2,19 @@ import pytest
 from httpx import AsyncClient
 
 from amcat4.models import FieldSpec, SnippetParams
-from tests.tools import build_headers, post_json
+from tests.tools import auth_cookie, post_json
 
 
 async def create_index_metareader(client, index, admin):
     await client.post(
-        f"/index/{index}/users", headers=build_headers(admin), json={"email": "meta@reader.com", "role": "METAREADER"}
+        f"/index/{index}/users", cookies=auth_cookie(admin), json={"email": "meta@reader.com", "role": "METAREADER"}
     )
 
 
 async def set_metareader_access(client, index, admin, metareader):
     await client.put(
         f"/index/{index}/fields",
-        headers=build_headers(admin),
+        cookies=auth_cookie(admin),
         json={"text": {"metareader": metareader}},
     )
 
@@ -69,12 +69,12 @@ async def test_metareader_aggregation(client: AsyncClient, admin, index_docs):
     await create_index_metareader(client, index_docs, admin)
     await client.put(
         f"/index/{index_docs}/fields",
-        headers=build_headers(admin),
+        cookies=auth_cookie(admin),
         json={"cat": {"metareader": {"access": "read"}}},
     )
     await client.put(
         f"/index/{index_docs}/fields",
-        headers=build_headers(admin),
+        cookies=auth_cookie(admin),
         json={"text": {"metareader": {"access": "none"}}},
     )
     response = await post_json(
@@ -90,7 +90,7 @@ async def test_metareader_aggregation(client: AsyncClient, admin, index_docs):
     # But metareader should not be able to aggregate on "text" field
     response = await client.post(
         f"/index/{index_docs}/aggregate",
-        headers=build_headers("meta@reader.com"),
+        cookies=auth_cookie("meta@reader.com"),
         json={"axes": [{"field": "text"}]},
     )
     assert response.status_code == 403
@@ -99,7 +99,7 @@ async def test_metareader_aggregation(client: AsyncClient, admin, index_docs):
     # Metareader should be able to use aggregation functions on fields they have access to
     await client.put(
         f"/index/{index_docs}/fields",
-        headers=build_headers(admin),
+        cookies=auth_cookie(admin),
         json={"i": {"metareader": {"access": "read"}}},
     )
     response = await post_json(
@@ -115,12 +115,12 @@ async def test_metareader_aggregation(client: AsyncClient, admin, index_docs):
     # But not on fields they have no access
     await client.put(
         f"/index/{index_docs}/fields",
-        headers=build_headers(admin),
+        cookies=auth_cookie(admin),
         json={"i": {"metareader": {"access": "none"}}},
     )
     response = await client.post(
         f"/index/{index_docs}/aggregate",
-        headers=build_headers("meta@reader.com"),
+        cookies=auth_cookie("meta@reader.com"),
         json={"aggregations": [{"field": "i", "function": "avg"}]},
     )
     assert response.status_code == 403
@@ -136,17 +136,17 @@ async def test_metareader_field_stats(client: AsyncClient, admin, index_docs):
 
     await client.put(
         f"/index/{index_docs}/fields",
-        headers=build_headers(admin),
+        cookies=auth_cookie(admin),
         json={"i": {"metareader": {"access": "read"}}},
     )
     await client.put(
         f"/index/{index_docs}/fields",
-        headers=build_headers(admin),
+        cookies=auth_cookie(admin),
         json={"date": {"metareader": {"access": "none"}}},
     )
     response = await client.get(
         f"/index/{index_docs}/fields/i/stats",
-        headers=build_headers("meta@reader.com"),
+        cookies=auth_cookie("meta@reader.com"),
     )
     assert response.status_code == 200
     stats = response.json()
@@ -158,7 +158,7 @@ async def test_metareader_field_stats(client: AsyncClient, admin, index_docs):
     # Metareader should not be able to get stats for "date" field
     response = await client.get(
         f"/index/{index_docs}/fields/date/stats",
-        headers=build_headers("meta@reader.com"),
+        cookies=auth_cookie("meta@reader.com"),
     )
     assert response.status_code == 403
     assert "metareader cannot" in response.json()["detail"].lower()

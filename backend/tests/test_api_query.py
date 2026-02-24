@@ -5,7 +5,7 @@ from amcat4.projects.index import refresh_index
 from amcat4.projects.query import query_documents
 from amcat4.systemdata.roles import create_project_role, update_project_role
 from tests.conftest import upload
-from tests.tools import build_headers, check, dictset, post_json
+from tests.tools import auth_cookie, check, dictset, post_json
 
 
 @pytest.mark.anyio
@@ -206,7 +206,7 @@ async def test_query_tags(client, index_docs, user):
     add_tags = dict(action="add", field="tag", tag="x", filters={"cat": "a"})
 
     await check(await client.post(f"/index/{index_docs}/tags_update", json=add_tags), 403)
-    await check(await client.post(f"/index/{index_docs}/tags_update", json=add_tags, headers=build_headers(user=user)), 403)
+    await check(await client.post(f"/index/{index_docs}/tags_update", json=add_tags, cookies=auth_cookie(user=user)), 403)
 
     await update_project_role(user, index_docs, Roles.WRITER)
 
@@ -248,7 +248,7 @@ async def test_api_update_by_query(client, index_docs, user):
     res = await client.post(
         f"/index/{index_docs}/update_by_query",
         json=dict(field="subcat", value="z", filters=dict(cat="a")),
-        headers=build_headers(user=user),
+        cookies=auth_cookie(user=user),
     )
     assert res.status_code == 403
 
@@ -256,7 +256,7 @@ async def test_api_update_by_query(client, index_docs, user):
     res = await client.post(
         f"/index/{index_docs}/update_by_query",
         json=dict(field="subcat", value="z", filters=dict(cat="a")),
-        headers=build_headers(user=user),
+        cookies=auth_cookie(user=user),
     )
     res.raise_for_status()
     assert await cats() == {"0": "z", "1": "z", "2": "z", "3": "y"}
@@ -274,7 +274,7 @@ async def test_api_delete_by_query(client, index_docs, user):
     res = await client.post(
         f"/index/{index_docs}/delete_by_query",
         json=dict(filters=dict(cat="a")),
-        headers=build_headers(user=user),
+        cookies=auth_cookie(user=user),
     )
     assert res.status_code == 403
 
@@ -282,7 +282,7 @@ async def test_api_delete_by_query(client, index_docs, user):
     res = await client.post(
         f"/index/{index_docs}/delete_by_query",
         json=dict(filters=dict(cat="a")),
-        headers=build_headers(user=user),
+        cookies=auth_cookie(user=user),
     )
     res.raise_for_status()
     assert await ids() == {"3"}

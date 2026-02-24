@@ -19,6 +19,7 @@ from amcat4.systemdata.roles import (
 from tests.middlecat_keypair import PUBLIC_KEY
 
 AMCAT_TESTS_PREFIX = "amcat4_unittest"
+BASE_URL = "http://test/api"
 
 
 @pytest.fixture(scope="session")
@@ -26,9 +27,32 @@ def anyio_backend():
     return "asyncio"
 
 
+class AsyncTestClient(AsyncClient):
+    """AsyncClient with injected CSRF token"""
+
+    async def request(self, method, url, **kwargs):
+        ## Our tests assume that request where an auth cookie is not explicitly passed is not authenticated
+        self.cookies.delete("amcat_session")
+        ## pytest no longer allows setting cookies per request (which we do for testing auth)
+        ## so here we intercept it and update the cookie jar instead.
+        request_cookies = kwargs.pop("cookies", None)
+        if request_cookies:
+            self.cookies.update(request_cookies)
+
+        csrf_token = self.cookies.get("CSRF-TOKEN")
+        if csrf_token:
+            headers = kwargs.get("headers") or {}
+            headers["X-CSRF-Token"] = csrf_token
+            kwargs["headers"] = headers
+
+        return await super().request(method, url, **kwargs)
+
+
 @pytest.fixture(scope="session")
 async def client():
-    async with AsyncClient(transport=ASGITransport(app=api.app), base_url="http://test/api", follow_redirects=False) as client:
+    async with AsyncTestClient(transport=ASGITransport(app=api.app), base_url=BASE_URL, follow_redirects=False) as client:
+        ## make one GET call first to get the csrf token
+        await client.get("/config")
         yield client
 
 

@@ -2,13 +2,13 @@ import re
 
 import pytest
 
-from tests.tools import build_headers
+from tests.tools import auth_cookie
 
 
 @pytest.mark.anyio
 async def check(client, url, status, message, method="post", user=None, **kargs):
-    headers = build_headers(user=user) if user else {}
-    r = await getattr(client, method)(url, headers=headers, **kargs)
+    cookies = auth_cookie(user=user) if user else {}
+    r = await getattr(client, method)(url, cookies=cookies, **kargs)
     print(r.content)
     print(r.headers)
     assert r.status_code == status

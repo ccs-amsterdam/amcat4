@@ -10,7 +10,7 @@ from amcat4.systemdata.roles import (
     set_project_guest_role,
     update_project_role,
 )
-from tests.tools import build_headers, check, get_json, post_json, put_json
+from tests.tools import auth_cookie, check, get_json, post_json, put_json
 
 
 @pytest.mark.anyio
@@ -20,11 +20,11 @@ async def test_create_list_delete_index(client, index_name, user, writer, writer
 
     # Anonymous or Unprivileged users cannot create indices
     await check(await client.post("/index", json=new_index), 403)
-    await check(await client.post("/index", json=new_index, headers=build_headers(user=user)), 403)
+    await check(await client.post("/index", json=new_index, cookies=auth_cookie(user=user)), 403)
 
     # Authorized users should get 404 if index does not exist
     await check(await client.get(f"/index/{index_name}"), 404)
-    await check(await client.get(f"/index/{index_name}", headers=build_headers(user=writer)), 404)
+    await check(await client.get(f"/index/{index_name}", cookies=auth_cookie(user=writer)), 404)
 
     # Writers can create indices
     await post_json(client, "/index", user=writer, json=new_index)
@@ -32,10 +32,10 @@ async def test_create_list_delete_index(client, index_name, user, writer, writer
 
     # Users can GET their own index, admins can GET all indices, others cannot GET non-public indices
     await check(await client.get(f"/index/{index_name}"), 403)
-    await check(await client.get(f"/index/{index_name}", headers=build_headers(user=user)), 403)
-    await check(await client.get(f"/index/{index_name}", headers=build_headers(user=writer)), 200)
-    await check(await client.get(f"/index/{index_name}", headers=build_headers(user=writer2)), 403)
-    await check(await client.get(f"/index/{index_name}", headers=build_headers(user=admin)), 200)
+    await check(await client.get(f"/index/{index_name}", cookies=auth_cookie(user=user)), 403)
+    await check(await client.get(f"/index/{index_name}", cookies=auth_cookie(user=writer)), 200)
+    await check(await client.get(f"/index/{index_name}", cookies=auth_cookie(user=writer2)), 403)
+    await check(await client.get(f"/index/{index_name}", cookies=auth_cookie(user=admin)), 200)
 
     # Users can only see indices that they have a role in or that have a guest role
     assert index_name not in {x["name"] for x in await get_json(client, "/index", user=user) or []}
@@ -47,7 +47,7 @@ async def test_create_list_delete_index(client, index_name, user, writer, writer
     await check(
         await client.put(
             f"/index/{index_name}",
-            headers=build_headers(user=writer),
+            cookies=auth_cookie(user=writer),
             json={"guest_role": "METAREADER"},
         ),
         204,
@@ -55,7 +55,7 @@ async def test_create_list_delete_index(client, index_name, user, writer, writer
     await check(
         await client.put(
             f"/index/{index_name}",
-            headers=build_headers(user=writer2),
+            cookies=auth_cookie(user=writer2),
             json={"guest_role": "READER"},
         ),
         403,
@@ -63,7 +63,7 @@ async def test_create_list_delete_index(client, index_name, user, writer, writer
     await check(
         await client.put(
             f"/index/{index_name}",
-            headers=build_headers(user=admin),
+            cookies=auth_cookie(user=admin),
             json={"guest_role": "READER"},
         ),
         204,
@@ -72,7 +72,7 @@ async def test_create_list_delete_index(client, index_name, user, writer, writer
 
     # Index should now be visible to non-authorized users
     assert index_name in {x["name"] for x in await get_json(client, "/index", user=writer) or []}
-    await check(await client.get(f"/index/{index_name}", headers=build_headers(user=user)), 200)
+    await check(await client.get(f"/index/{index_name}", cookies=auth_cookie(user=user)), 200)
 
 
 @pytest.mark.anyio
@@ -100,7 +100,7 @@ async def test_fields_upload(client: AsyncClient, user: str, index: str):
     # You need METAREADER permissions to read fields, and WRITER to upload docs
     await check(await client.get(f"/index/{index}/fields"), 403)
     await check(
-        await client.post(f"/index/{index}/documents", headers=build_headers(user), json=body),
+        await client.post(f"/index/{index}/documents", cookies=auth_cookie(user), json=body),
         403,
     )
 
@@ -111,7 +111,7 @@ async def test_fields_upload(client: AsyncClient, user: str, index: str):
     # but should still be empty, since no fields were created
     assert len(set(fields.keys())) == 0
     await check(
-        await client.post(f"/index/{index}/documents", headers=build_headers(user), json=body),
+        await client.post(f"/index/{index}/documents", cookies=auth_cookie(user), json=body),
         403,
     )
 
@@ -142,17 +142,17 @@ async def test_set_get_delete_roles(client: AsyncClient, admin: str, writer: str
     # Anon, unauthorized, READER, WRITER can't create users
     await check(await client.post(f"/index/{index}/users", json=body), 403)
     await check(
-        await client.post(f"/index/{index}/users", json=body, headers=build_headers(writer)),
+        await client.post(f"/index/{index}/users", json=body, cookies=auth_cookie(writer)),
         403,
     )
     await create_project_role(user, index, Roles.READER)
     await check(
-        await client.post(f"/index/{index}/users", json=body, headers=build_headers(writer)),
+        await client.post(f"/index/{index}/users", json=body, cookies=auth_cookie(writer)),
         403,
     )
     await update_project_role(user, index, Roles.WRITER)
     await check(
-        await client.post(f"/index/{index}/users", json=body, headers=build_headers(writer)),
+        await client.post(f"/index/{index}/users", json=body, cookies=auth_cookie(writer)),
         403,
     )
 
@@ -186,18 +186,18 @@ async def test_set_get_delete_roles(client: AsyncClient, admin: str, writer: str
     writer_url = f"/index/{index}/users/{writer}"
     await check(await client.put(writer_url, json={"role": "READER"}), 403)
     await check(
-        await client.put(writer_url, json={"role": "READER"}, headers=build_headers(writer)),
+        await client.put(writer_url, json={"role": "READER"}, cookies=auth_cookie(writer)),
         403,
     )
     # WRITER cant change, not even themselvs
     await check(
-        await client.put(writer_url, json={"role": "READER"}, headers=build_headers(writer)),
+        await client.put(writer_url, json={"role": "READER"}, cookies=auth_cookie(writer)),
         403,
     )
 
     # ADMIN (user) can
     await check(
-        await client.put(writer_url, json={"role": "READER"}, headers=build_headers(user)),
+        await client.put(writer_url, json={"role": "READER"}, cookies=auth_cookie(user)),
         200,
     )
     users = {u["email"]: u["role"] for u in await get_json(client, f"/index/{index}/users", user=user) or []}
@@ -206,11 +206,11 @@ async def test_set_get_delete_roles(client: AsyncClient, admin: str, writer: str
     # Anon can't delete
     await check(await client.delete(user_url), 403)
     # Writer can't delete
-    await check(await client.delete(user_url, headers=build_headers(writer)), 403)
+    await check(await client.delete(user_url, cookies=auth_cookie(writer)), 403)
     # Admin can delete
-    await check(await client.delete(writer_url, headers=build_headers(user)), 204)
+    await check(await client.delete(writer_url, cookies=auth_cookie(user)), 204)
     # Global admin can delete index admin
-    await check(await client.delete(user_url, headers=build_headers(admin)), 204)
+    await check(await client.delete(user_url, cookies=auth_cookie(admin)), 204)
     users = {u["email"]: u["role"] for u in await get_json(client, f"/index/{index}/users", user=admin) or []}
     assert user not in users
 
@@ -221,14 +221,14 @@ async def test_name_description(client, index, index_name, user, admin):
     await check(await client.put(f"/index/{index}", json=dict(name="test")), 403)
     await check(await client.get(f"/index/{index}"), 403)
     await check(
-        await client.put(f"/index/{index}", json=dict(name="test"), headers=build_headers(user)),
+        await client.put(f"/index/{index}", json=dict(name="test"), cookies=auth_cookie(user)),
         403,
     )
-    await check(await client.get(f"/index/{index}", headers=build_headers(user)), 403)
+    await check(await client.get(f"/index/{index}", cookies=auth_cookie(user)), 403)
 
     # global admin and index writer can change details
     await check(
-        await client.put(f"/index/{index}", json=dict(name="test"), headers=build_headers(admin)),
+        await client.put(f"/index/{index}", json=dict(name="test"), cookies=auth_cookie(admin)),
         204,
     )
 
@@ -238,7 +238,7 @@ async def test_name_description(client, index, index_name, user, admin):
         await client.put(
             f"/index/{index}",
             json=dict(description="ooktest"),
-            headers=build_headers(user),
+            cookies=auth_cookie(user),
         ),
         204,
     )
@@ -249,7 +249,7 @@ async def test_name_description(client, index, index_name, user, admin):
     await update_project_role(user, index, Roles.METAREADER)
     assert (await get_json(client, f"/index/{index}", user=user) or {})["name"] == "test"
     await delete_project_role(user, index)
-    await check(await client.get(f"/index/{index}", headers=build_headers(user)), 403)
+    await check(await client.get(f"/index/{index}", cookies=auth_cookie(user)), 403)
     await set_project_guest_role(index, Roles.METAREADER)
     assert (await get_json(client, f"/index/{index}", user=user) or {})["name"] == "test"
 
@@ -261,7 +261,7 @@ async def test_name_description(client, index, index_name, user, admin):
                 description="test2",
                 guest_role="METAREADER",
             ),
-            headers=build_headers(admin),
+            cookies=auth_cookie(admin),
         ),
         201,
     )

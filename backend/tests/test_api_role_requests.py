@@ -14,7 +14,7 @@ from amcat4.systemdata.roles import (
     update_server_role,
 )
 from amcat4.systemdata.settings import get_project_settings
-from tests.tools import build_headers, check, get_json, post_json
+from tests.tools import auth_cookie, check, get_json, post_json
 
 
 async def all_requests() -> dict[str, AdminPermissionRequest]:
@@ -208,7 +208,7 @@ async def test_api_post_admin_requests(clean_requests, client, guest_index, inde
 async def test_api_post_admin_requests_auth(clean_requests, client, guest_index, index, index_name, user, reader):
     async def check_resolve(body, expected=204, **kargs):
         await check(
-            await client.post("/permission_requests/admin", headers=build_headers(user=reader), json=body),
+            await client.post("/permission_requests/admin", cookies=auth_cookie(user=reader), json=body),
             expected=expected,
             **kargs,
         )

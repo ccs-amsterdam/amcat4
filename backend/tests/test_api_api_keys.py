@@ -4,7 +4,7 @@ import pytest
 
 from amcat4.models import Roles
 from amcat4.systemdata.roles import create_project_role
-from tests.tools import build_headers
+from tests.tools import auth_cookie
 
 
 @pytest.mark.anyio
@@ -12,7 +12,7 @@ async def test_create_api_key(client, index_name, admin):
     ## Create API key
     res = await client.post(
         "/api_keys",
-        headers=build_headers(user=admin),
+        cookies=auth_cookie(admin),
         json={"name": "test_key", "expires_at": "2030-01-01T00:00:00Z"},
     )
     d = res.json()
@@ -22,7 +22,7 @@ async def test_create_api_key(client, index_name, admin):
     ## List API keys
     res = await client.get(
         "/api_keys",
-        headers=build_headers(user=admin),
+        cookies=auth_cookie(user=admin),
     )
     assert res.json()[0]["name"] == "test_key"
 
@@ -56,7 +56,7 @@ async def test_api_key_expiration(client, index_name, admin):
     ## Create API key with expired date
     res = await client.post(
         "/api_keys",
-        headers=build_headers(user=admin),
+        cookies=auth_cookie(user=admin),
         json={"name": "test_key", "expires_at": "2010-01-01T00:00:00Z"},
     )
     api_key = res.json()["api_key"]
@@ -78,7 +78,7 @@ async def test_api_key_restrictions(client, index, admin):
     ## Create API key with restricted access to the 'index' project
     res = await client.post(
         "/api_keys",
-        headers=build_headers(user=admin),
+        cookies=auth_cookie(user=admin),
         json={
             "name": "test_key",
             "expires_at": "2030-01-01T00:00:00Z",
@@ -101,7 +101,7 @@ async def test_api_key_restrictions(client, index, admin):
     ## Update API key to remove restrictions
     res = await client.put(
         f"/api_keys/{api_key_id}",
-        headers=build_headers(user=admin),
+        cookies=auth_cookie(user=admin),
         json={
             "restrictions": {"project_roles": {}},
         },
@@ -118,7 +118,7 @@ async def test_api_key_restrictions(client, index, admin):
     ## Other restrictions besides project_roles are still in place
     res = await client.get(
         "/api_keys",
-        headers=build_headers(user=admin),
+        cookies=auth_cookie(user=admin),
     )
     r = next(k for k in res.json() if k["id"] == api_key_id)
     assert r["restrictions"]["server_role"] == "WRITER"

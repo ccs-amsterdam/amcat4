@@ -57,8 +57,8 @@ async def verify_middlecat_token(token: str) -> dict:
     public_key = (await get_middlecat_config(url))["public_key"]
     payload = jwt.decode(token, public_key)
 
-    if missing := {"email", "resource", "exp"} - set(payload.keys()):
-        raise InvalidToken(f"Invalid token, missing keys {missing}")
+    if missing := {"email", "clientId", "resource", "exp"} - set(payload.keys()):
+        raise InvalidToken(f"Missing keys {missing}")
     now = int(datetime.now().timestamp())
     if payload["exp"] < now:
         raise InvalidToken("Token expired")
