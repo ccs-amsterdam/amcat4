@@ -7,7 +7,7 @@
     "install:backend": "python3 -m venv backend/env && ./backend/env/bin/pip install -e ./backend[dev]",
     "start:web": "pnpm -C frontend dev",
     "start:api": "./backend/env/bin/python -m amcat4 run",
-    "start": "concurrently -k -n \"web,api\" -c \"cyan,green\" --kill-signal SIGINT \"pnpm start:api\" \"pnpm start:web\"",
+    "start": "concurrently -k -n \"web,api\" -c \"cyan,green\" \"pnpm start:api\" \"pnpm start:web\"",
     "// Helpers: Install and start elasticsearch (db) and seaweedfs (s3)": "",
     "services:up": "docker compose -f dev/docker-compose.yml up -d",
     "services:stop": "docker compose -f dev/docker-compose.yml stop",
@@ -16,7 +16,7 @@
     "dev:install": "pnpm install:frontend && pnpm install:backend",
     "dev:config": "./backend/env/bin/python -m amcat4 config -d -e backend/.env",
     "dev:startup": "pnpm services:up",
-    "dev": "pnpm services:wait && pnpm start",
+    "dev": "pnpm start",
     "dev:shutdown": "pnpm services:stop"
   },
   "devDependencies": {
