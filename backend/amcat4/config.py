@@ -46,12 +46,6 @@ for field, doc in extract_docs_from_cls_obj(AuthOptions).items():
 
 
 class Settings(BaseSettings):
-    env_file: Annotated[
-        Path,
-        Field(
-            description="Location of a .env file (if used) relative to working directory",
-        ),
-    ] = Path(".env")
     host: Annotated[
         str,
         Field(
@@ -161,12 +155,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix=ENV_PREFIX)
 
 
-def generate_interactive_settings(model_class: type[BaseSettings], skip: list[str] = [], only: list[str] | None = None):
-    print(f"🛠️  Configuring {model_class.__name__}\n")
+def generate_interactive_settings(current: Settings, skip: list[str] = [], only: list[str] | None = None):
+    print(f"🛠️  Configuring {Settings.__name__}\n")
     user_input = {}
 
-    fields = model_class.model_fields
-    current = get_settings()
+    fields = Settings.model_fields
 
     for name, field in fields.items():
         if name in ["model_config"]:
@@ -179,19 +172,16 @@ def generate_interactive_settings(model_class: type[BaseSettings], skip: list[st
             continue
 
         description = field.description or name
-        if current:
-            default = getattr(current, name)
-        else:
-            default = field.default if field.default is not None else ""
+
+        default = getattr(current, name)
+        default = default.value if isinstance(default, Enum) else default
 
         if field.annotation is bool or field.annotation is (bool | None):
             user_input[name] = questionary.confirm(f"{description}?", default=bool(default) if default != "" else True).ask()
 
-        elif hasattr(field.annotation, "__members__"):
+        elif field.annotation and hasattr(field.annotation, "__members__"):
             choices = list(field.annotation.__members__.keys())
-            user_input[name] = questionary.select(
-                f"{description}:", choices=choices, default=default.name if hasattr(default, "name") else choices[0]
-            ).ask()
+            user_input[name] = questionary.select(f"{description}:", choices=choices, default=default).ask()
 
         else:
             val = questionary.text(f"{description}:\n >>", default=str(default)).ask()
@@ -204,7 +194,7 @@ def generate_interactive_settings(model_class: type[BaseSettings], skip: list[st
         print()
 
     try:
-        return model_class(**user_input)
+        return Settings(**user_input)
     except Exception as e:
         raise ValueError(f"Invalid configuration: {e}")
 
@@ -212,22 +202,26 @@ def generate_interactive_settings(model_class: type[BaseSettings], skip: list[st
 def save_to_env(settings: BaseSettings, filename=".env"):
     with open(filename, "w") as f:
         for key, value in settings.model_dump().items():
-            val_str = str(value) if value is not None else ""
-            f.write(f"{key.upper()}={val_str}\n")
+            val_str = value.value if isinstance(value, Enum) else value
+            val_str = str(val_str) if val_str is not None else ""
+
+            env_var = f"{ENV_PREFIX}{key}"
+            f.write(f"{env_var.upper()}={val_str}\n")
 
 
 def config_tui_editor(env_file: str, dev: bool):
     print("🛠️ Amcat4 Dev Setup Wizard\n")
+    current = get_settings(env_file)
 
     if dev:
         only = ["auth", "admin_email"]
-        settings = generate_interactive_settings(Settings, only=only)
+        settings = generate_interactive_settings(current, only=only)
         setattr(settings, "s3_host", "http://localhost:8333")
         setattr(settings, "s3_access_key", "DEV_S3_ACCESS_KEY")
         setattr(settings, "s3_secret_key", "DEV_S3_SECRET_KEY")
     else:
-        skip = ["env_file", "test_mode", "cookie_secret"]
-        settings = generate_interactive_settings(Settings, skip=skip)
+        skip = ["test_mode", "cookie_secret"]
+        settings = generate_interactive_settings(current, skip=skip)
 
     save_to_env(settings, env_file)
 
@@ -235,13 +229,8 @@ def config_tui_editor(env_file: str, dev: bool):
 
 
 @functools.lru_cache()
-def get_settings() -> Settings:
-    # This shouldn't be necessary according to the docs, but without the load_dotenv it doesn't work at
-    # least when running with python -m amcat4.config...
-    temp = Settings()
-    # WvA: For some reason, it always seems to override environment variables?
-    load_dotenv(temp.env_file, override=False)
-
+def get_settings(env_file: str = ".env") -> Settings:
+    load_dotenv(env_file, override=False)
     return Settings()
 
 

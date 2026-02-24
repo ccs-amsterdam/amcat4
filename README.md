@@ -27,12 +27,36 @@ npm install -g pnpm
 
 ### Install and run AmCAT4 in development mode
 
-The easiest way to install and run AmCAT4 in development mode is to use the following commands:
+The easiest way to install AmCAT4 for local development mode is to use the following commands:
 
 ```
-pnpm install
-pnpm dev
+# install AmCAT4 in development mode
+pnpm dev:install
+
+# TUI for creating AmCAT4 .env file
+pnpm dev:config
 ```
+
+Then to start the development server, run:
+
+```
+# Start Elasticsearch and SeaweedFS instances using Docker Compose
+pnpm dev:services_up
+
+# Start client and server in dev mode, and ElasticSearch and SeaweedFS instances using Docker Compose
+pnpm dev      
+```
+
+The 
+
+# Start Elasticsearch and SeaweedFS instances using Docker Compose
+pnpm dev:services_up
+
+# Start client and server in dev mode, and ElasticSearch and SeaweedFS instances using Docker Compose
+pnpm dev      
+```
+
+
 
 This will also start ElasticSearch and SeaweedFS instances using Docker Compose.
 The docker containers will keep running when you kill  `pnpm dev` (with ctrl+c).
