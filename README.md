@@ -41,13 +41,18 @@ Then to start the development server, run:
 
 ```
 # Start Elasticsearch and SeaweedFS instances using Docker Compose
-pnpm dev:services_up
+pnpm dev:startup
 
 # Start client and server in dev mode, and ElasticSearch and SeaweedFS instances using Docker Compose
 pnpm dev      
 ```
 
-The 
+When you stop the dev server, the docker containers will keep running.
+To shut them down, run:
+
+```
+pnpm dev:shutdown
+```
 
 # Start Elasticsearch and SeaweedFS instances using Docker Compose
 pnpm dev:services_up

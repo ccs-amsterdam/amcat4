@@ -214,11 +214,11 @@ def config_tui_editor(env_file: str, dev: bool):
     current = get_settings(env_file)
 
     if dev:
-        only = ["auth", "admin_email"]
+        only = ["auth", "admin_email", "elastic_host", "s3_host", "s3_access_key", "s3_secret_key"]
+        setattr(current, "s3_host", "http://localhost:8333")
+        setattr(current, "s3_access_key", "DEV_S3_ACCESS_KEY")
+        setattr(current, "s3_secret_key", "DEV_S3_SECRET_KEY")
         settings = generate_interactive_settings(current, only=only)
-        setattr(settings, "s3_host", "http://localhost:8333")
-        setattr(settings, "s3_access_key", "DEV_S3_ACCESS_KEY")
-        setattr(settings, "s3_secret_key", "DEV_S3_SECRET_KEY")
     else:
         skip = ["test_mode", "cookie_secret"]
         settings = generate_interactive_settings(current, skip=skip)
