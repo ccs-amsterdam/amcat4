@@ -1,0 +1,110 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: katty
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - AMCAT4_URL=${AMCAT4_URL:-http://localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+      # Mount the built frontend files from the shared volume
+      - frontend_build:/srv
+    networks:
+      - amcat-net
+    depends_on:
+      - api
+
+  frontend_builder:
+    # image: ccsamsterdam/amcat4_frontend:${AMCAT4_VERSION:-4.1.1}
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    volumes:
+      - frontend_build:/app/dist # Copies built files into the shared volume
+
+  api:
+    # image: ccsamsterdam/amcat4_backend:${AMCAT4_VERSION:-4.1.1}
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: amcat4
+    restart: unless-stopped
+    networks:
+      - amcat-net
+    environment:
+      - amcat4_elastic_host=http://elastic8:9200
+      - amcat4_host=${AMCAT4_API:-http://localhost/api}
+      - FORWARDED_ALLOW_IPS=*
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.4
+    container_name: elastic8
+    restart: unless-stopped
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'curl -s http://localhost:9200/_cluster/health | grep -vq ''"status":"red"''',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    # for security reasons, the database is only exposed to the other containers in the amcat-net network
+    # to make it available, set ELASTIC_PUBLISHED_PORT to 9200: in the .env file
+    ports:
+      - "${ELASTIC_PUBLISHED_PORT:-}9200"
+    networks:
+      - amcat-net
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+      # Set heap memory in .env to at most half available memory, and at most 32g
+      - ES_JAVA_OPTS=-Xms${ELASTIC_MEMORY:-1g} -Xmx${ELASTIC_MEMORY:-1g}
+    volumes:
+      - ${ELASTIC_DATA_STORAGE:-elastic-volume}:/usr/share/elasticsearch/data:rw
+
+  # seaweedfs:
+  #   image: chrislusf/seaweedfs:latest
+  #   container_name: seaweedfs01
+  #   command: [
+  #       "server",
+  #       "-s3",
+  #       "-s3.config=/etc/seaweedfs/s3config.json",
+  #       "-s3.allowEmptyFolder=false",
+  #       # "-s3.dirCleanupThresholdMB=0",
+  #     ]
+  #   volumes:
+  #     - seaweedfs_data:/data
+  #     - ./s3config.json:/etc/seaweedfs/s3config.json:ro
+  #   ports:
+  #     - "8333:8333" # S3 Gateway
+  #     - "8889:8888" # Web UI
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8888/"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - amcat-net
+
+networks:
+  amcat-net:
+
+volumes:
+  elastic-volume:
+  caddy_data:
+  caddy_config:
+  frontend_build:

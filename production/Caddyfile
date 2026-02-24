@@ -1,0 +1,20 @@
+{$AMCAT4_URL} {
+    # 1. API - Keep the /api prefix
+    handle /api* {
+        reverse_proxy {$DOCKER_AMCAT_API}
+    }
+
+    # 2. UI - Static SPA logic
+    handle {
+        reverse_proxy {$DOCKER_AMCAT_UI} {
+            # Intercept 404s from the UI container and send index.html instead
+            @not_found status 404
+            handle_response @not_found {
+                rewrite * /index.html
+                copy_response
+            }
+        }
+    }
+
+    encode zstd gzip
+}
