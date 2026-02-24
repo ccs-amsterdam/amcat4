@@ -31,7 +31,7 @@ backend/*__upload_cache.json
 
 # --- Frontend Path-Specific ---
 frontend/node_modules/
-frontend/.next/
+frontend/dist/
 frontend/out/
 frontend/.env*.local
 frontend/*.log*

@@ -16,11 +16,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, get_args
 
+import questionary
 import uvicorn
 from pydantic.fields import FieldInfo
 from uvicorn.config import LOGGING_CONFIG
 
-from amcat4.config import AuthOptions, get_settings, validate_settings
+from amcat4.config import AuthOptions, config_tui_editor, get_settings, validate_settings
 from amcat4.connections import amcat_connections, es
 from amcat4.models import FieldType, ProjectSettings, Roles
 from amcat4.objectstorage.image_processing import create_image_from_url
@@ -187,37 +188,7 @@ async def list_users(_args):
 
 
 def config_amcat(args):
-    settings = get_settings()
-    # Not a useful entry in an actual env_file
-    print(f"Reading/writing settings from {settings.env_file}")
-    for fieldname, fieldinfo in type(settings).model_fields.items():
-        if fieldname == "env_file":
-            continue
-
-        validation_function = AuthOptions.validate if fieldname == "auth" else None
-        value = getattr(settings, fieldname)
-        value = menu(fieldname, fieldinfo, value, validation_function=validation_function)
-        if value is ABORTED:
-            return
-        if value is not UNCHANGED:
-            setattr(settings, fieldname, value)
-
-    with settings.env_file.open("w") as f:
-        for fieldname, fieldinfo in type(settings).model_fields.items():
-            value = getattr(settings, fieldname)
-            if doc := fieldinfo.description:
-                f.write(f"# {doc}\n")
-            if _isenum(fieldinfo) and fieldinfo.annotation:
-                f.write("# Valid options:\n")
-                for option in get_args(fieldinfo.annotation):
-                    doc = option.__doc__.replace("\n", " ")
-                    f.write(f"# - {option.name}: {doc}\n")
-            if value is None:
-                f.write(f"#amcat4_{fieldname}=\n\n")
-            else:
-                f.write(f"amcat4_{fieldname}={value}\n\n")
-    os.chmod(".env", 0o600)
-    print(f"*** Written {bold('.env')} file to {settings.env_file} ***")
+    config_tui_editor(args.dev)
 
 
 def bold(x):
@@ -276,6 +247,7 @@ def main():
     p.set_defaults(func=create_env)
 
     p = subparsers.add_parser("config", help="Configure amcat4 settings in an interactive menu.")
+    p.add_argument("-d", "--dev", action="store_true", help="Use default settings for dev, and only ask whats needed")
     p.set_defaults(func=config_amcat)
 
     p = subparsers.add_parser("add-admin", help="Add a global admin")

@@ -13,6 +13,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any
 
+import questionary
 from class_doc import extract_docs_from_cls_obj
 from dotenv import load_dotenv
 from pydantic import Field, model_validator
@@ -98,9 +99,9 @@ class Settings(BaseSettings):
     cookie_secret: Annotated[
         str,
         Field(
-            description="Secret key for encrypting session cookies. ",
+            description="Secret key for encrypting session cookies.",
         ),
-    ] = "Replace this with a cryptographic random string"
+    ] = secrets.token_urlsafe(32)
 
     middlecat_url: Annotated[
         str,
@@ -158,6 +159,79 @@ class Settings(BaseSettings):
         return self
 
     model_config = SettingsConfigDict(env_prefix=ENV_PREFIX)
+
+
+def generate_interactive_settings(model_class: type[BaseSettings], skip: list[str] = [], only: list[str] | None = None):
+    print(f"🛠️  Configuring {model_class.__name__}\n")
+    user_input = {}
+
+    fields = model_class.model_fields
+    current = get_settings()
+
+    for name, field in fields.items():
+        if name in ["model_config"]:
+            continue
+
+        if name in skip:
+            continue
+
+        if only and name not in only:
+            continue
+
+        description = field.description or name
+        if current:
+            default = getattr(current, name)
+        else:
+            default = field.default if field.default is not None else ""
+
+        if field.annotation is bool or field.annotation is (bool | None):
+            user_input[name] = questionary.confirm(f"{description}?", default=bool(default) if default != "" else True).ask()
+
+        elif hasattr(field.annotation, "__members__"):
+            choices = list(field.annotation.__members__.keys())
+            user_input[name] = questionary.select(
+                f"{description}:", choices=choices, default=default.name if hasattr(default, "name") else choices[0]
+            ).ask()
+
+        else:
+            val = questionary.text(f"{description}:\n >>", default=str(default)).ask()
+            if field.annotation is int:
+                user_input[name] = int(val) if val else 0
+            else:
+                user_input[name] = val
+
+        # Add an empty line for readability
+        print()
+
+    try:
+        return model_class(**user_input)
+    except Exception as e:
+        raise ValueError(f"Invalid configuration: {e}")
+
+
+def save_to_env(settings: BaseSettings, filename=".env"):
+    with open(filename, "w") as f:
+        for key, value in settings.model_dump().items():
+            val_str = str(value) if value is not None else ""
+            f.write(f"{key.upper()}={val_str}\n")
+
+
+def config_tui_editor(dev: bool):
+    print("🛠️ Amcat4 Dev Setup Wizard\n")
+
+    if dev:
+        only = ["auth", "admin_email"]
+        settings = generate_interactive_settings(Settings, only=only)
+        setattr(settings, "s3_host", "http://localhost:8333")
+        setattr(settings, "s3_access_key", "DEV_S3_ACCESS_KEY")
+        setattr(settings, "s3_secret_key", "DEV_S3_SECRET_KEY")
+    else:
+        skip = ["env_file", "test_mode", "cookie_secret"]
+        settings = generate_interactive_settings(Settings, skip=skip)
+
+    save_to_env(settings, ".env")
+
+    print("\n✅ Config saved to .env")
 
 
 @functools.lru_cache()
