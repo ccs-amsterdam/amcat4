@@ -22,6 +22,7 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "jinja2",
+    "itsdangerous",
     "elasticsearch~=8.6",
     "python-multipart",
     "python-dotenv",
