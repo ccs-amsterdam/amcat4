@@ -7,8 +7,8 @@ name = "amcat4"
 version = "4.2.0"
 description = "API for AmCAT4 Text Analysis"
 readme = "README.md"
-requires-python = ">=3.8"
-license = {text = "MIT License"}
+requires-python = ">=3.11"
+license = "MIT"
 authors = [
     {name = "Wouter van Atteveldt", email = "wouter@vanatteveldt.com"},
     {name = "Kasper Welbers", email = "kasperwelbers@gmail.com"}
@@ -16,11 +16,12 @@ authors = [
 keywords = ["API", "text"]
 classifiers = [
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Topic :: Text Processing",
 ]
 dependencies = [
-    "fastapi[all]",
+    "fastapi",
+    "uvicorn[standard]",
+    "jinja2",
     "elasticsearch~=8.6",
     "python-multipart",
     "python-dotenv",
@@ -34,7 +35,6 @@ dependencies = [
     "python-magic",
     "class_doc",
     "jsonpath_ng",
-    "asyncio",
     "async-lru",
     "aioboto3",
     "aiobotocore",
@@ -43,7 +43,7 @@ dependencies = [
     "questionary"
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest",
     "pytest-httpx",
@@ -54,6 +54,10 @@ dev = [
     "types-requests",
     "pytest-anyio",
 ]
+
+
+[tool.uv]
+default-groups = ["dev"]
 
 [project.scripts]
 amcat4 = "amcat4.__main__:main"

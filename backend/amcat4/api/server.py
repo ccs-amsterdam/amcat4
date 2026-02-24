@@ -1,10 +1,7 @@
 """API Endpoints for server information and configuration."""
 
 from importlib.metadata import version
-
-from fastapi import APIRouter, Depends, Request, status
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+from pathlib import Path
 
 from amcat4.api.auth_helpers import authenticated_user
 from amcat4.config import get_settings, validate_settings
@@ -14,8 +11,11 @@ from amcat4.objectstorage.image_processing import create_image_from_url
 from amcat4.projects.query import get_task_status
 from amcat4.systemdata.roles import HTTPException_if_not_server_role
 from amcat4.systemdata.settings import get_server_settings, upsert_server_settings
+from fastapi import APIRouter, Depends, Request, status
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 
-templates = Jinja2Templates(directory="backend/templates")
+templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent.parent / "templates")
 
 app_info = APIRouter(tags=["informational"])
 
@@ -54,7 +54,7 @@ class AuthConfigResponse(BaseModel):
 async def index(request: Request):
     """Returns an HTML page with information about this AmCAT instance."""
     host = get_settings().host
-    es_alive = await (es()).ping()
+    es_alive = await es().ping()
     auth = get_settings().auth
     has_admin_email = bool(get_settings().admin_email)
 
