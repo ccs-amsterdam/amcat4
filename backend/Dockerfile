@@ -7,9 +7,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /srv/amcat
 
 # 2 Clone the repo
-ARG amcat4_commit=master
-RUN git clone https://github.com/ccs-amsterdam/amcat4 . && \
-    git checkout $amcat4_commit
+COPY . .
 
 # 3 Install amcat using uv
 RUN UV_LINK_MODE=copy uv sync --frozen --no-dev

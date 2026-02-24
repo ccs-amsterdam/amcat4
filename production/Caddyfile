@@ -1,20 +1,27 @@
-{$AMCAT4_URL} {
-    # 1. API - Keep the /api prefix
-    handle /api* {
-        reverse_proxy {$DOCKER_AMCAT_API}
+{$AMCAT4_URL:localhost} {
+    # API - Proxy to the FastAPI container
+    handle_path /api/* {
+        reverse_proxy api:5000
     }
 
-    # 2. UI - Static SPA logic
+    # UI - Static SPA logic
     handle {
-        reverse_proxy {$DOCKER_AMCAT_UI} {
-            # Intercept 404s from the UI container and send index.html instead
-            @not_found status 404
-            handle_response @not_found {
-                rewrite * /index.html
-                copy_response
-            }
-        }
+        root * /srv
+        # Enable compression
+        encode zstd gzip
+
+        # Check if the file exists; if not, serve index.html (SPA routing)
+        try_files {path} /index.html
+
+        # Serve the files
+        file_server
     }
 
-    encode zstd gzip
+    # Optional: Security headers
+    header {
+        # Prevent the site from being embedded in iframes
+        X-Frame-Options "SAMEORIGIN"
+        # Hide the Caddy version for a bit more privacy
+        -Server
+    }
 }
