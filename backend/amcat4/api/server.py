@@ -15,7 +15,7 @@ from amcat4.projects.query import get_task_status
 from amcat4.systemdata.roles import HTTPException_if_not_server_role
 from amcat4.systemdata.settings import get_server_settings, upsert_server_settings
 
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory="backend/templates")
 
 app_info = APIRouter(tags=["informational"])
 

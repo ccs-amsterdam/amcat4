@@ -56,7 +56,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-api_router = APIRouter(prefix="/api")
+api_router = APIRouter()
 api_router.include_router(app_auth)
 api_router.include_router(app_info)
 api_router.include_router(app_users)

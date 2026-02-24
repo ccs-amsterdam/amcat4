@@ -15,9 +15,8 @@ See also the [API Documentation](apidoc.md)
 
 ### Before starting, ensure you have the following installed:
 
-* [Python 3.10+](https://www.python.org/downloads/)
+* [Python 3.11+](https://www.python.org/downloads/)
 * [Node.js 20+](https://nodejs.org/en)
-* [Docker & Docker Compose](https://docs.docker.com/compose/install/)
 
 Once Node.js is installed, run the following command to install pnpm globally:
 
@@ -30,6 +29,12 @@ npm install -g pnpm
 The easiest way to install AmCAT4 for local development mode is to use the following commands:
 
 ```
+# Clone the repo
+git clone https://github.com/ccs-amsterdam/amcat4
+
+# Install the monorepo 
+pnpm install
+
 # install AmCAT4 in development mode
 pnpm dev:install
 
@@ -37,13 +42,15 @@ pnpm dev:install
 pnpm dev:config
 ```
 
-Then to start the development server, run:
+Then we need an ElasticSearch instance, and optionally a SeaweedFS instance, using the hosts specified in `dev:config`. An easy way to fire this up is to use the `dev/docker-compose.yml`. 
 
 ```
-# Start Elasticsearch and SeaweedFS instances using Docker Compose
-pnpm dev:startup
+docker compose -f dev/docker-compose.yml up -d
+```
 
-# Start client and server in dev mode, and ElasticSearch and SeaweedFS instances using Docker Compose
+Then to start the development servers for both the frontend and backend, run
+
+```
 pnpm dev      
 ```
 
@@ -51,24 +58,7 @@ When you stop the dev server, the docker containers will keep running.
 To shut them down, run:
 
 ```
-pnpm dev:shutdown
-```
-
-# Start Elasticsearch and SeaweedFS instances using Docker Compose
-pnpm dev:services_up
-
-# Start client and server in dev mode, and ElasticSearch and SeaweedFS instances using Docker Compose
-pnpm dev      
-```
-
-
-
-This will also start ElasticSearch and SeaweedFS instances using Docker Compose.
-The docker containers will keep running when you kill  `pnpm dev` (with ctrl+c).
-To shut them down, run:
-
-```
-pnpm shutdown
+docker compose -f dev/docker-compose.yml down
 ```
 
 ## ElasticSearch and SeaweedFS
