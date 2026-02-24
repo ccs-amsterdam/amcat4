@@ -188,7 +188,7 @@ async def list_users(_args):
 
 
 def config_amcat(args):
-    config_tui_editor(args.dev)
+    config_tui_editor(args.env, args.dev)
 
 
 def bold(x):
@@ -248,6 +248,7 @@ def main():
 
     p = subparsers.add_parser("config", help="Configure amcat4 settings in an interactive menu.")
     p.add_argument("-d", "--dev", action="store_true", help="Use default settings for dev, and only ask whats needed")
+    p.add_argument("-e", "--env", help="Path to the .env file", default=".env")
     p.set_defaults(func=config_amcat)
 
     p = subparsers.add_parser("add-admin", help="Add a global admin")

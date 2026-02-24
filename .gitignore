@@ -36,6 +36,10 @@ frontend/out/
 frontend/.env*.local
 frontend/*.log*
 
+# -- Monorepo stuff
+node_modules
+.env
+
 # --- Static/Media ---
 backend/static/components/
 backend/navigator/media/static/

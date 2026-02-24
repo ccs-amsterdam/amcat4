@@ -143,7 +143,7 @@ export default function Upload({ user, indexId }: Props) {
       .then((result) => {
         if (uploadStatus.batch_index === uploadStatus.batches.length - 1) {
           setUploadStatus((uploadStatus) => ({ ...uploadStatus, status: "success" }));
-          let operationMessage = operation === "index" ? "created or updated" : "created";
+          const operationMessage = operation === "index" ? "created or updated" : "created";
           setData([]);
           setColumns([]);
           setCreateColumn(null);
@@ -187,7 +187,7 @@ export default function Upload({ user, indexId }: Props) {
   }
 
   function setColumn(column: Column) {
-    let newColumn = { ...column };
+    const newColumn = { ...column };
 
     if (!column.exists && column.field !== null) {
       const uniqueFields = new Set(columns.filter((c) => c.field !== newColumn.field).map((c) => c.field));
@@ -218,6 +218,16 @@ export default function Upload({ user, indexId }: Props) {
     startUpload();
   }
 
+  function suggestAmcatFields() {
+    const newColumns: Column[] = columns.map((column) => {
+      if (!column.exists && !column.type && !column.field) {
+        return autoTypeColumn(data, column.name);
+      }
+      return column;
+    });
+    setColumns(newColumns);
+  }
+
   if (fieldsLoading) return <div>Loading...</div>;
   if (!fields) return null;
 
@@ -228,6 +238,14 @@ export default function Upload({ user, indexId }: Props) {
     <div className="mb-12 flex flex-col gap-4">
       <CSVUploader fields={fields} setData={setData} setColumns={setColumns} />
       <div className={`flex flex-col gap-8 ${data.length === 0 ? "hidden" : ""}`}>
+        <Button
+          variant="outline"
+          className="ml-auto flex items-center justify-center gap-2"
+          onClick={suggestAmcatFields}
+          disabled={!columns.some((column) => !column.field)}
+        >
+          <Bot className="h-6 w-6 flex-shrink-0" /> Suggest new fields for unused columns
+        </Button>
         <UploadTable
           columns={columns}
           data={data}
@@ -373,12 +391,14 @@ function UnusedFields({ columns, fields }: { columns: Column[]; fields: AmcatFie
   const unusedIdentifiers = fields.filter((c) => c.identifier && !columns.find((col) => col.field === c.name));
   const unusedOther = fields.filter((c) => !c.identifier && !columns.find((col) => col.field === c.name));
 
-  function UnusedDropdown({
+  function unusedDropdown({
     items,
+    key,
     identifier,
     column,
   }: {
     items: AmcatField[] | Column[];
+    key: string;
     identifier?: boolean;
     column?: boolean;
   }) {
@@ -391,7 +411,7 @@ function UnusedFields({ columns, fields }: { columns: Column[]; fields: AmcatFie
     }
 
     return (
-      <div className={`${items.length > 0 ? "" : "hidden"}`}>
+      <div key={key} className={`${items.length > 0 ? "" : "hidden"}`}>
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-3 py-1">
             {identifier ? (
@@ -417,9 +437,9 @@ function UnusedFields({ columns, fields }: { columns: Column[]; fields: AmcatFie
 
   return (
     <div className="flex flex-col py-2">
-      <UnusedDropdown items={unusedColumns} column />
-      <UnusedDropdown items={unusedIdentifiers} identifier />
-      <UnusedDropdown items={unusedOther} />
+      {unusedDropdown({ key: "unusedColumns", items: unusedColumns, column: true })}
+      {unusedDropdown({ key: "unusedIdentifiers", items: unusedIdentifiers, column: true })}
+      {unusedDropdown({ key: "unusedOthers", items: unusedOther, column: true })}
     </div>
   );
 }
@@ -902,7 +922,7 @@ function prepareData({
     });
 
   setData(data);
-  setColumns(columns);
+  setColumns(columns.filter((column) => !!column.name));
 }
 
 function hasDuplicates(data: Record<string, jsType>[], columns: Column[]) {

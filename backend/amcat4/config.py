@@ -216,7 +216,7 @@ def save_to_env(settings: BaseSettings, filename=".env"):
             f.write(f"{key.upper()}={val_str}\n")
 
 
-def config_tui_editor(dev: bool):
+def config_tui_editor(env_file: str, dev: bool):
     print("🛠️ Amcat4 Dev Setup Wizard\n")
 
     if dev:
@@ -229,7 +229,7 @@ def config_tui_editor(dev: bool):
         skip = ["env_file", "test_mode", "cookie_secret"]
         settings = generate_interactive_settings(Settings, skip=skip)
 
-    save_to_env(settings, ".env")
+    save_to_env(settings, env_file)
 
     print("\n✅ Config saved to .env")
 

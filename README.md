@@ -4,13 +4,43 @@
 ![Python](https://img.shields.io/badge/python-3.10,3.11,3.12,3.13-blue.svg)
 ![Elasticsearch](https://img.shields.io/badge/elasticsearch-7.17,8.17-green)
 
-
 # AmCAT4
 
 Server for document management and automatic text analysis, developed as part of [OPTED](https://opted.eu).
 [Learn more](https://opted.eu/fileadmin/user_upload/k_opted/OPTED_deliverable_D7.1.pdf)
 
 See also the [API Documentation](apidoc.md)
+
+## Development
+
+### Before starting, ensure you have the following installed:
+
+* [Python 3.10+](https://www.python.org/downloads/)
+* [Node.js 20+](https://nodejs.org/en)
+* [Docker & Docker Compose](https://docs.docker.com/compose/install/)
+
+Once Node.js is installed, run the following command to install pnpm globally:
+
+```
+npm install -g pnpm
+```
+
+### Install and run AmCAT4 in development mode
+
+The easiest way to install and run AmCAT4 in development mode is to use the following commands:
+
+```
+pnpm install
+pnpm dev
+```
+
+This will also start ElasticSearch and SeaweedFS instances using Docker Compose.
+The docker containers will keep running when you kill  `pnpm dev` (with ctrl+c).
+To shut them down, run:
+
+```
+pnpm shutdown
+```
 
 ## ElasticSearch and SeaweedFS
 
