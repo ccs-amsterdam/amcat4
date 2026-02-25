@@ -1,5 +1,9 @@
 {$AMCAT4_URL:localhost} {
     # API - Proxy to the FastAPI container
+
+    handle_path /api {
+        reverse_proxy api:5000
+    }
     handle_path /api/* {
         reverse_proxy api:5000
     }
