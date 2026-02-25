@@ -56,7 +56,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-api_router = APIRouter()
+api_router = APIRouter(prefix="/api")
 api_router.include_router(app_auth)
 api_router.include_router(app_info)
 api_router.include_router(app_users)
@@ -69,6 +69,12 @@ api_router.include_router(app_requests)
 api_router.include_router(app_multimedia)
 api_router.include_router(app_api_keys)
 app.include_router(api_router)
+
+
+@app.get("/")
+async def root_message():
+    return {"message": "This is where the client goes"}
+
 
 ## TODO: figure out what's best here.
 # Ideally we disable CORS, and only allow own origin. But middlecat currently
