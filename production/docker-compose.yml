@@ -28,7 +28,7 @@ services:
       - amcat-net
     environment:
       - amcat4_elastic_host=http://elastic8:9200
-      - amcat4_host=${AMCAT4_API:-http://localhost/api}
+      - amcat4_host=${AMCAT4_URL:-http://localhost}
       - FORWARDED_ALLOW_IPS=*
       # Passthrough environment variables for the API configuration
       - amcat4_elastic_password
