@@ -8,6 +8,7 @@ import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { useMemo } from "react";
 import AggregateResult from "../Aggregate/AggregateResult";
 import Articles from "../Articles/Articles";
+import { Link } from "@tanstack/react-router";
 
 interface Props {
   user: AmcatSessionUser;
@@ -22,7 +23,8 @@ export default function Summary({ user, projectId, query }: Props) {
   if (data == null) return null;
 
   const isEmpty = data.pages[0].meta.total_count === 0;
-  if (isEmpty) return <EmptyProject />;
+  const noSearch = !query.queries?.length && !query.filters;
+  if (isEmpty && noSearch) return <EmptyProject projectId={projectId} />;
 
   function renderVisualization(field: AmcatField) {
     if (!field.client_settings.inListSummary) return null;
@@ -111,14 +113,17 @@ function KeywordSummaryGraph({ user, projectId, query, field }: SummaryProps) {
   );
 }
 
-function EmptyProject() {
+function EmptyProject({ projectId }: { projectId: AmcatProjectId }) {
   return (
     <div className="w-full rounded bg-primary/10 p-3">
       <div className="prose dark:prose-invert">
         <h3>This project is empty</h3>
         <p>
-          Congratulations on creating a project! To add documents, you can use the CSV uploader in the 'Data' menu
-          above. You can also use the API from R or Python for more powerful upload options
+          Congratulations on creating a project! To add documents, go to the{" "}
+          <Link to={`/projects/$project/data`} params={{ project: projectId }}>
+            Data menu
+          </Link>
+          . You can also use the API from R or Python for more powerful upload options
         </p>
       </div>
     </div>

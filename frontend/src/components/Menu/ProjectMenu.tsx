@@ -28,7 +28,7 @@ export default function ProjectMenu() {
   if (!user) return null;
 
   const key = user?.email || "guest";
-  const recentProjects = recentProjectsByUser[key]?.filter((r) => r.id !== projectId) || [];
+  const recentProjects = recentProjectsByUser[key];
   const noRecent = recentProjects.length === 0;
 
   function current() {
@@ -63,7 +63,11 @@ export default function ProjectMenu() {
         <DropdownMenuLabel>Select project</DropdownMenuLabel>
         {recentProjects.map((project) => {
           return (
-            <DropdownMenuItem key={project.id} onClick={() => onSelectProject(project.id)}>
+            <DropdownMenuItem
+              key={project.id}
+              onClick={() => onSelectProject(project.id)}
+              disabled={project.id === projectId}
+            >
               {project.name}
             </DropdownMenuItem>
           );

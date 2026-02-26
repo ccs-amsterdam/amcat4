@@ -3,6 +3,10 @@
 from importlib.metadata import version
 from pathlib import Path
 
+from fastapi import APIRouter, Depends, Request, status
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
+
 from amcat4.api.auth_helpers import authenticated_user
 from amcat4.config import get_settings, validate_settings
 from amcat4.connections import es, s3_enabled
@@ -11,9 +15,6 @@ from amcat4.objectstorage.image_processing import create_image_from_url
 from amcat4.projects.query import get_task_status
 from amcat4.systemdata.roles import HTTPException_if_not_server_role
 from amcat4.systemdata.settings import get_server_settings, upsert_server_settings
-from fastapi import APIRouter, Depends, Request, status
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
 
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent.parent / "templates")
 
@@ -28,14 +29,7 @@ class BrandingBody(BaseModel):
     welcome_text: str | None = Field(None, description="Welcome text for the server.")
     information_links: list[LinksGroup] | None = Field(None, description="Information links for the server.")
     welcome_buttons: list[Links] | None = Field(None, description="Welcome buttons for the server.")
-
-
-class UpdateBrandingBody(BaseModel):
     icon_url: str | None = Field(None, description="Icon image url for the server.")
-
-
-class BrandingResponse(BaseModel):
-    icon_id: str | None = Field(None, description="The ID of the server icon image.")
 
 
 # RESPONSE MODELS
@@ -86,17 +80,19 @@ def get_auth_config() -> AuthConfigResponse:
 
 
 @app_info.get("/config/branding")
-async def read_branding() -> BrandingResponse:
+async def read_branding() -> BrandingBody:
     """Get the server branding settings."""
     settings = await get_server_settings()
     d = settings.model_dump(exclude={"icon"})
     d["icon_id"] = settings.icon.id if settings.icon else None
-    return BrandingResponse(**d)
+    return BrandingBody(**d)
 
 
 @app_info.put("/config/branding", status_code=status.HTTP_204_NO_CONTENT)
-async def change_branding(data: UpdateBrandingBody, user: User = Depends(authenticated_user)):
+async def change_branding(data: BrandingBody, user: User = Depends(authenticated_user)):
     """Update the server branding settings. Requires ADMIN server role."""
+    print("put branding")
+    print(data)
     await HTTPException_if_not_server_role(user, Roles.ADMIN)
     d = data.model_dump(exclude_unset=True, exclude={"icon_url"})
     d["icon"] = await create_image_from_url(data.icon_url) if data.icon_url else None

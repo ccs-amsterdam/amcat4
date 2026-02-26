@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/branding")({
-  component: Branding,
+  component: BrandingPage,
 });
 
 import { useAmcatBranding } from "@/api/branding";
@@ -13,7 +13,7 @@ import { Branding, BrandingFooter } from "@/components/Server/Branding";
 import { AmcatBranding, AmcatConfig } from "@/interfaces";
 import { ServerBrandingForm } from "@/components/Server/ServerBrandingForm";
 
-export default function Page() {
+export default function BrandingPage() {
   const { user } = useAmcatSession();
   const { data: serverConfig, isLoading: configLoading } = useAmcatConfig();
   const { data: serverBranding, isLoading: brandingLoading } = useAmcatBranding();
@@ -44,7 +44,8 @@ function ServerSettings({ user, serverConfig, serverBranding }: ServerSettingsPr
 function ServerBrandingPreview({ serverConfig, serverBranding }: ServerSettingsProps) {
   return (
     <div className="flex flex-col items-center justify-start">
-      <div className="py-3 font-bold">Branding preview</div>
+      <div className="py-3 font-bold">Current branding page</div>
+      <div className="py-0 font-thin">(save changes to update) </div>
       <div className="-mt-12 scale-75 overflow-hidden rounded-lg">
         <Branding serverConfig={serverConfig!} serverBranding={serverBranding!} />
         <BrandingFooter serverBranding={serverBranding!} />

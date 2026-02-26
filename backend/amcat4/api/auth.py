@@ -189,7 +189,6 @@ async def refresh_token(request: Request):
     refresh_token = request.session.get("refresh_token")
     if not refresh_token:
         raise HTTPException(status_code=401, detail="No refresh token available")
-    print(refresh_token)
 
     # 3. Determine Provider and Data
     if OIDC_URL and not get_settings().test_mode:

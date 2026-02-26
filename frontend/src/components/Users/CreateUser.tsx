@@ -49,7 +49,7 @@ interface CreateUserProps {
 
 function CreateUserForm({ ownRole, roles, createUser }: CreateUserProps) {
   const [emails, setEmails] = useState("");
-  const [role, setRole] = useState("READER");
+  const [role, setRole] = useState(() => roles[0]);
 
   const { user } = useAmcatSession();
 

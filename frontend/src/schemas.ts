@@ -23,24 +23,6 @@ export const informationLinksSchema = z.array(
 
 export const taskSchema = z.any();
 
-export const amcatBrandingSchema = z.object({
-  server_name: z.string().nullish(),
-  server_url: z.string().nullish(),
-  server_icon: z.string().nullish(),
-  welcome_text: z.string().nullish(),
-  client_data: z
-    .object({
-      information_links: informationLinksSchema.nullish(),
-      welcome_buttons: linkArraySchema.nullish(),
-    })
-    .nullish(),
-});
-export const amcatUserRoles = ["NONE", "METAREADER", "READER", "WRITER", "ADMIN"] as const;
-export const amcatUserRoleSchema = z
-  .enum(amcatUserRoles)
-  .nullish()
-  .transform((v) => v ?? "NONE");
-
 export const contactInfoSchema = z.array(
   z.object({
     name: z.string().optional(),
@@ -48,6 +30,22 @@ export const contactInfoSchema = z.array(
     url: z.string().optional(),
   }),
 );
+
+export const amcatBrandingSchema = z.object({
+  name: z.string().nullish(),
+  description: z.string().nullish(),
+  contact: contactInfoSchema.nullish(),
+  external_url: z.string().nullish(),
+  icon_url: z.string().nullish(),
+  welcome_text: z.string().nullish(),
+  information_links: informationLinksSchema.nullish(),
+  welcome_buttons: linkArraySchema.nullish(),
+});
+export const amcatUserRoles = ["NONE", "METAREADER", "READER", "WRITER", "ADMIN"] as const;
+export const amcatUserRoleSchema = z
+  .enum(amcatUserRoles)
+  .nullish()
+  .transform((v) => v ?? "NONE");
 
 export const amcatProjectSchema = z.object({
   id: z.string(),

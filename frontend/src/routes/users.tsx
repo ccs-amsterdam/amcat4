@@ -16,7 +16,7 @@ import UserRoleTable from "@/components/Users/UserRoleTable";
 import { AmcatBranding, AmcatConfig } from "@/interfaces";
 import { Info } from "lucide-react";
 
-const roles = ["READER", "WRITER", "ADMIN"];
+const roles = ["WRITER", "ADMIN"];
 
 function Users() {
   const { user } = useAmcatSession();

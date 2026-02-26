@@ -25,14 +25,9 @@ async function getAmcatBranding() {
   }
 
   const res: any = await axios.get(`/api/config/branding`, { timeout: 3000 });
-  res.data.client_data = safeParseJson(res.data.client_data);
   const result = amcatBrandingSchema.safeParse(res.data);
   if (result.success) return result.data;
   toast("Error parsing branding data, see console for more details");
-  console.error(result.error);
-  res.data.client_data = undefined;
-  const branding: AmcatBranding = amcatBrandingSchema.parse(res.data);
-  return branding;
 }
 
 export function useMutateBranding(user?: AmcatSessionUser) {
@@ -41,9 +36,8 @@ export function useMutateBranding(user?: AmcatSessionUser) {
   return useMutation({
     mutationFn: (value: z.input<typeof amcatBrandingSchema>) => {
       // AmCAT API expects a single json blob for the client data
-      const body: Record<string, string | null> = { ...value, client_data: JSON.stringify(value.client_data) };
       if (!user) throw new Error("Not logged in");
-      return mutateBranding(user, body);
+      return mutateBranding(user, value);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["branding"] });
@@ -51,6 +45,6 @@ export function useMutateBranding(user?: AmcatSessionUser) {
   });
 }
 
-async function mutateBranding(user: AmcatSessionUser, value: Record<string, string | null>) {
+async function mutateBranding(user: AmcatSessionUser, value: AmcatBranding) {
   return await user.api.put(`config/branding`, value);
 }

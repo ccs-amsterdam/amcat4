@@ -9,7 +9,6 @@
       (function () {
         try {
           const theme = localStorage.getItem("theme-mode") || "default";
-          console.log("index.html theme", theme);
           const root = window.document.documentElement;
 
           if (theme === "dark" || (theme === "default" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {

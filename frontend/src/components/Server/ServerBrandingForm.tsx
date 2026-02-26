@@ -1,5 +1,3 @@
-
-
 import { useAmcatBranding, useMutateBranding } from "@/api/branding";
 import { useAmcatConfig } from "@/api/config";
 import { useCurrentUserDetails } from "@/api/userDetails";
@@ -43,7 +41,7 @@ export function ServerBrandingForm() {
       <form onSubmit={brandingForm.handleSubmit(brandingFormSubmit)} className="space-y-6">
         <FormField
           control={brandingForm.control}
-          name="server_name"
+          name="name"
           disabled={!isAdmin}
           render={({ field }) => (
             <FormItem>
@@ -57,7 +55,7 @@ export function ServerBrandingForm() {
         ></FormField>
         <FormField
           control={brandingForm.control}
-          name="server_url"
+          name="external_url"
           disabled={!isAdmin}
           render={({ field }) => (
             <FormItem>
@@ -71,7 +69,7 @@ export function ServerBrandingForm() {
         ></FormField>
         <FormField
           control={brandingForm.control}
-          name="server_icon"
+          name="icon_url"
           disabled={!isAdmin}
           render={({ field }) => (
             <FormItem>
@@ -93,7 +91,13 @@ export function ServerBrandingForm() {
               <FormControl>
                 <Textarea
                   rows={6}
-                  placeholder="# Title and text using **MarkDown**"
+                  placeholder={[
+                    "# Welcome to our AmCAT server!",
+                    "",
+                    "This is a really cool server",
+                    "",
+                    "[Our project website](https://project.website)",
+                  ].join("\n")}
                   {...field}
                   value={field.value ?? ""}
                 />
@@ -104,13 +108,13 @@ export function ServerBrandingForm() {
         ></FormField>
         <JSONForm
           control={brandingForm.control}
-          name="client_data.welcome_buttons"
+          name="welcome_buttons"
           label="Action Buttons below Welcome Text"
           schema={linkArraySchema}
         />
         <JSONForm
           control={brandingForm.control}
-          name="client_data.information_links"
+          name="information_links"
           label="Links column in homepage footer"
           schema={informationLinksSchema}
         />
