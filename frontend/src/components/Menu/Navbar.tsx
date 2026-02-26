@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Columns3Cog,
   DatabaseZap,
+  Home,
   LayoutDashboard,
   Library,
   LockKeyholeOpen,
@@ -20,6 +21,7 @@ import { Notifications } from "./Notifications";
 import { SubMenu, SubMenuPath } from "./SubMenu";
 
 const serverSubMenuPaths: SubMenuPath[] = [
+  { href: "", label: "Home", Icon: Home, minServerRole: "NONE" },
   { href: "projects", label: "Projects", Icon: Library, minServerRole: "NONE" },
   { href: "branding", label: "Branding", Icon: Paintbrush, minServerRole: "ADMIN" },
   { href: "users", label: "Server users", Icon: Users, minServerRole: "ADMIN" },

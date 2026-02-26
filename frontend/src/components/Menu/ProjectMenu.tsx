@@ -28,7 +28,7 @@ export default function ProjectMenu() {
   if (!user) return null;
 
   const key = user?.email || "guest";
-  const recentProjects = recentProjectsByUser[key];
+  const recentProjects = recentProjectsByUser[key] || [];
   const noRecent = recentProjects.length === 0;
 
   function current() {

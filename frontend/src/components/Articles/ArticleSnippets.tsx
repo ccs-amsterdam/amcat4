@@ -8,6 +8,7 @@ import { Button } from "../ui/button";
 import usePaginatedArticles from "./usePaginatedArticles";
 import { DynamicIcon } from "../ui/dynamic-icon";
 import { ReactNode } from "react";
+import { Loading } from "../ui/loading";
 
 interface Props {
   user: AmcatSessionUser;
@@ -25,7 +26,7 @@ const defaultSnippets = {
 };
 
 export default function ArticleSnippets({ user, projectId, projectRole, query, fields, onClick }: Props) {
-  const { articles, layout, listFields, isFetching, pageIndex, pageCount, totalCount, prevPage, nextPage } =
+  const { articles, layout, listFields, isLoading, isFetching, pageIndex, pageCount, totalCount, prevPage, nextPage } =
     usePaginatedArticles({
       user,
       projectId,
@@ -37,12 +38,15 @@ export default function ArticleSnippets({ user, projectId, projectRole, query, f
       pageSize: 6,
     });
 
-  // if (isLoading) return <Loading msg="Loading articles" />;
+  if (isLoading) return <Loading msg="Loading articles" />;
+
   return (
-    <div>
+    <div className="h-full">
       <div className="mb-1 flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-semibold text-foreground">{totalCount} articles</h3>
+          <h3 className="text-xl font-semibold text-foreground">
+            {totalCount} article{totalCount === 1 ? "" : "s"}
+          </h3>
         </div>
         <div className={`flex select-none items-center justify-end ${pageCount > 1 ? "" : "hidden"}`}>
           <Button variant="ghost" className="hover:bg-transparent" onClick={() => prevPage()} disabled={pageIndex <= 0}>
@@ -63,14 +67,14 @@ export default function ArticleSnippets({ user, projectId, projectRole, query, f
           </Button>
         </div>
       </div>
-      <div className="relative rounded ">
-        <div className={`relative grid max-h-full grid-cols-1 gap-2  pr-3 ${isFetching ? "opacity-80" : ""}`}>
+      <div className="relative h-full rounded ">
+        <div className={`relative my-auto grid max-h-full grid-cols-1 gap-2  pr-3 ${isFetching ? "opacity-80" : ""}`}>
           {articles.map((row, i: number) => (
             <button
               key={row._id + i}
               onClick={() => onClick && onClick(row)}
               className={`prose prose-sm max-w-full animate-fade-in rounded-t border-b border-primary text-left shadow-foreground/50
-                        transition-all dark:prose-invert hover:translate-x-1    ${onClick ? "cursor-pointer" : ""}`}
+                        transition-all dark:prose-invert hover:translate-x-[1px]    ${onClick ? "cursor-pointer" : ""}`}
             >
               <article className={`my-1 min-h-[5rem] py-1  `}>
                 <div className="flex  justify-between">

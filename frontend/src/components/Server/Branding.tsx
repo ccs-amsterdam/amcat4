@@ -26,47 +26,12 @@ export function Branding({
 
   const no_auth = serverConfig.authorization === "no_auth";
   return (
-    <section className="bg-gradient-to-tr from-primary/70 to-primary/90 text-primary-foreground ">
+    <section className="bg-gradient-to-r from-primary to-primary/80 text-primary-foreground ">
       {/*<div className="flex items-center justify-center gap-1 whitespace-nowrap pl-9 pt-3">
         <ServerNameAndLink serverBranding={serverBranding} />
       </div>*/}
-      <div className="container prose-xl mx-auto max-w-6xl px-4 py-10 text-center dark:prose-invert prose-a:underline md:py-32">
+      <div className="container prose-xl mx-auto max-w-6xl px-4 py-10 text-center dark:prose-invert prose-a:underline md:py-24">
         <Markdown>{message_md}</Markdown>
-        <div className="space-x-4">
-          {no_auth ? (
-            <>
-              <p>
-                This server does not use authentication. This is indented for using AmCAT on your own computer, but
-                please configure authentication if using AmCAT on a network or server.{" "}
-                <a href="https://amcat.nl/book/04._sharing">
-                  <b>More information</b>
-                </a>
-              </p>{" "}
-              <Link to="/projects">
-                <Button size="lg">Go to projects</Button>
-              </Link>
-            </>
-          ) : user.authenticated ? (
-            <Link to="/projects">
-              <Button size="lg" className="bg-foreground/10" variant="ghost">
-                Go to server
-              </Button>
-            </Link>
-          ) : (
-            <>
-              <Button size="lg" onClick={() => signIn()}>
-                Sign in
-                <LogIn className="ml-2 h-5 w-5" />
-              </Button>
-              &nbsp;
-              {require_login ? null : (
-                <Link to="/projects">
-                  <Button size="lg">Continue as Guest</Button>
-                </Link>
-              )}
-            </>
-          )}
-        </div>
         <div className={`${serverBranding.welcome_buttons ? "" : "hidden"} mt-3 flex justify-center gap-3`}>
           {(serverBranding.welcome_buttons ?? []).map((action, i) => (
             <Link key={i} to={action.href}>
@@ -76,8 +41,48 @@ export function Branding({
             </Link>
           ))}
         </div>
+
+        <div className="mt-6 flex flex-col">
+          {true ? (
+            <>
+              <p className="prose mx-auto mb-6 rounded border-2 bg-background/10 p-3 text-primary-foreground">
+                This server does not use authentication. This is indented for using AmCAT on your own computer or
+                private network only. Please configure authentication if hosting AmCAT publicly.{" "}
+                <a href="https://amcat.nl/book/04._sharing">
+                  <b>More information</b>
+                </a>
+              </p>{" "}
+              <EnterServerButton />
+            </>
+          ) : user.authenticated ? (
+            <EnterServerButton />
+          ) : (
+            <div className="mx-auto grid grid-cols-2 gap-3">
+              <Button size="lg" onClick={() => signIn()}>
+                Sign in
+                {/*<LogIn className="ml-2 h-5 w-5" />*/}
+              </Button>
+              {require_login ? null : (
+                <Link to="/projects">
+                  <Button size="lg">Continue as Guest</Button>
+                </Link>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </section>
+  );
+}
+
+function EnterServerButton() {
+  return (
+    <Link to="/projects">
+      <Button size="lg">
+        Enter server
+        <ArrowRight className="ml-2 h-5 w-5" />
+      </Button>
+    </Link>
   );
 }
 
@@ -100,14 +105,14 @@ export function BrandingFooter({ serverBranding }: { serverBranding?: AmcatBrand
             <h3 className="mb-2 font-semibold">Resources</h3>
             <ul className="space-y-2 text-sm">
               <li>
-                <a href="https://amcat.nl/book/" className=" hover:text-blue-600">
+                <Link href="https://amcat.nl/book/" className=" hover:text-blue-600">
                   Documentation
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="https://github.com/ccs-amsterdam/amcat4" className=" hover:text-blue-600">
+                <Link href="https://github.com/ccs-amsterdam/amcat4" className=" hover:text-blue-600">
                   GitHub
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
@@ -119,9 +124,9 @@ export function BrandingFooter({ serverBranding }: { serverBranding?: AmcatBrand
                   <ul className="space-y-2 text-sm">
                     {link.links.map((item, j) => (
                       <li key={j}>
-                        <a href={item.href as string} className=" hover:text-blue-600">
+                        <Link href={item.href as string} className=" hover:text-blue-600">
                           {item.label}
-                        </a>
+                        </Link>
                       </li>
                     ))}
                   </ul>

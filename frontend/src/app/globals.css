@@ -142,7 +142,7 @@
     60px center,
     75px center,
     90px center;
-  animation: rikSpikeRoll 0.65s linear infinite alternate;
+  animation: rikSpikeRoll 1s linear infinite alternate;
 }
 @keyframes rikSpikeRoll {
   0% {

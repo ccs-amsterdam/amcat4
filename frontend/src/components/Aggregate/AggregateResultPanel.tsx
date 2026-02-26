@@ -17,7 +17,6 @@ interface Props {
 
 export default function AggregateResultPanel({ user, projectId, query }: Props) {
   const [options, setOptions] = useState<AggregationOptions>(initialState);
-  options.display;
 
   function defaultPageSize() {
     if (options.display === "linechart") return 200;

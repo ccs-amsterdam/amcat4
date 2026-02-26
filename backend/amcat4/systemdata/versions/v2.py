@@ -135,7 +135,7 @@ fields_mapping: ElasticMapping = dict(
 roles_mapping: ElasticMapping = dict(
     email={"type": "keyword"},  # can also be *@domain.com (domain match) or * (guest match)
     role_context={"type": "keyword"},  # either _server or an index name
-    role={"type": "keyword"},  # "NONE", "LISTER", "METAREADER", "READER", "WRITER", "ADMIN"
+    role={"type": "keyword"},  # "NONE", "OBSERVER", "METAREADER", "READER", "WRITER", "ADMIN"
 )
 
 apikey_mapping: ElasticMapping = dict(

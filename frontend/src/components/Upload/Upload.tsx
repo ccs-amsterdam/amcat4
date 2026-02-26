@@ -40,6 +40,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import SimpleTooltip from "../ui/simple-tooltip";
 import { Label } from "../ui/label";
 import { Progress } from "../ui/progress";
+import { Loading } from "../ui/loading";
 
 interface Props {
   user: AmcatSessionUser;
@@ -228,7 +229,7 @@ export default function Upload({ user, projectId }: Props) {
     setColumns(newColumns);
   }
 
-  if (fieldsLoading) return <div>Loading...</div>;
+  if (fieldsLoading) return <Loading />;
   if (!fields) return null;
 
   if (uploadStatus.status === "uploading")

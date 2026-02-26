@@ -162,7 +162,7 @@ async def list_user_project_indices(
 
     project_role_lookup: dict[str, RoleRule] = {}
     user_indices: list[str] = []
-    roles = await list_user_project_roles(user, required_role=Roles.LISTER)
+    roles = await list_user_project_roles(user, required_role=Roles.OBSERVER)
     for role in roles:
         project_role_lookup[role.role_context] = role
         user_indices.append(role.role_context)

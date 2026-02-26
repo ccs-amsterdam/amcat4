@@ -130,7 +130,6 @@ export default function AggregateResult({
     setZoom({ zoomBy, query: newQuery });
   };
 
-  //const createZoom = (values: (number | string)[])   // Choose and render result element
   const Visualization = {
     list: AggregateList,
     table: AggregateTable,
@@ -144,6 +143,9 @@ export default function AggregateResult({
 
   return (
     <div>
+      {options.title ? (
+        <h3 className="rounded-bl-md  text-right font-semibold">{options.title.replaceAll("_", " ")}</h3>
+      ) : null}
       <div className="flex items-center justify-end gap-4 px-1">
         <AggregatePagination data={paginatedData} pagination={pagination} />
         <DownloadData
@@ -153,13 +155,8 @@ export default function AggregateResult({
           disabled={hasNextPage}
         />
       </div>
-      <div className="relative">
-        <div className={`pointer-events-none absolute right-0 top-0 z-50  `}>
-          {options.title ? (
-            <h3 className="mr-[6px] mt-[6px] max-w-none rounded-bl-md  border-foreground bg-background/50 py-1 pl-2 pr-2  font-semibold backdrop-blur-[1px]">
-              {options.title}
-            </h3>
-          ) : null}
+      <div>
+        <div className={`pointer-events-none text-right`}>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -348,16 +345,18 @@ function ArticleListModal({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="w-[750px] max-w-[90vw]">
+      <DialogContent className="flex h-[90vw] w-[750px] max-w-[90vw] flex-col">
         <DialogHeader className="border-b border-secondary pb-3">
           {Object.keys(zoom.zoomBy || {}).map((field) => (
             <p key={field} className="max-w-[700px]">
-              <span className="mr-2 font-bold">{field}</span>{" "}
+              <span className="mr-2 font-bold">{field.replaceAll("_", " ")}</span>{" "}
               <span className="round rounded bg-secondary/30 px-2 py-[2px]">{describe_filter(zoom.zoomBy[field])}</span>
             </p>
           ))}
         </DialogHeader>
-        <Articles user={user} projectId={projectId} query={query} />
+        <div className="h-full overflow-auto">
+          <Articles user={user} projectId={projectId} query={query} />
+        </div>
       </DialogContent>
     </Dialog>
   );

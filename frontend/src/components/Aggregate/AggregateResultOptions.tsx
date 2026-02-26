@@ -278,7 +278,7 @@ function AxisPicker({
 
   const fieldoptions = useMemo(() => {
     const fieldoptions = (fields ?? [])
-      .filter((f) => ["date", "keyword", "tag"].includes(f.type))
+      .filter((f) => ["date", "keyword", "tag", "number", "integer", "boolean"].includes(f.type))
       .filter((f) => f.name !== skipField)
       .map((f) => ({
         text: f.name,

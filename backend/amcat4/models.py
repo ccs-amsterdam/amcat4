@@ -14,15 +14,15 @@ IndexIds = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*$
 
 class Roles(IntEnum):
     NONE = 0
-    LISTER = 10
+    OBSERVER = 10
     METAREADER = 20
     READER = 30
     WRITER = 40
     ADMIN = 50
 
 
-Role = Literal["NONE", "LISTER", "METAREADER", "READER", "WRITER", "ADMIN"]
-GuestRole = Literal["NONE", "LISTER", "METAREADER", "READER", "WRITER"]
+Role = Literal["NONE", "OBSERVER", "METAREADER", "READER", "WRITER", "ADMIN"]
+GuestRole = Literal["NONE", "OBSERVER", "METAREADER", "READER", "WRITER"]
 ServerRole = Literal["NONE", "WRITER", "ADMIN"]
 
 
@@ -41,7 +41,7 @@ class RoleRule(BaseModel):
     @model_validator(mode="after")
     def validate_role(self) -> Self:
         uses_wildcard = "*" in self.email
-        if self.role == Roles.ADMIN and uses_wildcard:
+        if self.role == Roles.ADMIN.name and uses_wildcard:
             raise ValueError(f"Cannot create ADMIN role for {self.email}. Only exact email matches can have ADMIN role")
         return self
 

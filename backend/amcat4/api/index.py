@@ -112,7 +112,7 @@ async def index_list(
 ) -> list[IndexListResponse] | dict[IndexId, Role | None]:
     """
     List indices from this server that the user has access to. Returns a list of dicts with index details, including the user role.
-    Requires at least LISTER role on the index. If show_all is true, requires ADMIN server role and shows all indices.
+    Requires at least OBSERVER role on the index. If show_all is true, requires ADMIN server role and shows all indices.
     """
     if show_all:
         await HTTPException_if_not_server_role(user, Roles.ADMIN)
@@ -214,7 +214,7 @@ async def view_index(
     request: Request, ix: IndexId = Path(..., description="ID of the index to view"), user: User = Depends(authenticated_user)
 ) -> IndexViewResponse:
     """
-    Get details of a single index, including the user role. Requires at least LISTER role on the index.
+    Get details of a single index, including the user role. Requires at least OBSERVER role on the index.
     """
     try:
         d = await get_project_settings(ix)
@@ -223,7 +223,7 @@ async def view_index(
     except Exception:
         raise HTTPException(status_code=500, detail=f"Error reading index {ix} settings")
 
-    await HTTPException_if_not_project_index_role(user, ix, Roles.LISTER)
+    await HTTPException_if_not_project_index_role(user, ix, Roles.OBSERVER)
     role = await get_user_project_role(user, project_index=ix, global_admin=False)
 
     bytes = await index_size_in_bytes(ix)

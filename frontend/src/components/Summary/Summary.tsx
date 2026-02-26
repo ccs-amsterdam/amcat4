@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import AggregateResult from "../Aggregate/AggregateResult";
 import Articles from "../Articles/Articles";
 import { Link } from "@tanstack/react-router";
+import { Loading } from "../ui/loading";
 
 interface Props {
   user: AmcatSessionUser;
@@ -28,6 +29,8 @@ export default function Summary({ user, projectId, query }: Props) {
 
   function renderVisualization(field: AmcatField) {
     if (!field.client_settings.inListSummary) return null;
+    if (field.type === "number" || field.type === "integer")
+      return <LineSummaryGraph key={field.name} user={user} projectId={projectId} query={query} field={field} />;
     if (field.type === "date")
       return <DateSummaryGraph key={field.name} user={user} projectId={projectId} query={query} field={field} />;
     if (field.type === "keyword")
@@ -79,10 +82,33 @@ function DateSummaryGraph({ user, projectId, query, field }: SummaryProps) {
     return [axes, interval];
   }, [values, field, query]);
 
-  if (valuesLoading) return <div>Loading...</div>;
+  if (valuesLoading) return <Loading />;
   if (!values) return null;
 
   const title = interval ? `${field.name.toUpperCase()} - ${interval}` : field.name.toUpperCase();
+
+  return (
+    <AggregateResult
+      user={user}
+      projectId={projectId}
+      query={query}
+      options={{ axes, display: "linechart", title }}
+      defaultPageSize={200}
+    />
+  );
+}
+
+function LineSummaryGraph({ user, projectId, query, field }: SummaryProps) {
+  const { data: values, isLoading: valuesLoading } = useFieldStats(user, projectId, field.name);
+
+  const axes: AggregationAxis[] = useMemo(() => {
+    return [{ name: field.name, field: field.name }];
+  }, [field]);
+
+  if (valuesLoading) return <Loading />;
+  if (!values) return null;
+
+  const title = field.name.toUpperCase();
 
   return (
     <AggregateResult

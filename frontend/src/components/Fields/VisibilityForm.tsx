@@ -13,6 +13,8 @@ interface Props {
 
 const IconClass = "h-5 w-5";
 
+const canVisualizeTypes = ["number", "integer", "date", "keyword"];
+
 export default function VisibilityForm({ field, client_settings, onChange }: Props) {
   const canVisualize = field.type !== "text";
   const [newClientSettings, setNewClientSettings] = useState(client_settings);

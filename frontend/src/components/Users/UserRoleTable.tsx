@@ -71,18 +71,22 @@ export default function UserRoleTable({ user, ownRole, users, roles, changeRole 
   }
 
   const data: Row[] =
-    users?.map((user) => {
-      const row: Row = { ...user, canCreateAdmin: ownRole === "ADMIN" };
-      const canEditUser = ownRole === "ADMIN" || (ownRole === "WRITER" && user.role !== "ADMIN");
-      if (canEditUser) row.onChange = (newRole: string) => onChangeRole(user.email, user.role, newRole);
-      return row;
-    }) || [];
+    users
+      ?.map((user) => {
+        const row: Row = { ...user, canCreateAdmin: ownRole === "ADMIN" };
+        const canEditUser = ownRole === "ADMIN" || (ownRole === "WRITER" && user.role !== "ADMIN");
+        if (canEditUser) row.onChange = (newRole: string) => onChangeRole(user.email, user.role, newRole);
+        return row;
+      })
+      .filter((row) => {
+        // don't show GUEST role in table
+        return row.email !== "*";
+      }) || [];
 
   return (
     <div className=" w-full max-w-7xl grid-cols-1">
       <div className="flex items-center justify-between pb-4">
         <div className="prose-xl flex gap-1 md:gap-3">
-          <h3 className="mb-0">User Roles</h3>
           <CreateUser ownRole={ownRole} roles={roles} changeRole={changeRole}>
             <Button variant="ghost" className="flex gap-2 p-4">
               <UserPlus />
@@ -142,6 +146,16 @@ function createTableColumns(roles: string[]): ColumnDef<Row>[] {
           </Button>
         );
       },
+      cell: ({ getValue }) => {
+        const email = getValue();
+        return email === "*" ? (
+          <span>
+            * <span className="ml-1 text-primary/60">(GUEST ROLE)</span>
+          </span>
+        ) : (
+          email
+        );
+      },
       size: 400,
     },
     {
@@ -161,8 +175,10 @@ function createTableColumns(roles: string[]): ColumnDef<Row>[] {
       enableResizing: false,
       size: 100,
       cell: ({ row }) => {
-        const { role, canCreateAdmin, onChange } = row.original;
+        const { role, email, canCreateAdmin, onChange } = row.original;
+        const hasWildcard = email.includes("*");
         if (!onChange) return role;
+
         return (
           <DropdownMenu>
             <DropdownMenuTrigger className="flex h-full items-center gap-3 border-primary text-primary outline-none">
@@ -172,9 +188,10 @@ function createTableColumns(roles: string[]): ColumnDef<Row>[] {
             <DropdownMenuContent>
               <DropdownMenuRadioGroup value={row.original.role} onValueChange={onChange}>
                 {roles.map((role) => {
-                  if (!canCreateAdmin && role === "ADMIN") return null;
+                  const disabled = (!canCreateAdmin && role === "ADMIN") || (hasWildcard && role === "ADMIN");
+
                   return (
-                    <DropdownMenuRadioItem key={role} value={role}>
+                    <DropdownMenuRadioItem key={role} value={role} disabled={disabled}>
                       {role === "NONE" ? "DELETE" : role}
                     </DropdownMenuRadioItem>
                   );

@@ -46,17 +46,14 @@ export default function Articles({ user, projectId, query, onClick, showOnClick 
 
   return (
     <div className="w-full">
-      <div className="grid grid-cols-[max,1fr] rounded ">
-        <ArticleSnippets
-          user={user}
-          projectId={projectId}
-          projectRole={role || "NONE"}
-          query={query}
-          fields={fields}
-          onClick={handleClick}
-        />
-        <div> </div>
-      </div>
+      <ArticleSnippets
+        user={user}
+        projectId={projectId}
+        projectRole={role || "NONE"}
+        query={query}
+        fields={fields}
+        onClick={handleClick}
+      />
 
       {articleId ? (
         <ArticleModal

@@ -30,7 +30,7 @@ export default function CreateUser({ children, ownRole, roles, changeRole }: Pro
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent>
+      <DialogContent className="w-96 max-w-[100vw]">
         <DialogHeader>
           <DialogTitle>Add Users</DialogTitle>
         </DialogHeader>
@@ -82,7 +82,7 @@ function CreateUserForm({ ownRole, roles, createUser }: CreateUserProps) {
         required
         value={emails}
         onChange={(e) => setEmails(e.target.value)}
-        placeholder="user1@userland.com&#10;user2@userland.com"
+        placeholder="user1@userland.com&#10;user2@userland.com&#10;*@my-university.com"
       />
       <div className="grid grid-cols-[2fr,1fr] gap-3">
         <DropdownMenu>
