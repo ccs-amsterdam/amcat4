@@ -5,8 +5,8 @@ export const Route = createFileRoute("/projects/$project/users")({
 });
 
 import { useAmcatConfig } from "@/api/config";
-import { useIndex, useMutateIndex } from "@/api/index";
-import { useIndexUsers, useMutateIndexUser } from "@/api/indexUsers";
+import { useProject, useMutateProject } from "@/api/project";
+import { useProjectUsers, useMutateProjectUser } from "@/api/projectUsers";
 import UserRoleTable from "@/components/Users/UserRoleTable";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ErrorMsg } from "@/components/ui/error-message";
 import { Loading } from "@/components/ui/loading";
-import { AmcatIndex, AmcatUserRole } from "@/interfaces";
+import { AmcatProject, AmcatUserRole } from "@/interfaces";
 import { Edit } from "lucide-react";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 
@@ -26,29 +26,29 @@ const roles = ["METAREADER", "READER", "WRITER", "ADMIN"];
 function UsersPage() {
   const { project } = Route.useParams();
   const { user } = useAmcatSession();
-  const indexId = decodeURI(project);
-  const { data: index, isLoading: loadingIndex } = useIndex(user, indexId);
+  const projectId = decodeURI(project);
+  const { data: projectData, isLoading: loadingProject } = useProject(user, projectId);
 
-  if (loadingIndex) return <Loading />;
-  if (!index) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
+  if (loadingProject) return <Loading />;
+  if (!projectData) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
 
   return (
     <div className="flex w-full  flex-col gap-10">
-      <Users index={index} />
+      <Users project={projectData} />
     </div>
   );
 }
 
-function Users({ index }: { index: AmcatIndex }) {
+function Users({ project }: { project: AmcatProject }) {
   const { user } = useAmcatSession();
-  const { data: users, isLoading: loadingUsers } = useIndexUsers(user, index.id);
-  const { mutateAsync } = useMutateIndexUser(user, index.id);
-  const { mutate: mutateIndex } = useMutateIndex(user);
+  const { data: users, isLoading: loadingUsers } = useProjectUsers(user, project.id);
+  const { mutateAsync } = useMutateProjectUser(user, project.id);
+  const { mutate: mutateProject } = useMutateProject(user);
   const { data: config } = useAmcatConfig();
 
   if (loadingUsers) return <Loading />;
 
-  const ownRole = config?.authorization === "no_auth" ? "ADMIN" : index?.user_role;
+  const ownRole = config?.authorization === "no_auth" ? "ADMIN" : project?.user_role;
 
   async function changeRole(email: string | undefined, role: string, action: "create" | "delete" | "update") {
     mutateAsync({ email, role, action }).catch(console.error);
@@ -66,7 +66,7 @@ function Users({ index }: { index: AmcatIndex }) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button className="flex gap-3">
-              <div>{index.guest_role}</div>
+              <div>{project.guest_role}</div>
               <Edit className="h-5 w-5" />
             </Button>
           </DropdownMenuTrigger>
@@ -76,7 +76,7 @@ function Users({ index }: { index: AmcatIndex }) {
                 <DropdownMenuItem
                   key={role}
                   onClick={() => {
-                    mutateIndex({ id: index.id, guest_role: role as AmcatUserRole });
+                    mutateProject({ id: project.id, guest_role: role as AmcatUserRole });
                   }}
                 >
                   {role}

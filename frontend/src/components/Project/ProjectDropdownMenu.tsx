@@ -1,6 +1,6 @@
-import { useDeleteIndex, useHasIndexRole, useMutateIndex } from "@/api";
+import { useDeleteProject, useHasProjectRole, useMutateProject } from "@/api/project";
 import { Button } from "@/components/ui/button";
-import { AmcatIndex } from "@/interfaces";
+import { AmcatProject } from "@/interfaces";
 import { ArchiveRestore, ArchiveX, CornerLeftUp, FolderPlus, MoreVertical, Trash2 } from "lucide-react";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import React, { useState } from "react";
@@ -17,39 +17,39 @@ import {
 } from "../ui/dropdown-menu";
 import { Input } from "../ui/input";
 
-export function IndexDropdownMenu({
-  index,
+export function ProjectDropdownMenu({
+  project,
   folders,
   toFolder,
   activateConfirm,
 }: {
-  index: AmcatIndex;
+  project: AmcatProject;
   folders: string[];
   toFolder: (folder: string) => void;
   activateConfirm: ActivateConfirm;
 }) {
   const [isNewFolderDialogOpen, setIsNewFolderDialogOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState(index.folder || "");
+  const [newFolderName, setNewFolderName] = useState(project.folder || "");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const { user } = useAmcatSession();
-  const { mutateAsync } = useMutateIndex(user);
-  const { mutateAsync: deleteAsync } = useDeleteIndex(user);
+  const { mutateAsync } = useMutateProject(user);
+  const { mutateAsync: deleteAsync } = useDeleteProject(user);
 
-  const isAdmin = index.user_role === "ADMIN";
+  const isAdmin = project.user_role === "ADMIN";
 
   function handleDelete() {
-    deleteAsync(index.id);
+    deleteAsync(project.id);
   }
 
   function handleArchive(e: React.MouseEvent) {
     e.preventDefault();
-    mutateAsync({ id: index.id, archive: !index.archived }).then(() => setIsDropdownOpen(false));
+    mutateAsync({ id: project.id, archive: !project.archived }).then(() => setIsDropdownOpen(false));
   }
 
   function doMoveToFolder(folder: string) {
     const f = folder.replace(/\/+/g, "/").replace(/^\/|\/$/g, "");
-    mutateAsync({ id: index.id, folder: f }).then(() => {
+    mutateAsync({ id: project.id, folder: f }).then(() => {
       setIsDropdownOpen(false);
       setIsNewFolderDialogOpen(false);
       toFolder(f || "");
@@ -61,9 +61,9 @@ export function IndexDropdownMenu({
 
     let newFolder = "";
     if (folder === "..") {
-      newFolder = index.folder ? index.folder.split("/").slice(0, -1).join("/") : "";
+      newFolder = project.folder ? project.folder.split("/").slice(0, -1).join("/") : "";
     } else {
-      newFolder = index.folder ? `${index.folder}/${folder}` : folder;
+      newFolder = project.folder ? `${project.folder}/${folder}` : folder;
     }
     doMoveToFolder(newFolder);
   }
@@ -92,16 +92,16 @@ export function IndexDropdownMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
           <DropdownMenuItem onClick={handleArchive} className="flex items-center gap-3">
-            {index.archived ? <ArchiveRestore className="h-4 w-4" /> : <ArchiveX className="h-4 w-4" />}
-            <span>{index.archived ? "Re-activate" : "Archive"}</span>
+            {project.archived ? <ArchiveRestore className="h-4 w-4" /> : <ArchiveX className="h-4 w-4" />}
+            <span>{project.archived ? "Re-activate" : "Archive"}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             className="flex items-center gap-3"
             onClick={() =>
               activateConfirm(handleDelete, {
-                description: `You are about to delete index ${index.name}. This cannot be undone!`,
-                challenge: index.id,
-                confirmText: `Delete index ${index.name}`,
+                description: `You are about to delete project ${project.name}. This cannot be undone!`,
+                challenge: project.id,
+                confirmText: `Delete project ${project.name}`,
               })
             }
           >
@@ -124,13 +124,13 @@ export function IndexDropdownMenu({
                 }}
               >
                 <FolderPlus className="h-4 w-4" />
-                <span>{index.folder ? "change folder" : "move to folder"}</span>
+                <span>{project.folder ? "change folder" : "move to folder"}</span>
               </DropdownMenuItem>
             </DialogTrigger>
             <DialogContent onClick={(e) => e.stopPropagation()}>
               <DialogHeader>
                 <DialogTitle>Move to folder</DialogTitle>
-                <DialogDescription>This will create a new folder and move the index to that folder</DialogDescription>
+                <DialogDescription>This will create a new folder and move the project to that folder</DialogDescription>
               </DialogHeader>
               <Input
                 value={newFolderName}
@@ -146,10 +146,12 @@ export function IndexDropdownMenu({
             <DropdownMenuLabel className="text-foreground">
               <span>Move to folder</span>
             </DropdownMenuLabel>
-            {index.folder && (
+            {project.folder && (
               <DropdownMenuItem key={".."} onSelect={(e) => handleRelativeMove(e, "..")}>
                 <CornerLeftUp className="ml-4 h-3 w-3" />
-                <span className="ml-1">{index.folder.split("/")[index.folder.split("/").length - 2] || "Root"}</span>
+                <span className="ml-1">
+                  {project.folder.split("/")[project.folder.split("/").length - 2] || "Root"}
+                </span>
               </DropdownMenuItem>
             )}
             {folders.map((folder) => (

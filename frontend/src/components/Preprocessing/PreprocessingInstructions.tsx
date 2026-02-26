@@ -6,7 +6,7 @@ import {
   usePreprocessingTasks,
 } from "@/api/preprocessing";
 import { Loading } from "../ui/loading";
-import { AmcatIndexId, PreprocessingInstruction } from "@/interfaces";
+import { AmcatProjectId, PreprocessingInstruction } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { Fragment, useState } from "react";
 import { Dialog, DialogContent } from "../ui/dialog";
@@ -14,12 +14,12 @@ import { AlertCircle, CheckCircle, HelpCircle, Pause, PauseCircle, Play, PlayCir
 import { Button } from "../ui/button";
 
 interface Props {
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   user: AmcatSessionUser;
 }
 
-export default function PreprocessingInstructions({ indexId, user }: Props) {
-  const { data: instructions, isLoading } = usePreprocessingInstructions(user, indexId);
+export default function PreprocessingInstructions({ projectId, user }: Props) {
+  const { data: instructions, isLoading } = usePreprocessingInstructions(user, projectId);
   const { data: tasks, isLoading: isTasksLoading } = usePreprocessingTasks(user);
   const [activeInstruction, setActiveInstruction] = useState<PreprocessingInstruction | undefined>(undefined);
   if (isLoading || isTasksLoading) return <Loading />;
@@ -29,7 +29,7 @@ export default function PreprocessingInstructions({ indexId, user }: Props) {
     <div className="prose dark:prose-invert">
       <PreprocessingDetailsDialog
         user={user}
-        indexId={indexId}
+        projectId={projectId}
         instruction={activeInstruction}
         onClose={() => setActiveInstruction(undefined)}
       />
@@ -49,7 +49,7 @@ export default function PreprocessingInstructions({ indexId, user }: Props) {
                     onClick={() => setActiveInstruction(i)}
                   >
                     <div className="flex gap-2 font-semibold text-primary">
-                      <PreprocessingStatus indexId={indexId} user={user} instruction={i} />
+                      <PreprocessingStatus projectId={projectId} user={user} instruction={i} />
                       <div>
                         {i.outputs.map((f) => f.field).join(", ")} &larr; {i.field}(
                         {i.arguments
@@ -72,14 +72,14 @@ interface PreprocessingDetailsDialogProps extends Props {
   onClose: () => void;
   instruction?: PreprocessingInstruction;
 }
-function PreprocessingDetailsDialog({ onClose, indexId, instruction, user }: PreprocessingDetailsDialogProps) {
+function PreprocessingDetailsDialog({ onClose, projectId, instruction, user }: PreprocessingDetailsDialogProps) {
   const onOpenChange = (open: boolean) => {
     if (!open) onClose();
   };
   return (
     <Dialog open={instruction != null} onOpenChange={onOpenChange}>
       <DialogContent>
-        {instruction == null ? null : <PreprocessingDetails indexId={indexId} instruction={instruction} user={user} />}
+        {instruction == null ? null : <PreprocessingDetails projectId={projectId} instruction={instruction} user={user} />}
       </DialogContent>
     </Dialog>
   );
@@ -93,11 +93,11 @@ function shouldRefetchStatus(input: any) {
   return refetch ? 1000 : null;
 }
 
-function PreprocessingDetails({ indexId, instruction, user }: PreprocessingDetailsProps) {
-  const { isLoading, data } = usePreprocessingInstructionDetails(user, indexId, instruction.field, {
+function PreprocessingDetails({ projectId, instruction, user }: PreprocessingDetailsProps) {
+  const { isLoading, data } = usePreprocessingInstructionDetails(user, projectId, instruction.field, {
     refetchInterval: shouldRefetchStatus,
   });
-  const { mutateAsync: mutateAaction } = useMutatePreprocessingInstructionAction(user, indexId, instruction.field);
+  const { mutateAsync: mutateAaction } = useMutatePreprocessingInstructionAction(user, projectId, instruction.field);
   if (isLoading) return <Loading />;
   if (data == null) return null;
 
@@ -189,8 +189,8 @@ function PreprocessingDetails({ indexId, instruction, user }: PreprocessingDetai
   );
 }
 
-function PreprocessingStatus({ user, indexId, instruction }: PreprocessingDetailsProps) {
-  const { isLoading, data } = usePreprocessingInstructionStatus(user, indexId, instruction.field, {
+function PreprocessingStatus({ user, projectId, instruction }: PreprocessingDetailsProps) {
+  const { isLoading, data } = usePreprocessingInstructionStatus(user, projectId, instruction.field, {
     refetchInterval: shouldRefetchStatus,
   });
   if (isLoading || data == null) return <Loading />;

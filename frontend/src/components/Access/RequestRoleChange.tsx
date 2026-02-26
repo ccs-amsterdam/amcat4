@@ -1,5 +1,11 @@
 import { useMyRequests, useSubmitRequest } from "@/api/requests";
-import { AmcatIndex, AmcatIndexId, AmcatRequest, AmcatRequestProjectRole, AmcatRequestServerRole } from "@/interfaces";
+import {
+  AmcatProject,
+  AmcatProjectId,
+  AmcatRequest,
+  AmcatRequestProjectRole,
+  AmcatRequestServerRole,
+} from "@/interfaces";
 import { amcatRequestProjectRoleSchema, amcatRequestServerRoleSchema } from "@/schemas";
 import { ChevronDown, Loader, LogInIcon, Timer } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
@@ -19,15 +25,15 @@ interface Props {
   user: AmcatSessionUser;
   roles: string[];
   currentRole: string;
-  index?: AmcatIndex;
+  project?: AmcatProject;
   onSend?: () => void;
 }
 
-export function RequestRoleChange({ user, roles, currentRole, index, onSend }: Props) {
+export function RequestRoleChange({ user, roles, currentRole, project, onSend }: Props) {
   const { signIn } = useAmcatSession();
   const { mutateAsync: submitRequest } = useSubmitRequest(user);
   const [role, setRole] = useState<string | undefined>(undefined);
-  const pending = usePendingRequest(user, index?.id);
+  const pending = usePendingRequest(user, project?.id);
   const [message, setMessage] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
@@ -41,11 +47,11 @@ export function RequestRoleChange({ user, roles, currentRole, index, onSend }: P
   function onSubmit(role: string | undefined) {
     if (!role) return;
 
-    const request = index
+    const request = project
       ? amcatRequestProjectRoleSchema.parse({
           type: "project_role",
           role: role,
-          project_id: index.id,
+          project_id: project.id,
           message,
         })
       : amcatRequestServerRoleSchema.parse({
@@ -67,7 +73,7 @@ export function RequestRoleChange({ user, roles, currentRole, index, onSend }: P
       <div className=" flex items-center rounded-md  bg-primary/10 p-3">
         <div className="flex flex-col">
           <div className="text-lg font-bold">Request role change</div>
-          <div>Sign-in to requests a role on this index</div>
+          <div>Sign-in to requests a role on this project</div>
         </div>
         <Button className="ml-auto flex h-full items-center gap-2 pr-6" onClick={() => signIn()}>
           <LogInIcon className="mr-2 h-4 w-4" />
@@ -143,7 +149,7 @@ export function RequestRoleChange({ user, roles, currentRole, index, onSend }: P
 
 function usePendingRequest(
   user: AmcatSessionUser,
-  index?: AmcatIndexId,
+  project?: AmcatProjectId,
 ): { request: AmcatRequestServerRole | AmcatRequestProjectRole | null; loading: boolean } {
   const { data: myRequests, isLoading } = useMyRequests(user);
 
@@ -152,14 +158,14 @@ function usePendingRequest(
 
     for (const r of myRequests) {
       if (r.email !== user.email) continue;
-      if (index) {
-        if (r.request.type === "project_role" && r.request.project_id === index) return r.request;
+      if (project) {
+        if (r.request.type === "project_role" && r.request.project_id === project) return r.request;
       } else {
         if (r.request.type === "server_role") return r.request;
       }
     }
     return null;
-  }, [myRequests, user, index]);
+  }, [myRequests, user, project]);
 
   if (isLoading) return { request: null, loading: true };
   return { request: getPending(), loading: false };

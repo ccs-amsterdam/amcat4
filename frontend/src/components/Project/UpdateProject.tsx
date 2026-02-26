@@ -1,6 +1,4 @@
-
-
-import { useMutateIndex } from "@/api";
+import { useMutateProject } from "@/api/project";
 import {
   Dialog,
   DialogContent,
@@ -10,8 +8,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
-import { AmcatIndex } from "@/interfaces";
-import { amcatIndexUpdateSchema, contactInfoSchema } from "@/schemas";
+import { AmcatProject } from "@/interfaces";
+import { amcatProjectUpdateSchema, contactInfoSchema } from "@/schemas";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useState } from "react";
@@ -22,18 +20,18 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { JSONForm } from "../ui/jsonForm";
 
-export function UpdateIndex({ index, children }: { index: AmcatIndex; children?: React.ReactNode }) {
+export function UpdateProject({ project, children }: { project: AmcatProject; children?: React.ReactNode }) {
   const { user } = useAmcatSession();
-  const { mutateAsync } = useMutateIndex(user);
+  const { mutateAsync } = useMutateProject(user);
   const [open, setOpen] = useState(false);
-  const form = useForm<z.input<typeof amcatIndexUpdateSchema>>({
-    resolver: zodResolver(amcatIndexUpdateSchema),
-    defaultValues: { ...index, archive: undefined },
+  const form = useForm<z.input<typeof amcatProjectUpdateSchema>>({
+    resolver: zodResolver(amcatProjectUpdateSchema),
+    defaultValues: { ...project, archive: undefined },
   });
-  if (!index) return null;
+  if (!project) return null;
 
-  function onSubmit(values: z.input<typeof amcatIndexUpdateSchema>) {
-    mutateAsync(amcatIndexUpdateSchema.parse(values)).then(() => setOpen(false));
+  function onSubmit(values: z.input<typeof amcatProjectUpdateSchema>) {
+    mutateAsync(amcatProjectUpdateSchema.parse(values)).then(() => setOpen(false));
   }
 
   return (
@@ -43,8 +41,8 @@ export function UpdateIndex({ index, children }: { index: AmcatIndex; children?:
       </DialogTrigger>
       <DialogContent aria-describedby={undefined} className="w-[500px] max-w-[90vw]">
         <DialogHeader>
-          <DialogTitle>Edit Index</DialogTitle>
-          <DialogDescription>{index.id}</DialogDescription>
+          <DialogTitle>Edit Project</DialogTitle>
+          <DialogDescription>{project.id}</DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
@@ -56,7 +54,7 @@ export function UpdateIndex({ index, children }: { index: AmcatIndex; children?:
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Index Name</FormLabel>
+                      <FormLabel>Project Name</FormLabel>
                       <FormControl>
                         <Input {...field} value={field.value ?? ""} />
                       </FormControl>
@@ -85,7 +83,7 @@ export function UpdateIndex({ index, children }: { index: AmcatIndex; children?:
                     <FormLabel>Description</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="A short description of what this index is about"
+                        placeholder="A short description of what this project is about"
                         {...field}
                         value={field.value ?? ""}
                       />
@@ -110,7 +108,7 @@ export function UpdateIndex({ index, children }: { index: AmcatIndex; children?:
               />
             </div>
             <Button className="mt-3" type="submit">
-              Update Index Settings
+              Update Project Settings
             </Button>
           </form>
         </Form>

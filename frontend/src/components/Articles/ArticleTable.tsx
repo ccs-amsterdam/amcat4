@@ -1,5 +1,5 @@
-import { useMyIndexrole } from "@/api";
-import { AmcatArticle, AmcatField, AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { useMyProjectRole } from "@/api/project";
+import { AmcatArticle, AmcatField, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { useMemo, useState } from "react";
 
@@ -10,21 +10,21 @@ import usePaginatedArticles from "./usePaginatedArticles";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
   fields: AmcatField[];
   children?: React.ReactNode;
 }
 
-export default function ArticleTable({ user, indexId, query, fields, children }: Props) {
+export default function ArticleTable({ user, projectId, query, fields, children }: Props) {
   const [pageSize] = useState(6);
-  const { role: indexRole } = useMyIndexrole(user, indexId);
+  const { role: projectRole } = useMyProjectRole(user, projectId);
   const { articles, pageIndex, prevPage, nextPage, isFetching, pageCount } = usePaginatedArticles({
     user,
-    indexId,
+    projectId,
     query,
     fields,
-    indexRole,
+    projectRole,
     pageSize,
 
     combineResults: true,
@@ -51,8 +51,8 @@ export default function ArticleTable({ user, indexId, query, fields, children }:
     };
     const columns: ColumnDef<AmcatArticle>[] = fields.map((field) => {
       let restricted = "";
-      if (indexRole === "METAREADER" && field.metareader.access === "none") restricted = "forbidden";
-      if (indexRole === "METAREADER" && field.metareader.access === "snippet") restricted = "snippet";
+      if (projectRole === "METAREADER" && field.metareader.access === "none") restricted = "forbidden";
+      if (projectRole === "METAREADER" && field.metareader.access === "snippet") restricted = "snippet";
       return {
         id: field.name,
         header: () => (
@@ -73,7 +73,7 @@ export default function ArticleTable({ user, indexId, query, fields, children }:
       };
     });
     return [idColumn, ...columns];
-  }, [indexRole, fields]);
+  }, [projectRole, fields]);
 
   return (
     <div>

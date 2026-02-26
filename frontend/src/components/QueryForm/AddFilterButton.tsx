@@ -1,4 +1,4 @@
-import { AmcatField, AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { AmcatField, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { useState } from "react";
 
 import { useFields } from "@/api/fields";
@@ -17,14 +17,14 @@ export function fieldOptions(fields: AmcatField[], query: AmcatQuery) {
 interface AddFilterProps {
   children: React.ReactNode;
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   value: AmcatQuery;
   onSubmit: (value: AmcatQuery) => void;
 }
 
-export function AddFilterButton({ children, user, indexId, value, onSubmit }: AddFilterProps) {
+export function AddFilterButton({ children, user, projectId, value, onSubmit }: AddFilterProps) {
   const [open, setOpen] = useState(false);
-  const { data: fields } = useFields(user, indexId);
+  const { data: fields } = useFields(user, projectId);
 
   function addFilter(name: string) {
     const filters = value?.filters || {};

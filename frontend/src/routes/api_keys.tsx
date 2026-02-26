@@ -9,10 +9,11 @@ import { CreateApiKey } from "@/components/Server/CreateApiKey";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { AmcatApiKey } from "@/interfaces";
-import { Check, Clipboard, Cog, Recycle, Trash2 } from "lucide-react";
+import { Check, Clipboard, Cog, LogInIcon, Recycle, Trash2 } from "lucide-react";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ErrorMsg } from "@/components/ui/error-message";
 
 type CreateKey = AmcatApiKey | "new" | null;
 
@@ -27,6 +28,8 @@ export default function ApiKeys() {
   if (createKey) {
     return <CreateApiKeyForm createKey={createKey} setCreateKey={setCreateKey} setShowKey={setShowKey} />;
   }
+
+  if (!user.authenticated) return <AuthRequired />;
 
   return (
     <div className="mx-auto mt-12 flex w-full max-w-3xl flex-col px-6 py-6">
@@ -164,5 +167,19 @@ function CreateApiKeyForm({
     <div className="mx-auto mt-12 w-full max-w-2xl px-6 py-6">
       <CreateApiKey current={createKey} onClose={() => setCreateKey(null)} setShowKey={setShowKey} />
     </div>
+  );
+}
+
+function AuthRequired() {
+  const { signIn } = useAmcatSession();
+
+  return (
+    <ErrorMsg type="Sign-in required">
+      <p className="w-[500px] max-w-[95vw] text-center">Only authenticated users can create API keys</p>
+      <Button className="mx-auto mt-6 flex items-center gap-2 pr-6" onClick={() => signIn()}>
+        <LogInIcon className="mr-2 h-4 w-4" />
+        Sign-in
+      </Button>
+    </ErrorMsg>
   );
 }

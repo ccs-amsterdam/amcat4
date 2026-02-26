@@ -36,7 +36,7 @@ interface Props {
   changeRole: (email: string | undefined, role: string, action: "create" | "delete" | "update") => void;
 }
 
-// This components works for both Server and Index users, depending
+// This components works for both Server and Project users, depending
 // on the props passed in.
 
 export default function UserRoleTable({ user, ownRole, users, roles, changeRole }: Props) {
@@ -53,7 +53,7 @@ export default function UserRoleTable({ user, ownRole, users, roles, changeRole 
   }, [debouncedGlobalFilter]);
 
   if (!["ADMIN", "WRITER"].includes(ownRole))
-    return <ErrorMsg type="Not Allowed">Need to have the WRITER or ADMIN role to edit index users</ErrorMsg>;
+    return <ErrorMsg type="Not Allowed">Need to have the WRITER or ADMIN role to edit project users</ErrorMsg>;
 
   function onChangeRole(email: string, currentRole: AmcatUserRole, newRole: string) {
     const role = amcatUserRoleSchema.parse(newRole);

@@ -1,4 +1,4 @@
-import { AmcatIndexId, MultimediaListItem, MultimediaPresignedPost } from "@/interfaces";
+import { AmcatProjectId, MultimediaListItem, MultimediaPresignedPost } from "@/interfaces";
 import { amcatMultimediaListItem, amcatMultimediaPresignedGet, amcatMultimediaPresignedPost } from "@/schemas";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
@@ -18,20 +18,20 @@ interface MultimediaParams {
 
 export function useMultimediaList(
   user?: AmcatSessionUser,
-  indexId?: AmcatIndexId | undefined,
+  projectId?: AmcatProjectId | undefined,
   params?: MultimediaParams,
   enabled: boolean = true,
 ) {
   return useQuery({
-    queryKey: ["multimediaList", user, indexId, params],
-    queryFn: () => getMultimediaList(user, indexId, params),
-    enabled: user != null && indexId != null && enabled,
+    queryKey: ["multimediaList", user, projectId, params],
+    queryFn: () => getMultimediaList(user, projectId, params),
+    enabled: user != null && projectId != null && enabled,
   });
 }
 
 export function useMultimediaConcatenatedList(
   user?: AmcatSessionUser,
-  indexId?: AmcatIndexId | undefined,
+  projectId?: AmcatProjectId | undefined,
   prefixes?: string[],
 ) {
   // special case of useMultimediaList.
@@ -39,8 +39,8 @@ export function useMultimediaConcatenatedList(
 
   const results = useQueries({
     queries: (prefixes || []).map((prefix) => ({
-      queryKey: ["multimediaList", user, indexId, { prefix }],
-      queryFn: () => getMultimediaList(user, indexId, { prefix }),
+      queryKey: ["multimediaList", user, projectId, { prefix }],
+      queryFn: () => getMultimediaList(user, projectId, { prefix }),
     })),
   });
 
@@ -53,10 +53,10 @@ export function useMultimediaConcatenatedList(
 
 async function getMultimediaList(
   user?: AmcatSessionUser,
-  indexId?: AmcatIndexId,
+  projectId?: AmcatProjectId,
   params?: MultimediaParams,
 ): Promise<MultimediaListItem[]> {
-  if (!user || !indexId) throw new Error("Missing user or indexId");
+  if (!user || !projectId) throw new Error("Missing user or projectId");
 
   const batchsize = 100000;
   let data: MultimediaListItem[] = [];
@@ -65,7 +65,7 @@ async function getMultimediaList(
   while (true) {
     const p: MultimediaParams = { ...(params || {}), n: params?.n || batchsize };
     if (start_after) p.start_after = start_after;
-    const res = await user.api.get(`/index/${indexId}/multimedia/list`, { params });
+    const res = await user.api.get(`/index/${projectId}/multimedia/list`, { params });
     const batch = z.array(amcatMultimediaListItem).parse(res.data);
     data = [...data, ...batch];
     if (batch.length < batchsize) break;
@@ -76,43 +76,43 @@ async function getMultimediaList(
 
 export function useMultimediaPresignedPost(
   user?: AmcatSessionUser,
-  indexId?: AmcatIndexId | undefined,
+  projectId?: AmcatProjectId | undefined,
   enabled: boolean = true,
 ) {
   return useQuery({
-    queryKey: ["multimediaPresignedPost", user, indexId],
+    queryKey: ["multimediaPresignedPost", user, projectId],
     queryFn: async () => {
-      if (!user || !indexId) return undefined;
-      const res = await user?.api.get(`index/${indexId}/multimedia/presigned_post`);
+      if (!user || !projectId) return undefined;
+      const res = await user?.api.get(`index/${projectId}/multimedia/presigned_post`);
       return amcatMultimediaPresignedPost.parse(res.data);
     },
-    enabled: enabled && user != null && indexId != null,
+    enabled: enabled && user != null && projectId != null,
   });
 }
 
-export function useMultimediaPresignedGet(user?: AmcatSessionUser, indexId?: AmcatIndexId | undefined, key?: string) {
+export function useMultimediaPresignedGet(user?: AmcatSessionUser, projectId?: AmcatProjectId | undefined, key?: string) {
   return useQuery({
-    queryKey: ["presignedUrl", user, indexId, key],
+    queryKey: ["presignedUrl", user, projectId, key],
     queryFn: async () => {
-      if (!user || !indexId || !key) return undefined;
-      const res = await user.api.get(`/index/${indexId}/multimedia/presigned_get`, { params: { key } });
+      if (!user || !projectId || !key) return undefined;
+      const res = await user.api.get(`/index/${projectId}/multimedia/presigned_get`, { params: { key } });
       return amcatMultimediaPresignedGet.parse(res.data);
     },
-    enabled: user != null && indexId != null && key != null,
+    enabled: user != null && projectId != null && key != null,
     retry: false, // because
   });
 }
 
 export function useMutateMultimedia(
   user?: AmcatSessionUser,
-  indexId?: AmcatIndexId | undefined,
+  projectId?: AmcatProjectId | undefined,
   presignedPost?: MultimediaPresignedPost,
 ) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (file: FileWithPath) => {
-      if (!user || !indexId || !presignedPost) throw new Error("Missing user, indexId or presignedPost");
+      if (!user || !projectId || !presignedPost) throw new Error("Missing user, projectId or presignedPost");
       const body = new FormData();
       body.append("key", file.path || file.name);
       for (const [key, value] of Object.entries(presignedPost.form_data)) body.append(key, value);
@@ -125,8 +125,8 @@ export function useMutateMultimedia(
       if (!res.ok) throw new Error(`Failed to upload file: ${res.statusText}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["multimediaList", user || "", indexId || ""] });
-      queryClient.invalidateQueries({ queryKey: ["multimediaFullList", user || "", indexId || ""] });
+      queryClient.invalidateQueries({ queryKey: ["multimediaList", user || "", projectId || ""] });
+      queryClient.invalidateQueries({ queryKey: ["multimediaFullList", user || "", projectId || ""] });
       toast.success("File uploaded");
     },
   });

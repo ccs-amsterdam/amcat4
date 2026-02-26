@@ -4,14 +4,14 @@ export const Route = createFileRoute("/projects/$project/settings")({
   component: SettingsPage,
 });
 
-import { useArchiveIndex, useIndex, useMutateIndex } from "@/api/index";
-import { ContactInfo } from "@/components/Index/ContactInfo";
-import { UpdateIndex } from "@/components/Index/UpdateIndex";
+import { useArchiveProject, useProject, useMutateProject } from "@/api/project";
+import { ContactInfo } from "@/components/Project/ContactInfo";
+import { UpdateProject } from "@/components/Project/UpdateProject";
 import { Button } from "@/components/ui/button";
 import { ErrorMsg } from "@/components/ui/error-message";
 import { Loading } from "@/components/ui/loading";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { AmcatIndex } from "@/interfaces";
+import { AmcatProject } from "@/interfaces";
 import { Edit, Trash2 } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useState } from "react";
@@ -19,47 +19,47 @@ import { useState } from "react";
 function SettingsPage() {
   const { project } = Route.useParams();
   const { user } = useAmcatSession();
-  const indexId = decodeURI(project);
-  const { data: index, isLoading: loadingIndex } = useIndex(user, indexId);
+  const projectId = decodeURI(project);
+  const { data: projectData, isLoading: loadingProject } = useProject(user, projectId);
 
-  if (loadingIndex) return <Loading />;
-  if (!index) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
+  if (loadingProject) return <Loading />;
+  if (!projectData) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
 
   return (
     <div className="flex w-full  flex-col gap-10">
-      <Settings user={user} index={index} />
+      <Settings user={user} project={projectData} />
     </div>
   );
 }
 
-function Settings({ user, index }: { user: AmcatSessionUser; index: AmcatIndex }) {
-  const { mutate } = useMutateIndex(user);
-  const { mutate: archive } = useArchiveIndex(user);
+function Settings({ user, project }: { user: AmcatSessionUser; project: AmcatProject }) {
+  const { mutate } = useMutateProject(user);
+  const { mutate: archive } = useArchiveProject(user);
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   return (
     <div className="grid grid-cols-1 items-start justify-between gap-10 p-3">
       <div>
         <div className="mb-3 flex items-center gap-5 md:justify-between">
-          <h2 className="mb-0 mt-0 break-all text-[clamp(1.2rem,5vw,2rem)]">{index.name}</h2>
+          <h2 className="mb-0 mt-0 break-all text-[clamp(1.2rem,5vw,2rem)]">{project.name}</h2>
           <div className="flex items-center gap-2">
             <Popover open={archiveOpen} onOpenChange={setArchiveOpen}>
               <PopoverTrigger asChild>
                 <Button
                   onClick={() => setArchiveOpen(!archiveOpen)}
-                  variant={!index.archived ? "outline" : "default"}
+                  variant={!project.archived ? "outline" : "default"}
                   className="flex gap-2"
                 >
                   <Trash2 className="h-5 w-5" />
-                  {!!index.archived ? "Unarchive" : "Archive"}
+                  {!!project.archived ? "Unarchive" : "Archive"}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="flex flex-col gap-3">
-                <p>Are you sure you want to {!!index.archived ? "unarchive" : "archive"} this index?</p>
+                <p>Are you sure you want to {!!project.archived ? "unarchive" : "archive"} this project?</p>
                 <Button
                   onClick={() => {
                     if (archive) {
-                      archive({ indexId: index.id, archived: !index.archived });
+                      archive({ projectId: project.id, archived: !project.archived });
                     }
                     setArchiveOpen(false);
                   }}
@@ -68,31 +68,31 @@ function Settings({ user, index }: { user: AmcatSessionUser; index: AmcatIndex }
                 </Button>
               </PopoverContent>
             </Popover>
-            <UpdateIndex index={index}>
+            <UpdateProject project={project}>
               <Button variant="ghost" className="flex gap-3">
                 <Edit className="h-7 w-7" />
                 <div className="hidden text-xl md:block">Edit</div>
               </Button>
-            </UpdateIndex>
+            </UpdateProject>
           </div>
         </div>
         <p className=" mt-0 break-all text-[clamp(0.8rem,3.5vw,1.4rem)]">
-          {index.description || <i className="text-sm text-foreground/60">(No description)</i>}
+          {project.description || <i className="text-sm text-foreground/60">(No description)</i>}
         </p>
       </div>
 
       <div className="grid grid-cols-[auto,1fr] gap-x-6 text-lg   ">
         <div className="font-bold">Size</div>
-        <div className="text-primary">{formatSimpleBytes(index.bytes || null)}</div>
+        <div className="text-primary">{formatSimpleBytes(project.bytes || null)}</div>
         <div className="font-bold">Guest role</div>
-        <div className="text-primary">{index.guest_role}</div>
+        <div className="text-primary">{project.guest_role}</div>
         <div className="font-bold">Own role</div>
-        <div className=" text-primary">{index.user_role}</div>
+        <div className=" text-primary">{project.user_role}</div>
         <div className="font-bold">Folder</div>
-        <div className=" text-primary">{index.folder}</div>
+        <div className=" text-primary">{project.folder}</div>
       </div>
       <img
-        src={index.image_url || ""}
+        src={project.image_url || ""}
         alt="No project image set"
         className="max-w-[300px] rounded object-contain text-center"
       />
@@ -100,12 +100,12 @@ function Settings({ user, index }: { user: AmcatSessionUser; index: AmcatIndex }
       <div>
         <div className="prose w-max rounded-md bg-primary/10 px-6 py-2 dark:prose-invert">
           <h4 className="text-foreground/60">Contact information</h4>
-          <ContactInfo contact={index.contact} />
+          <ContactInfo contact={project.contact} />
         </div>
       </div>
-      <div className={`${index.archived ? "" : "hidden"}`}>
+      <div className={`${project.archived ? "" : "hidden"}`}>
         <p className="w-max rounded border border-destructive p-2 text-destructive">
-          This project was archived on {index.archived?.split(".")[0]}
+          This project was archived on {project.archived?.split(".")[0]}
         </p>
       </div>
     </div>

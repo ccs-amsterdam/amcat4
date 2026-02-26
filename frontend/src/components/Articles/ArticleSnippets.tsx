@@ -1,4 +1,4 @@
-import { AmcatArticle, AmcatField, AmcatIndexId, AmcatQuery, AmcatUserRole } from "@/interfaces";
+import { AmcatArticle, AmcatField, AmcatProjectId, AmcatQuery, AmcatUserRole } from "@/interfaces";
 import { AlertTriangle, Link as LinkIcon, SkipBack, SkipForward } from "lucide-react";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { Link } from "@tanstack/react-router";
@@ -11,8 +11,8 @@ import { ReactNode } from "react";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
-  indexRole: AmcatUserRole;
+  projectId: AmcatProjectId;
+  projectRole: AmcatUserRole;
   query: AmcatQuery;
   fields: AmcatField[];
   onClick?: (doc: AmcatArticle) => void;
@@ -24,9 +24,18 @@ const defaultSnippets = {
   match_chars: 50,
 };
 
-export default function ArticleSnippets({ user, indexId, indexRole, query, fields, onClick }: Props) {
+export default function ArticleSnippets({ user, projectId, projectRole, query, fields, onClick }: Props) {
   const { articles, layout, listFields, isFetching, pageIndex, pageCount, totalCount, prevPage, nextPage } =
-    usePaginatedArticles({ user, indexId, query, fields, indexRole, highlight: true, defaultSnippets, pageSize: 6 });
+    usePaginatedArticles({
+      user,
+      projectId,
+      query,
+      fields,
+      projectRole,
+      highlight: true,
+      defaultSnippets,
+      pageSize: 6,
+    });
 
   // if (isLoading) return <Loading msg="Loading articles" />;
   return (

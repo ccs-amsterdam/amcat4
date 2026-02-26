@@ -1,14 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/projects/$project/access")({
-  component: IndexRole,
+  component: ProjectRole,
 });
 
-import { useIndex } from "@/api/index";
-import { useMutateIndexUser } from "@/api/indexUsers";
+import { useProject } from "@/api/project";
+import { useMutateProjectUser } from "@/api/projectUsers";
 import { useHasGlobalRole } from "@/api/userDetails";
 import { RequestRoleChange } from "@/components/Access/RequestRoleChange";
-import { ContactInfo } from "@/components/Index/ContactInfo";
+import { ContactInfo } from "@/components/Project/ContactInfo";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
@@ -18,36 +18,36 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AmcatIndex } from "@/interfaces";
+import { AmcatProject } from "@/interfaces";
 import { ChevronDown, Crown, HelpCircle } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 
 const roles = ["NONE", "METAREADER", "READER", "WRITER", "ADMIN"];
 
-function IndexRole() {
+function ProjectRole() {
   const { user } = useAmcatSession();
   const { project } = Route.useParams();
-  const indexId = decodeURI(project);
-  const { data: index } = useIndex(user, indexId);
-  if (!index) return null;
+  const projectId = decodeURI(project);
+  const { data: projectData } = useProject(user, projectId);
+  if (!projectData) return null;
 
-  return <IndexRoleMenu user={user} index={index} />;
+  return <ProjectRoleMenu user={user} project={projectData} />;
 }
 
-interface IndexRoleProps {
+interface ProjectRoleProps {
   user: AmcatSessionUser;
-  index: AmcatIndex;
+  project: AmcatProject;
 }
 
-function IndexRoleMenu({ user, index }: IndexRoleProps) {
-  const user_role = index?.user_role || "NONE";
+function ProjectRoleMenu({ user, project }: ProjectRoleProps) {
+  const user_role = project?.user_role || "NONE";
   const isServerAdmin = useHasGlobalRole(user, "ADMIN");
 
   function myRole() {
-    if (user_role === "NONE") return <span>you do not have access to this index</span>;
+    if (user_role === "NONE") return <span>you do not have access to this project</span>;
     return (
       <span>
-        You have the <b>{user_role}</b> role on this index.
+        You have the <b>{user_role}</b> role on this project.
       </span>
     );
   }
@@ -59,30 +59,30 @@ function IndexRoleMenu({ user, index }: IndexRoleProps) {
         <Crown className="text-secondary" />
         <span className="text-sm">Use server admin privilege</span>
         <div className="ml-auto text-nowrap">
-          <IndexMenuServerAdmin user={user} index={index} />
+          <ProjectMenuServerAdmin user={user} project={project} />
         </div>
       </div>
     );
   }
 
   function requestRoleChange() {
-    if (index?.user_role === "ADMIN") return null;
+    if (project?.user_role === "ADMIN") return null;
     if (isServerAdmin) return null;
-    return <RequestRoleChange user={user} roles={roles} currentRole={index?.user_role} index={index} />;
+    return <RequestRoleChange user={user} roles={roles} currentRole={project?.user_role} project={project} />;
   }
 
   function pointsOfContact() {
-    if (index?.contact && index?.contact.length > 0)
+    if (project?.contact && project?.contact.length > 0)
       return (
         <div className=" mt-6  max-w-xl items-center gap-3 rounded-md">
           <div className="p-3">
             <div className="text-lg font-bold">Contact information</div>
             <div className="text-sm">
-              For other questions or comments about the accessibility of data in this index, you can reach out to:
+              For other questions or comments about the accessibility of data in this project, you can reach out to:
             </div>
           </div>
           <div className="items-center rounded-md  p-3 text-sm ">
-            <ContactInfo contact={index?.contact} />
+            <ContactInfo contact={project?.contact} />
           </div>
         </div>
       );
@@ -103,8 +103,8 @@ function IndexRoleMenu({ user, index }: IndexRoleProps) {
   );
 }
 
-function IndexMenuServerAdmin({ user, index }: IndexRoleProps) {
-  const { mutate: mutateUser } = useMutateIndexUser(user, index?.id);
+function ProjectMenuServerAdmin({ user, project }: ProjectRoleProps) {
+  const { mutate: mutateUser } = useMutateProjectUser(user, project?.id);
   const isAdmin = useHasGlobalRole(user, "ADMIN");
   if (!isAdmin) return null;
 
@@ -112,7 +112,7 @@ function IndexMenuServerAdmin({ user, index }: IndexRoleProps) {
     if (!role) return;
     if (role === "NONE") {
       mutateUser({ email: user.email, role, action: "delete" });
-    } else if (index?.user_role && index.user_role !== "NONE") {
+    } else if (project?.user_role && project.user_role !== "NONE") {
       mutateUser({ email: user.email, role, action: "update" });
     } else {
       mutateUser({ email: user.email, role, action: "create" });
@@ -121,7 +121,7 @@ function IndexMenuServerAdmin({ user, index }: IndexRoleProps) {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild className={!index ? "hidden" : ""}>
+      <DropdownMenuTrigger asChild className={!project ? "hidden" : ""}>
         <Button variant="ghost" className="">
           Change role
           <ChevronDown className="ml-2 h-4 w-4" />
@@ -129,7 +129,7 @@ function IndexMenuServerAdmin({ user, index }: IndexRoleProps) {
       </DropdownMenuTrigger>
       <DropdownMenuContent className="" align="end">
         <DropdownMenuRadioGroup
-          value={index?.user_role}
+          value={project?.user_role}
           onSelect={(e) => e.preventDefault()}
           onValueChange={onChangeRole}
         >
@@ -158,7 +158,7 @@ function RoleInfoDialog() {
         <HelpCircle className="cursor-pointer text-primary" />
       </DialogTrigger>
       <DialogContent className="w-[600px] max-w-[95vw]">
-        <DialogTitle className="">Index access roles</DialogTitle>
+        <DialogTitle className="">Project access roles</DialogTitle>
         <DialogDescription className="">
           There are five levels of access, with incremental permissions
         </DialogDescription>
@@ -173,15 +173,15 @@ function RoleInfo() {
     <div className="flex flex-col gap-3 text-sm">
       <div className="grid grid-cols-[7rem,1fr] gap-1">
         <b className="text-primary">NO ROLE</b>
-        Cannot see this index at all.
+        Cannot see this project at all.
         <b className="text-primary">METAREADER</b>
-        Can search documents, but can only view content approved by the index admin.
+        Can search documents, but can only view content approved by the project admin.
         <b className="text-primary">READER</b>
         Can view all document contents.
         <b className="text-primary">WRITER</b>
         Can upload and modify documents.
         <b className="text-primary">ADMIN</b>
-        Can manage index settings and users, and delete data.
+        Can manage project settings and users, and delete data.
       </div>
     </div>
   );

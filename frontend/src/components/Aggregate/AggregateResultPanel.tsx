@@ -1,4 +1,4 @@
-import { AggregationOptions, AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { AggregationOptions, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { useState } from "react";
 import AggregateResult from "./AggregateResult";
@@ -11,11 +11,11 @@ const initialState: AggregationOptions = {
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
 }
 
-export default function AggregateResultPanel({ user, indexId, query }: Props) {
+export default function AggregateResultPanel({ user, projectId, query }: Props) {
   const [options, setOptions] = useState<AggregationOptions>(initialState);
   options.display;
 
@@ -26,7 +26,7 @@ export default function AggregateResultPanel({ user, indexId, query }: Props) {
     if (options.display === "list") return 20;
   }
 
-  if (!user || !indexId || !query) return null;
+  if (!user || !projectId || !query) return null;
 
   return (
     <div>
@@ -37,7 +37,7 @@ export default function AggregateResultPanel({ user, indexId, query }: Props) {
         <div className="flex justify-center p-5">
           <AggregateResultOptions
             user={user}
-            indexId={indexId}
+            projectId={projectId}
             query={query}
             options={options}
             setOptions={setOptions}
@@ -46,7 +46,7 @@ export default function AggregateResultPanel({ user, indexId, query }: Props) {
         <div className="w-full p-5">
           <AggregateResult
             user={user}
-            indexId={indexId}
+            projectId={projectId}
             query={query}
             options={options}
             defaultPageSize={defaultPageSize()}

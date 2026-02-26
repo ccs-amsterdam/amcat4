@@ -18,7 +18,7 @@ const date_intervals = [
 ];
 
 interface AxisPickerProps {
-  /** index fields to choose from */
+  /** project fields to choose from */
   fields: AmcatField[];
   /** Current axis value */
   value: AggregationAxis;

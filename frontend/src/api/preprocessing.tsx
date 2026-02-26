@@ -19,29 +19,29 @@ export function usePreprocessingTasks(user: AmcatSessionUser) {
   });
 }
 
-export function usePreprocessingInstructions(user: AmcatSessionUser, indexId: string) {
+export function usePreprocessingInstructions(user: AmcatSessionUser, projectId: string) {
   return useQuery({
-    queryKey: ["preprocessingInstructions", user, indexId],
+    queryKey: ["preprocessingInstructions", user, projectId],
     queryFn: async () => {
-      const res = await user.api.get(`/index/${indexId}/preprocessing`);
+      const res = await user.api.get(`/index/${projectId}/preprocessing`);
       return z.array(amcatPreprocessingInstruction).parse(res.data);
     },
   });
 }
 
-export function useMutatePreprocessingInstruction(user: AmcatSessionUser, indexId: string) {
+export function useMutatePreprocessingInstruction(user: AmcatSessionUser, projectId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (instruction: any) => {
-      await user.api.post(`/index/${indexId}/preprocessing`, instruction);
+      await user.api.post(`/index/${projectId}/preprocessing`, instruction);
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["preprocessingInstructions", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["fields", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["articles", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["aggregate", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["article", user, indexId] });
+      queryClient.invalidateQueries({ queryKey: ["preprocessingInstructions", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["fields", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["articles", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["aggregate", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["article", user, projectId] });
       toast.success("Preprocessing instruction submitted");
     },
   });
@@ -49,14 +49,14 @@ export function useMutatePreprocessingInstruction(user: AmcatSessionUser, indexI
 
 export function usePreprocessingInstructionDetails(
   user: AmcatSessionUser,
-  indexId: string,
+  projectId: string,
   field: string,
   extra_options = {},
 ) {
   return useQuery({
-    queryKey: ["preprocessingInstructionDetails", user, indexId, field],
+    queryKey: ["preprocessingInstructionDetails", user, projectId, field],
     queryFn: async () => {
-      const res = await user.api.get(`/index/${indexId}/preprocessing/${field}`);
+      const res = await user.api.get(`/index/${projectId}/preprocessing/${field}`);
       return amcatPreprocessingInstructionDetails.parse(res.data);
     },
     staleTime: 1000,
@@ -66,14 +66,14 @@ export function usePreprocessingInstructionDetails(
 
 export function usePreprocessingInstructionStatus(
   user: AmcatSessionUser,
-  indexId: string,
+  projectId: string,
   field: string,
   extra_options = {},
 ) {
   return useQuery({
-    queryKey: ["preprocessingInstructionStatus", user, indexId, field],
+    queryKey: ["preprocessingInstructionStatus", user, projectId, field],
     queryFn: async () => {
-      const res = await user.api.get(`/index/${indexId}/preprocessing/${field}/status`);
+      const res = await user.api.get(`/index/${projectId}/preprocessing/${field}/status`);
       return amcatPreprocessingInstructionStatus.parse(res.data);
     },
     staleTime: 1000,
@@ -81,16 +81,16 @@ export function usePreprocessingInstructionStatus(
   });
 }
 
-export function useMutatePreprocessingInstructionAction(user: AmcatSessionUser, indexId: string, field: string) {
+export function useMutatePreprocessingInstructionAction(user: AmcatSessionUser, projectId: string, field: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (action: any) => {
-      await user.api.post(`/index/${indexId}/preprocessing/${field}/status`, { action });
+      await user.api.post(`/index/${projectId}/preprocessing/${field}/status`, { action });
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["preprocessingInstructionDetails", user, indexId, field] });
-      queryClient.invalidateQueries({ queryKey: ["preprocessingInstructionStatus", user, indexId, field] });
+      queryClient.invalidateQueries({ queryKey: ["preprocessingInstructionDetails", user, projectId, field] });
+      queryClient.invalidateQueries({ queryKey: ["preprocessingInstructionStatus", user, projectId, field] });
       toast.success(`Sent preprocessing action ${variables} to ${field}`);
     },
   });

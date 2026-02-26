@@ -45,20 +45,8 @@ async def login(
     code_verifier = secrets.token_urlsafe(64)
     code_challenge = base_urlsafe_hash(code_verifier)
 
-    # Logic for Middlecat vs OIDC
-    if OIDC_URL:
-        auth_url = OIDC_URL
-        client_id = OIDC_ID
-    else:
-        auth_url = f"{MIDDLECAT_URL}/authorize"
-        client_id = host
-
-    if auth_url is None:
-        raise HTTPException(500, "Server does not have an authentication provider set up")
-
     params = {
         "response_type": "code",
-        "client_id": client_id,
         "redirect_uri": f"{api}/auth/callback",
         "scope": "openid profile email",
         "code_challenge": code_challenge,
@@ -66,6 +54,18 @@ async def login(
         "resource": api,
         "state": secrets.token_urlsafe(16),
     }
+
+    # Logic for Middlecat vs OIDC
+    if OIDC_URL and not get_settings().test_mode:
+        auth_url = OIDC_URL
+        params["client_id"] = OIDC_ID or ""
+    else:
+        auth_url = f"{MIDDLECAT_URL}/authorize"
+        params["client_id"] = host
+        # params["refresh_mode"] = "static"
+
+    if auth_url is None:
+        raise HTTPException(500, "Server does not have an authentication provider set up")
 
     # Persist to encrypted session cookie
     request.session.update({"code_verifier": code_verifier, "state": params["state"], "rd": redirect_back})
@@ -76,8 +76,7 @@ async def login(
 
 @app_auth.get("/auth/callback")
 async def callback(request: Request, code: str, state: str):
-    session = request.session
-    if state != session.get("state"):
+    if state != request.session.get("state"):
         raise HTTPException(status_code=400, detail="State mismatch")
 
     protocol = request.headers.get("x-forwarded-proto", "https")
@@ -85,7 +84,7 @@ async def callback(request: Request, code: str, state: str):
     client_url = f"{protocol}://{host}"
 
     # Prepare Token Exchange
-    if OIDC_URL:
+    if OIDC_URL and not get_settings().test_mode:
         token_url = OIDC_URL
         data = {
             "grant_type": "authorization_code",
@@ -93,14 +92,14 @@ async def callback(request: Request, code: str, state: str):
             "client_id": OIDC_ID,
             "client_secret": OIDC_SECRET,
             "redirect_uri": f"{client_url}/auth/callback",
-            "code_verifier": session.get("code_verifier"),
+            "code_verifier": request.session.get("code_verifier"),
         }
     else:
         token_url = f"{MIDDLECAT_URL}/api/token"
         data = {
             "grant_type": "authorization_code",
             "code": code,
-            "code_verifier": session.get("code_verifier"),
+            "code_verifier": request.session.get("code_verifier"),
         }
 
     async with httpx.AsyncClient() as client:
@@ -110,7 +109,7 @@ async def callback(request: Request, code: str, state: str):
     claims = decode_claims(tokens["access_token"])
 
     # Create session
-    session.update(
+    request.session.update(
         {
             "id_token": tokens.get("id_token"),
             "access_token": tokens["access_token"],
@@ -124,7 +123,7 @@ async def callback(request: Request, code: str, state: str):
     response = RedirectResponse(url=request.session.get("rd") or "/")
 
     # Session data the client should be able to see
-    value = str(claims.get("exp", "")) + "." + str(claims.get("email"))
+    value = str(claims.get("exp")) + "." + str(claims.get("email"))
     response.set_cookie(key="client_session", value=value, httponly=False, samesite="lax", secure=IS_SECURE_CONTEXT)
 
     return response
@@ -146,7 +145,7 @@ async def logout(
     request.session.clear()
 
     # Handle Logic per Provider
-    if OIDC_URL:
+    if OIDC_URL and not get_settings().test_mode:
         params = {
             "post_logout_redirect_uri": final_destination,
         }
@@ -181,20 +180,19 @@ async def logout(
 
 @app_auth.post("/auth/refresh")
 async def refresh_token(request: Request):
-    session = request.session
-
     # Check if refresh is actually needed (5-minute buffer)
     now = int(time.time())
-    exp = session.get("exp")
-    if exp and (exp - now > 5 * 60):
+    exp = int(request.session.get("exp", now))
+    if exp - now > 5 * 60:
         return JSONResponse({"exp": exp})
 
-    refresh_token = session.get("refresh_token")
+    refresh_token = request.session.get("refresh_token")
     if not refresh_token:
         raise HTTPException(status_code=401, detail="No refresh token available")
+    print(refresh_token)
 
     # 3. Determine Provider and Data
-    if OIDC_URL:
+    if OIDC_URL and not get_settings().test_mode:
         token_url = OIDC_URL
         data = {
             "grant_type": "refresh_token",
@@ -217,16 +215,16 @@ async def refresh_token(request: Request):
             tokens = res.json()
         except httpx.HTTPStatusError:
             # If the refresh token is expired/invalid, clear session
-            session.clear()
+            request.session.clear()
             raise HTTPException(status_code=401, detail="Refresh failed")
 
     # New Tokens
     new_access_token = tokens["access_token"]
-    new_refresh_token = tokens.get("refresh_token", refresh_token)  # Some providers don't rotate
+    new_refresh_token = tokens.get("refresh_token", refresh_token)  # In case rotated
     claims = decode_claims(new_access_token)
 
     # Update Session
-    session.update(
+    request.session.update(
         {
             "access_token": new_access_token,
             "refresh_token": new_refresh_token,
@@ -235,6 +233,7 @@ async def refresh_token(request: Request):
     )
 
     # Update session data the client should be able to see
+
     response = JSONResponse({"exp": claims.get("exp")})
     value = str(claims.get("exp", "")) + "." + str(claims.get("email"))
     response.set_cookie(key="client_session", value=value, httponly=False, samesite="lax", secure=IS_SECURE_CONTEXT)

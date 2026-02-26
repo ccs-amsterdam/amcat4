@@ -1,6 +1,6 @@
-import { useMyIndexrole } from "@/api";
+import { useMyProjectRole } from "@/api/project";
 import { useFields } from "@/api/fields";
-import { AmcatField, AmcatIndexId, AmcatQuery, AmcatUserRole } from "@/interfaces";
+import { AmcatField, AmcatProjectId, AmcatQuery, AmcatUserRole } from "@/interfaces";
 import { ChevronDown, Download, EyeOff } from "lucide-react";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { MouseEvent, useEffect, useState } from "react";
@@ -18,26 +18,26 @@ import { Input } from "../ui/input";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
 }
 
-export default function DownloadArticles({ user, indexId, query }: Props) {
+export default function DownloadArticles({ user, projectId, query }: Props) {
   const [fields, setFields] = useState<AmcatField[] | undefined>();
 
-  const { role: indexRole } = useMyIndexrole(user, indexId);
-  const { data: allFields, isLoading } = useFields(user, indexId);
+  const { role: projectRole } = useMyProjectRole(user, projectId);
+  const { data: allFields, isLoading } = useFields(user, projectId);
 
   useEffect(() => {
     if (!allFields) return;
     setFields(
       allFields.filter((field) => {
         if (!field.client_settings.inList) return false;
-        if (indexRole === "METAREADER" && field.metareader.access === "none") return false;
+        if (projectRole === "METAREADER" && field.metareader.access === "none") return false;
         return true;
       }),
     );
-  }, [indexRole, allFields]);
+  }, [projectRole, allFields]);
 
   function toggleField(e: MouseEvent, field: AmcatField) {
     e.preventDefault();
@@ -50,10 +50,10 @@ export default function DownloadArticles({ user, indexId, query }: Props) {
   }
 
   if (isLoading) return <Loading />;
-  if (!indexRole || !fields) return null;
+  if (!projectRole || !fields) return null;
 
   return (
-    <ArticleTable user={user} indexId={indexId} query={query} fields={fields}>
+    <ArticleTable user={user} projectId={projectId} query={query} fields={fields}>
       <div className="flex justify-end gap-3 ">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -64,8 +64,8 @@ export default function DownloadArticles({ user, indexId, query }: Props) {
           <DropdownMenuContent onClick={(e) => e.preventDefault()} className="max-h-60 overflow-auto">
             {allFields?.map((field) => {
               const selected = fields.find((f) => f.name === field.name);
-              const forbidden = indexRole === "METAREADER" && field.metareader.access === "none";
-              const snippet = indexRole === "METAREADER" && field.metareader.access === "snippet";
+              const forbidden = projectRole === "METAREADER" && field.metareader.access === "none";
+              const snippet = projectRole === "METAREADER" && field.metareader.access === "snippet";
               return (
                 <DropdownMenuItem
                   disabled={forbidden}
@@ -82,7 +82,7 @@ export default function DownloadArticles({ user, indexId, query }: Props) {
             })}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Downloader user={user} indexId={indexId} query={query} fields={fields} indexRole={indexRole} />
+        <Downloader user={user} projectId={projectId} query={query} fields={fields} projectRole={projectRole} />
       </div>
     </ArticleTable>
   );
@@ -90,28 +90,28 @@ export default function DownloadArticles({ user, indexId, query }: Props) {
 
 interface DownloaderProps {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
   fields: AmcatField[];
-  indexRole: AmcatUserRole;
+  projectRole: AmcatUserRole;
 }
 
-function Downloader({ user, indexId, query, fields, indexRole }: DownloaderProps) {
+function Downloader({ user, projectId, query, fields, projectRole }: DownloaderProps) {
   const [enabled, setEnabled] = useState(false);
   const [filename, setFilename] = useState<string>("");
   const { CSVDownloader, Type } = useCSVDownloader();
   const { articles, pageIndex, pageCount, isLoading, nextPage } = usePaginatedArticles({
     user,
-    indexId,
+    projectId,
     query,
     fields,
-    indexRole,
+    projectRole,
     pageSize: 200,
     combineResults: true,
     enabled,
   });
 
-  const defaultFilename = `${indexId}_articles`;
+  const defaultFilename = `${projectId}_articles`;
 
   useEffect(() => {
     if (pageIndex < pageCount - 1) nextPage();

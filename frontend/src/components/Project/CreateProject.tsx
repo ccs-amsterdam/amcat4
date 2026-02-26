@@ -1,11 +1,11 @@
-import { useCreateIndex } from "@/api";
+import { useCreateProject } from "@/api/project";
 import { useSubmitRequest } from "@/api/requests";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { amcatIndexSchema } from "@/schemas";
+import { amcatProjectSchema } from "@/schemas";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
@@ -14,16 +14,16 @@ import { AmcatRequestProject } from "@/interfaces";
 import { Loader } from "lucide-react";
 import { useQueryState } from "nuqs";
 
-export function CreateIndex({ folder, request }: { folder?: string; request?: boolean }) {
+export function CreateProject({ folder, request }: { folder?: string; request?: boolean }) {
   const navigate = useNavigate();
-  const [open, setOpen] = useQueryState("create_index");
+  const [open, setOpen] = useQueryState("create_project");
 
   const [loading, setLoading] = useState(false);
   const { user } = useAmcatSession();
   const isAdmin = useHasGlobalRole(user, "ADMIN");
 
-  const { mutateAsync: createIndexAsync } = useCreateIndex(user);
-  const { mutateAsync: requestIndexAsync } = useSubmitRequest(user);
+  const { mutateAsync: createProjectAsync } = useCreateProject(user);
+  const { mutateAsync: requestProjectAsync } = useSubmitRequest(user);
   const [name, setName] = useState("");
   const [folderValue, setFolderValue] = useState(folder);
   const [description, setDescription] = useState("");
@@ -50,7 +50,7 @@ export function CreateIndex({ folder, request }: { folder?: string; request?: bo
   function onCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
-    createIndexAsync(amcatIndexSchema.parse({ id, name, description, folder: folderValue }))
+    createProjectAsync(amcatProjectSchema.parse({ id, name, description, folder: folderValue }))
       .then(() => navigate({ to: `/projects/${id}/data`, search: { tab: "upload" } as any }))
       .catch((e) => {
         setError(e?.response?.data?.message || "An error occurred");
@@ -70,7 +70,7 @@ export function CreateIndex({ folder, request }: { folder?: string; request?: bo
     };
 
     setLoading(true);
-    requestIndexAsync(request)
+    requestProjectAsync(request)
       .then(() => {
         setOpen(null);
       })
@@ -81,8 +81,8 @@ export function CreateIndex({ folder, request }: { folder?: string; request?: bo
     if (!request) return null;
     return (
       <div className="prose dark:prose-invert">
-        You do not have permission to create a new index, but you can submit a request. If approved, the project will be
-        created for you and you will be granted admin access to it.
+        You do not have permission to create a new project, but you can submit a request. If approved, the project will
+        be created for you and you will be granted admin access to it.
       </div>
     );
   }
@@ -90,11 +90,11 @@ export function CreateIndex({ folder, request }: { folder?: string; request?: bo
   return (
     <Dialog open={!!open} onOpenChange={(open) => setOpen(open ? "open" : null)}>
       <DialogTrigger asChild>
-        <Button className="">{request ? "Request new index" : "Create new index"}</Button>
+        <Button className="">{request ? "Request new project" : "Create new project"}</Button>
       </DialogTrigger>
       <DialogContent aria-describedby={undefined} className="w-[600px] max-w-[95vw]">
         <DialogHeader>
-          <DialogTitle>Create Index</DialogTitle>
+          <DialogTitle>Create Project</DialogTitle>
         </DialogHeader>
         <form className="flex flex-col gap-3" onSubmit={request ? onRequest : onCreate}>
           {requestInfo()}
@@ -110,12 +110,12 @@ export function CreateIndex({ folder, request }: { folder?: string; request?: bo
                 id="name"
                 name="name"
                 autoComplete="off"
-                placeholder="My new index"
+                placeholder="My new project"
               />
             </div>
 
             <div>
-              <label htmlFor="ID">Index ID</label>
+              <label htmlFor="ID">Project ID</label>
               <Input id="ID" name="ID" value={id} onChange={(e) => setId(idFromName(e.target.value))} />
             </div>
           </div>
@@ -126,7 +126,7 @@ export function CreateIndex({ folder, request }: { folder?: string; request?: bo
               onChange={(e) => setDescription(e.target.value)}
               id="description"
               name="description"
-              placeholder="Optionally, A brief description of the index"
+              placeholder="Optionally, A brief description of the project"
             />
           </div>
 
@@ -145,7 +145,7 @@ export function CreateIndex({ folder, request }: { folder?: string; request?: bo
           </div>
 
           <div className={`${request ? "" : "hidden"}`}>
-            <label htmlFor="message">Index request Message</label>
+            <label htmlFor="message">Project request Message</label>
             <Textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -156,7 +156,7 @@ export function CreateIndex({ folder, request }: { folder?: string; request?: bo
           </div>
           <div className={`${error ? "" : "hidden"} text-center text-destructive`}>{error}</div>
           <Button className="mt-2 w-full">
-            {loading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : request ? "Submit request" : "Create index"}
+            {loading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : request ? "Submit request" : "Create project"}
           </Button>
         </form>
       </DialogContent>

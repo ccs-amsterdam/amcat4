@@ -2,9 +2,9 @@ import React, { ReactElement, useMemo, useState } from "react";
 
 import { useArticle } from "@/api/article";
 import { useFields } from "@/api/fields";
-import { useMyIndexrole } from "@/api/index";
+import { useMyProjectRole } from "@/api/project";
 
-import { AmcatArticle, AmcatField, AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { AmcatArticle, AmcatField, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { Button } from "../ui/button";
 import { Loading } from "../ui/loading";
@@ -16,7 +16,7 @@ import PreprocessStatus from "./PreprocessStatus";
 
 export interface ArticleProps {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   /** An article id. Can also be an array of length 1 with the article id, which can trigger setOpen if the id didn't change */
   id: string;
   /** A query, used for highlighting */
@@ -27,17 +27,17 @@ export interface ArticleProps {
 
 export default React.memo(Article);
 
-function Article({ user, indexId, id, query, changeArticle, link }: ArticleProps) {
-  const { data: fields, isLoading: fieldsLoading } = useFields(user, indexId);
+function Article({ user, projectId, id, query, changeArticle, link }: ArticleProps) {
+  const { data: fields, isLoading: fieldsLoading } = useFields(user, projectId);
   const documentFields = useMemo(() => fields?.filter((f) => f.client_settings.inDocument), [fields]);
-  const { role: indexRole } = useMyIndexrole(user, indexId);
+  const { role: projectRole } = useMyProjectRole(user, projectId);
   const { data: article, isLoading: articleLoading } = useArticle(
     user,
-    indexId,
+    projectId,
     id,
     query,
     { highlight: true },
-    indexRole,
+    projectRole,
   );
 
   if (fieldsLoading || articleLoading) return <Loading />;
@@ -52,7 +52,7 @@ function Article({ user, indexId, id, query, changeArticle, link }: ArticleProps
   return (
     <div className="prose grid h-full max-w-none grid-cols-1 gap-6 dark:prose-invert lg:grid-cols-[1fr,0.5fr]">
       <div className="h-full overflow-auto">
-        <Body article={article} fields={documentFields} metareader={indexRole === "METAREADER"} />
+        <Body article={article} fields={documentFields} metareader={projectRole === "METAREADER"} />
       </div>
       <div className="mt-6 overflow-x-hidden">
         <div className={`${hasMeta ? "" : "hidden"} h-full rounded bg-primary/10 p-3 `}>
@@ -61,12 +61,12 @@ function Article({ user, indexId, id, query, changeArticle, link }: ArticleProps
             article={article}
             fields={documentFields}
             setArticle={changeArticle}
-            metareader={indexRole === "METAREADER"}
+            metareader={projectRole === "METAREADER"}
           />
         </div>
         <div className={` mt-10 overflow-hidden ${hasMultimedia ? "" : "hidden"}`}>
           <h2 className="mb-0 mt-4">Multimedia</h2>
-          <ArticleMultimedia user={user} indexId={indexId} article={article} fields={documentFields} />
+          <ArticleMultimedia user={user} projectId={projectId} article={article} fields={documentFields} />
         </div>
         <div className={` mt-10 overflow-hidden ${hasPreprocess ? "" : "hidden"}`}>
           <h2 className="mb-0 mt-4">Preprocessing status</h2>

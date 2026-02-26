@@ -6,13 +6,13 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 /**
  * Show a single article
  */
-export default function ArticleModal({ user, indexId, id, query, changeArticle, link }: ArticleProps) {
+export default function ArticleModal({ user, projectId, id, query, changeArticle, link }: ArticleProps) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     setOpen(true);
   }, [id]);
-  if (!indexId || !id) return null;
+  if (!projectId || !id) return null;
 
   return (
     <Dialog
@@ -25,7 +25,7 @@ export default function ArticleModal({ user, indexId, id, query, changeArticle, 
       <DialogContent className=" h-[90vh] w-[95vw] max-w-6xl">
         <DialogTitle className="sr-only">Article {id}</DialogTitle>
         <DialogDescription className="sr-only">Detailed view of article {id}</DialogDescription>
-        <Article user={user} id={id} indexId={indexId} query={query} link={link} />
+        <Article user={user} id={id} projectId={projectId} query={query} link={link} />
       </DialogContent>
     </Dialog>
   );

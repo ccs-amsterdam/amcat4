@@ -1,14 +1,10 @@
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { ThemeProvider } from "next-themes";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthSessionProvider } from "@/components/Contexts/AuthProvider";
 import { AxiosError } from "axios";
-import { NuqsAdapter } from "nuqs/adapters/tanstack-router";
 
 const defaultOptions = {
   queries: {
@@ -78,22 +74,10 @@ export default function ClientProviders({ children }: { children: React.ReactNod
   });
   const [queryClient] = useState(() => new QueryClient({ mutationCache, queryCache, defaultOptions }));
 
-  function renderIfLoaded() {
-    return (
-      <>
-        <AuthSessionProvider>
-          <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
-        </AuthSessionProvider>
-        <ReactQueryDevtools initialIsOpen={false} />
-      </>
-    );
-  }
-
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-        <NuqsAdapter>{renderIfLoaded()}</NuqsAdapter>
-      </ThemeProvider>
+      {children}
+      <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   );
 }

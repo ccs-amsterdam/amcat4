@@ -3,7 +3,7 @@ import {
   AggregationInterval,
   AggregationMetric,
   AggregationOptions,
-  AmcatIndexId,
+  AmcatProjectId,
   AmcatQuery,
   DisplayOption,
   MetricFunction,
@@ -25,13 +25,13 @@ import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
   options: AggregationOptions;
   setOptions: Dispatch<SetStateAction<AggregationOptions>>;
 }
 
-export function AggregateResultOptions({ user, indexId, query, options, setOptions }: Props) {
+export function AggregateResultOptions({ user, projectId, query, options, setOptions }: Props) {
   const [newOptions, setNewOptions] = useState(options);
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export function AggregateResultOptions({ user, indexId, query, options, setOptio
           <div className={rowClassName}>
             <MetricPicker
               user={user}
-              indexId={indexId}
+              projectId={projectId}
               value={newOptions.metrics?.[0]}
               onChange={(newval) =>
                 setNewOptions({
@@ -97,7 +97,7 @@ export function AggregateResultOptions({ user, indexId, query, options, setOptio
           <div className={rowClassName}>
             <AxisPicker
               user={user}
-              indexId={indexId}
+              projectId={projectId}
               query={query}
               value={newOptions.axes?.[0]}
               onChange={(newval) => setAxis(0, newval)}
@@ -111,7 +111,7 @@ export function AggregateResultOptions({ user, indexId, query, options, setOptio
           <div className={rowClassName}>
             <AxisPicker
               user={user}
-              indexId={indexId}
+              projectId={projectId}
               query={query}
               value={newOptions.axes?.[1]}
               onChange={(newval) => setAxis(1, newval)}
@@ -199,12 +199,12 @@ function DisplayPicker({ options, setOptions }: DisplayPickerProps) {
 
 interface MetricPickerProps {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   value?: AggregationMetric;
   onChange: (value?: AggregationMetric) => void;
 }
-function MetricPicker({ user, indexId, value, onChange }: MetricPickerProps) {
-  const { data: fields } = useFields(user, indexId);
+function MetricPicker({ user, projectId, value, onChange }: MetricPickerProps) {
+  const { data: fields } = useFields(user, projectId);
 
   const metricFieldOptions = useMemo(() => {
     if (fields == null) return [];
@@ -256,7 +256,7 @@ function MetricPicker({ user, indexId, value, onChange }: MetricPickerProps) {
 
 interface AxisPickerProps {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
   value?: AggregationAxis;
   onChange: (value?: AggregationAxis) => void;
@@ -266,7 +266,7 @@ interface AxisPickerProps {
 }
 function AxisPicker({
   user,
-  indexId,
+  projectId,
   query,
   value,
   onChange,
@@ -274,7 +274,7 @@ function AxisPicker({
   clearable = false,
   disabled = false,
 }: AxisPickerProps) {
-  const { data: fields } = useFields(user, indexId);
+  const { data: fields } = useFields(user, projectId);
 
   const fieldoptions = useMemo(() => {
     const fieldoptions = (fields ?? [])

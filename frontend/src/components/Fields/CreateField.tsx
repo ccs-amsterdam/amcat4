@@ -192,9 +192,9 @@ export function CreateFieldInfoDialog() {
         <HelpCircle className="cursor-pointer text-primary" />
       </DialogTrigger>
       <DialogContent>
-        <DialogHeader>Creating a new index field</DialogHeader>
+        <DialogHeader>Creating a new project field</DialogHeader>
         <p className="text-sm">
-          When creating a new index field, you need to pick a name and type. The type indicates how the data will be
+          When creating a new project field, you need to pick a name and type. The type indicates how the data will be
           stored in Elasticsearch. Make sure to pick a suitable type, because you won't be able to change this after the
           field has been created.
         </p>

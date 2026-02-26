@@ -1,5 +1,5 @@
 import {
-  AmcatIndexId,
+  AmcatProjectId,
   AmcatQuery,
   AmcatQueryParams,
   AmcatQueryResult,
@@ -15,10 +15,10 @@ import { postQuery } from "./query";
 
 export function useArticles(
   user: AmcatSessionUser,
-  indexId: AmcatIndexId,
+  projectId: AmcatProjectId,
   query: AmcatQuery,
   params?: AmcatQueryParams,
-  indexRole?: string,
+  projectRole?: string,
   enabled: boolean = true,
 ) {
   const queryClient = useQueryClient();
@@ -28,19 +28,19 @@ export function useArticles(
     // this is necessary because react query otherwise refetches ALL pages at once,
     // both slowing down the UI and making needless API requests
     return () =>
-      queryClient.setQueryData(["articles", user, indexId, query, params, indexRole], (oldData: any) => {
+      queryClient.setQueryData(["articles", user, projectId, query, params, projectRole], (oldData: any) => {
         if (!oldData) return oldData;
         return {
           pageParams: [0],
           pages: [oldData.pages[0]],
         };
       });
-  }, [queryClient, user, indexId, query, params, indexRole]);
+  }, [queryClient, user, projectId, query, params, projectRole]);
 
   return useInfiniteQuery({
-    queryKey: ["articles", user, indexId, query, params, indexRole],
-    queryFn: ({ pageParam }) => getArticles(user, indexId, query, { page: pageParam, ...(params || {}) }),
-    enabled: enabled && !!user && !!indexId && !!query,
+    queryKey: ["articles", user, projectId, query, params, projectRole],
+    queryFn: ({ pageParam }) => getArticles(user, projectId, query, { page: pageParam, ...(params || {}) }),
+    enabled: enabled && !!user && !!projectId && !!query,
     initialPageParam: 0,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
@@ -52,15 +52,20 @@ export function useArticles(
   });
 }
 
-async function getArticles(user: AmcatSessionUser, indexId: AmcatIndexId, query: AmcatQuery, params: AmcatQueryParams) {
+async function getArticles(
+  user: AmcatSessionUser,
+  projectId: AmcatProjectId,
+  query: AmcatQuery,
+  params: AmcatQueryParams,
+) {
   // TODO, make sure query doesn't run needlessly
   // also check that it doesn't run if field is added but empty
-  const res = await postQuery(user, indexId, query, params);
+  const res = await postQuery(user, projectId, query, params);
   const queryResult: AmcatQueryResult = amcatQueryResultSchema.parse(res.data);
   return queryResult;
 }
 
-export function useMutateArticles(user?: AmcatSessionUser, indexId?: AmcatIndexId | undefined) {
+export function useMutateArticles(user?: AmcatSessionUser, projectId?: AmcatProjectId | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -69,8 +74,8 @@ export function useMutateArticles(user?: AmcatSessionUser, indexId?: AmcatIndexI
       fields?: Record<string, UpdateAmcatField>;
       operation: UploadOperation;
     }) => {
-      if (!user || !indexId) throw new Error("Not logged in");
-      const res = await user.api.post(`/index/${indexId}/documents`, params);
+      if (!user || !projectId) throw new Error("Not logged in");
+      const res = await user.api.post(`/index/${projectId}/documents`, params);
       return z
         .object({
           successes: z.number(),
@@ -79,11 +84,11 @@ export function useMutateArticles(user?: AmcatSessionUser, indexId?: AmcatIndexI
         .parse(res.data);
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["article", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["articles", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["fields", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["fieldValues", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["aggregate", user, indexId] });
+      queryClient.invalidateQueries({ queryKey: ["article", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["articles", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["fields", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["fieldValues", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["aggregate", user, projectId] });
     },
   });
 }

@@ -1,5 +1,5 @@
 import { Input } from "@/components/ui/input";
-import { AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { ChevronsUpDown, Filter, Loader, Search } from "lucide-react";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { Loading } from "../ui/loading";
@@ -8,7 +8,7 @@ import { queriesFromString, queriesToString } from "./libQuery";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
   updateQuery: (query: AmcatQuery, executeAfter: number | "never") => void;
   debouncing: boolean;
@@ -19,13 +19,13 @@ interface Props {
 export default function SimpleQueryForm({
   children,
   user,
-  indexId,
+  projectId,
   query,
   debouncing,
   updateQuery,
   switchAdvanced,
 }: Props) {
-  if (!indexId) return <Loading />;
+  if (!projectId) return <Loading />;
 
   function handleKeydown(e: any) {
     if (e.key === "Enter") {
@@ -57,7 +57,7 @@ export default function SimpleQueryForm({
           </div>
         </div>
         <div className="flex items-center pl-2">
-          <AddFilterButton user={user} indexId={indexId} value={query} onSubmit={(value) => updateQuery(value, 0)}>
+          <AddFilterButton user={user} projectId={projectId} value={query} onSubmit={(value) => updateQuery(value, 0)}>
             <Filter />
           </AddFilterButton>
           <ChevronsUpDown role="button" onClick={switchAdvanced} className="h-8 w-8 cursor-pointer select-none p-1" />

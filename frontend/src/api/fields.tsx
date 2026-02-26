@@ -1,4 +1,4 @@
-import { AmcatField, AmcatIndexId, UpdateAmcatField } from "@/interfaces";
+import { AmcatField, AmcatProjectId, UpdateAmcatField } from "@/interfaces";
 import { amcatFieldSchema } from "@/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
@@ -30,17 +30,17 @@ const DEFAULT_CLIENT_SETTINGS: Record<string, any> = {
   },
 };
 
-export function useFields(user?: AmcatSessionUser, indexId?: AmcatIndexId | undefined, enabled: boolean = true) {
+export function useFields(user?: AmcatSessionUser, projectId?: AmcatProjectId | undefined, enabled: boolean = true) {
   return useQuery({
-    queryKey: ["fields", user, indexId],
-    queryFn: () => getFields(user, indexId || ""),
-    enabled: enabled && user != null && indexId != null,
+    queryKey: ["fields", user, projectId],
+    queryFn: () => getFields(user, projectId || ""),
+    enabled: enabled && user != null && projectId != null,
   });
 }
 
-async function getFields(user?: AmcatSessionUser, indexId?: AmcatIndexId) {
-  if (!user || !indexId) return undefined;
-  const res = await user.api.get(`/index/${indexId}/fields`);
+async function getFields(user?: AmcatSessionUser, projectId?: AmcatProjectId) {
+  if (!user || !projectId) return undefined;
+  const res = await user.api.get(`/index/${projectId}/fields`);
   const fieldsArray = Object.keys(res.data).map((name) => ({ name, ...res.data[name] }));
   const fields = z.array(amcatFieldSchema).parse(fieldsArray);
   return fields.map((f) => {
@@ -60,18 +60,18 @@ interface MutateFieldsParams {
   action: "create" | "delete" | "update";
 }
 
-export function useMutateFields(user?: AmcatSessionUser, indexId?: AmcatIndexId | undefined) {
+export function useMutateFields(user?: AmcatSessionUser, projectId?: AmcatProjectId | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ fields, action }: MutateFieldsParams) => {
       if (!user) throw new Error("Not logged in");
-      return mutateFields(user, indexId || "", action, fields);
+      return mutateFields(user, projectId || "", action, fields);
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["fields", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["articles", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["article", user, indexId] });
+      queryClient.invalidateQueries({ queryKey: ["fields", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["articles", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["article", user, projectId] });
 
       const fieldnames = variables.fields.map((f) => f.name).join(", ");
       if (variables.action === "create") toast.success(`Created fields: ${fieldnames}`);
@@ -83,11 +83,11 @@ export function useMutateFields(user?: AmcatSessionUser, indexId?: AmcatIndexId 
 
 async function mutateFields(
   user: AmcatSessionUser,
-  indexId: AmcatIndexId,
+  projectId: AmcatProjectId,
   action: "create" | "delete" | "update",
   fields: UpdateAmcatField[],
 ) {
-  if (!indexId) return undefined;
+  if (!projectId) return undefined;
   const fieldsObject: Record<string, any> = {};
 
   fields.forEach((f) => {
@@ -108,10 +108,10 @@ async function mutateFields(
   });
 
   if (action === "delete") {
-    return await user.api.delete(`/index/${indexId}/fields`, { data: fields.map((f) => f.name) });
+    return await user.api.delete(`/index/${projectId}/fields`, { data: fields.map((f) => f.name) });
   } else if (action === "create") {
-    return await user.api.post(`/index/${indexId}/fields`, fieldsObject);
+    return await user.api.post(`/index/${projectId}/fields`, fieldsObject);
   } else if (action === "update") {
-    return await user.api.put(`/index/${indexId}/fields`, fieldsObject);
+    return await user.api.put(`/index/${projectId}/fields`, fieldsObject);
   }
 }

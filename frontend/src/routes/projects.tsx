@@ -39,7 +39,7 @@ function AuthenticatedOnlyServer() {
       <p className="w-[500px] max-w-[95vw] text-center">
         This server only allows authenticated users. Please sign-in to access the available projects.
       </p>
-      <Button className="mx-auto flex items-center gap-2 pr-6" onClick={() => signIn()}>
+      <Button className="mx-auto mt-6 flex items-center gap-2 pr-6" onClick={() => signIn()}>
         <LogInIcon className="mr-2 h-4 w-4" />
         Sign-in
       </Button>

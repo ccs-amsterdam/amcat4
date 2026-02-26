@@ -1,4 +1,4 @@
-import { AmcatFilter, AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { AmcatFilter, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import FilterPicker from "./FilterPicker";
@@ -7,16 +7,16 @@ import SimpleQueryForm from "./SimpleQueryForm";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
   setQuery: Dispatch<SetStateAction<AmcatQuery>>;
 }
 
-export default function QueryForm({ user, indexId, query, setQuery }: Props) {
+export default function QueryForm({ user, projectId, query, setQuery }: Props) {
   const [queryDebounced, setQueryDebounced] = useState<AmcatQuery>(query);
   const debounceTimer = useRef<any>(undefined);
 
-  if (!indexId) return null;
+  if (!projectId) return null;
 
   const updateQuery = useCallback(
     (newQuery: AmcatQuery, executeAfter: number | "never") => {
@@ -50,7 +50,7 @@ export default function QueryForm({ user, indexId, query, setQuery }: Props) {
   return (
     <DebouncedQueryForm
       user={user}
-      indexId={indexId}
+      projectId={projectId}
       query={queryDebounced}
       updateQuery={updateQuery}
       debouncing={debouncing}
@@ -61,14 +61,14 @@ export default function QueryForm({ user, indexId, query, setQuery }: Props) {
 
 interface DebouncedQueryFormProps {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
   updateQuery: (query: AmcatQuery, executeAfter: number | "never") => void;
   debouncing: boolean;
   queryChanged: boolean;
 }
 
-function DebouncedQueryForm({ user, indexId, query, updateQuery, debouncing, queryChanged }: DebouncedQueryFormProps) {
+function DebouncedQueryForm({ user, projectId, query, updateQuery, debouncing, queryChanged }: DebouncedQueryFormProps) {
   const [advanced, setAdvanced] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
@@ -112,7 +112,7 @@ function DebouncedQueryForm({ user, indexId, query, updateQuery, debouncing, que
           <div ref={formRef}>
             <QForm
               user={user}
-              indexId={indexId}
+              projectId={projectId}
               query={query}
               updateQuery={updateQuery}
               switchAdvanced={switchAdvanced}
@@ -124,7 +124,7 @@ function DebouncedQueryForm({ user, indexId, query, updateQuery, debouncing, que
                   key={f + i}
                   className="w-full"
                   user={user}
-                  indexId={indexId}
+                  projectId={projectId}
                   fieldName={f}
                   value={query?.filters?.[f]}
                   onChange={(newval) => onChangeFilter(newval, f)}

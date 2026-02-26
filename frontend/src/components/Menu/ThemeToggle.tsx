@@ -1,26 +1,24 @@
-
-
 import { Moon, Sun, SunMoon } from "lucide-react";
-import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { DropdownMenuItem } from "../ui/dropdown-menu";
+import { useTheme } from "../Contexts/ThemeProvider";
 
 interface ThemeToggleProps {
   label?: boolean;
 }
 
 export default function ThemeToggle({ label }: ThemeToggleProps) {
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const { theme, setMode } = useTheme();
 
-  useEffect(() => setMounted(true), []);
-
-  if (!mounted) return <SunMoon className="mr-3 h-5 w-5" />;
+  const mode =
+    theme.mode === "default"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light"
+      : theme.mode;
 
   function renderIcon() {
-    // if not on client
-    if (typeof window === "undefined") return <SunMoon className="mr-3 h-5 w-5" />;
-    if (theme === "dark") return <Sun className="mr-3 h-5 w-5" />;
+    if (mode !== "dark") return <Sun className="mr-3 h-5 w-5" />;
     return <Moon className="mr-3 h-5 w-5" />;
   }
 
@@ -29,11 +27,11 @@ export default function ThemeToggle({ label }: ThemeToggleProps) {
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        setTheme(theme === "dark" ? "light" : "dark");
+        setMode(mode === "dark" ? "light" : "dark");
       }}
     >
       {renderIcon()}
-      {label ? (theme === "dark" ? "Light mode" : "Dark mode") : ""}
+      {label ? (mode === "dark" ? "Dark mode" : "Light mode") : ""}
     </DropdownMenuItem>
   );
 }

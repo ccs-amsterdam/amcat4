@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 import { useAmcatConfig } from "@/api/config";
-import { useIndex } from "@/api/index";
+import { useProject } from "@/api/project";
 import Multimedia from "@/components/Multimedia/Multimedia";
 import Upload from "@/components/Upload/Upload";
 import { ErrorMsg } from "@/components/ui/error-message";
@@ -35,13 +35,13 @@ function DataPage() {
 
   const { user } = useAmcatSession();
   const { data: serverConfig, isLoading: configLoading } = useAmcatConfig();
-  const indexId = decodeURI(project);
-  const { data: index, isLoading: loadingIndex } = useIndex(user, indexId);
+  const projectId = decodeURI(project);
+  const { data: projectData, isLoading: loadingProject } = useProject(user, projectId);
 
   const [tab, setTab] = useQueryState("tab", parseAsStringEnum<Tab>(Object.values(Tab)).withDefault(Tab.Upload));
 
-  if (loadingIndex || configLoading) return <Loading />;
-  if (!index) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
+  if (loadingProject || configLoading) return <Loading />;
+  if (!projectData) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
 
   return (
     <div className="flex w-full  flex-col gap-10">
@@ -59,13 +59,13 @@ function DataPage() {
         </TabsList>
         <div className="mx-auto w-full ">
           <TabsContent value={Tab.Upload}>
-            <Upload indexId={index.id} user={user} />
+            <Upload projectId={projectData.id} user={user} />
           </TabsContent>
           <TabsContent value={Tab.Multimedia}>
-            <Multimedia indexId={index.id} user={user} />
+            <Multimedia projectId={projectData.id} user={user} />
           </TabsContent>
           {/*<TabsContent value={Tab.Preprocessing}>
-            <Preprocessing indexId={index.id} user={user} />
+            <Preprocessing projectId={projectData.id} user={user} />
           </TabsContent>*/}
         </div>
       </Tabs>

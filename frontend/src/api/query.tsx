@@ -1,4 +1,4 @@
-import { AggregationOptions, AmcatFilters, AmcatIndexId, AmcatQuery, AmcatQueryParams } from "@/interfaces";
+import { AggregationOptions, AmcatFilters, AmcatProjectId, AmcatQuery, AmcatQueryParams } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 
 interface PostAmcatQuery {
@@ -8,12 +8,12 @@ interface PostAmcatQuery {
 
 export function postQuery(
   user: AmcatSessionUser,
-  indexId: AmcatIndexId,
+  projectId: AmcatProjectId,
   query?: AmcatQuery,
   params?: AmcatQueryParams,
 ) {
   const postAmcatQuery = query ? asPostAmcatQuery(query) : undefined;
-  return user.api.post(`index/${indexId}/query`, {
+  return user.api.post(`index/${projectId}/query`, {
     ...postAmcatQuery,
     ...params,
   });
@@ -21,7 +21,7 @@ export function postQuery(
 
 export function postAggregateQuery(
   user: AmcatSessionUser,
-  indexId: AmcatIndexId,
+  projectId: AmcatProjectId,
   options: AggregationOptions,
   query?: AmcatQuery,
 ) {
@@ -34,7 +34,7 @@ export function postAggregateQuery(
     });
   if (options.after) postOptions.after = options.after;
 
-  return user.api.post(`index/${indexId}/aggregate`, {
+  return user.api.post(`index/${projectId}/aggregate`, {
     ...postAmcatQuery,
     ...postOptions,
   });
@@ -60,8 +60,8 @@ export function asPostAmcatQuery(query: AmcatQuery) {
 
 export function postReindex(
   user: AmcatSessionUser,
-  source: AmcatIndexId,
-  destination: AmcatIndexId,
+  source: AmcatProjectId,
+  destination: AmcatProjectId,
   query: AmcatQuery,
 ) {
   const query_body = asPostAmcatQuery(query);

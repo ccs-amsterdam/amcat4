@@ -1,7 +1,7 @@
 import { useCount } from "@/api/aggregate";
 import { useAmcatProjects } from "@/api/projects";
 import { postReindex } from "@/api/query";
-import { AmcatIndex, AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { AmcatProject, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { DialogDescription, DialogTitle } from "@radix-ui/react-dialog";
 import { DropdownMenuContent } from "@radix-ui/react-dropdown-menu";
 import { ArrowRight, BarChart, CheckCircle, ChevronDown } from "lucide-react";
@@ -15,32 +15,32 @@ import { DropdownMenu, DropdownMenuTrigger } from "../ui/dropdown-menu";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
 }
 
-export default function Reindex({ user, indexId, query }: Props) {
-  const { count } = useCount(user, indexId, query);
+export default function Reindex({ user, projectId, query }: Props) {
+  const { count } = useCount(user, projectId, query);
   const { data: projects } = useAmcatProjects(user);
-  const [newIndexOpen, setNewIndexOpen] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [taskResult, setTaskResult] = useState<string | null>(null);
-  const [newIndex, setNewIndex] = useState<AmcatIndex | undefined>(undefined);
-  //TODO: Add option to create a new index?
+  const [newProject, setNewProject] = useState<AmcatProject | undefined>(undefined);
+  //TODO: Add option to create a new project?
 
-  function onSubmitNewIndex(e: React.FormEvent<HTMLFormElement>) {
+  function onSubmitNewProject(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (newIndex) {
-      postReindex(user, indexId, newIndex.id, query)
+    if (newProject) {
+      postReindex(user, projectId, newProject.id, query)
         .catch((error) => console.error(error))
         .then((res) => {
           setTaskResult(res?.data.task);
         });
     }
   }
-  const indexlabel = (ix: AmcatIndex) => `${ix.folder || ""}/${ix.name}`;
-  const onSelectNewIndex = (ix: AmcatIndex) => {
-    setNewIndex(ix);
-    setNewIndexOpen(false); // Close the dropdown
+  const projectlabel = (ix: AmcatProject) => `${ix.folder || ""}/${ix.name}`;
+  const onSelectNewProject = (ix: AmcatProject) => {
+    setNewProject(ix);
+    setNewProjectOpen(false); // Close the dropdown
   };
   if (count == null) return null;
   return (
@@ -48,18 +48,18 @@ export default function Reindex({ user, indexId, query }: Props) {
       <CopyOperationDialog
         open={taskResult != null}
         onOpenChange={() => setTaskResult(null)}
-        newIndexId={newIndex?.id}
+        newProjectId={newProject?.id}
         taskResultId={taskResult ?? undefined}
       />
       <h4>
-        Copy <b className="text-primary">{count}</b> documents to an existing index
+        Copy <b className="text-primary">{count}</b> documents to an existing project
       </h4>
 
-      <form onSubmit={onSubmitNewIndex} className="flex items-center justify-stretch gap-3">
-        <DropdownMenu open={newIndexOpen} onOpenChange={setNewIndexOpen}>
+      <form onSubmit={onSubmitNewProject} className="flex items-center justify-stretch gap-3">
+        <DropdownMenu open={newProjectOpen} onOpenChange={setNewProjectOpen}>
           <DropdownMenuTrigger asChild>
             <Button className="min-w-64 justify-between gap-3" variant="outline">
-              {newIndex?.name ?? "Select destination index"}
+              {newProject?.name ?? "Select destination project"}
 
               <ChevronDown className="h-5 w-5" />
             </Button>
@@ -72,16 +72,16 @@ export default function Reindex({ user, indexId, query }: Props) {
             <Command>
               <CommandInput placeholder="Filter projects" autoFocus={true} className="h-9" />
               <CommandList>
-                <CommandEmpty>No index found</CommandEmpty>
+                <CommandEmpty>No project found</CommandEmpty>
                 <CommandGroup>
                   {projects
-                    ?.sort((a, b) => indexlabel(a).localeCompare(indexlabel(b)))
+                    ?.sort((a, b) => projectlabel(a).localeCompare(projectlabel(b)))
                     .filter((ix) => !user.authenticated || ix.user_role === "WRITER" || ix.user_role === "ADMIN")
                     .filter((ix) => !ix.archived)
                     .map((ix) => (
-                      <CommandItem key={ix.id} value={ix.id} onSelect={() => onSelectNewIndex(ix)}>
+                      <CommandItem key={ix.id} value={ix.id} onSelect={() => onSelectNewProject(ix)}>
                         {" "}
-                        <span>{indexlabel(ix).replace(/^\//, "")}</span>
+                        <span>{projectlabel(ix).replace(/^\//, "")}</span>
                       </CommandItem>
                     ))}
                 </CommandGroup>
@@ -89,15 +89,15 @@ export default function Reindex({ user, indexId, query }: Props) {
             </Command>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button type="submit" disabled={newIndex == null}>
+        <Button type="submit" disabled={newProject == null}>
           Copy
         </Button>
       </form>
 
       <div className="border-primary-100 mt-3 border bg-primary/10 p-1">
-        <em>Note:</em> This will copy all currently selected articles to a new or existing index. This also allows you
-        to change field settings by first creating the target index and defining any fields as needed. Fields in the
-        source index that don't occur in the target index will be copied.
+        <em>Note:</em> This will copy all currently selected articles to a new or existing project. This also allows you
+        to change field settings by first creating the target project and defining any fields as needed. Fields in the
+        source project that don't occur in the target project will be copied.
       </div>
     </div>
   );
@@ -105,10 +105,10 @@ export default function Reindex({ user, indexId, query }: Props) {
 interface CopyOperationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  newIndexId?: string;
+  newProjectId?: string;
   taskResultId?: string;
 }
-function CopyOperationDialog({ open, onOpenChange, newIndexId, taskResultId }: CopyOperationDialogProps) {
+function CopyOperationDialog({ open, onOpenChange, newProjectId, taskResultId }: CopyOperationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
@@ -123,8 +123,8 @@ function CopyOperationDialog({ open, onOpenChange, newIndexId, taskResultId }: C
         </DialogHeader>
         <div className="flex flex-col gap-4 py-4">
           <Button asChild variant="outline" className="justify-between">
-            <Link href={`/projects/${newIndexId}/dashboard`}>
-              View Destination Index
+            <Link href={`/projects/${newProjectId}/dashboard`}>
+              View Destination Project
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
           </Button>
@@ -136,7 +136,7 @@ function CopyOperationDialog({ open, onOpenChange, newIndexId, taskResultId }: C
           </Button>
         </div>
         <DialogFooter>
-          <Button onClick={() => onOpenChange(false)}>Close and Return to Source Index</Button>
+          <Button onClick={() => onOpenChange(false)}>Close and Return to Source Project</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

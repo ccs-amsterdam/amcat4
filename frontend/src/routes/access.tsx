@@ -36,17 +36,17 @@ function ServerRole() {
   // TODO: Add contact info on server client_data, then uncomment this
   //
   // function pointsOfContact() {
-  //   if (index?.contact)
+  //   if (project?.contact)
   //     return (
   //       <div className=" mt-6  max-w-xl items-center gap-3 rounded-md">
   //         <div className="p-3">
   //           <div className="text-lg font-bold">Contact information</div>
   //           <div className="text-sm">
-  //             For other questions or comments about the accessibility of data in this index, you can reach out to:
+  //             For other questions or comments about the accessibility of data in this project, you can reach out to:
   //           </div>
   //         </div>
   //         <div className="items-center rounded-md  p-3 text-sm ">
-  //           <ContactInfo contact={index?.contact} />
+  //           <ContactInfo contact={project?.contact} />
   //         </div>
   //       </div>
   //     );
@@ -74,8 +74,8 @@ function RoleInfoDialog() {
       <DialogContent className="w-[600px] max-w-[95vw]">
         <DialogTitle className="">Server access roles</DialogTitle>
         <DialogDescription className="">
-          AmCAT has two types of roles: Server level access and Index level access. Any user can be given a role on an
-          index, but only users with a server level role can create new projects or manage users.
+          AmCAT has two types of roles: Server level access and Project level access. Any user can be given a role on a
+          project, but only users with a server level role can create new projects or manage users.
         </DialogDescription>
         <RoleInfo />
       </DialogContent>
@@ -88,9 +88,9 @@ function RoleInfo() {
     <div className="flex flex-col gap-3 text-sm">
       <div className="grid grid-cols-[7rem,1fr] gap-1">
         <b className="text-primary">NO ROLE</b>
-        Can be given a role on an index, and can request a new index.
+        Can be given a role on a project, and can request a new project.
         <b className="text-primary">WRITER</b>
-        Can create new projects, and approve new index requests.
+        Can create new projects, and approve new project requests.
         <b className="text-primary">ADMIN</b>
         Can manage all projects and users.
       </div>

@@ -1,18 +1,18 @@
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AmcatIndex } from "@/interfaces";
+import { AmcatProject } from "@/interfaces";
 import { randomIcon, randomLightColor } from "@/lib/utils";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { Link } from "@tanstack/react-router";
 import { useConfirm } from "../ui/confirm";
-import { IndexDropdownMenu } from "./IndexDropdownMenu";
+import { ProjectDropdownMenu } from "./ProjectDropdownMenu";
 import { ReactElement } from "react";
 
-export const IndexCard = ({
-  index,
+export const ProjectCard = ({
+  project,
   folders,
   toFolder,
 }: {
-  index: AmcatIndex;
+  project: AmcatProject;
   folders: string[];
   toFolder: (folder: string) => void;
 }) => {
@@ -20,23 +20,23 @@ export const IndexCard = ({
   const { user } = useAmcatSession();
   if (user == null) return null;
 
-  const hasImage = !!index.image_url;
+  const hasImage = !!project.image_url;
 
   const style = {
-    backgroundImage: `url('${hasImage ? index.image_url : ""}')`,
+    backgroundImage: `url('${hasImage ? project.image_url : ""}')`,
     backgroundRepeat: "no-repeat",
     backgroundPositionX: "center",
     backgroundSize: hasImage ? "cover" : "80px",
-    backgroundColor: hasImage ? "" : randomLightColor(index.id),
+    backgroundColor: hasImage ? "" : randomLightColor(project.id),
     backgroundPositionY: "center",
   };
 
-  const Icon = hasImage ? null : (randomIcon(index.id) as any);
+  const Icon = hasImage ? null : (randomIcon(project.id) as any);
 
   return (
     <>
       {confirmDialog}
-      <Link to={`/projects/${index.id}/dashboard`}>
+      <Link to={`/projects/${project.id}/dashboard`}>
         <Card
           style={style}
           className="relative aspect-video w-full max-w-[400px] animate-fade-in justify-self-end  overflow-hidden  shadow-md"
@@ -46,11 +46,16 @@ export const IndexCard = ({
           >
             <CardHeader className="flex h-full  flex-col justify-between p-0">
               <div className="flex items-start justify-between  p-3 text-white">
-                <CardTitle className={`line-clamp-2 text-base leading-5 `}>{index.name}</CardTitle>
-                <IndexDropdownMenu index={index} folders={folders} toFolder={toFolder} activateConfirm={activate} />
+                <CardTitle className={`line-clamp-2 text-base leading-5 `}>{project.name}</CardTitle>
+                <ProjectDropdownMenu
+                  project={project}
+                  folders={folders}
+                  toFolder={toFolder}
+                  activateConfirm={activate}
+                />
               </div>
               <CardDescription className="h-16 overflow-hidden break-words rounded-b-md     bg-black/50 px-3 text-sm leading-4 text-white backdrop-blur-[2px] transition-all group-hover:line-clamp-4 group-hover:opacity-100 md:opacity-70">
-                <div className="my-2 line-clamp-3">{index.description || ""}</div>
+                <div className="my-2 line-clamp-3">{project.description || ""}</div>
               </CardDescription>
             </CardHeader>
 

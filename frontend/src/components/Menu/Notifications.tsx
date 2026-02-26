@@ -7,7 +7,7 @@ import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 
-type Tab = "Server role" | "Index role" | "Project";
+type Tab = "Server role" | "Project role" | "Project";
 
 interface Action {
   tab: Tab;
@@ -97,9 +97,9 @@ function NotificationTabs({ requests, actions: actions, setActions }: Notificati
   const [tab, setTab] = useState<Tab>("Server role");
 
   const requestsPerTab = useMemo(() => {
-    const requestsPerTab: Record<Tab, AmcatRequest[]> = { "Server role": [], "Index role": [], Project: [] };
+    const requestsPerTab: Record<Tab, AmcatRequest[]> = { "Server role": [], "Project role": [], Project: [] };
     requestsPerTab["Server role"] = requests.filter((r) => r.request.type === "server_role");
-    requestsPerTab["Index role"] = requests.filter((r) => r.request.type === "project_role");
+    requestsPerTab["Project role"] = requests.filter((r) => r.request.type === "project_role");
     requestsPerTab["Project"] = requests.filter((r) => r.request.type === "create_project");
     return requestsPerTab;
   }, [requests]);
@@ -166,16 +166,16 @@ function NotificationTabs({ requests, actions: actions, setActions }: Notificati
     <Tabs className="m-0 " value={tab} onValueChange={(v) => setTab(v as Tab)}>
       <TabsList className="ml-auto flex-col md:flex-row">
         {renderTrigger("Server role", requestsPerTab["Server role"])}
-        {renderTrigger("Index role", requestsPerTab["Index role"])}
+        {renderTrigger("Project role", requestsPerTab["Project role"])}
         {renderTrigger("Project", requestsPerTab["Project"])}
       </TabsList>
       <div className="max-h-[500px] overflow-auto pt-3">
         <TabsContent value="Server role" className="">
           <div className="mt-0 flex flex-col gap-3">{renderRoleRequests("Server role")}</div>
         </TabsContent>
-        <TabsContent value="Index role" className="">
+        <TabsContent value="Project role" className="">
           <div className="mt-0 flex flex-col gap-3">
-            <div className="mt-0 flex flex-col gap-3">{renderRoleRequests("Index role")}</div>
+            <div className="mt-0 flex flex-col gap-3">{renderRoleRequests("Project role")}</div>
           </div>
         </TabsContent>
         <TabsContent value="Project" className="">
@@ -227,7 +227,7 @@ function RoleRequest({
           <div>{request.role} role</div>
           {projectId == null ? null : (
             <>
-              <div className="text-foreground/70">for index</div>
+              <div className="text-foreground/70">for project</div>
               <b>{projectId}</b>
             </>
           )}

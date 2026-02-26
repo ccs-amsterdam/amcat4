@@ -7,7 +7,7 @@ export function ContactInfo({ contact }: { contact: z.infer<typeof contactInfoSc
   if (!contact || contact.length === 0)
     return (
       <div>
-        <i>This index does not have public contact information.</i>
+        <i>This project does not have public contact information.</i>
       </div>
     );
   return (

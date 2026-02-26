@@ -6,13 +6,13 @@ import { extensionMapping } from "./MultimediaUpload";
 
 export default function RenderMultimedia({
   user,
-  indexId,
+  projectId,
   url,
   renderAs,
   height,
 }: {
   user: AmcatSessionUser;
-  indexId: string;
+  projectId: string;
   url: string;
   // if renderAs is given it will always render the url for this type. If not, it will use the
   // MINIO mimetype (if url is a key) or try to infer it from the url.
@@ -21,7 +21,7 @@ export default function RenderMultimedia({
 }) {
   const key = /https?:\/\//.test(url) ? undefined : url;
   const externalUrl = /https?:\/\//.test(url) ? url : undefined;
-  const { data: presigned, isLoading } = useMultimediaPresignedGet(user, indexId, key);
+  const { data: presigned, isLoading } = useMultimediaPresignedGet(user, projectId, key);
 
   if (isLoading) return <Loading />;
 
@@ -81,7 +81,7 @@ export default function RenderMultimedia({
 function InvalidLink() {
   return (
     <div className="relative m-0 flex items-center justify-center gap-2 rounded p-1 py-2 text-center ">
-      This file does not exist on this index
+      This file does not exist on this project
     </div>
   );
 }

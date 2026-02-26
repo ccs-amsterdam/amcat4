@@ -56,6 +56,7 @@ async function refreshToken(csrf: string): Promise<null> {
 
   const now = Date.now() / 1000;
   const nearfuture = now + 10; // refresh x seconds before expires
+  console.log(exp, nearfuture, exp < nearfuture);
   if (exp < nearfuture) {
     await axios.post("api/auth/refresh", {}, { headers: { "X-CSRF-TOKEN": csrf } });
   }
@@ -77,7 +78,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async () => {
     const returnTo = encodeURIComponent(window.location.href);
-    const loginUrl = `api/auth/login?returnTo=${returnTo}`;
+    const loginUrl = `/api/auth/login?returnTo=${returnTo}`;
     window.location.href = loginUrl;
   }, []);
 

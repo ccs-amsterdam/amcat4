@@ -1,4 +1,4 @@
-import { AggregationOptions, AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { AggregationOptions, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import AggregateResult from "../Aggregate/AggregateResult";
 import { useFields } from "@/api/fields";
@@ -24,14 +24,14 @@ import { useCount } from "@/api/aggregate";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
 }
 
-export default function Tags({ user, indexId, query }: Props) {
-  const { data: fields, isLoading: fieldsLoading } = useFields(user, indexId);
+export default function Tags({ user, projectId, query }: Props) {
+  const { data: fields, isLoading: fieldsLoading } = useFields(user, projectId);
   const [field, setField] = useState("");
-  const { count, isLoading: countLoading } = useCount(user, indexId, query);
+  const { count, isLoading: countLoading } = useCount(user, projectId, query);
   if (fieldsLoading || countLoading) return <Loading />;
   if (!fields || !count) return null;
   const tagFields = fields.filter((f) => f.type === "tag");
@@ -40,7 +40,7 @@ export default function Tags({ user, indexId, query }: Props) {
       <div className="flex flex-col gap-3 ">
         <h4>Select options below to update {count} documents</h4>
         {tagFields.length === 0 ? (
-          <div>There are no tag fields in this index. Create a tag field in index setup</div>
+          <div>There are no tag fields in this project. Create a tag field in project setup</div>
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -64,11 +64,11 @@ export default function Tags({ user, indexId, query }: Props) {
         {field == "" ? null : (
           <>
             <br />
-            <AddOrRemoveTag user={user} indexId={indexId} query={query} field={field} />
+            <AddOrRemoveTag user={user} projectId={projectId} query={query} field={field} />
           </>
         )}
       </div>
-      <TagGraph user={user} indexId={indexId} query={query} field={field} />
+      <TagGraph user={user} projectId={projectId} query={query} field={field} />
     </div>
   );
 }
@@ -77,16 +77,16 @@ interface PropsWithField extends Props {
   field: string;
 }
 
-function AddOrRemoveTag({ user, indexId, query, field }: PropsWithField) {
-  const { data: fields, isLoading: fieldsLoading } = useFields(user, indexId);
-  const { data: fieldValues, isLoading: fieldValuesLoading } = useFieldValues(user, indexId, field);
+function AddOrRemoveTag({ user, projectId, query, field }: PropsWithField) {
+  const { data: fields, isLoading: fieldsLoading } = useFields(user, projectId);
+  const { data: fieldValues, isLoading: fieldValuesLoading } = useFieldValues(user, projectId, field);
   const [newTag, setNewTag] = useState("");
   const [selectedTag, setSelectedTag] = useState<string>();
   const [createNew, setCreateNew] = useState(false);
   const canOnlyCreate = !fieldValues?.length;
   const tag = createNew || canOnlyCreate ? newTag : selectedTag;
   const tagExists = tag && fieldValues?.includes(tag);
-  const { mutateAsync } = useMutateTags(user, indexId);
+  const { mutateAsync } = useMutateTags(user, projectId);
   if (fieldsLoading || fieldValuesLoading) return <Loading />;
   if (!fields) return null;
 
@@ -185,7 +185,7 @@ function AddOrRemoveTag({ user, indexId, query, field }: PropsWithField) {
   );
 }
 
-function TagGraph({ user, indexId, query, field }: PropsWithField) {
+function TagGraph({ user, projectId, query, field }: PropsWithField) {
   const TagGraphOptions: AggregationOptions = {
     axes: [{ name: "tag", field: field }],
     display: "barchart",
@@ -195,7 +195,7 @@ function TagGraph({ user, indexId, query, field }: PropsWithField) {
   return (
     <div>
       <h4 className="text-right text-lg font-bold">Number of documents per tag</h4>
-      <AggregateResult user={user} indexId={indexId} query={{}} options={TagGraphOptions} />
+      <AggregateResult user={user} projectId={projectId} query={{}} options={TagGraphOptions} />
     </div>
   );
 }

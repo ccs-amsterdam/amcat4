@@ -87,8 +87,8 @@ export function useResolveRequests(user: AmcatSessionUser | undefined) {
 
       for (const r of variables) {
         if ("project_id" in r.request) {
-          queryClient.invalidateQueries({ queryKey: ["index", user, r.request.project_id] });
-          queryClient.invalidateQueries({ queryKey: ["indexusers", user, r.request.project_id] });
+          queryClient.invalidateQueries({ queryKey: ["project", user, r.request.project_id] });
+          queryClient.invalidateQueries({ queryKey: ["projectusers", user, r.request.project_id] });
         }
       }
       return variables;

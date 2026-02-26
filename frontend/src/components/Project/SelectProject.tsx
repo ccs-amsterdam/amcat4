@@ -3,7 +3,7 @@ import { useHasGlobalRole } from "@/api/userDetails";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Loading } from "@/components/ui/loading";
-import { AmcatIndex } from "@/interfaces";
+import { AmcatProject } from "@/interfaces";
 import { Folder, FolderOpen, LogInIcon, Search, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ErrorMsg } from "../ui/error-message";
@@ -12,25 +12,25 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
-import { CreateIndex } from "./CreateIndex";
+import { CreateProject } from "./CreateProject";
 import { FolderBreadcrumbs } from "./FolderBreadcrumbs";
-import { IndexCard } from "./IndexCard";
-import { PendingIndexRequests } from "./PendingIndexRequests";
+import { ProjectCard } from "./ProjectCard";
+import { PendingProjectRequests } from "./PendingProjectRequests";
 import { useAmcatConfig } from "@/api/config";
 import { useQueryState } from "nuqs";
 
 interface Folder {
   folders: Map<string, Folder>;
-  projects: AmcatIndex[];
+  projects: AmcatProject[];
 }
 
-export function SelectIndex() {
+export function SelectProject() {
   const { user } = useAmcatSession();
   const { data: config } = useAmcatConfig();
   const [currentPath, setCurrentPath] = useQueryState("folder");
 
   const [search, setSearch] = useState("");
-  const [indexMap, setIndexMap] = useState<Map<string, AmcatIndex[]> | null>(null);
+  const [projectMap, setProjectMap] = useState<Map<string, AmcatProject[]> | null>(null);
   const canCreate = useHasGlobalRole(user, "WRITER");
   const isAdmin = useHasGlobalRole(user, "ADMIN");
   const [path, setPath] = useState<string | null>(null);
@@ -67,10 +67,10 @@ export function SelectIndex() {
     function setVisible() {
       if (!myProjects) return;
 
-      const filtered = myProjects.filter((index) => {
+      const filtered = myProjects.filter((project) => {
         if (search) {
-          if (index.name.toLowerCase().includes(search.toLowerCase())) return true;
-          if (index.id.toLowerCase().includes(search.toLowerCase())) return true;
+          if (project.name.toLowerCase().includes(search.toLowerCase())) return true;
+          if (project.id.toLowerCase().includes(search.toLowerCase())) return true;
           return false;
         }
         return true;
@@ -78,8 +78,8 @@ export function SelectIndex() {
 
       let prefix = currentPath?.replace(/^\/|\/$/, "") ?? "";
 
-      const indexMap = new Map<string, AmcatIndex[]>();
-      indexMap.set("", []);
+      const projectMap = new Map<string, AmcatProject[]>();
+      projectMap.set("", []);
 
       filtered.forEach((ix) => {
         // remove double slashes and leading/trailing slashes
@@ -91,12 +91,12 @@ export function SelectIndex() {
         const remainingPath = prefix ? folder.slice(prefix.length + 1) : folder;
 
         const head = remainingPath.split("/")[0] || "";
-        if (!indexMap.has(head)) indexMap.set(head, []);
-        indexMap.get(head)?.push(ix);
+        if (!projectMap.has(head)) projectMap.set(head, []);
+        projectMap.get(head)?.push(ix);
       });
 
       setPath(prefix);
-      setIndexMap(indexMap);
+      setProjectMap(projectMap);
     }
 
     const timeout = setTimeout(setVisible, 200);
@@ -116,8 +116,8 @@ export function SelectIndex() {
   }
 
   if (user && !isAdmin && !user.authenticated && allProjects?.length === 0) return <NoPublicProjectsMessage />;
-  if (indexMap === null) return <Loading />;
-  const folderList = [...indexMap.keys()].filter((f) => f !== "");
+  if (projectMap === null) return <Loading />;
+  const folderList = [...projectMap.keys()].filter((f) => f !== "");
 
   return (
     <div className="flex flex-col gap-3">
@@ -125,8 +125,8 @@ export function SelectIndex() {
         <div className="prose-xl mr-auto   flex items-center justify-between">
           <h3 className="">Projects</h3>
         </div>
-        <CreateIndex folder={currentPath ?? undefined} request={!canCreate} />
-        <PendingIndexRequests />
+        <CreateProject folder={currentPath ?? undefined} request={!canCreate} />
+        <PendingProjectRequests />
       </div>
 
       <div className="mb-3 flex items-center gap-6">
@@ -164,13 +164,13 @@ export function SelectIndex() {
             <div className="px-1 py-1 text-sm text-foreground/60">No folders found</div>
           )}
         </div>
-        {indexMap.size === 0 ? (
+        {projectMap.size === 0 ? (
           <NoResultsMessage cancreate={!!canCreate} issearching={search !== ""} />
         ) : (
           <div className="flex flex-col ">
             <div className="mb-6 mt-3 min-h-[50rem] rounded p-3">
               {loadingProjects ? <Loading /> : null}
-              {[...indexMap].map(([folder, projects], i) => {
+              {[...projectMap].map(([folder, projects], i) => {
                 // if (search === "" && folder !== "") return null;
                 if (projects.length === 0) {
                   return null;
@@ -195,8 +195,13 @@ export function SelectIndex() {
                       </Button>
                     </div>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
-                      {projects.map((index) => (
-                        <IndexCard key={index.id} index={index} folders={folderList} toFolder={setCurrentPath} />
+                      {projects.map((project) => (
+                        <ProjectCard
+                          key={project.id}
+                          project={project}
+                          folders={folderList}
+                          toFolder={setCurrentPath}
+                        />
                       ))}
                     </div>
                   </div>
@@ -299,8 +304,8 @@ function NoResultsMessage({ cancreate, issearching }: { cancreate: boolean; isse
           ? "No projects match your search pattern. Try changing your search terms or filter options. "
           : "There are currently no projects that you have access to. "}
         {cancreate
-          ? "To get started, create a new index using the 'create new (index)' button above"
-          : "To get started, you can ask a server administrator to create a project for you using the 'Request new (index)' button above "}
+          ? "To get started, create a new project using the 'create new project' button above"
+          : "To get started, you can ask a server administrator to create a project for you using the 'Request new project' button above "}
       </p>
     </InfoMsg>
   );

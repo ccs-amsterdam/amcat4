@@ -6,41 +6,41 @@ export const Route = createFileRoute("/projects/$project/fields")({
 
 import { useAmcatConfig } from "@/api/config";
 import { useFields, useMutateFields } from "@/api/fields";
-import { useIndex } from "@/api/index";
+import { useProject } from "@/api/project";
 import FieldTable from "@/components/Fields/FieldTable";
 import { ErrorMsg } from "@/components/ui/error-message";
 import { Loading } from "@/components/ui/loading";
-import { AmcatIndex } from "@/interfaces";
+import { AmcatProject } from "@/interfaces";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 
 function FieldsPage() {
   const { project } = Route.useParams();
   const { user } = useAmcatSession();
-  const indexId = decodeURI(project);
-  const { data: index, isLoading: loadingIndex } = useIndex(user, indexId);
+  const projectId = decodeURI(project);
+  const { data: projectData, isLoading: loadingProject } = useProject(user, projectId);
 
-  if (loadingIndex) return <Loading />;
-  if (!index) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
+  if (loadingProject) return <Loading />;
+  if (!projectData) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
 
   return (
     <div className="flex w-full  flex-col gap-10">
-      <Fields index={index} />
+      <Fields project={projectData} />
     </div>
   );
 }
 
-function Fields({ index }: { index: AmcatIndex }) {
+function Fields({ project }: { project: AmcatProject }) {
   const { user } = useAmcatSession();
-  const { data: fields, isLoading: loadingFields } = useFields(user, index.id);
-  const { mutate } = useMutateFields(user, index.id);
+  const { data: fields, isLoading: loadingFields } = useFields(user, project.id);
+  const { mutate } = useMutateFields(user, project.id);
   const { data: config } = useAmcatConfig();
 
   if (loadingFields) return <Loading />;
 
-  const ownRole = config?.authorization === "no_auth" ? "ADMIN" : index?.user_role;
+  const ownRole = config?.authorization === "no_auth" ? "ADMIN" : project?.user_role;
   if (!ownRole || !mutate) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
   if (ownRole !== "ADMIN" && ownRole !== "WRITER")
-    return <ErrorMsg type="Not Allowed">Need to have the WRITER or ADMIN role to edit index fields</ErrorMsg>;
+    return <ErrorMsg type="Not Allowed">Need to have the WRITER or ADMIN role to edit project fields</ErrorMsg>;
 
   return (
     <div className="p-3">

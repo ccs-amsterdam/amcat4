@@ -3,7 +3,7 @@ import QueryForm from "@/components/QueryForm/QueryForm";
 import { AmcatQuery } from "@/interfaces";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 
-import { useMyIndexrole } from "@/api";
+import { useMyProjectRole } from "@/api/project";
 import AggregateResultPanel from "@/components/Aggregate/AggregateResultPanel";
 import DownloadArticles from "@/components/Articles/DownloadArticles";
 import Summary from "@/components/Summary/Summary";
@@ -40,9 +40,9 @@ export const Route = createFileRoute("/projects/$project/dashboard")({
 
 function DashboardPage() {
   const { project } = Route.useParams();
-  const indexId = decodeURI(project);
+  const projectId = decodeURI(project);
   const { user } = useAmcatSession();
-  const { role: indexRole } = useMyIndexrole(user, indexId);
+  const { role: projectRole } = useMyProjectRole(user, projectId);
 
   const [tab, setTab] = useQueryState("tab", parseAsStringEnum<Tab>(Object.values(Tab)).withDefault(Tab.Summary));
   const [queryState, setQueryState] = useQueryState("query");
@@ -55,16 +55,16 @@ function DashboardPage() {
     setQueryState(serializeQuery(query));
   }, [query, setQueryState]);
 
-  if (indexRole === "NONE") return <NoAccess />;
+  if (projectRole === "NONE") return <NoAccess />;
 
-  const isWriter = indexRole === "WRITER" || indexRole === "ADMIN";
+  const isWriter = projectRole === "WRITER" || projectRole === "ADMIN";
 
   return (
     <div>
       <div className={` pb-4 `}>
         <div className="flex flex-col items-center lg:items-start">
           <div className="w-full">
-            <QueryForm user={user} indexId={indexId} query={query} setQuery={setQuery} />
+            <QueryForm user={user} projectId={projectId} query={query} setQuery={setQuery} />
           </div>
         </div>
       </div>
@@ -83,19 +83,19 @@ function DashboardPage() {
         </TabsList>
         <div className="">
           <TabsContent value={Tab.Summary}>
-            <Summary user={user} indexId={indexId} query={query} />
+            <Summary user={user} projectId={projectId} query={query} />
           </TabsContent>
           <TabsContent value={Tab.Aggregate}>
-            <AggregateResultPanel user={user} indexId={indexId} query={query} />
+            <AggregateResultPanel user={user} projectId={projectId} query={query} />
           </TabsContent>
           <TabsContent value={Tab.Update}>
-            <Update user={user} indexId={indexId} query={query} />
+            <Update user={user} projectId={projectId} query={query} />
           </TabsContent>
           <TabsContent value={Tab.Copy}>
-            <Reindex user={user} indexId={indexId} query={query} />
+            <Reindex user={user} projectId={projectId} query={query} />
           </TabsContent>
           <TabsContent value={Tab.Download}>
-            <DownloadArticles user={user} indexId={indexId} query={query} />
+            <DownloadArticles user={user} projectId={projectId} query={query} />
           </TabsContent>
         </div>
       </Tabs>
@@ -107,7 +107,7 @@ function NoAccess() {
   return (
     <ErrorMsg type="Not Allowed">
       <p className="text-center">
-        You do not have access to this index. <br />
+        You do not have access to this project. <br />
       </p>
       <br />
 

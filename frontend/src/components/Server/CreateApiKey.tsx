@@ -10,8 +10,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { useMutateApiKeys } from "@/api/api_keys";
-import { useAmcatIndexRoles } from "@/api/projects";
-import { AmcatApiKey, AmcatIndexId, AmcatUserRole } from "@/interfaces";
+import { useAmcatProjectRoles } from "@/api/projects";
+import { AmcatApiKey, AmcatProjectId, AmcatUserRole } from "@/interfaces";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "../ui/select";
 import { roleHigherThan } from "@/api/util";
 import { Button } from "../ui/button";
@@ -46,7 +46,7 @@ export function CreateApiKey({
 }) {
   const { user } = useAmcatSession();
   const { data: userDetails, isLoading: loadingUserDetails } = useCurrentUserDetails(user);
-  const { data: userIndexRoles, isLoading: loadingUserProjects } = useAmcatIndexRoles(user);
+  const { data: userProjectRoles, isLoading: loadingUserProjects } = useAmcatProjectRoles(user);
   const mutateApiKeys = useMutateApiKeys(user);
 
   const apikeyForm = useForm<z.input<typeof amcatApiKeySchema>, unknown, z.output<typeof amcatApiKeySchema>>({
@@ -121,7 +121,7 @@ export function CreateApiKey({
             name="restrictions.default_project_role"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>restrict index role</FormLabel>
+                <FormLabel>restrict project role</FormLabel>
                 <FormControl>
                   <RoleInput value={field.value || undefined} onChange={field.onChange} />
                 </FormControl>
@@ -137,9 +137,9 @@ export function CreateApiKey({
           name="restrictions.project_roles"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Custom index role restrictions (overrides restrict index role)</FormLabel>
+              <FormLabel>Custom project role restrictions (overrides restrict project role)</FormLabel>
               <FormControl>
-                <ProjectRoles value={field.value || {}} onChange={field.onChange} actual={userIndexRoles || {}} />
+                <ProjectRoles value={field.value || {}} onChange={field.onChange} actual={userProjectRoles || {}} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -165,23 +165,23 @@ function ProjectRoles({
 }: {
   value: Record<string, AmcatUserRole>;
   onChange: (value: Record<string, AmcatUserRole>) => void;
-  actual: Record<AmcatIndexId, AmcatUserRole>;
+  actual: Record<AmcatProjectId, AmcatUserRole>;
 }) {
-  const unassigned = Object.entries(actual).filter(([indexId]) => !(indexId in value));
+  const unassigned = Object.entries(actual).filter(([projectId]) => !(projectId in value));
 
   return (
     <div>
-      {Object.entries(value).map(([indexId, role]) => (
-        <div key={indexId} className="my-1 grid grid-cols-[1fr,150px,min-content] items-center gap-3 rounded  py-1">
-          <div className="h-full rounded bg-primary/10 p-2">{indexId}</div>
+      {Object.entries(value).map(([projectId, role]) => (
+        <div key={projectId} className="my-1 grid grid-cols-[1fr,150px,min-content] items-center gap-3 rounded  py-1">
+          <div className="h-full rounded bg-primary/10 p-2">{projectId}</div>
           <div>
             <RoleInput
               value={role || undefined}
               onChange={(newRole) => {
-                const newValue = { ...value, [indexId]: newRole };
+                const newValue = { ...value, [projectId]: newRole };
                 onChange(newValue);
               }}
-              actual={actual ? actual[indexId] : undefined}
+              actual={actual ? actual[projectId] : undefined}
             />
           </div>
           <Button
@@ -189,7 +189,7 @@ function ProjectRoles({
             size="icon"
             onClick={() => {
               const newValue = { ...value };
-              delete newValue[indexId];
+              delete newValue[projectId];
               onChange(newValue);
             }}
           >
@@ -199,19 +199,19 @@ function ProjectRoles({
       ))}
       <DropdownMenu>
         <DropdownMenuTrigger className={unassigned.length > 0 ? "" : "hidden"} asChild>
-          <Button>Add index role</Button>
+          <Button>Add project role</Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
-          {unassigned.map(([indexId, role]) => {
+          {unassigned.map(([projectId, role]) => {
             return (
               <DropdownMenuItem
-                key={indexId}
+                key={projectId}
                 onClick={() => {
-                  const newValue = { ...value, [indexId]: role };
+                  const newValue = { ...value, [projectId]: role };
                   onChange(newValue);
                 }}
               >
-                <div className="min-w-16">{indexId}</div>
+                <div className="min-w-16">{projectId}</div>
                 <span className="text-foreground/60">{role}</span>
               </DropdownMenuItem>
             );

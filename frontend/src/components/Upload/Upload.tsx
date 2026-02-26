@@ -3,7 +3,7 @@ import {
   AmcatElasticFieldType,
   AmcatField,
   AmcatFieldType,
-  AmcatIndexId,
+  AmcatProjectId,
   UpdateAmcatField,
   UploadOperation,
 } from "@/interfaces";
@@ -15,7 +15,7 @@ import { Button } from "../ui/button";
 import { autoNameColumn, autoTypeColumn, prepareUploadData, validateColumns } from "./typeValidation";
 
 import { useMutateArticles } from "@/api/articles";
-import { useHasIndexRole } from "@/api/index";
+import { useHasProjectRole } from "@/api/project";
 import { useMultimediaConcatenatedList } from "@/api/multimedia";
 import { splitIntoBatches } from "@/api/util";
 import { toast } from "sonner";
@@ -43,7 +43,7 @@ import { Progress } from "../ui/progress";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
 }
 
 export type jsType = string | number | boolean;
@@ -76,12 +76,12 @@ export interface Column {
 
 // TODO: Operation is currently not working (always uses index)
 
-export default function Upload({ user, indexId }: Props) {
-  const { data: fields, isLoading: fieldsLoading } = useFields(user, indexId);
-  const isAdmin = useHasIndexRole(user, indexId, "ADMIN");
+export default function Upload({ user, projectId }: Props) {
+  const { data: fields, isLoading: fieldsLoading } = useFields(user, projectId);
+  const isAdmin = useHasProjectRole(user, projectId, "ADMIN");
   const [data, setData] = useState<Record<string, jsType>[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
-  const { mutateAsync: mutateArticles } = useMutateArticles(user, indexId);
+  const { mutateAsync: mutateArticles } = useMutateArticles(user, projectId);
   const unusedFields = useMemo(() => {
     if (!fields) return [];
     return fields.filter((f) => !columns.find((c) => c.field === f.name));
@@ -117,7 +117,7 @@ export default function Upload({ user, indexId }: Props) {
     }
     return Array.from(prefixes);
   }, [data, columns]);
-  const multimedia = useMultimediaConcatenatedList(user, indexId, multimediaPrefixes);
+  const multimedia = useMultimediaConcatenatedList(user, projectId, multimediaPrefixes);
 
   useEffect(() => {
     const needsValidation = columns.filter((c) => c.status === "Validating");
@@ -748,10 +748,10 @@ function CreateFieldDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="sr-only">Create new field</DialogTitle>
-          <DialogDescription className="sr-only">Create new index field</DialogDescription>
+          <DialogDescription className="sr-only">Create new project field</DialogDescription>
           <div className="text-lg font-bold">Create new field</div>
           {/* <p className="text-sm">
-            This creates a new index field. Make sure to pick a suitable field type, since you won't be able to change
+            This creates a new project field. Make sure to pick a suitable field type, since you won't be able to change
             this after the data has been uploaded.
           </p> */}
         </DialogHeader>

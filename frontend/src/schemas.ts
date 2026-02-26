@@ -49,7 +49,7 @@ export const contactInfoSchema = z.array(
   }),
 );
 
-export const amcatIndexSchema = z.object({
+export const amcatProjectSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().nullish(),
@@ -62,7 +62,7 @@ export const amcatIndexSchema = z.object({
   bytes: z.number().nullish(),
 });
 
-export const amcatIndexUpdateSchema = amcatIndexSchema
+export const amcatProjectUpdateSchema = amcatProjectSchema
   .partial()
   .required({ id: true })
   .omit({ archived: true })

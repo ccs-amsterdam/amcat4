@@ -9,7 +9,7 @@ import JSZip from "jszip";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface Props {
-  indexId: string;
+  projectId: string;
   user: AmcatSessionUser;
 }
 
@@ -39,11 +39,11 @@ export const extensionMapping: Record<string, string> = {
   flac: "audio/flac",
 };
 
-export default function MultimediaUpload({ indexId, user }: Props) {
+export default function MultimediaUpload({ projectId, user }: Props) {
   const [data, setData] = useState<FileWithPath[]>();
   const [uploadQueue, setUploadQueue] = useState<UploadQueue>({ uploading: false, files: [], progress: 0 });
-  const { data: presignedPost } = useMultimediaPresignedPost(user, indexId, !!data);
-  const { mutateAsync } = useMutateMultimedia(user, indexId, presignedPost);
+  const { data: presignedPost } = useMultimediaPresignedPost(user, projectId, !!data);
+  const { mutateAsync } = useMutateMultimedia(user, projectId, presignedPost);
   const queryClient = useQueryClient();
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { amcatIndexSchema, amcatUserRoleSchema } from "@/schemas";
+import { amcatProjectSchema, amcatUserRoleSchema } from "@/schemas";
 import { useQuery } from "@tanstack/react-query";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { z } from "zod";
@@ -13,13 +13,13 @@ export function useAmcatProjects(user: AmcatSessionUser | undefined, params?: Pa
     queryKey: ["projects", user, params],
     queryFn: async () => {
       const res = await getProjects(user, params);
-      return z.array(amcatIndexSchema).parse(res);
+      return z.array(amcatProjectSchema).parse(res);
     },
     enabled: user != null,
   });
 }
 
-export function useAmcatIndexRoles(user: AmcatSessionUser | undefined, params?: Params) {
+export function useAmcatProjectRoles(user: AmcatSessionUser | undefined, params?: Params) {
   return useQuery({
     queryKey: ["projects", user, params, "minimal"],
     queryFn: async () => {

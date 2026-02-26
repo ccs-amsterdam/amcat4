@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 
-export function PendingIndexRequests() {
+export function PendingProjectRequests() {
   const { user } = useAmcatSession();
   const { data: myRequests, isLoading } = useMyRequests(user);
   const { mutateAsync: deleteRequest } = useDeleteMyRequest(user);
@@ -30,7 +30,7 @@ export function PendingIndexRequests() {
       <DialogContent className="max-h-[80vh] w-[90vw] max-w-2xl overflow-auto">
         <DialogHeader>
           <DialogTitle>Pending project requests</DialogTitle>
-          <DialogDescription>You submitted the following index requests</DialogDescription>
+          <DialogDescription>You submitted the following project requests</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-1">
           {pending.map((request) => (

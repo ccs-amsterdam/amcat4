@@ -1,15 +1,15 @@
 import { useArticles } from "@/api/articles";
-import { AmcatArticle, AmcatField, AmcatIndexId, AmcatQuery, AmcatSnippet, AmcatUserRole } from "@/interfaces";
+import { AmcatArticle, AmcatField, AmcatProjectId, AmcatQuery, AmcatSnippet, AmcatUserRole } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useListFields from "./useListFields";
 
 interface params {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
   fields?: AmcatField[];
-  indexRole?: AmcatUserRole;
+  projectRole?: AmcatUserRole;
   pageSize: number;
   highlight?: boolean;
   defaultSnippets?: AmcatSnippet;
@@ -19,17 +19,17 @@ interface params {
 
 export default function usePaginatedArticles({
   user,
-  indexId,
+  projectId,
   query,
   fields,
-  indexRole,
+  projectRole,
   pageSize,
   highlight,
   defaultSnippets,
   combineResults,
   enabled = true,
 }: params) {
-  const { listFields, layout } = useListFields(indexRole || "NONE", fields || [], defaultSnippets);
+  const { listFields, layout } = useListFields(projectRole || "NONE", fields || [], defaultSnippets);
   const params = useMemo(
     () => ({ per_page: pageSize, highlight: !!highlight, fields: listFields }),
     [pageSize, listFields],
@@ -38,7 +38,14 @@ export default function usePaginatedArticles({
   const [articles, setArticles] = useState<AmcatArticle[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [alignedPageIndex, setAlignedPageIndex] = useState(0);
-  const { data, isLoading, isFetching, fetchNextPage } = useArticles(user, indexId, query, params, indexRole, enabled);
+  const { data, isLoading, isFetching, fetchNextPage } = useArticles(
+    user,
+    projectId,
+    query,
+    params,
+    projectRole,
+    enabled,
+  );
 
   useEffect(() => {
     if (!data?.pages || pageIndex > data.pages.length - 1) {

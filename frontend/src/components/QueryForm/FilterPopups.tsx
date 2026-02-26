@@ -1,7 +1,7 @@
 import { useFieldStats } from "@/api/fieldStats";
 import { useFieldValues } from "@/api/fieldValues";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AmcatField, AmcatFilter, AmcatIndexId, DateFilter } from "@/interfaces";
+import { AmcatField, AmcatFilter, AmcatProjectId, DateFilter } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { useMemo, useRef, useState } from "react";
 import { Input } from "../ui/input";
@@ -9,7 +9,7 @@ import DatePicker from "./DatePicker";
 
 interface FilterPopupProps {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   field: AmcatField | undefined;
   value: AmcatFilter | undefined;
   onChange: (value: AmcatFilter) => void;
@@ -44,16 +44,16 @@ export function filterLabel(name: string, field: AmcatField | undefined, filter:
   );
 }
 
-export function FilterPopup({ user, indexId, field, value, onChange }: FilterPopupProps) {
+export function FilterPopup({ user, projectId, field, value, onChange }: FilterPopupProps) {
   if (field == null || value == null) return null;
 
-  if (field.type === "date") return DateRangePopup({ user, indexId, field, value, onChange });
-  if (field.type === "number") return NumberRangePopup({ user, indexId, field, value, onChange });
-  return KeywordPopup({ user, indexId, field, value, onChange });
+  if (field.type === "date") return DateRangePopup({ user, projectId, field, value, onChange });
+  if (field.type === "number") return NumberRangePopup({ user, projectId, field, value, onChange });
+  return KeywordPopup({ user, projectId, field, value, onChange });
 }
 
-function NumberRangePopup({ user, indexId, field, value, onChange }: FilterPopupProps) {
-  const { data: fieldStats } = useFieldStats(user, indexId, field?.name);
+function NumberRangePopup({ user, projectId, field, value, onChange }: FilterPopupProps) {
+  const { data: fieldStats } = useFieldStats(user, projectId, field?.name);
 
   if (field == null || value == null || fieldStats == null) return null;
   return (
@@ -82,9 +82,9 @@ function NumberRangePopup({ user, indexId, field, value, onChange }: FilterPopup
   );
 }
 
-function KeywordPopup({ user, indexId, field, value, onChange }: FilterPopupProps) {
+function KeywordPopup({ user, projectId, field, value, onChange }: FilterPopupProps) {
   const [query, setQuery] = useState("");
-  const { data: fieldValues } = useFieldValues(user, indexId, field?.name);
+  const { data: fieldValues } = useFieldValues(user, projectId, field?.name);
   const enableSearch = fieldValues && fieldValues?.length > 10;
   const selected = value?.values || [];
 
@@ -150,8 +150,8 @@ function date2str(date: Date, ifNone = ""): string {
   return year + "-" + month + "-" + day;
 }
 
-function DateRangePopup({ user, indexId, field, value, onChange }: FilterPopupProps) {
-  const { data: fieldStats } = useFieldStats(user, indexId, field?.name);
+function DateRangePopup({ user, projectId, field, value, onChange }: FilterPopupProps) {
+  const { data: fieldStats } = useFieldStats(user, projectId, field?.name);
   if (field == null || value == null) return null;
   if (!fieldStats) return null;
 

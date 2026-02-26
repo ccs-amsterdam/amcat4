@@ -1,4 +1,4 @@
-import { AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { toast } from "sonner";
@@ -12,20 +12,20 @@ interface MutateTagsParams {
   query: AmcatQuery;
 }
 
-export function useMutateTags(user: AmcatSessionUser, indexId: AmcatIndexId) {
+export function useMutateTags(user: AmcatSessionUser, projectId: AmcatProjectId) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ tag, action, field = "tags", query }: MutateTagsParams) => {
       const amcatQuery = asPostAmcatQuery(query);
-      return user.api.post(`/index/${indexId}/tags_update`, { ...amcatQuery, tag, action, field });
+      return user.api.post(`/index/${projectId}/tags_update`, { ...amcatQuery, tag, action, field });
     },
     onSuccess: (data: any, variables: any) => {
-      queryClient.invalidateQueries({ queryKey: ["fields", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["article", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["articles", user, indexId] });
-      queryClient.invalidateQueries({ queryKey: ["fieldValues", user, indexId, variables.field] });
-      queryClient.invalidateQueries({ queryKey: ["aggregate", user, indexId] });
+      queryClient.invalidateQueries({ queryKey: ["fields", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["article", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["articles", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["fieldValues", user, projectId, variables.field] });
+      queryClient.invalidateQueries({ queryKey: ["aggregate", user, projectId] });
 
       const result = z.object({ updated: z.number(), total: z.number() }).parse(data.data);
       if (variables.action === "add")

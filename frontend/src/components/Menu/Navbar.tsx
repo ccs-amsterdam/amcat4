@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Link, useParams, useNavigate, useLocation } from "@tanstack/react-router";
 import AccountMenu from "./AccountMenu";
-import IndexMenu from "./IndexMenu";
+import ProjectMenu from "./ProjectMenu";
 import { Notifications } from "./Notifications";
 import { SubMenu, SubMenuPath } from "./SubMenu";
 
@@ -92,11 +92,11 @@ function BreadCrumbs({ branding, hasIndex }: { branding?: AmcatBranding; hasInde
         <ChevronRight className="h-4 w-4 min-w-4 flex-shrink opacity-50" />
         {/*<span className="text-primary/50">|</span>*/}
         {/*<span className=" text-xs text-foreground/50">/</span>*/}
-        <IndexMenu />
+        <ProjectMenu />
       </div>
       <div className="flex  flex-col items-start overflow-hidden py-1  pl-2 text-sm sm:hidden  md:text-base">
         <BreadCrumbLink name={serverLinkLabel} href="/projects" active={!homepage && !hasIndex} />
-        <IndexMenu />
+        <ProjectMenu />
       </div>
     </>
   );

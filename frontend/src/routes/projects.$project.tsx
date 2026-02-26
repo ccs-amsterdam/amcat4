@@ -6,15 +6,15 @@ export const Route = createFileRoute("/projects/$project")({
 
 import { ErrorMsg } from "@/components/ui/error-message";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
-import { useMyIndexrole } from "@/api";
+import { useMyProjectRole } from "@/api/project";
 
 function ProjectLayout() {
   const { project } = Route.useParams();
   const { user } = useAmcatSession();
-  const { role: indexRole, isLoading } = useMyIndexrole(user, project);
+  const { role: projectRole, isLoading } = useMyProjectRole(user, project);
 
   if (isLoading) return <div>Loading...</div>;
-  if (!indexRole) return <NoAccessToThisProject />;
+  if (!projectRole) return <NoAccessToThisProject />;
 
   return <Outlet />;
 }

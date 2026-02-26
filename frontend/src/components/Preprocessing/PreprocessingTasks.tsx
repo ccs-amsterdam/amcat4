@@ -2,7 +2,7 @@ import { useMutatePreprocessingInstruction, usePreprocessingTasks } from "@/api/
 import {
   AmcatField,
   AmcatFieldType,
-  AmcatIndexId,
+  AmcatProjectId,
   PreprocessingInstruction,
   PreprocessingTask,
   UpdateAmcatField,
@@ -27,13 +27,13 @@ const useRouter = () => {
 };
 
 interface Props {
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   user: AmcatSessionUser;
 }
 
-export default function PreprocessingTasks({ indexId, user }: Props) {
+export default function PreprocessingTasks({ projectId, user }: Props) {
   const { data: tasks, isLoading: isLoadingTasks } = usePreprocessingTasks(user);
-  const { data: fields, isLoading: isLoadingFields } = useFields(user, indexId);
+  const { data: fields, isLoading: isLoadingFields } = useFields(user, projectId);
 
   if (isLoadingTasks || isLoadingFields) return <Loading />;
   if (!tasks || !fields) return null;
@@ -46,7 +46,7 @@ export default function PreprocessingTasks({ indexId, user }: Props) {
           <AccordionItem value={task.name} key={task.name}>
             <AccordionTrigger>{task.name}</AccordionTrigger>
             <AccordionContent>
-              <TaskForm key={task.name} user={user} indexId={indexId} task={task} fields={fields} />
+              <TaskForm key={task.name} user={user} projectId={projectId} task={task} fields={fields} />
             </AccordionContent>
           </AccordionItem>
         ))}
@@ -59,17 +59,17 @@ type ArgumentValue = z.infer<typeof amcatPreprocessingInstructionArgumentValue>;
 
 function TaskForm({
   user,
-  indexId,
+  projectId,
   task,
   fields,
 }: {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   task: PreprocessingTask;
   fields: AmcatField[];
 }) {
-  const { mutateAsync: mutateFields } = useMutateFields(user, indexId);
-  const { mutateAsync: mutatePreprocessing } = useMutatePreprocessingInstruction(user, indexId);
+  const { mutateAsync: mutateFields } = useMutateFields(user, projectId);
+  const { mutateAsync: mutatePreprocessing } = useMutatePreprocessingInstruction(user, projectId);
   const [instruction, setInstruction] = useState(() => createInstructionTemplate(task));
   const router = useRouter();
   useEffect(() => setInstruction(createInstructionTemplate(task)), [task]);
@@ -98,7 +98,7 @@ function TaskForm({
         });
       }
     }
-    const onReady = () => router.push(`/projects/${indexId}/settings`);
+    const onReady = () => router.push(`/projects/${projectId}/settings`);
     if (newFields.length > 0) {
       mutateFields({ fields: newFields, action: "create" })
         .then(() => mutatePreprocessing(instruction))

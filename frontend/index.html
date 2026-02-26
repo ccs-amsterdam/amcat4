@@ -1,12 +1,116 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AmCAT</title>
+    <script>
+      (function () {
+        try {
+          const theme = localStorage.getItem("theme-mode") || "default";
+          console.log("index.html theme", theme);
+          const root = window.document.documentElement;
+
+          if (theme === "dark" || (theme === "default" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+            root.classList.add("dark");
+          } else {
+            root.classList.remove("dark");
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <style>
+      :root {
+        background-color: #ffffff; /* Default light */
+      }
+
+      :root.dark {
+        background-color: hsl(0, 0%, 14%); /* Matches your --background variable */
+      }
+      #loading-screen {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: transparent;
+        z-index: 9999;
+        transition: opacity 0.5s ease;
+      }
+
+      .loading-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.5rem;
+        width: 100%;
+        max-width: 200px;
+      }
+
+      .loading-logo {
+        width: 64px;
+        height: 64px;
+        animation: pulse 2s infinite ease-in-out;
+      }
+
+      #loading-container {
+        width: 100%;
+        height: 4px;
+        background-color: rgba(174, 80%, 30%, 0.1);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+
+      #loading-bar {
+        height: 100%;
+        width: 0%;
+        background-color: hsl(174, 80%, 30%);
+        animation: progress 1s infinite ease-in-out;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.8;
+          transform: scale(0.95);
+        }
+      }
+
+      @keyframes progress {
+        0% {
+          width: 5%;
+        }
+        50% {
+          width: 70%;
+        }
+        100% {
+          width: 100%;
+        }
+      }
+
+      .loading-fade-out {
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
   </head>
   <body>
+    <div id="loading-screen">
+      <div class="loading-content">
+        <img src="/logo.png" alt="Logo" class="loading-logo" />
+
+        <div id="loading-container">
+          <div id="loading-bar"></div>
+        </div>
+      </div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

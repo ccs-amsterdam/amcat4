@@ -10,16 +10,16 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import RenderMultimedia from "./RenderMultimedia";
 
 interface Props {
-  indexId: string;
+  projectId: string;
   user: AmcatSessionUser;
 }
 
-export default function Multimedia({ indexId, user }: Props) {
+export default function Multimedia({ projectId, user }: Props) {
   const [prefix, setPrefix] = useState<string>("");
   const [page, setPage] = useState(0);
   const [format, setFormat] = useState<"list" | "panes">("list");
 
-  const { data: multimediaList, isLoading: loadingMultimediaList } = useMultimediaList(user, indexId, { prefix });
+  const { data: multimediaList, isLoading: loadingMultimediaList } = useMultimediaList(user, projectId, { prefix });
 
   const items = multimediaList?.filter((item) => !item.is_dir) || [];
   const pageSize = format === "list" ? 20 : 4;
@@ -40,7 +40,7 @@ export default function Multimedia({ indexId, user }: Props) {
     return (
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {showItems?.map((item) => {
-          return <RenderMultimedia user={user} indexId={indexId} url={item.key} height={240} />;
+          return <RenderMultimedia user={user} projectId={projectId} url={item.key} height={240} />;
         })}
       </div>
     );
@@ -52,7 +52,7 @@ export default function Multimedia({ indexId, user }: Props) {
         <h3 className="mt-0">Multimedia list</h3>
         {loadingMultimediaList ? <Loading /> : null}
         <div className="min-h-[4rem]">
-          <DirectoryBrowser indexId={indexId} prefix={prefix} setPrefix={setPrefix} multimediaList={multimediaList} />
+          <DirectoryBrowser projectId={projectId} prefix={prefix} setPrefix={setPrefix} multimediaList={multimediaList} />
         </div>
         <div className={` flex items-center justify-between ${showItems.length ? "" : "hidden"} `}>
           <div className="flex items-center ">
@@ -83,7 +83,7 @@ export default function Multimedia({ indexId, user }: Props) {
       <div className="w-full lg:w-1/2  xl:w-[40%]">
         <div className="flex min-h-[20rem] flex-col gap-3 p-3 pl-6">
           <h3 className="mt-0">Upload multimedia</h3>
-          <MultimediaUpload indexId={indexId} user={user} />
+          <MultimediaUpload projectId={projectId} user={user} />
         </div>
       </div>
     </div>
@@ -129,12 +129,12 @@ function ItemPagination({
 }
 
 function DirectoryBrowser({
-  indexId,
+  projectId,
   prefix,
   setPrefix,
   multimediaList,
 }: {
-  indexId: string;
+  projectId: string;
   prefix: string;
   setPrefix: (prefix: string) => void;
   multimediaList?: MultimediaListItem[];
@@ -143,7 +143,7 @@ function DirectoryBrowser({
     if (!prefix) return [];
     const split = prefix.split("/");
     return split.slice(0, split.length - 1);
-  }, [indexId, prefix]);
+  }, [projectId, prefix]);
 
   const directories = useMemo(() => {
     if (!multimediaList) return [];

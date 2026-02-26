@@ -9,7 +9,7 @@ import {
   AggregationInterval,
   AggregationOptions,
   AmcatFilter,
-  AmcatIndexId,
+  AmcatProjectId,
   AmcatQuery,
 } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
@@ -32,7 +32,7 @@ import AggregatePagination, { useAggregatePagination } from "./AggregatePaginati
 
 interface AggregateResultProps {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   /** The query for the results to show */
   query: AmcatQuery;
   /** Aggregation options (display and axes information) */
@@ -57,7 +57,7 @@ interface Zoom {
  */
 export default function AggregateResult({
   user,
-  indexId,
+  projectId,
   query,
   options,
   width,
@@ -71,7 +71,7 @@ export default function AggregateResult({
     error,
     hasNextPage,
     fetchNextPage,
-  } = useAggregate(user, indexId, query, options);
+  } = useAggregate(user, projectId, query, options);
   const [zoom, setZoom] = useState<Zoom>();
 
   const data: AggregateData | null = useMemo(() => {
@@ -146,7 +146,12 @@ export default function AggregateResult({
     <div>
       <div className="flex items-center justify-end gap-4 px-1">
         <AggregatePagination data={paginatedData} pagination={pagination} />
-        <DownloadData data={paginatedData.rows} axes={paginatedData.axes} indexId={indexId} disabled={hasNextPage} />
+        <DownloadData
+          data={paginatedData.rows}
+          axes={paginatedData.axes}
+          projectId={projectId}
+          disabled={hasNextPage}
+        />
       </div>
       <div className="relative">
         <div className={`pointer-events-none absolute right-0 top-0 z-50  `}>
@@ -185,7 +190,7 @@ export default function AggregateResult({
             limit={options.limit}
           />
         </div>
-        <ArticleListModal user={user} index={indexId} zoom={zoom} onClose={() => setZoom(undefined)} />
+        <ArticleListModal user={user} projectId={projectId} zoom={zoom} onClose={() => setZoom(undefined)} />
       </div>
     </div>
   );
@@ -194,19 +199,19 @@ export default function AggregateResult({
 function DownloadData({
   data,
   axes,
-  indexId,
+  projectId,
   disabled,
 }: {
   data: AggregateDataPoint[];
   axes: AggregationAxis[];
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
 
   disabled: boolean;
 }) {
   const { CSVDownloader, Type } = useCSVDownloader();
   const [filename, setFilename] = useState("");
 
-  const defaultFilename = `${indexId}_${axes.map((a) => a.name).join("_X_")}`;
+  const defaultFilename = `${projectId}_${axes.map((a) => a.name).join("_X_")}`;
   return (
     <Dialog>
       <DialogTrigger disabled={disabled} className="disabled:opacity-50">
@@ -324,12 +329,12 @@ function describe_filter(filter: AmcatFilter | undefined) {
 
 function ArticleListModal({
   user,
-  index,
+  projectId,
   zoom,
   onClose,
 }: {
   user: AmcatSessionUser;
-  index: AmcatIndexId;
+  projectId: AmcatProjectId;
   zoom?: Zoom;
   onClose: () => void;
 }) {
@@ -352,7 +357,7 @@ function ArticleListModal({
             </p>
           ))}
         </DialogHeader>
-        <Articles user={user} indexId={index} query={query} />
+        <Articles user={user} projectId={projectId} query={query} />
       </DialogContent>
     </Dialog>
   );

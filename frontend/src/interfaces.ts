@@ -14,7 +14,7 @@ import {
   amcatFieldStatsSchema,
   amcatFieldTypeSchema,
   amcatFieldValuesSchema,
-  amcatIndexSchema,
+  amcatProjectSchema,
   amcatMetareaderAccessSchema,
   amcatMetricFunctionSchema,
   amcatMultimediaListItem,
@@ -36,7 +36,7 @@ import { Axios } from "axios";
 export type AmcatConfig = z.infer<typeof amcatConfigSchema>;
 export type AmcatBranding = z.infer<typeof amcatBrandingSchema>;
 export type AmcatUserRole = z.infer<typeof amcatUserRoleSchema>;
-export type AmcatIndex = z.infer<typeof amcatIndexSchema>;
+export type AmcatProject = z.infer<typeof amcatProjectSchema>;
 export type AmcatUserDetails = z.infer<typeof amcatUserDetailsSchema>;
 export type AmcatFieldType = z.infer<typeof amcatFieldTypeSchema>;
 export type AmcatElasticFieldType = z.infer<typeof amcatElasticFieldTypeSchema>;
@@ -66,7 +66,7 @@ export type AmcatRequestServerRole = z.infer<typeof amcatRequestServerRoleSchema
 export type AmcatRequestProject = z.infer<typeof amcatRequestProjectSchema>;
 export type AmcatApiKey = z.infer<typeof amcatApiKeySchema>;
 
-export type AmcatIndexId = string;
+export type AmcatProjectId = string;
 
 //TODO: think about how visual and data options relate, e.g. limit.
 export interface AggregationOptions {
@@ -167,4 +167,4 @@ export type UploadOperation = "create" | "update" | "index";
 
 export type MultimediaType = "image" | "video" | "audio";
 
-export type RecentProjects = Record<string, AmcatIndex[]>;
+export type RecentProjects = Record<string, AmcatProject[]>;

@@ -1,15 +1,15 @@
-import { AmcatArticle, AmcatField, AmcatIndexId, MultimediaType } from "@/interfaces";
+import { AmcatArticle, AmcatField, AmcatProjectId, MultimediaType } from "@/interfaces";
 import RenderMultimedia from "../Multimedia/RenderMultimedia";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   article: AmcatArticle;
   fields: AmcatField[];
 }
 
-export default function ArticleMultimedia({ user, indexId, article, fields }: Props) {
+export default function ArticleMultimedia({ user, projectId, article, fields }: Props) {
   const multimediaFields = fields.filter((f) => f.type === "image" || f.type === "video" || f.type === "audio");
   if (multimediaFields.length === 0) return null;
 
@@ -31,7 +31,7 @@ export default function ArticleMultimedia({ user, indexId, article, fields }: Pr
             {fields.map((field) => {
               if (!article[field.name]) return null;
               const type = field.type as MultimediaType;
-              return <RenderMultimedia user={user} indexId={indexId} url={article[field.name]} renderAs={type} />;
+              return <RenderMultimedia user={user} projectId={projectId} url={article[field.name]} renderAs={type} />;
             })}
           </div>
         );

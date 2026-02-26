@@ -1,8 +1,8 @@
-import { useHasIndexRole } from "@/api";
+import { useHasProjectRole } from "@/api/project";
 import { useArticles } from "@/api/articles";
 import { useFieldStats } from "@/api/fieldStats";
 import { useFields } from "@/api/fields";
-import { AggregationAxis, AmcatField, AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { AggregationAxis, AmcatField, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { autoFormatDate } from "@/lib/autoFormatDate";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { useMemo } from "react";
@@ -11,14 +11,14 @@ import Articles from "../Articles/Articles";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
 }
 
-export default function Summary({ user, indexId, query }: Props) {
-  const { data: fields } = useFields(user, indexId);
-  const isWriter = useHasIndexRole(user, indexId, "WRITER");
-  const { data } = useArticles(user, indexId, query);
+export default function Summary({ user, projectId, query }: Props) {
+  const { data: fields } = useFields(user, projectId);
+  const isWriter = useHasProjectRole(user, projectId, "WRITER");
+  const { data } = useArticles(user, projectId, query);
   if (data == null) return null;
 
   const isEmpty = data.pages[0].meta.total_count === 0;
@@ -27,16 +27,16 @@ export default function Summary({ user, indexId, query }: Props) {
   function renderVisualization(field: AmcatField) {
     if (!field.client_settings.inListSummary) return null;
     if (field.type === "date")
-      return <DateSummaryGraph key={field.name} user={user} indexId={indexId} query={query} field={field} />;
+      return <DateSummaryGraph key={field.name} user={user} projectId={projectId} query={query} field={field} />;
     if (field.type === "keyword")
-      return <KeywordSummaryGraph key={field.name} user={user} indexId={indexId} query={query} field={field} />;
+      return <KeywordSummaryGraph key={field.name} user={user} projectId={projectId} query={query} field={field} />;
   }
 
   const visualizations = (fields || []).map(renderVisualization).filter((el) => el != null);
   return (
     <div className="grid snap-x snap-mandatory grid-cols-[100%,100%] gap-1 overflow-auto md:grid-cols-2 md:gap-3 md:overflow-visible">
       <div className="border-foreground/31 snap-center  rounded-l">
-        <Articles user={user} indexId={indexId} query={query} />
+        <Articles user={user} projectId={projectId} query={query} />
       </div>
       <div className="mt-12 flex snap-center flex-col  gap-3 md:gap-6">
         {visualizations.length === 0 ? (
@@ -55,8 +55,8 @@ interface SummaryProps extends Props {
   field: AmcatField;
 }
 
-function DateSummaryGraph({ user, indexId, query, field }: SummaryProps) {
-  const { data: values, isLoading: valuesLoading } = useFieldStats(user, indexId, field.name);
+function DateSummaryGraph({ user, projectId, query, field }: SummaryProps) {
+  const { data: values, isLoading: valuesLoading } = useFieldStats(user, projectId, field.name);
 
   const [axes, interval] = useMemo(() => {
     if (!values?.max_as_string || !values.min_as_string) return [[], null];
@@ -85,7 +85,7 @@ function DateSummaryGraph({ user, indexId, query, field }: SummaryProps) {
   return (
     <AggregateResult
       user={user}
-      indexId={indexId}
+      projectId={projectId}
       query={query}
       options={{ axes, display: "linechart", title }}
       defaultPageSize={200}
@@ -93,7 +93,7 @@ function DateSummaryGraph({ user, indexId, query, field }: SummaryProps) {
   );
 }
 
-function KeywordSummaryGraph({ user, indexId, query, field }: SummaryProps) {
+function KeywordSummaryGraph({ user, projectId, query, field }: SummaryProps) {
   const axes = useMemo(() => {
     const axes: AggregationAxis[] = [{ name: field.name, field: field.name }];
     if (query.queries && query.queries.length > 0) axes.push({ name: "_query", field: "_query" });
@@ -103,7 +103,7 @@ function KeywordSummaryGraph({ user, indexId, query, field }: SummaryProps) {
   return (
     <AggregateResult
       user={user}
-      indexId={indexId}
+      projectId={projectId}
       query={query}
       options={{ axes, display: "barchart", title: field.name.toUpperCase() }}
       defaultPageSize={20}

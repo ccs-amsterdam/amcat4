@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { AmcatIndexId, AmcatQuery } from "@/interfaces";
+import { AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { ChevronUp, Loader, PlusSquareIcon } from "lucide-react";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { AddFilterButton } from "./AddFilterButton";
@@ -8,7 +8,7 @@ import { queriesFromString, queriesToString } from "./libQuery";
 
 interface Props {
   user: AmcatSessionUser;
-  indexId: AmcatIndexId;
+  projectId: AmcatProjectId;
   query: AmcatQuery;
   updateQuery: (query: AmcatQuery, executeAfter: number | "never") => void;
   debouncing: boolean;
@@ -20,14 +20,14 @@ interface Props {
 export default function MultilineQueryForm({
   children,
   user,
-  indexId,
+  projectId,
   query,
   debouncing,
   queryChanged,
   updateQuery,
   switchAdvanced,
 }: Props) {
-  if (!indexId) return null;
+  if (!projectId) return null;
 
   function handleKeyDown(event: any) {
     if (event.key === "Enter" && event.ctrlKey) {
@@ -67,7 +67,7 @@ export default function MultilineQueryForm({
         <div className="flex h-10 items-center gap-2">
           <div className="flex gap-2">
             <b>Filters</b>
-            <AddFilterButton user={user} indexId={indexId} value={query} onSubmit={(value) => updateQuery(value, 0)}>
+            <AddFilterButton user={user} projectId={projectId} value={query} onSubmit={(value) => updateQuery(value, 0)}>
               <PlusSquareIcon />
             </AddFilterButton>
           </div>
