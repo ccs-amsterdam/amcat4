@@ -30,7 +30,7 @@ export function Branding({
       {/*<div className="flex items-center justify-center gap-1 whitespace-nowrap pl-9 pt-3">
         <ServerNameAndLink serverBranding={serverBranding} />
       </div>*/}
-      <div className="container prose-xl mx-auto max-w-6xl px-4 py-10 text-center dark:prose-invert prose-a:underline md:py-24">
+      <div className="container prose-xl mx-auto max-w-6xl text-balance px-4 py-10 text-center dark:prose-invert prose-a:underline md:py-24">
         <Markdown>{message_md}</Markdown>
         <div className={`${serverBranding.welcome_buttons ? "" : "hidden"} mt-3 flex justify-center gap-3`}>
           {(serverBranding.welcome_buttons ?? []).map((action, i) => (
@@ -43,9 +43,9 @@ export function Branding({
         </div>
 
         <div className="mt-6 flex flex-col">
-          {true ? (
+          {no_auth ? (
             <>
-              <p className="prose mx-auto mb-6 rounded border-2 bg-background/10 p-3 text-primary-foreground">
+              <p className="prose mx-auto mb-6 rounded border-2 bg-background/20 p-3 text-primary-foreground">
                 This server does not use authentication. This is indented for using AmCAT on your own computer or
                 private network only. Please configure authentication if hosting AmCAT publicly.{" "}
                 <a href="https://amcat.nl/book/04._sharing">

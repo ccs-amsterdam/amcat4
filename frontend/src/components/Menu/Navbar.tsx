@@ -48,11 +48,7 @@ export default function Navbar() {
   function logo() {
     return (
       <Link to={"/"} className="flex h-14 items-center px-3">
-        <img
-          className={`mr-0 aspect-auto w-9 min-w-9 sm:w-10 `}
-          src={branding?.server_icon || "/logo.png"}
-          alt="AmCAT"
-        />
+        <img className={`mr-0 aspect-auto w-9 min-w-9 sm:w-10 `} src={branding?.icon_url || "/logo.png"} alt="AmCAT" />
       </Link>
     );
   }
@@ -85,7 +81,7 @@ function BreadCrumbs({ branding, hasIndex }: { branding?: AmcatBranding; hasInde
   const path = location.pathname;
   const homepage = path === "/";
 
-  const serverLinkLabel = branding?.server_name || "Server";
+  const serverLinkLabel = branding?.name || "Server";
 
   return (
     <>
@@ -93,7 +89,7 @@ function BreadCrumbs({ branding, hasIndex }: { branding?: AmcatBranding; hasInde
         <BreadCrumbLink name={serverLinkLabel} href="/projects" active={!homepage && !hasIndex} />
         <ChevronRight className="h-4 w-4 min-w-4 flex-shrink opacity-50" />
         {/*<span className="text-primary/50">|</span>*/}
-        {/*<span className=" text-xs text-foreground/50">/</span>*/}
+        {/*<span className="text-foreground/30">/</span>*/}
         <ProjectMenu />
       </div>
       <div className="flex  flex-col items-start overflow-hidden py-1  pl-2 text-sm sm:hidden  md:text-base">

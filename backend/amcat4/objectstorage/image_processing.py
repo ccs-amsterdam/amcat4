@@ -4,9 +4,9 @@ import base64
 import hashlib
 import io
 
-import httpx
 from PIL import Image
 
+from amcat4.connections import http
 from amcat4.models import ImageObject
 
 
@@ -54,21 +54,20 @@ async def _chunked_download(url: str, max_bytes: int, chunk_size=8192):
     chunks: list[bytes] = []
     current_size = 0
 
-    async with httpx.AsyncClient() as client:
-        async with client.stream("GET", url) as r:
-            r.raise_for_status()
+    async with http().stream("GET", url) as r:
+        r.raise_for_status()
 
-            content_length = r.headers.get("Content-Length")
-            if content_length and int(content_length) > max_bytes:
-                raise ValueError(f"Error : Image at URL '{url}' exceeds maximum allowed size of {max_bytes} bytes.")
+        content_length = r.headers.get("Content-Length")
+        if content_length and int(content_length) > max_bytes:
+            raise ValueError(f"Error : Image at URL '{url}' exceeds maximum allowed size of {max_bytes} bytes.")
 
-            async for chunk in r.aiter_bytes(chunk_size=chunk_size):
-                chunks.append(chunk)
-                current_size += len(chunk)
-                if current_size > max_bytes:
-                    raise ValueError(
-                        f"Error: Image at URL '{url}' exceeds maximum allowed size of {max_bytes} bytes during download."
-                    )
+        async for chunk in r.aiter_bytes(chunk_size=chunk_size):
+            chunks.append(chunk)
+            current_size += len(chunk)
+            if current_size > max_bytes:
+                raise ValueError(
+                    f"Error: Image at URL '{url}' exceeds maximum allowed size of {max_bytes} bytes during download."
+                )
 
     return b"".join(chunks)
 

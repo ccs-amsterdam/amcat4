@@ -3,7 +3,7 @@
 from importlib.metadata import version
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
@@ -65,9 +65,12 @@ async def index(request: Request):
 
 @app_info.get("/config")
 @app_info.get("/middlecat")
-def get_auth_config() -> AuthConfigResponse:
+def get_auth_config(response: Response) -> AuthConfigResponse:
     """Get the authentication configuration for this AmCAT instance."""
     settings = get_settings()
+
+    if get_settings().middlecat_url:
+        response.headers["Access-Control-Allow-Origin"] = get_settings().middlecat_url
 
     return AuthConfigResponse(
         middlecat_url=settings.middlecat_url,

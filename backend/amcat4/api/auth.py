@@ -11,6 +11,7 @@ from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from amcat4.config import get_settings
+from amcat4.connections import http
 
 app_auth = APIRouter(prefix="", tags=["auth"])
 
@@ -102,9 +103,8 @@ async def callback(request: Request, code: str, state: str):
             "code_verifier": request.session.get("code_verifier"),
         }
 
-    async with httpx.AsyncClient() as client:
-        res = await client.post(token_url, data=data)
-        tokens = res.json()
+    res = await http().post(token_url, data=data)
+    tokens = res.json()
 
     claims = decode_claims(tokens["access_token"])
 
@@ -161,14 +161,13 @@ async def logout(
     else:
         # Middlecat 'kill_session' logic (Back-channel)
         token_endpoint = f"{MIDDLECAT_URL}/api/token"
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                token_endpoint,
-                data={
-                    "grant_type": "kill_session",
-                    "refresh_token": refresh_token,
-                },
-            )
+        await http().post(
+            token_endpoint,
+            data={
+                "grant_type": "kill_session",
+                "refresh_token": refresh_token,
+            },
+        )
         # For Middlecat, since it's back-channel, we just tell the UI to refresh/redirect
         response = JSONResponse({"status": "logged_out", "logout_url": final_destination})
 
@@ -207,15 +206,14 @@ async def refresh_token(request: Request):
         }
 
     # Refresh Request
-    async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(token_url, data=data)
-            res.raise_for_status()
-            tokens = res.json()
-        except httpx.HTTPStatusError:
-            # If the refresh token is expired/invalid, clear session
-            request.session.clear()
-            raise HTTPException(status_code=401, detail="Refresh failed")
+    try:
+        res = await http().post(token_url, data=data)
+        res.raise_for_status()
+        tokens = res.json()
+    except httpx.HTTPStatusError:
+        # If the refresh token is expired/invalid, clear session
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Refresh failed")
 
     # New Tokens
     new_access_token = tokens["access_token"]

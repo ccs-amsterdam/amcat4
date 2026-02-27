@@ -2,6 +2,7 @@ import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import AsyncGenerator
 
+import httpx
 from aiobotocore.config import AioConfig
 from aiobotocore.session import get_session
 from elasticsearch import AsyncElasticsearch
@@ -14,19 +15,22 @@ class AmcatConnections:
     elastic: AsyncElasticsearch | None
     s3_client: S3Client | None
     s3_context_stack: AsyncExitStack | None
+    http_client: httpx.AsyncClient | None
 
     def __init__(
         self,
         elastic: AsyncElasticsearch | None = None,
         s3_client: S3Client | None = None,
         s3_context_stack: AsyncExitStack | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ):
         self.elastic = elastic
         self.s3_client = s3_client
         self.s3_context_stack = s3_context_stack
+        self.http_client = http_client
 
 
-CONNECTIONS = AmcatConnections(s3_client=None, elastic=None)  # type: ignore
+CONNECTIONS = AmcatConnections(s3_client=None, elastic=None, http_client=None)  # type: ignore
 
 
 @asynccontextmanager
@@ -41,10 +45,12 @@ async def amcat_connections() -> AsyncGenerator[None, None]:
     try:
         await _start_s3()
         await _start_elastic()
+        await _start_http()
         yield
     finally:
         await _close_s3()
         await _close_elastic()
+        await _close_http()
 
 
 def es() -> AsyncElasticsearch:
@@ -63,6 +69,12 @@ def s3() -> S3Client:
     if CONNECTIONS.s3_client is None:
         raise ConnectionError("S3 client not started")
     return CONNECTIONS.s3_client
+
+
+def http() -> httpx.AsyncClient:
+    if CONNECTIONS.http_client is None:
+        raise ConnectionError("HTTP client not started")
+    return CONNECTIONS.http_client
 
 
 def s3_enabled() -> bool:
@@ -135,3 +147,14 @@ async def _close_s3():
         await CONNECTIONS.s3_context_stack.aclose()
         CONNECTIONS.s3_client = None
         CONNECTIONS.s3_context_stack = None
+
+
+async def _start_http():
+    # You can set global timeouts or headers here
+    CONNECTIONS.http_client = httpx.AsyncClient(timeout=10.0)
+
+
+async def _close_http():
+    if CONNECTIONS.http_client is not None:
+        await CONNECTIONS.http_client.aclose()
+        CONNECTIONS.http_client = None

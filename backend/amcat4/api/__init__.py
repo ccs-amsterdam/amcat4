@@ -76,14 +76,6 @@ async def root_message():
     return {"message": "This is where the client goes"}
 
 
-## TODO: figure out what's best here.
-# Ideally we disable CORS, and only allow own origin. But middlecat currently
-# fetches the server config, and does this via the browser, because if it does
-# it via the server it doesn't work for local amcat servers. Maybe we can
-# disable this call altogether when we simplify middlecat for the new situation
-# (tight integration ui and amcat api)
-app.add_middleware(CORSMiddleware, allow_origins=["https://middlecat.net"])
-
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(

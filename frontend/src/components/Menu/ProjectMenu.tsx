@@ -54,10 +54,10 @@ export default function ProjectMenu() {
     <DropdownMenu open={open && !noRecent} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         disabled={noRecent}
-        className={`flex h-full min-w-0  select-none items-center gap-1 px-1 outline-none hover:font-semibold md:px-3 ${open ? "font-semibold" : ""}`}
+        className={`flex h-full min-w-0  select-none items-center gap-2 px-1 outline-none hover:font-semibold md:px-3 ${open ? "font-semibold" : ""}`}
       >
         {current()}
-        {noRecent ? null : <ChevronDown className="h-4 w-4 opacity-50" />}
+        {noRecent ? null : <ChevronDown className="h-4 w-4 opacity-30" />}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="ml-2 w-[200px] max-w-[95vw] border-[1px] border-foreground">
         <DropdownMenuLabel>Select project</DropdownMenuLabel>

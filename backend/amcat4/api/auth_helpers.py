@@ -3,7 +3,6 @@
 import logging
 from datetime import datetime
 
-import httpx
 from async_lru import alru_cache
 from authlib.common.errors import AuthlibBaseError
 from authlib.jose import JsonWebToken, jwt
@@ -12,6 +11,7 @@ from fastapi.security import APIKeyCookie, APIKeyHeader, OpenIdConnect
 from fastapi.security.oauth2 import OAuth2AuthorizationCodeBearer
 
 from amcat4.config import AuthOptions, get_settings
+from amcat4.connections import http
 from amcat4.models import User
 from amcat4.systemdata.apikeys import get_api_key
 
@@ -31,10 +31,9 @@ class InvalidToken(ValueError):
 
 @alru_cache(maxsize=1)
 async def get_middlecat_config(middlecat_url) -> dict:
-    async with httpx.AsyncClient() as client:
-        r = await client.get(f"{middlecat_url}/api/configuration")
-        r.raise_for_status()
-        return r.json()
+    r = await http().get(f"{middlecat_url}/api/configuration")
+    r.raise_for_status()
+    return r.json()
 
 
 @alru_cache(maxsize=1)
@@ -43,11 +42,10 @@ async def get_oidc_jwks():
     if oidc_url is None:
         raise InvalidToken("No OIDC configured")
 
-    async with httpx.AsyncClient() as client:
-        url = oidc_url + "/.well-known/openid-configuration"
-        r = await client.get(url)
-        r.raise_for_status()
-        return r.json().get("jwks_uri")
+    url = oidc_url + "/.well-known/openid-configuration"
+    r = await http().get(url)
+    r.raise_for_status()
+    return r.json().get("jwks_uri")
 
 
 async def verify_middlecat_token(token: str) -> dict:
