@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from typing import AsyncIterable, Mapping
 
+from amcat4.config import get_settings
 from amcat4.connections import es, s3_enabled
 from amcat4.elastic.util import index_scan
 from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, RoleRule, Roles, User
@@ -62,6 +63,13 @@ async def register_project_index(
     You can optionally provide field mappings to specify the field types before they are inferred.
     NOTE: the mappings argument is not yet used, but we need it if we want to support importing properly
     """
+    index_exists = await es().indices.exists(index=index.id)
+    if not index_exists:
+        raise IndexDoesNotExist(f'Elasticsearch index "{index.id}" does not exist')
+    project_exists = await es().exists(index=settings_index_name(), id=settings_index_id(index.id))
+    if project_exists:
+        raise IndexAlreadyExists(f'Project "{index.id}" is already registered')
+
     await create_project_settings(index, admin_email)
     if mappings:
         await create_fields(index.id, mappings)
@@ -169,6 +177,17 @@ async def list_user_project_indices(
 
     async for index in list_project_indices(ids=user_indices, skip_archived=not show_archived):
         yield index, project_role_lookup[index.id]
+
+
+async def list_unregistered_indices() -> list[str]:
+    """
+    List all elasticsearch indices that exist but are not registered as amcat projects.
+    Excludes any index whose name starts with the system_index prefix.
+    """
+    prefix = get_settings().system_index
+    registered_ids = {project.id async for project in list_project_indices(skip_archived=False)}
+    all_indices = await es().indices.get(index="*")
+    return sorted(name for name in all_indices.keys() if not name.startswith(prefix) and name not in registered_ids)
 
 
 async def index_size_in_bytes(index_id: IndexId) -> int:

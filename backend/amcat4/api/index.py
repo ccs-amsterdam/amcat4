@@ -29,8 +29,10 @@ from amcat4.projects.index import (
     create_project_index,
     delete_project_index,
     index_size_in_bytes,
+    list_unregistered_indices,
     list_user_project_indices,
     refresh_index,
+    register_project_index,
     update_project_index,
 )
 from amcat4.projects.query import reindex
@@ -176,6 +178,45 @@ async def create_index(
 
     if body.guest_role:
         await set_project_guest_role(body.id, Roles[body.guest_role])
+
+
+@app_index.post("/index/{ix}/register", status_code=status.HTTP_201_CREATED)
+async def register_index(
+    ix: Annotated[IndexId, Path(..., description="ID of the existing elasticsearch index to register")],
+    body: Annotated[UpdateIndexBody, Body(...)],
+    user: User = Depends(authenticated_user),
+):
+    """
+    Register an existing elasticsearch index as an amcat project.
+    The elasticsearch index must already exist and not yet be registered. Requires ADMIN server role.
+    """
+    await HTTPException_if_not_server_role(
+        user, Roles.ADMIN, message="Registering an existing index requires ADMIN permission on the server"
+    )
+
+    d = body.model_dump(exclude={"image_url"})
+    d["image"] = await create_image_from_url(body.image_url) if body.image_url else None
+    d["id"] = ix
+
+    try:
+        await register_project_index(ProjectSettings(**d), user.email)
+    except IndexDoesNotExist as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except IndexAlreadyExists as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    if body.guest_role:
+        await set_project_guest_role(ix, Roles[body.guest_role])
+
+
+@app_index.get("/index/unregistered")
+async def list_unregistered(user: User = Depends(authenticated_user)) -> list[str]:
+    """
+    List all elasticsearch indices that exist but are not registered as amcat projects.
+    Excludes system indices. Requires ADMIN server role.
+    """
+    await HTTPException_if_not_server_role(user, Roles.ADMIN)
+    return await list_unregistered_indices()
 
 
 @app_index.put("/index/{ix}", status_code=status.HTTP_204_NO_CONTENT)

@@ -106,6 +106,31 @@ export function useArchiveProject(user: AmcatSessionUser | undefined) {
   });
 }
 
+export function useUnregisteredIndices(user: AmcatSessionUser | undefined) {
+  return useQuery({
+    queryKey: ["unregistered_indices", user],
+    queryFn: async () => {
+      const res = await user!.api.get("/index/unregistered");
+      return res.data as string[];
+    },
+    enabled: !!user,
+  });
+}
+
+export function useRegisterProject(user: AmcatSessionUser | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (value: z.input<typeof amcatProjectSchema>) => {
+      if (!user) throw new Error("Not logged in");
+      const { id, ...body } = value;
+      return user.api.post(`/index/${id}/register`, body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", user] });
+    },
+  });
+}
+
 export function useDeleteProject(user: AmcatSessionUser | undefined) {
   const queryClient = useQueryClient();
 
