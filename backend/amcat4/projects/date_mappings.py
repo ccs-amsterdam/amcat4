@@ -25,7 +25,7 @@ class DayOfWeek(DateMapping):
     interval = "dayofweek"
 
     def mapping_script(self, field):
-        return f"emit(doc['{field}'].value.dayOfWeekEnum.getDisplayName(TextStyle.FULL, Locale.ROOT))"
+        return f"emit(doc['{field}'].value.dayOfWeekEnum.getDisplayName(TextStyle.FULL, Locale.ENGLISH))"
 
 
 class DayPart(DateMapping):
