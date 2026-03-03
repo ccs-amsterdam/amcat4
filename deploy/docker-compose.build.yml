@@ -1,0 +1,13 @@
+# Build overrides — combine with docker-compose.yml to build and push images:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml build
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml push
+
+services:
+  caddy:
+    build:
+      context: ../frontend
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile

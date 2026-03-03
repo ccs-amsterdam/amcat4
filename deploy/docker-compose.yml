@@ -1,8 +1,6 @@
 services:
   caddy:
-    build:
-      context: ..
-      dockerfile: production/Katty.Dockerfile
+    image: ccsamsterdam/amcat4_frontend:${AMCAT4_VERSION:-latest}
     container_name: katty
     restart: unless-stopped
     ports:
@@ -17,11 +15,9 @@ services:
       - amcat-net
     depends_on:
       - api
+
   api:
-    # image: ccsamsterdam/amcat4_backend:${AMCAT4_VERSION:-4.1.1}
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
+    image: ccsamsterdam/amcat4_backend:${AMCAT4_VERSION:-latest}
     container_name: amcat4
     restart: unless-stopped
     networks:
@@ -37,7 +33,6 @@ services:
       - amcat4_auth
       - amcat4_middlecat_url
       - amcat4_admin_email
-      - FORWARDED_ALLOW_IPS=*
     depends_on:
       db:
         condition: service_healthy
@@ -59,8 +54,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 15
-    # for security reasons, the database is only exposed to the other containers in the amcat-net network
-    # to make it available, set ELASTIC_PUBLISHED_PORT to 9200: in the .env file
+    # For security reasons, the database is only exposed to the other containers in the amcat-net network.
+    # To make it available on the host, set ELASTIC_PUBLISHED_PORT=9200 in the .env file.
     ports:
       - "${ELASTIC_PUBLISHED_PORT:-}9200"
     networks:
@@ -74,29 +69,31 @@ services:
     volumes:
       - ${ELASTIC_DATA_STORAGE:-elastic-volume}:/usr/share/elasticsearch/data:rw
 
-  # seaweedfs:
-  #   image: chrislusf/seaweedfs:latest
-  #   container_name: seaweedfs01
-  #   command: [
-  #       "server",
-  #       "-s3",
-  #       "-s3.config=/etc/seaweedfs/s3config.json",
-  #       "-s3.allowEmptyFolder=false",
-  #       # "-s3.dirCleanupThresholdMB=0",
-  #     ]
-  #   volumes:
-  #     - seaweedfs_data:/data
-  #     - ./s3config.json:/etc/seaweedfs/s3config.json:ro
-  #   ports:
-  #     - "8333:8333" # S3 Gateway
-  #     - "8889:8888" # Web UI
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8888/"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   networks:
-  #     - amcat-net
+  # SeaweedFS S3-compatible storage — only used in local dev (run with --profile dev)
+  seaweedfs:
+    profiles: [dev]
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs01
+    command:
+      [
+        "server",
+        "-s3",
+        "-s3.config=/etc/seaweedfs/s3config.json",
+        "-s3.allowEmptyFolder=false",
+      ]
+    volumes:
+      - seaweedfs_data:/data
+      - ./s3config.json:/etc/seaweedfs/s3config.json:ro
+    ports:
+      - "8333:8333" # S3 Gateway
+      - "8889:8888" # Web UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - amcat-net
 
 networks:
   amcat-net:
@@ -105,4 +102,4 @@ volumes:
   elastic-volume:
   caddy_data:
   caddy_config:
-  frontend_build:
+  seaweedfs_data:
