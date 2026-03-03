@@ -334,7 +334,8 @@ class RegisterObject(BaseModel):
     size: int = Field(gt=0, description="The exact (!) size of the multimedia file in bytes")
     content_type: AllowedContentType | None = Field(
         default=None,
-        description="The MIME type of the multimedia file (e.g., image/jpeg, video/mp4). If None, it will be inferred from the file extension.",
+        description="The MIME type of the multimedia file (e.g., image/jpeg, video/mp4). "
+        "If None, it will be inferred from the file extension.",
     )
     force: bool = Field(
         default=False,

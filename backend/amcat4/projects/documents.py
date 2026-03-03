@@ -23,7 +23,8 @@ async def create_or_update_documents(
     :param index: The name of the index (without prefix)
     :param documents: A sequence of article dictionaries
     :param fields: A mapping of fieldname:UpdateField for field types
-    :param op_type: Whether to 'index' new documents (create or overwrite), 'create' (only create) or 'update' existing documents
+    :param op_type: Whether to 'index' new documents (create or overwrite), 'create' (only create) or 'update'
+        existing documents
     """
     if fields:
         create_fields_dict: dict[str, CreateDocumentField] = dict()

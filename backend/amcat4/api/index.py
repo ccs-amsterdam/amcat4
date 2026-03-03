@@ -112,7 +112,8 @@ async def index_list(
     user: User = Depends(authenticated_user),
 ) -> list[IndexListResponse] | dict[IndexId, Role | None]:
     """
-    List indices from this server that the user has access to. Returns a list of dicts with index details, including the user role.
+    List indices from this server that the user has access to. Returns a list of dicts with index details,
+    including the user role.
     Requires at least OBSERVER role on the index. If show_all is true, requires ADMIN server role and shows all indices.
     """
     if show_all:

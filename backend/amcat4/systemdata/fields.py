@@ -170,8 +170,8 @@ async def list_and_repair_fields(
             fields[name] = system_index_fields[name]
 
             if fields[name].elastic_type != inferred_field.elastic_type:
-                ## if for some reason the elastic types in the system index and mapping don't match, update the system index using the
-                ## the inferred type (because we can't update the mapping)
+                ## if for some reason the elastic types in the system index and mapping don't match,
+                ## update the system index using the inferred type (because we can't update the mapping)
                 update_system_index = True
                 fields[name].elastic_type = inferred_field.elastic_type
 
@@ -179,7 +179,8 @@ async def list_and_repair_fields(
                 if fields[name].elastic_type not in list_allowed_elastic_types(fields[name].type):
                     fields[name].type = inferred_field.type
 
-    # check if all fields in the system index have defined mappings in elastic, and otherwise update mapping (update_mapping=True)
+    # check if all fields in the system index have defined mappings in elastic, and otherwise update mapping
+    # (update_mapping=True)
     update_mapping = False
     for name in system_index_fields.keys():
         if name not in inferred_fields.keys():
@@ -445,7 +446,8 @@ def _get_default_field(type: FieldType, elastic_type: ElasticType | None = None)
 
         if len(default_elastic_types) == 0:
             raise ValueError(
-                f"The default elastic type mapping for field type {type} is not defined (if this happens, blame and inform Kasper)"
+                f"The default elastic type mapping for field type {type} is not defined "
+                "(if this happens, blame and inform Kasper)"
             )
         elastic_type = default_elastic_types[0]
 

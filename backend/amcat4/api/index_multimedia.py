@@ -164,19 +164,23 @@ async def multimedia_get_gatekeeper(
     cache: Annotated[
         bool,
         Query(
-            description="Only use in browser. If true, the server will respond with a redirect to a unique cached version of the multimedia object, allowing the browser to cache it. If set to a specific etag value, the server will serve that specific version of the multimedia object with immutable caching.",
+            description="Only use in browser. If true, the server will respond with a redirect to a unique cached version "
+            "of the multimedia object, allowing the browser to cache it. If set to a specific etag value, the server will "
+            "serve that specific version of the multimedia object with immutable caching.",
         ),
     ] = False,
     max_size: Annotated[
         int | None,
         Query(
-            description="Optional maximum size of the multimedia object in bytes. If the object exceeds this size, a 413 error will be returned.",
+            description="Optional maximum size of the multimedia object in bytes. If the object exceeds this size, "
+            "a 413 error will be returned.",
         ),
     ] = None,
     skip_mime_check: Annotated[
         bool | None,
         Query(
-            description="By default, the server checks the mime type of the multimedia object before serving it. Set this to true to skip this check (better performance, but need to trust the stored mime type).",
+            description="By default, the server checks the mime type of the multimedia object before serving it. "
+            "Set this to true to skip this check (better performance, but need to trust the stored mime type).",
         ),
     ] = False,
     etag: Annotated[
@@ -196,8 +200,8 @@ async def multimedia_get_gatekeeper(
     """
     Gatekeeper endpoint for multimedia GET requests.
 
-    When viewed in browser, the ?cache=true parameter should be set. This triggers a self redirect with a unique cache id for the
-    current version of the multimedia object, allowing the browser to cache the object.
+    When viewed in browser, the ?cache=true parameter should be set. This triggers a self redirect with a unique
+    cache id for the current version of the multimedia object, allowing the browser to cache the object.
     """
     if etag:
         # If an is given, we assume that all checks EXCEPT FOR AUTHORIZATION have already
@@ -216,7 +220,8 @@ async def multimedia_get_gatekeeper(
         await HTTPException_if_invalid_or_unauthorized_multimedia_field(ix, field, user)
         raise HTTPException(
             status_code=400,
-            detail=f"The multimedia file extension {meta['content_type']} does not match its real content type {meta['real_content_type']}",
+            detail=f"The multimedia file extension {meta['content_type']} does not match its real content type "
+            f"{meta['real_content_type']}",
         )
 
     if max_size is not None and meta["size"] > max_size:

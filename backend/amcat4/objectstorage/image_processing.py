@@ -85,7 +85,8 @@ def _load_image_from_bytes(image_data: bytes, max_bytes: int) -> Image.Image:
 
     if img.get_format_mimetype() not in allowed_mime_types:
         raise ValueError(
-            f"Error: Unsupported image MIME type '{img.get_format_mimetype()}'. Has to be one of {', '.join(allowed_mime_types)}."
+            f"Error: Unsupported image MIME type '{img.get_format_mimetype()}'. "
+            f"Has to be one of {', '.join(allowed_mime_types)}."
         )
 
     # Convert to RGB to ensure compatibility with JPEG compression (handles transparency)
@@ -126,7 +127,8 @@ def _iterative_compress(
         if quality < 10:
             # Fallback for images that can't meet the target size even at low quality
             print(
-                f"Warning: Minimum quality (10) reached. Final size: {current_size / 1024:.2f} KB (Target: {max_bytes / 1024:.2f} KB)"
+                f"Warning: Minimum quality (10) reached. Final size: {current_size / 1024:.2f} KB "
+                f"(Target: {max_bytes / 1024:.2f} KB)"
             )
             return compressed_data  # Return the best effort
 

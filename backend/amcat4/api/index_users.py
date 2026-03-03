@@ -100,7 +100,8 @@ async def modify_project_user(
     except NotFoundError:
         raise HTTPException(
             404,
-            detail=f"Cannot modify User {email}, because this user does not have a role on index {ix} yet. Create new user or use upsert",
+            detail=f"Cannot modify User {email}, because this user does not have a role on index {ix} yet. "
+            "Create new user or use upsert",
         )
     return IndexUserResponse(email=email, role=body.role)
 
