@@ -1,5 +1,7 @@
-from typing import Literal, Union, Dict
+from typing import Dict, Literal, Union
+
 from typing_extensions import TypedDict
+
 
 class ElasticField(TypedDict):
     """

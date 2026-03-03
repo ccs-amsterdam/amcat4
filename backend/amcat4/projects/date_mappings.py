@@ -1,5 +1,5 @@
 from inspect import isclass
-from typing import Optional, Iterable
+from typing import Iterable, Optional
 
 
 class DateMapping:

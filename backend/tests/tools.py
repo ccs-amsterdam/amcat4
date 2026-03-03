@@ -1,5 +1,4 @@
 import json
-import base64
 from base64 import b64encode
 from contextlib import contextmanager
 from datetime import date, datetime

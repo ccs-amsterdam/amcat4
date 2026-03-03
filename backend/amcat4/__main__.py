@@ -14,9 +14,8 @@ import sys
 import urllib.request
 from enum import Enum
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any
 
-import questionary
 import uvicorn
 from pydantic.fields import FieldInfo
 from uvicorn.config import LOGGING_CONFIG

@@ -1,7 +1,6 @@
 """API Endpoints for document and index management."""
 
 import base64
-from datetime import UTC, datetime
 from typing import Annotated
 
 from elastic_transport import ApiError

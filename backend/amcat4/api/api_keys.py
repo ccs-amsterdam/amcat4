@@ -3,8 +3,7 @@
 from datetime import datetime, timezone
 from typing import Annotated
 
-from elastic_transport import ApiError
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth_helpers import authenticated_user

@@ -3,7 +3,7 @@ import hashlib
 import json
 import secrets
 import time
-from typing import Annotated, Optional
+from typing import Annotated
 from urllib.parse import urlencode
 
 import httpx

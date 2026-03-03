@@ -1,4 +1,4 @@
-from amcat4.elastic.mapping import nested_field, object_field, ElasticMapping
+from amcat4.elastic.mapping import ElasticMapping, nested_field, object_field
 from amcat4.elastic.util import SystemIndexMapping
 
 VERSION = 1

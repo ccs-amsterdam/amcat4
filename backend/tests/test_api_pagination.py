@@ -1,7 +1,7 @@
 import pytest
 
 from amcat4.models import CreateDocumentField
-from amcat4.systemdata.roles import Roles, create_project_role, update_project_role
+from amcat4.systemdata.roles import Roles, create_project_role
 from tests.conftest import upload
 from tests.tools import post_json
 

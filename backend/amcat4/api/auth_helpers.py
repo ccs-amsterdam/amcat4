@@ -4,11 +4,9 @@ import logging
 from datetime import datetime
 
 from async_lru import alru_cache
-from authlib.common.errors import AuthlibBaseError
 from authlib.jose import JsonWebToken, jwt
 from fastapi import Depends, HTTPException, Request, Security
-from fastapi.security import APIKeyCookie, APIKeyHeader, OpenIdConnect
-from fastapi.security.oauth2 import OAuth2AuthorizationCodeBearer
+from fastapi.security import APIKeyCookie, APIKeyHeader
 
 from amcat4.config import AuthOptions, get_settings
 from amcat4.connections import http

@@ -13,7 +13,7 @@ async def test_handler_responses(client: AsyncClient, admin):
     async def test(expected=200, **payload):
         token = create_token(**payload)
         session_data = {"access_token": token}
-        session_cookie = create_session_cookie(sessio_data)
+        session_cookie = create_session_cookie(session_data)
         cookies = {"amcat_session": session_cookie}
         return await get_json(client, "/users/me", cookies=cookies, expected=expected)
 

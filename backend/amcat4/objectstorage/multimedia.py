@@ -1,8 +1,8 @@
 import logging
 from typing import Tuple
-from typing_extensions import TypedDict
 
 import magic
+from typing_extensions import TypedDict
 
 from amcat4.connections import es
 from amcat4.models import ObjectStorage
