@@ -7,9 +7,26 @@
 # AmCAT4
 
 Server for document management and automatic text analysis, developed as part of [OPTED](https://opted.eu).
-[Learn more](https://opted.eu/fileadmin/user_upload/k_opted/OPTED_deliverable_D7.1.pdf)
+[Learn more](https://opted.eu/fileadmin/user_upload/k_opted/OPTED_deliverable_D7.1.pdf) See also the [AmCAT book (in progress)](https://amcat.nl/book/02._getting-started).
 
-See also the [API Documentation](apidoc.md)
+# Installing AmCAT
+
+The recommended way to install AmCAT either for local use or in a production environment is through docker:
+
+1. Download the [amcat4-deploy.zip](https://github.com/ccs-amsterdam/amcat4/releases/latest/download/amcat4-deploy.zip)
+2. Unzip the the archive, creating the amcat4-deploy folder on your computer
+3. If needed, edit the .env file (which is based on [.env.example](deploy/.env.example)) for local configuration. For private use, this step can be skipped. For setting up a shared server you certainly want to set up authentication, change the cookie secret, add a https address etc.
+4. Run `docker compose up -d`
+
+On linux-like systems, you can also use the commands below to go through these steps:
+
+```{sh}
+wget https://github.com/ccs-amsterdam/amcat4/releases/latest/download/amcat4-deploy.zip
+unzip amcat4-deploy.zip
+cd amcat4-deploy.zip
+editor .env   # if needed; replace 'editor' by an editor of your choice
+docker compose up -d
+```
 
 ## Development
 
