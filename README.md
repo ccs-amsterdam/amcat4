@@ -23,7 +23,7 @@ On linux-like systems, you can also use the commands below to go through these s
 ```{sh}
 wget https://github.com/ccs-amsterdam/amcat4/releases/latest/download/amcat4-deploy.zip
 unzip amcat4-deploy.zip
-cd amcat4-deploy.zip
+cd amcat4-deploy
 editor .env   # if needed; replace 'editor' by an editor of your choice
 docker compose up -d
 ```
