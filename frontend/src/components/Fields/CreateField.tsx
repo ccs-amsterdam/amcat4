@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AmcatField, AmcatFieldType, UpdateAmcatField } from "@/interfaces";
-import { ChevronDown, HelpCircle, Key } from "lucide-react";
+import { ChevronDown, Key } from "lucide-react";
+import FieldsHelpDialog from "./FieldsHelpDialog";
 import { useEffect, useState } from "react";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -79,7 +80,7 @@ function CreateFieldForm({ fields, createField }: CreateFieldProps) {
         </Checkbox>
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <CreateFieldInfoDialog />
+        <FieldsHelpDialog />
         <span className="text-destructive">{error}</span>
         <Button className="" onClick={onSubmit} disabled={disabled}>
           Create
@@ -103,6 +104,7 @@ const types = new Map<AmcatFieldType, string>([
   ["vector", "Dense vectors, i.e. document embeddings"],
   ["geo", "Geolocations, i.e. longitude and lattitude"],
   ["tag", "Tag fields can contain multiple tags for each document"],
+  ["url", "URL fields store links to web pages or external resources"],
 ]);
 
 export function CreateFieldNameInput({
@@ -185,28 +187,3 @@ export function CreateFieldSelectType({
   );
 }
 
-export function CreateFieldInfoDialog() {
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <HelpCircle className="cursor-pointer text-primary" />
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>Creating a new project field</DialogHeader>
-        <p className="text-sm">
-          When creating a new project field, you need to pick a name and type. The type indicates how the data will be
-          stored in Elasticsearch. Make sure to pick a suitable type, because you won't be able to change this after the
-          field has been created.
-        </p>
-        <p className="text-sm">
-          If a field is marked as an <i>identifier</i>, it will be used to prevent duplicate documents (like a primary
-          key in SQL). Use a unique identifier (e.g., URL) if available. Use multiple identifiers for unique
-          combinations (e.g., author & timestamp).{" "}
-          <span className="text-primary">
-            You won't be able to change this afterwards, and identifiers are also immutable (i.e. cannot be updated).
-          </span>
-        </p>
-      </DialogContent>
-    </Dialog>
-  );
-}

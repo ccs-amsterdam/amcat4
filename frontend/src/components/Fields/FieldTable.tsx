@@ -3,13 +3,14 @@ import { AmcatClientSettings, AmcatField, AmcatMetareaderAccess, UpdateAmcatFiel
 import { ColumnDef } from "@tanstack/react-table";
 import { Key, ListPlus, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { DynamicIcon } from "../ui/dynamic-icon";
 import { Input } from "../ui/input";
 import MetareaderAccessForm from "./MetareaderAccessForm";
 import VisibilityForm from "./VisibilityForm";
 
 import { Button } from "../ui/button";
 import CreateField from "./CreateField";
+import FieldsHelpDialog from "./FieldsHelpDialog";
+import TypeEditForm from "./TypeEditForm";
 
 interface Row extends AmcatField {
   onChange?: ({ name, type, metareader, client_settings }: UpdateAmcatField) => void;
@@ -33,15 +34,11 @@ const tableColumns: ColumnDef<Row>[] = [
     header: "Type",
 
     cell: ({ row }) => {
-      return (
-        <div className="flex items-center gap-2">
-          <DynamicIcon type={row.original.type} />
-          <div>
-            <div>{row.original.type}</div>
-            <div className="text-xs  leading-3 text-primary">{row.original.elastic_type}</div>
-          </div>
-        </div>
-      );
+      const field = row.original;
+      function onTypeChange(type: string) {
+        field.onChange?.({ name: field.name, type });
+      }
+      return <TypeEditForm field={field} onChange={field.onChange ? onTypeChange : undefined} />;
     },
   },
 
@@ -130,7 +127,7 @@ export default function FieldTable({ fields, mutate }: Props) {
   return (
     <div>
       <div className="flex items-center justify-between pb-4">
-        <div className="prose-xl flex gap-1 md:gap-3">
+        <div className="flex items-center gap-1 md:gap-3">
           <h3 className="">Fields</h3>
           <CreateField fields={fields} onCreate={onCreate}>
             <Button variant="ghost" className="flex gap-2 p-4">
@@ -138,6 +135,7 @@ export default function FieldTable({ fields, mutate }: Props) {
               <span className="hidden sm:inline">Add field</span>
             </Button>
           </CreateField>
+          <FieldsHelpDialog />
         </div>
         <div className="relative ml-auto flex items-center">
           <Input

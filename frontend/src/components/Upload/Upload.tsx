@@ -19,7 +19,8 @@ import { useHasProjectRole } from "@/api/project";
 import { useMultimediaConcatenatedList } from "@/api/multimedia";
 import { splitIntoBatches } from "@/api/util";
 import { toast } from "sonner";
-import { CreateFieldInfoDialog, CreateFieldNameInput, CreateFieldSelectType } from "../Fields/CreateField";
+import { CreateFieldNameInput, CreateFieldSelectType } from "../Fields/CreateField";
+import FieldsHelpDialog from "../Fields/FieldsHelpDialog";
 import { Checkbox } from "../ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import {
@@ -782,7 +783,7 @@ function CreateFieldDialog({
           </div>
         </div>
         <div className="mt-2 flex items-center gap-2">
-          <CreateFieldInfoDialog />
+          <FieldsHelpDialog />
           {error ? (
             <div className="ml-auto max-w-64 overflow-hidden text-ellipsis text-sm text-destructive">{error}</div>
           ) : null}
