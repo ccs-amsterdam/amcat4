@@ -1,0 +1,23 @@
+{
+  "name": "amcat4-monorepo",
+  "private": true,
+  "scripts": {
+    "// Helpers: Install and start vite (frontened) and backend (fastapi)": "",
+    "install:frontend": "pnpm -C frontend install",
+    "install:backend": "uv sync --project ./backend",
+    "build:frontend": "pnpm -C frontend build",
+    "start:web": "pnpm -C frontend dev",
+    "start:api": "uv run --project ./backend amcat4 run",
+    "start": "concurrently -k -n \"api,web\" -c \"cyan,green\" \"pnpm start:api\" \"pnpm start:web\"",
+    "// Dev scripts": "",
+    "dev:install": "pnpm install && pnpm install:frontend && pnpm install:backend",
+    "dev:config": "uv run --project ./backend amcat4 config -d",
+    "dev": "pnpm start",
+    "// Test scripts": "",
+    "test:backend": "./backend/env/bin/pytest"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "wait-on": "^7.2.0"
+  }
+}

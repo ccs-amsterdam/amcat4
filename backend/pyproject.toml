@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amcat4"
+version = "4.2.0"
+description = "API for AmCAT4 Text Analysis"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    {name = "Wouter van Atteveldt", email = "wouter@vanatteveldt.com"},
+    {name = "Kasper Welbers", email = "kasperwelbers@gmail.com"}
+]
+keywords = ["API", "text"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Text Processing",
+]
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "jinja2",
+    "httpx",
+    "itsdangerous",
+    "elasticsearch~=8.6",
+    "python-multipart",
+    "python-dotenv",
+    "requests",
+    "authlib",
+    "pydantic[email]",
+    "pydantic-settings",
+    "typing_extensions",
+    "uvicorn",
+    "Pillow",
+    "python-magic",
+    "class_doc",
+    "jsonpath_ng",
+    "async-lru",
+    "aioboto3",
+    "aiobotocore",
+    "types-aiobotocore[s3]",
+    "cryptography",
+    "questionary"
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-httpx",
+    "basedpyright",
+    "ruff",
+    "responses",
+    "pre-commit",
+    "types-requests",
+    "pytest-anyio",
+]
+
+
+[tool.uv]
+default-groups = ["dev"]
+
+[project.scripts]
+amcat4 = "amcat4.__main__:main"
+
+[tool.setuptools]
+packages = ["amcat4", "amcat4.api"]
+include-package-data = true
+zip-safe = false
+
+[tool.ruff]
+line-length = 127
+
+[tool.ruff.lint]
+select = ["E", "F", "I"] # Error, Pyflakes, Isort
+ignore = ["E203"]
+
+[tool.basedpyright]
+typeCheckingMode = "basic"  # Or "standard" / "all" for more strictness
