@@ -349,11 +349,21 @@ def coerce_type(value: Any, type: FieldType):
     Coerces values into the respective type in elastic
     based on ES_MAPPINGS and elastic field types
     """
-    if type == "date" and isinstance(value, datetime.date):
-        return value.isoformat()
+    if type == "date":
+        if isinstance(value, datetime.date):
+            return value.isoformat()
+        str_value = str(value)
+        try:
+            datetime.datetime.fromisoformat(str_value)
+        except ValueError:
+            raise ValueError(
+                f"Invalid date value: {value!r}. "
+                "Dates must be valid ISO 8601 with year between 1 and 9999."
+            )
+        return str_value
     if type == "tag" and isinstance(value, Iterable) and not isinstance(value, str):
         return [str(val) for val in value]
-    if type in ["text", "tag", "date"]:
+    if type in ["text", "tag"]:
         return str(value)
     if type in ["boolean"]:
         return bool(value)

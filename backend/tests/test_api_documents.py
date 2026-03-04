@@ -40,3 +40,39 @@ async def test_documents(client, index, user):
     assert (await get_json(client, url, user=user))["title"] == "the headline"
     await adelete(client, url, cookies=auth_cookie(user), expected=204)
     await get_json(client, url, cookies=auth_cookie(user), expected=404)
+
+
+@pytest.mark.anyio
+async def test_negative_date_rejected(client, index, user):
+    """Negative-year dates (e.g. BCE) must be rejected with 422 (issue #27)."""
+    from amcat4.systemdata.roles import update_project_role
+
+    await update_project_role(user, index, Roles.WRITER, ignore_missing=True)
+    await post_json(
+        client,
+        f"index/{index}/documents",
+        user=user,
+        expected=422,
+        json={
+            "documents": [{"date": "-0001-11-30T00:00:00"}],
+            "fields": {"date": {"type": "date"}},
+        },
+    )
+
+
+@pytest.mark.anyio
+async def test_earliest_valid_date_accepted(client, index, user):
+    """Year 1 (Python's datetime.MINYEAR) must be accepted."""
+    from amcat4.systemdata.roles import update_project_role
+
+    await update_project_role(user, index, Roles.WRITER, ignore_missing=True)
+    await post_json(
+        client,
+        f"index/{index}/documents",
+        user=user,
+        expected=201,
+        json={
+            "documents": [{"date": "0001-01-01"}],
+            "fields": {"date": {"type": "date"}},
+        },
+    )

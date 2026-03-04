@@ -59,7 +59,10 @@ async def upload_documents(
     """
     await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
 
-    result = await create_or_update_documents(ix, body.documents, body.fields, body.operation)
+    try:
+        result = await create_or_update_documents(ix, body.documents, body.fields, body.operation)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e))
     return UploadResult.model_validate(result)
 
 
