@@ -1,4 +1,3 @@
-
 import pytest
 
 from amcat4.models import Roles

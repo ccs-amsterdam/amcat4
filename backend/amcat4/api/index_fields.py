@@ -7,22 +7,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth_helpers import authenticated_user
-from amcat4.models import (
-    CreateDocumentField,
-    DocumentField,
-    FieldType,
-    IndexId,
-    Roles,
-    UpdateDocumentField,
-    User,
-)
-from amcat4.systemdata.fields import (
-    create_fields,
-    field_stats,
-    field_values,
-    list_fields,
-    update_fields,
-)
+from amcat4.models import CreateDocumentField, DocumentField, FieldType, IndexId, Roles, UpdateDocumentField, User
+from amcat4.systemdata.fields import create_fields, field_stats, field_values, list_fields, update_fields
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, get_user_project_role, role_is_at_least
 
 app_index_fields = APIRouter(prefix="", tags=["project index fields"])

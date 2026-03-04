@@ -31,7 +31,6 @@ async def create_or_update_systemdata(rm_pending_migrations: bool = True) -> int
     # Check the current version of the system indices exists
     active_version = await active_systemdata_status(LATEST_VERSION, rm_pending_migrations)
 
-
     if active_version is None:
         logging.info("No active system index version exists. Creating latest version mappings.")
         # No active system indices version exists, so we don't need to migrate. Just create the mappings.

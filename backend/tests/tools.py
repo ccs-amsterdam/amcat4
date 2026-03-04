@@ -17,6 +17,7 @@ def create_token(**payload) -> str:
     token = jwt.encode(header, payload, PRIVATE_KEY)
     return token.decode("utf-8")
 
+
 def create_session_cookie(data: dict):
     """Immitate how Starlette signs the session cookie."""
     secret_key = get_settings().cookie_secret
@@ -24,6 +25,7 @@ def create_session_cookie(data: dict):
     json_data = json.dumps(data).encode("utf-8")
     base64_data = b64encode(json_data)
     return signer.sign(base64_data).decode("utf-8")
+
 
 def auth_cookie(user=None, cookies=None):
     if not user:
@@ -36,7 +38,7 @@ def auth_cookie(user=None, cookies=None):
         exp=int(datetime.now().timestamp()) + 1000,
     )
     session_data = {"access_token": token}
-    signed_cookie = create_session_cookie( data=session_data )
+    signed_cookie = create_session_cookie(data=session_data)
 
     if not cookies:
         cookies = {}

@@ -356,10 +356,7 @@ def coerce_type(value: Any, type: FieldType):
         try:
             datetime.datetime.fromisoformat(str_value)
         except ValueError:
-            raise ValueError(
-                f"Invalid date value: {value!r}. "
-                "Dates must be valid ISO 8601 with year between 1 and 9999."
-            )
+            raise ValueError(f"Invalid date value: {value!r}. Dates must be valid ISO 8601 with year between 1 and 9999.")
         return str_value
     if type == "tag" and isinstance(value, Iterable) and not isinstance(value, str):
         return [str(val) for val in value]
