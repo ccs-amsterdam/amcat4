@@ -3,9 +3,10 @@ import hashlib
 import json
 from typing import Annotated
 
-from amcat4.auth.oauth import oauth_callback, oauth_login, oauth_logout, oauth_refresh
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+
+from amcat4.auth.oauth import oauth_callback, oauth_login, oauth_logout, oauth_refresh
 
 app_auth = APIRouter(prefix="", tags=["auth"])
 

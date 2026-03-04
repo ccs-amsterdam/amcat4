@@ -39,7 +39,12 @@ def set_client_session_cookie(response: Response, exp: int, email: str):
     cookie_value = json.dumps({"exp": exp, "email": email})
     safe_cookie_value = urllib.parse.quote(cookie_value)
     response.set_cookie(
-        key="client_session", value=safe_cookie_value, httponly=False, samesite="lax", max_age=MAX_AGE_SESSION, secure=IS_SECURE_CONTEXT
+        key="client_session",
+        value=safe_cookie_value,
+        httponly=False,
+        samesite="lax",
+        max_age=MAX_AGE_SESSION,
+        secure=IS_SECURE_CONTEXT,
     )
     return response
 
