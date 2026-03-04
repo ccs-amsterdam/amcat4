@@ -7,7 +7,6 @@ import { useFields } from "@/api/fields";
 import { AmcatField, AmcatProject, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { DialogDescription, DialogTitle } from "@radix-ui/react-dialog";
-import { DropdownMenuContent } from "@radix-ui/react-dropdown-menu";
 import {
   ArrowRight,
   BarChart,
@@ -21,9 +20,8 @@ import { useState, useMemo } from "react";
 import { Button } from "../ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "../ui/command";
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from "../ui/dialog";
-import { DropdownMenu, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Input } from "../ui/input";
-import { Switch } from "../ui/switch";
 import { DynamicIcon } from "../ui/dynamic-icon";
 import { CreateFieldSelectType } from "../Fields/CreateField";
 
@@ -34,11 +32,22 @@ interface Props {
 }
 
 type DestMode = "existing" | "new";
+type FieldAction = "new" | "existing" | "exclude";
 
 interface FieldConfig {
-  rename?: string;
+  action?: FieldAction;
+  targetName?: string;
   type?: string;
-  exclude?: boolean;
+}
+
+function getDefaultAction(
+  fieldName: string,
+  destFields: AmcatField[] | undefined,
+  destMode: DestMode,
+): FieldAction {
+  if (destMode === "new") return "new";
+  if (!destFields) return "new";
+  return destFields.some((f) => f.name === fieldName) ? "existing" : "new";
 }
 
 export default function Reindex({ user, projectId, query }: Props) {
@@ -52,6 +61,7 @@ export default function Reindex({ user, projectId, query }: Props) {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newProjectId, setNewProjectId] = useState("");
   const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectNameEdited, setNewProjectNameEdited] = useState(false);
   const [fieldConfigs, setFieldConfigs] = useState<Record<string, FieldConfig>>({});
   const [fieldConfigOpen, setFieldConfigOpen] = useState(false);
   const [taskResult, setTaskResult] = useState<string | null>(null);
@@ -76,21 +86,20 @@ export default function Reindex({ user, projectId, query }: Props) {
     !submitting &&
     (destMode === "existing" ? existingProject != null : newProjectId !== "" && newProjectIdError === null);
 
-  // Determine which fields are new vs existing in destination
-  function isFieldNewInDest(sourceFieldName: string, config: FieldConfig): boolean {
-    if (destMode === "new") return true;
-    if (!destFields) return true;
-    const destName = config.rename || sourceFieldName;
-    return !destFields.some((f) => f.name === destName);
-  }
-
   function updateFieldConfig(fieldName: string, update: Partial<FieldConfig>) {
-    setFieldConfigs((prev) => ({ ...prev, [fieldName]: { ...prev[fieldName], ...update } }));
+    setFieldConfigs((prev) => {
+      const existing = prev[fieldName] ?? {};
+      const next = { ...existing, ...update };
+      if (update.action !== undefined && update.action !== existing.action) delete next.targetName;
+      return { ...prev, [fieldName]: next };
+    });
   }
 
-  const configuredCount = Object.values(fieldConfigs).filter(
-    (c) => c.exclude || c.rename || c.type,
-  ).length;
+  const configuredCount =
+    sourceFields?.filter((field) => {
+      const c = fieldConfigs[field.name];
+      return c && (c.action !== undefined || c.targetName !== undefined || c.type !== undefined);
+    }).length ?? 0;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -103,13 +112,16 @@ export default function Reindex({ user, projectId, query }: Props) {
       }
       // Build field_options — only send non-default entries
       const field_options: Record<string, FieldReindexOptions> = {};
-      for (const [name, config] of Object.entries(fieldConfigs)) {
-        if (config.exclude || config.rename || config.type) {
-          field_options[name] = {
-            ...(config.rename ? { rename: config.rename } : {}),
-            ...(config.exclude ? { exclude: true } : {}),
-            ...(config.type ? { type: config.type } : {}),
-          };
+      for (const field of sourceFields ?? []) {
+        const config = fieldConfigs[field.name] ?? {};
+        const action = config.action ?? getDefaultAction(field.name, destFields, destMode);
+        if (action === "exclude") {
+          field_options[field.name] = { exclude: true };
+        } else {
+          const opts: FieldReindexOptions = {};
+          if (config.targetName && config.targetName !== field.name) opts.rename = config.targetName;
+          if (action === "new" && config.type) opts.type = config.type;
+          if (Object.keys(opts).length > 0) field_options[field.name] = opts;
         }
       }
       const res = await postReindex(user, projectId, destinationId, query, field_options);
@@ -148,7 +160,7 @@ export default function Reindex({ user, projectId, query }: Props) {
                 name="destMode"
                 value="existing"
                 checked={destMode === "existing"}
-                onChange={() => setDestMode("existing")}
+                onChange={() => { setDestMode("existing"); setFieldConfigs({}); }}
               />
               Existing project
             </label>
@@ -159,7 +171,7 @@ export default function Reindex({ user, projectId, query }: Props) {
                   name="destMode"
                   value="new"
                   checked={destMode === "new"}
-                  onChange={() => setDestMode("new")}
+                  onChange={() => { setDestMode("new"); setFieldConfigs({}); }}
                 />
                 New project
               </label>
@@ -168,17 +180,14 @@ export default function Reindex({ user, projectId, query }: Props) {
 
           {destMode === "existing" && (
             <div className="flex items-center gap-3">
-              <DropdownMenu open={newProjectOpen} onOpenChange={setNewProjectOpen}>
-                <DropdownMenuTrigger asChild>
+              <Popover open={newProjectOpen} onOpenChange={setNewProjectOpen}>
+                <PopoverTrigger asChild>
                   <Button className="min-w-64 justify-between gap-3" variant="outline">
                     {existingProject?.name ?? "Select destination project"}
                     <ChevronDown className="h-5 w-5" />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="ml-2 min-w-[200px] border-[1px] border-foreground bg-background"
-                >
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-72 p-0">
                   <Command>
                     <CommandInput placeholder="Filter projects" autoFocus className="h-9" />
                     <CommandList>
@@ -188,10 +197,11 @@ export default function Reindex({ user, projectId, query }: Props) {
                           ?.sort((a, b) => projectLabel(a).localeCompare(projectLabel(b)))
                           .filter((ix) => !user.authenticated || ix.user_role === "WRITER" || ix.user_role === "ADMIN")
                           .filter((ix) => !ix.archived)
+                          .filter((ix) => ix.id !== projectId)
                           .map((ix) => (
                             <CommandItem
                               key={ix.id}
-                              value={ix.id}
+                              value={projectLabel(ix)}
                               onSelect={() => {
                                 setExistingProject(ix);
                                 setNewProjectOpen(false);
@@ -203,8 +213,8 @@ export default function Reindex({ user, projectId, query }: Props) {
                       </CommandGroup>
                     </CommandList>
                   </Command>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                </PopoverContent>
+              </Popover>
             </div>
           )}
 
@@ -215,7 +225,11 @@ export default function Reindex({ user, projectId, query }: Props) {
                   <Input
                     placeholder="project-id (required)"
                     value={newProjectId}
-                    onChange={(e) => setNewProjectId(e.target.value.replace(/ /g, "-"))}
+                    onChange={(e) => {
+                      const id = e.target.value.replace(/ /g, "-");
+                      setNewProjectId(id);
+                      if (!newProjectNameEdited) setNewProjectName(id);
+                    }}
                     className="w-56"
                   />
                   {newProjectId && newProjectIdError && (
@@ -225,7 +239,10 @@ export default function Reindex({ user, projectId, query }: Props) {
                 <Input
                   placeholder="Display name (optional)"
                   value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
+                  onChange={(e) => {
+                    setNewProjectName(e.target.value);
+                    setNewProjectNameEdited(true);
+                  }}
                   className="w-56"
                 />
               </div>
@@ -254,8 +271,8 @@ export default function Reindex({ user, projectId, query }: Props) {
                 sourceFields={sourceFields}
                 fieldConfigs={fieldConfigs}
                 onUpdate={updateFieldConfig}
-                isNewInDest={isFieldNewInDest}
                 destFields={destFields}
+                destMode={destMode}
               />
             )}
           </div>
@@ -288,61 +305,114 @@ interface FieldConfigTableProps {
   sourceFields: AmcatField[];
   fieldConfigs: Record<string, FieldConfig>;
   onUpdate: (fieldName: string, update: Partial<FieldConfig>) => void;
-  isNewInDest: (fieldName: string, config: FieldConfig) => boolean;
   destFields: AmcatField[] | undefined;
+  destMode: DestMode;
 }
 
-function FieldConfigTable({ sourceFields, fieldConfigs, onUpdate, isNewInDest, destFields }: FieldConfigTableProps) {
+function FieldConfigTable({ sourceFields, fieldConfigs, onUpdate, destFields, destMode }: FieldConfigTableProps) {
   return (
     <div className="border-t text-sm">
-      <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-3 border-b bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
-        <span>Field</span>
-        <span>Rename to</span>
+      <div className="grid grid-cols-[1fr_8rem_1fr_9rem] gap-x-3 border-b bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+        <span>Source field</span>
+        <span>Action</span>
+        <span>Target field</span>
         <span>Type</span>
-        <span>Include</span>
       </div>
-      {sourceFields.map((field) => {
-        const config = fieldConfigs[field.name] ?? {};
-        const excluded = config.exclude ?? false;
-        const isNew = isNewInDest(field.name, config);
-        const currentType = config.type ?? field.type;
+      {sourceFields.map((field) => (
+        <FieldConfigRow
+          key={field.name}
+          field={field}
+          config={fieldConfigs[field.name] ?? {}}
+          onUpdate={onUpdate}
+          destFields={destFields}
+          destMode={destMode}
+        />
+      ))}
+    </div>
+  );
+}
 
-        return (
-          <div
-            key={field.name}
-            className={`grid grid-cols-[1fr_1fr_auto_auto] items-center gap-x-3 border-b px-3 py-1.5 ${excluded ? "opacity-40" : ""}`}
-          >
-            <div className="flex items-center gap-1.5 font-mono text-xs">
-              <DynamicIcon type={field.type} className="h-3.5 w-3.5 shrink-0" />
-              {field.name}
-            </div>
-            <Input
-              className="h-7 text-xs"
-              placeholder={field.name}
-              value={config.rename ?? ""}
-              disabled={excluded}
-              onChange={(e) => onUpdate(field.name, { rename: e.target.value || undefined })}
-            />
-            <div className="flex items-center gap-1">
-              {isNew ? (
-                <CreateFieldSelectType
-                  type={currentType as any}
-                  setType={(t) => onUpdate(field.name, { type: t })}
-                />
-              ) : (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Lock className="h-3 w-3" />
-                  {destFields?.find((f) => f.name === (config.rename || field.name))?.type ?? field.type}
-                </span>
-              )}
-            </div>
-            <Switch
-              checked={!excluded}
-              onCheckedChange={(checked) => onUpdate(field.name, { exclude: !checked })}
-            />
-          </div>
-        );
-      })}
+function FieldConfigRow({
+  field,
+  config,
+  onUpdate,
+  destFields,
+  destMode,
+}: {
+  field: AmcatField;
+  config: FieldConfig;
+  onUpdate: (fieldName: string, update: Partial<FieldConfig>) => void;
+  destFields: AmcatField[] | undefined;
+  destMode: DestMode;
+}) {
+  const defaultAction = getDefaultAction(field.name, destFields, destMode);
+  const action = config.action ?? defaultAction;
+  const effectiveTargetName = config.targetName ?? field.name;
+  const currentType = config.type ?? field.type;
+  const destFieldType =
+    action === "existing"
+      ? (destFields?.find((f) => f.name === effectiveTargetName)?.type ?? field.type)
+      : null;
+
+  return (
+    <div
+      className={`grid grid-cols-[1fr_8rem_1fr_9rem] items-center gap-x-3 border-b px-3 py-1.5 ${action === "exclude" ? "opacity-40" : ""}`}
+    >
+      {/* Source field */}
+      <div className="flex items-center gap-1.5 font-mono text-xs">
+        <DynamicIcon type={field.type} className="h-3.5 w-3.5 shrink-0" />
+        {field.name}
+      </div>
+
+      {/* Action */}
+      <select
+        value={action}
+        onChange={(e) => onUpdate(field.name, { action: e.target.value as FieldAction })}
+        className="h-7 rounded border border-input bg-background px-2 text-xs"
+      >
+        {destMode === "existing" && <option value="existing">Existing field</option>}
+        <option value="new">New field</option>
+        <option value="exclude">Exclude</option>
+      </select>
+
+      {/* Target field */}
+      {action === "existing" ? (
+        <select
+          value={effectiveTargetName}
+          onChange={(e) => onUpdate(field.name, { targetName: e.target.value })}
+          className="h-7 rounded border border-input bg-background px-2 text-xs"
+        >
+          {destFields?.map((f) => (
+            <option key={f.name} value={f.name}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      ) : action === "new" ? (
+        <Input
+          className="h-7 text-xs"
+          placeholder={field.name}
+          value={config.targetName ?? ""}
+          onChange={(e) => onUpdate(field.name, { targetName: e.target.value || undefined })}
+        />
+      ) : (
+        <span className="text-xs text-muted-foreground">—</span>
+      )}
+
+      {/* Type */}
+      {action === "new" ? (
+        <CreateFieldSelectType
+          type={currentType as any}
+          setType={(t) => onUpdate(field.name, { type: t })}
+        />
+      ) : action === "existing" ? (
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Lock className="h-3 w-3" />
+          {destFieldType}
+        </span>
+      ) : (
+        <span />
+      )}
     </div>
   );
 }
