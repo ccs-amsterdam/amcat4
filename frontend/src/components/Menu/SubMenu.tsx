@@ -14,6 +14,7 @@ export type SubMenuPath = {
   Icon: React.ElementType;
   minProjectRole?: AmcatUserRole;
   minServerRole?: AmcatUserRole;
+  requiresAuth?: boolean;
 };
 
 export function useSubMenuPaths(paths: SubMenuPath[]) {
@@ -25,11 +26,12 @@ export function useSubMenuPaths(paths: SubMenuPath[]) {
 
   const allowedPaths = useMemo(() => {
     return paths.filter((path) => {
+      if (path.requiresAuth && !user.authenticated) return false;
       if (path.minServerRole && !hasMinAmcatRole(globalRole, path.minServerRole)) return false;
       if (path.minProjectRole && !hasMinAmcatRole(projectRole, path.minProjectRole)) return false;
       return true;
     });
-  }, [paths, globalRole, projectRole]);
+  }, [paths, user.authenticated, globalRole, projectRole]);
 
   return allowedPaths;
 }

@@ -25,7 +25,7 @@ const serverSubMenuPaths: SubMenuPath[] = [
   { href: "projects", label: "Projects", Icon: Library, minServerRole: "NONE" },
   { href: "branding", label: "Branding", Icon: Paintbrush, minServerRole: "ADMIN" },
   { href: "users", label: "Server users", Icon: Users, minServerRole: "ADMIN" },
-  { href: "api_keys", label: "API keys", Icon: Bot, minServerRole: "NONE" },
+  { href: "api_keys", label: "API keys", Icon: Bot, minServerRole: "NONE", requiresAuth: true },
   { href: "access", label: "Server role", Icon: LockKeyholeOpen, minServerRole: "NONE" },
 ];
 
