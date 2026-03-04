@@ -8,11 +8,14 @@ import { AmcatField, AmcatProject, AmcatProjectId, AmcatQuery } from "@/interfac
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { DialogDescription, DialogTitle } from "@radix-ui/react-dialog";
 import {
+  AlertCircle,
+  AlertTriangle,
   ArrowRight,
   BarChart,
   CheckCircle,
   ChevronDown,
   ChevronRight,
+  Loader,
   Lock,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -23,8 +26,10 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from "../ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Input } from "../ui/input";
+import { Progress } from "../ui/progress";
 import { DynamicIcon } from "../ui/dynamic-icon";
 import { CreateFieldSelectType } from "../Fields/CreateField";
+import { useTaskStatus } from "@/api/task";
 
 interface Props {
   user: AmcatSessionUser;
@@ -153,6 +158,7 @@ export default function Reindex({ user, projectId, query }: Props) {
         onOpenChange={() => setTaskResult(null)}
         newProjectId={submittedProjectId}
         taskResultId={taskResult ?? undefined}
+        user={user}
       />
 
       <h4>
@@ -437,37 +443,93 @@ interface CopyOperationDialogProps {
   onOpenChange: (open: boolean) => void;
   newProjectId?: string;
   taskResultId?: string;
+  user: AmcatSessionUser;
 }
 
-function CopyOperationDialog({ open, onOpenChange, newProjectId, taskResultId }: CopyOperationDialogProps) {
+function CopyOperationDialog({ open, onOpenChange, newProjectId, taskResultId, user }: CopyOperationDialogProps) {
+  const { data: taskData } = useTaskStatus(open ? user : undefined, taskResultId);
+
+  const completed = taskData?.completed ?? false;
+  const hasTopLevelError = completed && taskData?.error != null;
+
+  // Use `response` (final counts) when complete, `task.status` when in-progress
+  const counts = completed ? taskData?.response : taskData?.task?.status;
+  const total = counts?.total ?? 0;
+  const done = (counts?.created ?? 0) + (counts?.updated ?? 0) + (counts?.deleted ?? 0);
+  const failures = completed && total > 0 ? total - done : 0;
+
+  const allFailed = completed && total > 0 && done === 0 && failures > 0;
+  const someFailed = completed && failures > 0 && done > 0;
+  const succeeded = completed && failures === 0 && !hasTopLevelError;
+
+  // Show actual proportion so 0% when all failed (not forced 100%)
+  const progressValue = total > 0 ? Math.round((done / total) * 100) : completed ? 100 : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <CheckCircle className="h-6 w-6 text-green-500" />
             Copy Operation Started
           </DialogTitle>
-          <DialogDescription>
-            Your copy operation has been initiated successfully. Choose an option below to proceed.
-          </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-4 py-4">
-          <Button asChild variant="outline" className="justify-between">
-            <Link to="/projects/$project/dashboard" params={{ project: newProjectId! }}>
-              View Destination Project
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Link>
-          </Button>
-          <Button asChild variant="outline" className="justify-between">
-            <Link to="/task/$task" params={{ task: taskResultId! }}>
-              View Copy Progress
-              <BarChart className="ml-2 h-4 w-4" />
-            </Link>
-          </Button>
+        <div className="flex flex-col gap-4 py-2">
+          {/* Status line + counts */}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              {hasTopLevelError || allFailed ? (
+                <><AlertCircle className="h-4 w-4 text-destructive" /><span className="text-destructive">{hasTopLevelError ? "Error" : "All documents failed"}</span></>
+              ) : someFailed ? (
+                <><AlertTriangle className="h-4 w-4 text-yellow-500" /><span className="text-yellow-600">Some documents failed</span></>
+              ) : succeeded ? (
+                <><CheckCircle className="h-4 w-4 text-green-500" /><span className="text-green-600">Completed</span></>
+              ) : (
+                <><Loader className="h-4 w-4 animate-spin text-primary" /><span className="text-muted-foreground">In progress…</span></>
+              )}
+            </div>
+            {total > 0 && (
+              <div className="text-xs text-muted-foreground">
+                {done.toLocaleString()} / {total.toLocaleString()} copied{failures > 0 ? `, ${failures.toLocaleString()} errors` : ""}
+              </div>
+            )}
+          </div>
+
+          {/* Progress bar */}
+          <div className={progressValue === null && !completed ? "animate-pulse" : ""}>
+            <Progress value={progressValue ?? 0} className="h-2" />
+          </div>
+
+          {!completed && (
+            <p className="text-xs text-muted-foreground">
+              The copy is running in the background. You can close this dialog and the copying will continue.
+            </p>
+          )}
+
+          {hasTopLevelError && (
+            <p className="text-xs text-destructive">{String(taskData?.error?.reason ?? "An error occurred")}</p>
+          )}
+
+          <div className="flex flex-col gap-2 pt-2">
+            {newProjectId && (
+              <Button asChild variant="outline" className="justify-between">
+                <Link to="/projects/$project/dashboard" params={{ project: newProjectId }}>
+                  View Destination Project
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            )}
+            {taskResultId && (
+              <Button asChild variant="outline" className="justify-between">
+                <Link to="/task/$task" params={{ task: taskResultId }}>
+                  View logs
+                  <BarChart className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            )}
+          </div>
         </div>
         <DialogFooter>
-          <Button onClick={() => onOpenChange(false)}>Close and Return to Source Project</Button>
+          <Button onClick={() => onOpenChange(false)}>Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

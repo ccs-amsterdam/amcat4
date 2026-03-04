@@ -13,5 +13,6 @@ export function useTaskStatus(user?: AmcatSessionUser, taskId?: string | null) {
     },
     enabled: user != null && taskId != null,
     staleTime: 1000 * 5 * 1,
+    refetchInterval: (query) => (query.state.data?.completed ? false : 2000),
   });
 }
