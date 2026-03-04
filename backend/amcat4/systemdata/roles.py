@@ -108,7 +108,7 @@ async def get_user_project_role(user: User, project_index: IndexId, global_admin
     """
     # If auth disabled always return the admin role, even if global_admin is False.
     if user.auth_disabled:
-        return RoleRule(email=user.email or "*", role_context=project_index, role=Roles.ADMIN.name)
+        return RoleRule(email=user.email, role_context=project_index, role=Roles.ADMIN.name)
 
     # If the user is a superadmin, we can directly return ADMIN
     if global_admin and user.superadmin:
@@ -142,7 +142,7 @@ async def get_user_server_role(user: User) -> RoleRule:
     returns a RoleRule with Role.NONE if no role exists.
     """
     if user.superadmin or user.auth_disabled:
-        return RoleRule(email=user.email or "*", role_context="_server", role=Roles.ADMIN.name)
+        return RoleRule(email=user.email or "ADMIN", role_context="_server", role=Roles.ADMIN.name)
 
     user_roles = await list_user_roles(user, role_contexts=["_server"])
     if user_roles:

@@ -164,6 +164,7 @@ async def list_user_project_indices(
     TODO: add pagination and search here
     """
     if show_all:
+        ## ONLY ALLOWED FOR SERVER ADMINS. make sure to check role before setting this param
         async for index in list_project_indices(skip_archived=not show_archived):
             yield index, RoleRule(role=Roles.ADMIN.name, role_context=index.id, email=user.email or "*")
         return

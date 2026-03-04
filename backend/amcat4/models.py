@@ -5,6 +5,8 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing_extensions import Self
 
+from amcat4.config import get_settings
+
 IndexId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]*$", title="Index ID")]
 IndexIds = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*$", title="Index ID or comma-separated IDs")]
 
@@ -26,8 +28,10 @@ GuestRole = Literal["NONE", "OBSERVER", "METAREADER", "READER", "WRITER"]
 ServerRole = Literal["NONE", "WRITER", "ADMIN"]
 
 
+NO_AUTH_USER = Literal["ADMIN"]
+
 RoleEmailPattern = Annotated[
-    EmailStr | Literal["*"],
+    EmailStr | Literal["*"] | NO_AUTH_USER,
     Field(title="An email addres (user@domain.com), domain wildcard (*@domain.com) or guest wildcard (*)"),
 ]  # user@domain.com or *@domain.com or *
 RoleContext = Annotated[IndexId | Literal["_server"], Field(title="Index ID for project roles or _server for server roles")]
@@ -42,7 +46,7 @@ class RoleRule(BaseModel):
     def validate_role(self) -> Self:
         uses_wildcard = "*" in self.email
         if self.role == Roles.ADMIN.name and uses_wildcard:
-            raise ValueError(f"Cannot create ADMIN role for {self.email}. Only exact email matches can have ADMIN role")
+            raise ValueError(f"Cannot have ADMIN role for {self.email}. Only exact email matches can have ADMIN role")
         return self
 
 
@@ -71,7 +75,9 @@ AuthMethod = Literal["middlecat", "api_key", "oidc", "none"]
 class User(BaseModel):
     """For internal use only. Represents an authenticated user."""
 
-    email: EmailStr | None  # this can only be an authenticed, full email address or None for unauthenticated users
+    email: (
+        EmailStr | NO_AUTH_USER | None
+    )  # this can only be an authenticed, full email address or None for unauthenticated users
     superadmin: bool = False  # if auth is disabled, or if the user is the hardcoded admin email
     auth_disabled: bool = False  # if auth is disabled on this server
     api_key_name: str | None = None  # if logged in via API key, what is its name

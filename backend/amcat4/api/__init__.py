@@ -22,6 +22,7 @@ from amcat4.api.requests import app_requests
 from amcat4.api.server import app_info
 from amcat4.api.users import app_users
 from amcat4.auth.CSRFMiddleware import CSRFMiddleware
+from amcat4.auth.oauth import MAX_AGE_SESSION
 from amcat4.config import get_settings
 from amcat4.connections import amcat_connections
 from amcat4.systemdata.manage import create_or_update_systemdata
@@ -83,7 +84,8 @@ app.add_middleware(
     secret_key=get_settings().cookie_secret,
     session_cookie="amcat_session",
     same_site="lax",
-    https_only=True,  # Ensure this is True in production
+    https_only=True,
+    max_age=MAX_AGE_SESSION,
 )
 
 app.add_middleware(CSRFMiddleware)
