@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 
 import { useHasGlobalRole } from "@/api/userDetails";
 import { AmcatRequestProject } from "@/interfaces";
+import { idFromName } from "@/lib/projectId";
 import { Check, ChevronsUpDown, Loader } from "lucide-react";
 import { useQueryState } from "nuqs";
 
@@ -43,16 +44,6 @@ export function CreateProject({ folder, request }: { folder?: string; request?: 
   }, [folder]);
 
   if (!isAdmin && !user?.authenticated) return null;
-
-  function idFromName(name: string) {
-    return name
-      .replaceAll(" ", "-")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replaceAll(/[^a-z0-9_-]/g, "")
-      .replace(/^[_-]+/, "");
-  }
 
   function onCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

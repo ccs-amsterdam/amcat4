@@ -16,6 +16,7 @@ import {
   Lock,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { idFromName, validateProjectId } from "@/lib/projectId";
 import { useState, useMemo } from "react";
 import { Button } from "../ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "../ui/command";
@@ -52,16 +53,17 @@ function getDefaultAction(
 
 export default function Reindex({ user, projectId, query }: Props) {
   const { count } = useCount(user, projectId, query);
-  const { data: projects } = useAmcatProjects(user);
-  const { data: sourceFields } = useFields(user, projectId);
   const canCreateProject = useHasGlobalRole(user, "WRITER");
+  const isGlobalAdmin = useHasGlobalRole(user, "ADMIN");
+  const { data: projects } = useAmcatProjects(user, { showAll: !!isGlobalAdmin });
+  const { data: sourceFields } = useFields(user, projectId);
 
   const [destMode, setDestMode] = useState<DestMode>("existing");
   const [existingProject, setExistingProject] = useState<AmcatProject | undefined>();
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newProjectId, setNewProjectId] = useState("");
   const [newProjectName, setNewProjectName] = useState("");
-  const [newProjectNameEdited, setNewProjectNameEdited] = useState(false);
+  const [newProjectIdEdited, setNewProjectIdEdited] = useState(false);
   const [fieldConfigs, setFieldConfigs] = useState<Record<string, FieldConfig>>({});
   const [fieldConfigOpen, setFieldConfigOpen] = useState(false);
   const [taskResult, setTaskResult] = useState<string | null>(null);
@@ -75,8 +77,8 @@ export default function Reindex({ user, projectId, query }: Props) {
   // Validate new project ID
   const existingIds = useMemo(() => new Set(projects?.map((p) => p.id) ?? []), [projects]);
   const newProjectIdError = useMemo(() => {
-    if (!newProjectId) return "Project ID is required";
-    if (/[ .\\]/.test(newProjectId)) return "ID cannot contain spaces, dots, or backslashes";
+    const formatError = validateProjectId(newProjectId);
+    if (formatError) return formatError;
     if (existingIds.has(newProjectId)) return "A project with this ID already exists";
     return null;
   }, [newProjectId, existingIds]);
@@ -84,7 +86,9 @@ export default function Reindex({ user, projectId, query }: Props) {
   const destinationId = destMode === "existing" ? existingProject?.id : newProjectId;
   const canSubmit =
     !submitting &&
-    (destMode === "existing" ? existingProject != null : newProjectId !== "" && newProjectIdError === null);
+    (destMode === "existing"
+      ? existingProject != null
+      : newProjectId !== "" && newProjectIdError === null && projects !== undefined);
 
   function updateFieldConfig(fieldName: string, update: Partial<FieldConfig>) {
     setFieldConfigs((prev) => {
@@ -127,6 +131,11 @@ export default function Reindex({ user, projectId, query }: Props) {
       const res = await postReindex(user, projectId, destinationId, query, field_options);
       setSubmittedProjectId(destinationId);
       setTaskResult(res?.data.task);
+      if (destMode === "new") {
+        setNewProjectId("");
+        setNewProjectName("");
+        setNewProjectIdEdited(false);
+      }
     } catch (err: any) {
       const msg = err?.response?.data?.detail ?? err?.message ?? "An error occurred";
       setSubmitError(msg);
@@ -201,7 +210,7 @@ export default function Reindex({ user, projectId, query }: Props) {
                           .map((ix) => (
                             <CommandItem
                               key={ix.id}
-                              value={projectLabel(ix)}
+                              value={`${projectLabel(ix)} ${ix.id}`}
                               onSelect={() => {
                                 setExistingProject(ix);
                                 setNewProjectOpen(false);
@@ -221,30 +230,34 @@ export default function Reindex({ user, projectId, query }: Props) {
           {destMode === "new" && (
             <div className="flex flex-col gap-2">
               <div className="flex items-start gap-3">
+                <Input
+                  autoFocus
+                  placeholder="Display name"
+                  value={newProjectName}
+                  onChange={(e) => {
+                    setNewProjectName(e.target.value);
+                    if (!newProjectIdEdited) setNewProjectId(idFromName(e.target.value));
+                  }}
+                  className="w-56"
+                />
                 <div className="flex flex-col gap-1">
                   <Input
                     placeholder="project-id (required)"
                     value={newProjectId}
                     onChange={(e) => {
-                      const id = e.target.value.replace(/ /g, "-");
-                      setNewProjectId(id);
-                      if (!newProjectNameEdited) setNewProjectName(id);
+                      setNewProjectId(idFromName(e.target.value));
+                      setNewProjectIdEdited(true);
                     }}
                     className="w-56"
                   />
-                  {newProjectId && newProjectIdError && (
-                    <span className="text-xs text-destructive">{newProjectIdError}</span>
+                  {newProjectId && (
+                    projects === undefined
+                      ? <span className="text-xs text-muted-foreground">Checking availability…</span>
+                      : newProjectIdError
+                        ? <span className="text-xs text-destructive">{newProjectIdError}</span>
+                        : null
                   )}
                 </div>
-                <Input
-                  placeholder="Display name (optional)"
-                  value={newProjectName}
-                  onChange={(e) => {
-                    setNewProjectName(e.target.value);
-                    setNewProjectNameEdited(true);
-                  }}
-                  className="w-56"
-                />
               </div>
             </div>
           )}
