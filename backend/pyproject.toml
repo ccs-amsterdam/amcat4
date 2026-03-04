@@ -55,6 +55,7 @@ dev = [
     "pre-commit",
     "types-requests",
     "pytest-anyio",
+    "types-Authlib"
 ]
 
 
