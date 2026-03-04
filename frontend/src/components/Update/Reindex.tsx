@@ -1,17 +1,31 @@
 import { useCount } from "@/api/aggregate";
+import { useCreateProject } from "@/api/project";
 import { useAmcatProjects } from "@/api/projects";
-import { postReindex } from "@/api/query";
-import { AmcatProject, AmcatProjectId, AmcatQuery } from "@/interfaces";
+import { FieldReindexOptions, postReindex } from "@/api/query";
+import { useHasGlobalRole } from "@/api/userDetails";
+import { useFields } from "@/api/fields";
+import { AmcatField, AmcatProject, AmcatProjectId, AmcatQuery } from "@/interfaces";
+import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { DialogDescription, DialogTitle } from "@radix-ui/react-dialog";
 import { DropdownMenuContent } from "@radix-ui/react-dropdown-menu";
-import { ArrowRight, BarChart, CheckCircle, ChevronDown } from "lucide-react";
-import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
+import {
+  ArrowRight,
+  BarChart,
+  CheckCircle,
+  ChevronDown,
+  ChevronRight,
+  Lock,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "../ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "../ui/command";
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from "../ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import { Input } from "../ui/input";
+import { Switch } from "../ui/switch";
+import { DynamicIcon } from "../ui/dynamic-icon";
+import { CreateFieldSelectType } from "../Fields/CreateField";
 
 interface Props {
   user: AmcatSessionUser;
@@ -19,95 +33,329 @@ interface Props {
   query: AmcatQuery;
 }
 
+type DestMode = "existing" | "new";
+
+interface FieldConfig {
+  rename?: string;
+  type?: string;
+  exclude?: boolean;
+}
+
 export default function Reindex({ user, projectId, query }: Props) {
   const { count } = useCount(user, projectId, query);
   const { data: projects } = useAmcatProjects(user);
-  const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [taskResult, setTaskResult] = useState<string | null>(null);
-  const [newProject, setNewProject] = useState<AmcatProject | undefined>(undefined);
-  //TODO: Add option to create a new project?
+  const { data: sourceFields } = useFields(user, projectId);
+  const canCreateProject = useHasGlobalRole(user, "WRITER");
 
-  function onSubmitNewProject(e: React.FormEvent<HTMLFormElement>) {
+  const [destMode, setDestMode] = useState<DestMode>("existing");
+  const [existingProject, setExistingProject] = useState<AmcatProject | undefined>();
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newProjectId, setNewProjectId] = useState("");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [fieldConfigs, setFieldConfigs] = useState<Record<string, FieldConfig>>({});
+  const [fieldConfigOpen, setFieldConfigOpen] = useState(false);
+  const [taskResult, setTaskResult] = useState<string | null>(null);
+  const [submittedProjectId, setSubmittedProjectId] = useState<string | undefined>();
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const { mutateAsync: createProjectAsync } = useCreateProject(user);
+  const { data: destFields } = useFields(user, destMode === "existing" ? existingProject?.id : undefined);
+
+  // Validate new project ID
+  const existingIds = useMemo(() => new Set(projects?.map((p) => p.id) ?? []), [projects]);
+  const newProjectIdError = useMemo(() => {
+    if (!newProjectId) return "Project ID is required";
+    if (/[ .\\]/.test(newProjectId)) return "ID cannot contain spaces, dots, or backslashes";
+    if (existingIds.has(newProjectId)) return "A project with this ID already exists";
+    return null;
+  }, [newProjectId, existingIds]);
+
+  const destinationId = destMode === "existing" ? existingProject?.id : newProjectId;
+  const canSubmit =
+    !submitting &&
+    (destMode === "existing" ? existingProject != null : newProjectId !== "" && newProjectIdError === null);
+
+  // Determine which fields are new vs existing in destination
+  function isFieldNewInDest(sourceFieldName: string, config: FieldConfig): boolean {
+    if (destMode === "new") return true;
+    if (!destFields) return true;
+    const destName = config.rename || sourceFieldName;
+    return !destFields.some((f) => f.name === destName);
+  }
+
+  function updateFieldConfig(fieldName: string, update: Partial<FieldConfig>) {
+    setFieldConfigs((prev) => ({ ...prev, [fieldName]: { ...prev[fieldName], ...update } }));
+  }
+
+  const configuredCount = Object.values(fieldConfigs).filter(
+    (c) => c.exclude || c.rename || c.type,
+  ).length;
+
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (newProject) {
-      postReindex(user, projectId, newProject.id, query)
-        .catch((error) => console.error(error))
-        .then((res) => {
-          setTaskResult(res?.data.task);
-        });
+    if (!canSubmit || !destinationId) return;
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      if (destMode === "new") {
+        await createProjectAsync({ id: newProjectId, name: newProjectName });
+      }
+      // Build field_options — only send non-default entries
+      const field_options: Record<string, FieldReindexOptions> = {};
+      for (const [name, config] of Object.entries(fieldConfigs)) {
+        if (config.exclude || config.rename || config.type) {
+          field_options[name] = {
+            ...(config.rename ? { rename: config.rename } : {}),
+            ...(config.exclude ? { exclude: true } : {}),
+            ...(config.type ? { type: config.type } : {}),
+          };
+        }
+      }
+      const res = await postReindex(user, projectId, destinationId, query, field_options);
+      setSubmittedProjectId(destinationId);
+      setTaskResult(res?.data.task);
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail ?? err?.message ?? "An error occurred";
+      setSubmitError(msg);
+    } finally {
+      setSubmitting(false);
     }
   }
-  const projectlabel = (ix: AmcatProject) => `${ix.folder || ""}/${ix.name}`;
-  const onSelectNewProject = (ix: AmcatProject) => {
-    setNewProject(ix);
-    setNewProjectOpen(false); // Close the dropdown
-  };
+
   if (count == null) return null;
+
   return (
     <div className="flex flex-col gap-6">
       <CopyOperationDialog
         open={taskResult != null}
         onOpenChange={() => setTaskResult(null)}
-        newProjectId={newProject?.id}
+        newProjectId={submittedProjectId}
         taskResultId={taskResult ?? undefined}
       />
+
       <h4>
-        Copy <b className="text-primary">{count}</b> documents to an existing project
+        Copy <b className="text-primary">{count}</b> documents
       </h4>
 
-      <form onSubmit={onSubmitNewProject} className="flex items-center justify-stretch gap-3">
-        <DropdownMenu open={newProjectOpen} onOpenChange={setNewProjectOpen}>
-          <DropdownMenuTrigger asChild>
-            <Button className="min-w-64 justify-between gap-3" variant="outline">
-              {newProject?.name ?? "Select destination project"}
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        {/* Destination */}
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-4 text-sm font-medium">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="destMode"
+                value="existing"
+                checked={destMode === "existing"}
+                onChange={() => setDestMode("existing")}
+              />
+              Existing project
+            </label>
+            {canCreateProject && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="destMode"
+                  value="new"
+                  checked={destMode === "new"}
+                  onChange={() => setDestMode("new")}
+                />
+                New project
+              </label>
+            )}
+          </div>
 
-              <ChevronDown className="h-5 w-5" />
-            </Button>
-          </DropdownMenuTrigger>
+          {destMode === "existing" && (
+            <div className="flex items-center gap-3">
+              <DropdownMenu open={newProjectOpen} onOpenChange={setNewProjectOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button className="min-w-64 justify-between gap-3" variant="outline">
+                    {existingProject?.name ?? "Select destination project"}
+                    <ChevronDown className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="ml-2 min-w-[200px] border-[1px] border-foreground bg-background"
+                >
+                  <Command>
+                    <CommandInput placeholder="Filter projects" autoFocus className="h-9" />
+                    <CommandList>
+                      <CommandEmpty>No project found</CommandEmpty>
+                      <CommandGroup>
+                        {projects
+                          ?.sort((a, b) => projectLabel(a).localeCompare(projectLabel(b)))
+                          .filter((ix) => !user.authenticated || ix.user_role === "WRITER" || ix.user_role === "ADMIN")
+                          .filter((ix) => !ix.archived)
+                          .map((ix) => (
+                            <CommandItem
+                              key={ix.id}
+                              value={ix.id}
+                              onSelect={() => {
+                                setExistingProject(ix);
+                                setNewProjectOpen(false);
+                              }}
+                            >
+                              <span>{projectLabel(ix).replace(/^\//, "")}</span>
+                            </CommandItem>
+                          ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
 
-          <DropdownMenuContent
-            align="start"
-            className="ml-2 min-w-[200px] border-[1px] border-foreground bg-background"
-          >
-            <Command>
-              <CommandInput placeholder="Filter projects" autoFocus={true} className="h-9" />
-              <CommandList>
-                <CommandEmpty>No project found</CommandEmpty>
-                <CommandGroup>
-                  {projects
-                    ?.sort((a, b) => projectlabel(a).localeCompare(projectlabel(b)))
-                    .filter((ix) => !user.authenticated || ix.user_role === "WRITER" || ix.user_role === "ADMIN")
-                    .filter((ix) => !ix.archived)
-                    .map((ix) => (
-                      <CommandItem key={ix.id} value={ix.id} onSelect={() => onSelectNewProject(ix)}>
-                        {" "}
-                        <span>{projectlabel(ix).replace(/^\//, "")}</span>
-                      </CommandItem>
-                    ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button type="submit" disabled={newProject == null}>
-          Copy
-        </Button>
+          {destMode === "new" && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-start gap-3">
+                <div className="flex flex-col gap-1">
+                  <Input
+                    placeholder="project-id (required)"
+                    value={newProjectId}
+                    onChange={(e) => setNewProjectId(e.target.value.replace(/ /g, "-"))}
+                    className="w-56"
+                  />
+                  {newProjectId && newProjectIdError && (
+                    <span className="text-xs text-destructive">{newProjectIdError}</span>
+                  )}
+                </div>
+                <Input
+                  placeholder="Display name (optional)"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  className="w-56"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Field configuration (expandable) */}
+        {sourceFields && sourceFields.length > 0 && (
+          <div className="border rounded">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium"
+              onClick={() => setFieldConfigOpen((v) => !v)}
+            >
+              {fieldConfigOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              Configure fields
+              {configuredCount > 0 && (
+                <span className="ml-1 rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">
+                  {configuredCount} configured
+                </span>
+              )}
+            </button>
+            {fieldConfigOpen && (
+              <FieldConfigTable
+                sourceFields={sourceFields}
+                fieldConfigs={fieldConfigs}
+                onUpdate={updateFieldConfig}
+                isNewInDest={isFieldNewInDest}
+                destFields={destFields}
+              />
+            )}
+          </div>
+        )}
+
+        {submitError && <p className="text-sm text-destructive">{submitError}</p>}
+
+        <div>
+          <Button type="submit" disabled={!canSubmit}>
+            {submitting ? "Copying…" : "Copy"}
+          </Button>
+        </div>
       </form>
 
-      <div className="border-primary-100 mt-3 border bg-primary/10 p-1">
-        <em>Note:</em> This will copy all currently selected articles to a new or existing project. This also allows you
-        to change field settings by first creating the target project and defining any fields as needed. Fields in the
-        source project that don't occur in the target project will be copied.
+      <div className="border-primary-100 mt-3 border bg-primary/10 p-2 text-sm">
+        <em>Note:</em> Fields in the source project that don't exist in the target project will be copied automatically.
+        Expand "Configure fields" to rename, retype, or exclude individual fields.
       </div>
     </div>
   );
 }
+
+function projectLabel(ix: AmcatProject) {
+  return `${ix.folder || ""}/${ix.name}`;
+}
+
+// --- Field config table ---
+
+interface FieldConfigTableProps {
+  sourceFields: AmcatField[];
+  fieldConfigs: Record<string, FieldConfig>;
+  onUpdate: (fieldName: string, update: Partial<FieldConfig>) => void;
+  isNewInDest: (fieldName: string, config: FieldConfig) => boolean;
+  destFields: AmcatField[] | undefined;
+}
+
+function FieldConfigTable({ sourceFields, fieldConfigs, onUpdate, isNewInDest, destFields }: FieldConfigTableProps) {
+  return (
+    <div className="border-t text-sm">
+      <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-3 border-b bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+        <span>Field</span>
+        <span>Rename to</span>
+        <span>Type</span>
+        <span>Include</span>
+      </div>
+      {sourceFields.map((field) => {
+        const config = fieldConfigs[field.name] ?? {};
+        const excluded = config.exclude ?? false;
+        const isNew = isNewInDest(field.name, config);
+        const currentType = config.type ?? field.type;
+
+        return (
+          <div
+            key={field.name}
+            className={`grid grid-cols-[1fr_1fr_auto_auto] items-center gap-x-3 border-b px-3 py-1.5 ${excluded ? "opacity-40" : ""}`}
+          >
+            <div className="flex items-center gap-1.5 font-mono text-xs">
+              <DynamicIcon type={field.type} className="h-3.5 w-3.5 shrink-0" />
+              {field.name}
+            </div>
+            <Input
+              className="h-7 text-xs"
+              placeholder={field.name}
+              value={config.rename ?? ""}
+              disabled={excluded}
+              onChange={(e) => onUpdate(field.name, { rename: e.target.value || undefined })}
+            />
+            <div className="flex items-center gap-1">
+              {isNew ? (
+                <CreateFieldSelectType
+                  type={currentType as any}
+                  setType={(t) => onUpdate(field.name, { type: t })}
+                />
+              ) : (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Lock className="h-3 w-3" />
+                  {destFields?.find((f) => f.name === (config.rename || field.name))?.type ?? field.type}
+                </span>
+              )}
+            </div>
+            <Switch
+              checked={!excluded}
+              onCheckedChange={(checked) => onUpdate(field.name, { exclude: !checked })}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- Post-submit dialog ---
+
 interface CopyOperationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   newProjectId?: string;
   taskResultId?: string;
 }
+
 function CopyOperationDialog({ open, onOpenChange, newProjectId, taskResultId }: CopyOperationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -123,13 +371,13 @@ function CopyOperationDialog({ open, onOpenChange, newProjectId, taskResultId }:
         </DialogHeader>
         <div className="flex flex-col gap-4 py-4">
           <Button asChild variant="outline" className="justify-between">
-            <Link href={`/projects/${newProjectId}/dashboard`}>
+            <Link to="/projects/$project/dashboard" params={{ project: newProjectId! }}>
               View Destination Project
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
           </Button>
           <Button asChild variant="outline" className="justify-between">
-            <Link href={`/task/${taskResultId}`}>
+            <Link to="/task/$task" params={{ task: taskResultId! }}>
               View Copy Progress
               <BarChart className="ml-2 h-4 w-4" />
             </Link>

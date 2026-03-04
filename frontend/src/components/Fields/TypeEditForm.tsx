@@ -4,7 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { DynamicIcon } from "../ui/dynamic-icon";
 
 // Mirrors backend/amcat4/systemdata/typemap.py _TYPEMAP_AMCAT_TO_ES
-const TYPEMAP_AMCAT_TO_ES: Record<string, string[]> = {
+export const TYPEMAP_AMCAT_TO_ES: Record<string, string[]> = {
   text: ["text", "annotated_text", "binary", "match_only_text"],
   date: ["date"],
   boolean: ["boolean"],
@@ -21,7 +21,7 @@ const TYPEMAP_AMCAT_TO_ES: Record<string, string[]> = {
   audio: ["keyword"],
 };
 
-function getCompatibleAmcatTypes(elasticType: string): string[] {
+export function getCompatibleAmcatTypes(elasticType: string): string[] {
   return Object.entries(TYPEMAP_AMCAT_TO_ES)
     .filter(([, esTypes]) => esTypes.includes(elasticType))
     .map(([amcatType]) => amcatType);

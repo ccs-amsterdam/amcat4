@@ -12,6 +12,7 @@ from amcat4.api.auth_helpers import authenticated_user
 from amcat4.api.index_query import FiltersType, QueriesType, _standardize_filters, _standardize_queries
 from amcat4.models import (
     ContactInfo,
+    FieldType,
     GuestRole,
     IndexId,
     ProjectSettings,
@@ -71,12 +72,21 @@ class CreateIndexBody(UpdateIndexBody):
     id: IndexId = Field(description="ID of the new index")
 
 
+class FieldReindexOptions(BaseModel):
+    """Per-field options for reindexing."""
+
+    rename: str | None = None
+    exclude: bool = False
+    type: FieldType | None = None
+
+
 class ReindexBody(BaseModel):
     """Body for reindexing documents."""
 
     destination: str = Field(description="The destination index id")
     queries: QueriesType
     filters: FiltersType
+    field_options: dict[str, FieldReindexOptions] = {}
 
 
 # RESPONSE MODELS
@@ -331,7 +341,13 @@ async def start_reindex(
     filters = _standardize_filters(body.filters)
 
     queries = _standardize_queries(body.queries)
-    return await reindex(source_index=ix, destination_index=body.destination, queries=queries, filters=filters)
+    return await reindex(
+        source_index=ix,
+        destination_index=body.destination,
+        queries=queries,
+        filters=filters,
+        field_options={k: v.model_dump() for k, v in body.field_options.items()},
+    )
 
 
 @app_index.get("/index/{ix}/image/{id}")

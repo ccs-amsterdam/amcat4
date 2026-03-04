@@ -302,29 +302,64 @@ async def reindex(
     destination_index: str,
     queries: dict[str, str] | None = None,
     filters: dict[str, FilterSpec] | None = None,
+    field_options: dict[str, dict] | None = None,
     wait_for_completion=False,
 ):
     """Start a reindex task.
     This will first create any fields missing in the target index, and then start the reindex task.
     If wait_for_completion is False (default), returns a {'task': task_id} dict
+
+    field_options: per-field options dict keyed by source field name, each with optional keys:
+      - rename: str — copy field under this new name in destination
+      - exclude: bool — if True, skip this field entirely
+      - type: FieldType — override amcat type for fields new to destination
     """
     if not await es().indices.exists(index=destination_index):
-        # Note: We could automatically create, but then also need to think about
-        #       name, roles, etc., so for now let client create first
         raise Exception("Please create index before re-indexing!")
 
+    field_options = field_options or {}
     dest_fields = await list_fields(destination_index)
-    fields: dict[str, FieldType] = {
-        field: definition.type for (field, definition) in (await list_fields(source_index)).items() if field not in dest_fields
-    }
-    if fields:
-        logging.info(f"Creating fields {fields}")
-        await create_fields(destination_index, fields)
+    source_field_defs = await list_fields(source_index)
+
+    # Sync fields to destination, applying renames, exclusions, and type overrides
+    new_fields: dict[str, FieldType] = {}
+    for field, definition in source_field_defs.items():
+        opts = field_options.get(field, {})
+        if opts.get("exclude"):
+            continue
+        dest_name = opts.get("rename") or field
+        if dest_name in dest_fields:
+            continue  # already exists; elastic type is immutable, skip
+        type_override = opts.get("type")
+        new_fields[dest_name] = type_override if type_override else definition.type
+
+    if new_fields:
+        logging.info(f"Creating fields {new_fields}")
+        await create_fields(destination_index, new_fields)
+
     source: dict = {"index": source_index}
+
+    # Exclude fields from the source payload
+    excluded = [f for f, opts in field_options.items() if opts.get("exclude")]
+    if excluded:
+        source["_source"] = {"excludes": excluded}
+
     if queries or filters:
         source.update(build_body(queries, filters))
 
-    return await es().reindex(dest=dict(index=destination_index), source=source, wait_for_completion=wait_for_completion)
+    # Build Painless script for field renames
+    rename_lines = [
+        f'ctx._source["{opts["rename"]}"] = ctx._source["{f}"]; ctx._source.remove("{f}")'
+        for f, opts in field_options.items()
+        if opts.get("rename")
+    ]
+    script = "; ".join(rename_lines) if rename_lines else None
+
+    kwargs: dict = dict(dest=dict(index=destination_index), source=source, wait_for_completion=wait_for_completion)
+    if script:
+        kwargs["script"] = {"source": script, "lang": "painless"}
+
+    return await es().reindex(**kwargs)
 
 
 async def get_task_status(task_id):

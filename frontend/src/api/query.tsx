@@ -58,15 +58,23 @@ export function asPostAmcatQuery(query: AmcatQuery) {
   return postAmcatQuery;
 }
 
+export interface FieldReindexOptions {
+  rename?: string;
+  exclude?: boolean;
+  type?: string;
+}
+
 export function postReindex(
   user: AmcatSessionUser,
   source: AmcatProjectId,
   destination: AmcatProjectId,
   query: AmcatQuery,
+  field_options?: Record<string, FieldReindexOptions>,
 ) {
   const query_body = asPostAmcatQuery(query);
   return user.api.post(`index/${source}/reindex`, {
     destination: destination,
     ...query_body,
+    ...(field_options && Object.keys(field_options).length > 0 ? { field_options } : {}),
   });
 }
