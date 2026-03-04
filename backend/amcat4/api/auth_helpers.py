@@ -100,14 +100,19 @@ async def authenticated_user(
     Authenticates the user based on the provided middlecat token, oidc token or api key.
     """
     settings = get_settings()
-    auth_disabled = settings.auth == AuthOptions.no_auth
 
-    if access_token is not None:
+    if settings.auth == AuthOptions.no_auth:
+        return User(
+            email="ADMIN",  # special NO_AUTH_USER
+            auth_disabled=True,
+            auth_method="none",
+        )
+
+    elif access_token is not None:
         try:
             t = await verify_token(access_token)
             return User(
                 email=t["email"],
-                auth_disabled=auth_disabled,
                 superadmin=t["email"] == settings.admin_email,
                 auth_method="middlecat",
             )
@@ -120,7 +125,6 @@ async def authenticated_user(
             a = await get_api_key(api_key)
             return User(
                 email=a.email,
-                auth_disabled=auth_disabled,
                 superadmin=a.email == settings.admin_email,
                 api_key_name=a.name,
                 api_key_restrictions=a.restrictions,
@@ -138,6 +142,5 @@ async def authenticated_user(
             )
         return User(
             email=None,
-            auth_disabled=auth_disabled,
             auth_method="none",
         )

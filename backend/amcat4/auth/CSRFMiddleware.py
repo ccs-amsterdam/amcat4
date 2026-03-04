@@ -11,9 +11,10 @@ is_secure_context = get_settings().host.startswith("https://")
 
 class CSRFMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        session = request.cookies.get("amcat_session") ## only check csrf for browser sessions
         cookie_token = request.cookies.get("CSRF-TOKEN")
 
-        if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
+        if session and request.method in ["POST", "PUT", "DELETE", "PATCH"]:
             header_token = request.headers.get("X-CSRF-TOKEN")
 
             if not cookie_token or not header_token or cookie_token != header_token:

@@ -36,7 +36,7 @@ async def test_handler_responses(client: AsyncClient, admin):
     # A valid token needs a valid resource, clientId, expiry, and email
     now = int(datetime.now().timestamp())
     clientId = get_settings().host
-    resource = get_settings().host + '/api'
+    resource = get_settings().host + "/api"
     await test(clientId=clientId, resource=resource, email=admin, expected=401)
     await test(exp=now + 1000, email=admin, expected=401)
     assert (await test(clientId=clientId, resource=resource, exp=now + 1000, email=admin))["email"] == admin
