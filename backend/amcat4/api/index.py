@@ -1,11 +1,14 @@
 """API Endpoints for document and index management."""
 
 import base64
+import json
+import zlib
 from typing import Annotated
 
 from elastic_transport import ApiError
 from elasticsearch import NotFoundError
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Path, Query, Request, Response, UploadFile, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth_helpers import authenticated_user
@@ -13,6 +16,7 @@ from amcat4.api.index_query import FiltersType, QueriesType, _standardize_filter
 from amcat4.config import get_settings
 from amcat4.models import (
     ContactInfo,
+    FieldSpec,
     FieldType,
     GuestRole,
     IndexId,
@@ -36,12 +40,14 @@ from amcat4.projects.index import (
     register_project_index,
     update_project_index,
 )
-from amcat4.projects.query import reindex
+from amcat4.projects.query import query_documents, reindex
+from amcat4.systemdata.fields import list_fields
 from amcat4.systemdata.roles import (
     HTTPException_if_not_project_index_role,
     HTTPException_if_not_server_role,
     get_project_guest_role,
     get_user_project_role,
+    list_project_roles,
     set_project_guest_role,
 )
 from amcat4.systemdata.settings import get_project_image, get_project_settings
@@ -410,3 +416,53 @@ async def upload_index_image(
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail=f"Index {ix} does not exist")
+
+
+@app_index.get("/index/{ix}/download")
+async def download_index(
+    ix: Annotated[IndexId, Path(..., description="ID of the index to download")],
+    user: User = Depends(authenticated_user),
+):
+    """
+    Download a complete project export as a streaming NDJSON file.
+    Each line is a JSON object with a 'type' field: 'settings', 'field', 'user_role', or 'document'.
+    Requires ADMIN role on the index.
+    """
+    await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
+
+    async def generate():
+        compressor = zlib.compressobj(wbits=31)  # wbits=31 = gzip format
+
+        async def ndjson_lines():
+            # 1. Project settings
+            settings = await get_project_settings(ix)
+            yield json.dumps({"_type": "settings", **settings.model_dump(exclude={"image"})}) + "\n"
+
+            # 2. Field definitions
+            fields = await list_fields(ix)
+            for name, field in fields.items():
+                yield json.dumps({"_type": "field", "name": name, **field.model_dump()}) + "\n"
+
+            # 3. User roles for this project
+            async for role in list_project_roles(project_ids=[ix]):
+                yield json.dumps({"_type": "user_role", "email": role.email, "role": role.role}) + "\n"
+
+            # 4. Documents via scroll
+            field_specs = [FieldSpec(name=name) for name in fields]
+            result = await query_documents(ix, fields=field_specs, scroll=True, per_page=500)
+            while result is not None:
+                for doc in result.data:
+                    yield json.dumps({"_type": "document", **doc}) + "\n"
+                result = await query_documents(ix, scroll_id=result.scroll_id)
+
+        async for line in ndjson_lines():
+            chunk = compressor.compress(line.encode())
+            if chunk:
+                yield chunk
+        yield compressor.flush()
+
+    return StreamingResponse(
+        generate(),
+        media_type="application/gzip",
+        headers={"Content-Disposition": f'attachment; filename="{ix}.ndjson.gz"'},
+    )

@@ -12,7 +12,7 @@ import { ErrorMsg } from "@/components/ui/error-message";
 import { Loading } from "@/components/ui/loading";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AmcatProject } from "@/interfaces";
-import { Edit, Trash2 } from "lucide-react";
+import { Download, Edit, Trash2 } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useState } from "react";
 import { UploadProjectImage } from "@/components/Project/UploadProjectImage";
@@ -44,6 +44,14 @@ function Settings({ user, project }: { user: AmcatSessionUser; project: AmcatPro
         <div className="mb-3 flex items-center gap-5 md:justify-between">
           <h2 className="mb-0 mt-0 break-all text-[clamp(1.2rem,5vw,2rem)]">{project.name}</h2>
           <div className="flex items-center gap-2">
+            {project.user_role === "ADMIN" && (
+              <Button variant="outline" className="flex gap-2" asChild>
+                <a href={`/api/index/${project.id}/download`} download={`${project.id}.ndjson.gz`}>
+                  <Download className="h-5 w-5" />
+                  Export project
+                </a>
+              </Button>
+            )}
             <Popover open={archiveOpen} onOpenChange={setArchiveOpen}>
               <PopoverTrigger asChild>
                 <Button
