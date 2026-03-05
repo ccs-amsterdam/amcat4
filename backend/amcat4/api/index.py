@@ -281,7 +281,7 @@ async def view_index(
     bytes = await index_size_in_bytes(ix)
 
     domain_url = str(request.base_url).rstrip("/")
-    image_url = f"{domain_url}/index/{ix}/image/{d.image.id}" if d.image else None
+    image_url = f"{domain_url}/api/index/{ix}/image/{d.image.id}" if d.image else None
 
     return IndexViewResponse(
         id=d.id,
