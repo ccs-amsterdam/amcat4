@@ -58,9 +58,14 @@ async def get_project_image(index_id: IndexId) -> ImageObject | None:
     id = settings_index_id(index_id)
     include = ["project_settings.image"]
     doc = (await es().get(index=settings_index_name(), id=id, source_includes=include))["_source"]
-    if "image" not in doc["project_settings"]:
+
+    image_data = doc["project_settings"].get("image")
+    if not image_data:
         return None
-    return ImageObject.model_validate(doc["project_settings"].get("image"))
+    return ImageObject.model_validate(image_data)
+    # if "image" not in doc["project_settings"]:
+    #     return None
+    # return ImageObject.model_validate(doc["project_settings"].get("image"))
 
 
 ## SERVER SETTINGS

@@ -18,8 +18,15 @@ export interface AmcatSession {
   signOut: () => Promise<void>;
 }
 
-async function createUser(): Promise<AmcatSessionUser> {
-  const { email } = parseClientSessionCookie();
+async function createUser(signOut: () => void): Promise<AmcatSessionUser> {
+  const sessionCookie = parseClientSessionCookie();
+  console.log(sessionCookie);
+
+  // if sessionCookie is invalid, break the session.
+  // This is strict, because the sessioncookie is the only way for the client to know
+  // if an amcat session cookie (httponly) is present
+  if (sessionCookie === "broken") signOut();
+
   const api = axios.create({
     baseURL: "/api/",
     withCredentials: true,
@@ -33,9 +40,14 @@ async function createUser(): Promise<AmcatSessionUser> {
     const csrf = Cookies.get("CSRF-TOKEN") || "";
     config.headers["X-CSRF-TOKEN"] = csrf;
 
-    if (email) {
+    if (sessionCookie) {
       if (!refreshQueue) refreshQueue = refreshToken(csrf);
-      await refreshQueue;
+      try {
+        await refreshQueue;
+      } catch (e) {
+        // if token refresh failed, redirect to login
+        signOut();
+      }
       refreshQueue = undefined;
     }
 
@@ -43,20 +55,21 @@ async function createUser(): Promise<AmcatSessionUser> {
     return config;
   });
 
-  if (email) {
-    return { loading: false, authenticated: true, email, api };
+  if (sessionCookie) {
+    return { loading: false, authenticated: true, email: sessionCookie.email, api };
   } else {
     return { loading: false, authenticated: false, api };
   }
 }
 
 async function refreshToken(csrf: string): Promise<null> {
-  const { exp, email } = parseClientSessionCookie();
-  if (!email || !exp) return null;
+  const session = parseClientSessionCookie();
+  if (!session || session === "broken") throw new Error("Session cookie was deleted or broken during session");
 
   const now = Date.now() / 1000;
   const nearfuture = now + 10; // refresh x seconds before expires
-  if (exp < nearfuture) {
+  // if (exp < nearfuture) {
+  if (true) {
     await axios.post("/api/auth/refresh", {}, { headers: { "X-CSRF-TOKEN": csrf } });
   }
   return null;
@@ -71,10 +84,6 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     api: axios.create({ baseURL: "/api/" }),
   });
 
-  useEffect(() => {
-    createUser().then((user) => setUser(user));
-  }, []);
-
   const signIn = useCallback(async () => {
     const returnTo = encodeURIComponent(window.location.href);
     const loginUrl = `/api/auth/login?returnTo=${returnTo}`;
@@ -82,16 +91,19 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    if (!user) return;
     try {
-      await user.api.post("auth/logout");
-      const currentPage = window.location.href;
-      window.location.href = currentPage; //refresh
+      const csrf = Cookies.get("CSRF-TOKEN") || "";
+      await axios.post("/api/auth/logout", {}, { headers: { "X-CSRF-TOKEN": csrf } });
+      window.location.reload();
     } catch (e) {
       console.log(e);
       toast.error("An error occurred during logout.");
     }
-  }, [user]);
+  }, []);
+
+  useEffect(() => {
+    createUser(signOut).then((user) => setUser(user));
+  }, [signOut]);
 
   return <SessionContext.Provider value={{ user, signIn, signOut }}>{children}</SessionContext.Provider>;
 }
@@ -104,13 +116,20 @@ export const useAmcatSession = (): AmcatSession => {
   return context;
 };
 
-function parseClientSessionCookie() {
+interface ClientSessionCookie {
+  exp: number;
+  email: string;
+}
+
+function parseClientSessionCookie(): ClientSessionCookie | null | "broken" {
   const cookie = Cookies.get("client_session");
-  if (!cookie) return { exp: undefined, email: undefined };
+  if (!cookie) return null;
 
-  const parts = cookie.split(".");
-  const exp = Number(parts[0]);
-  const email = parts.slice(1).join(".");
-
-  return { exp, email };
+  try {
+    const json = decodeURIComponent(cookie);
+    const { exp, email } = JSON.parse(json);
+    return { exp, email };
+  } catch (e) {
+    return "broken";
+  }
 }

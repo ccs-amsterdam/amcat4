@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from amcat4.api.auth_helpers import authenticated_user
 from amcat4.api.index_query import FiltersType, QueriesType, _standardize_filters, _standardize_queries
+from amcat4.config import get_settings
 from amcat4.models import (
     ContactInfo,
     FieldType,
@@ -129,12 +130,12 @@ async def index_list(
     if show_all:
         await HTTPException_if_not_server_role(user, Roles.ADMIN)
 
-    domain_url = str(request.base_url).rstrip("/")
+    domain_url = get_settings().host
 
     ix_list: list = []
     ix_dict: dict[IndexId, Role | None] = {}
     async for ix, role in list_user_project_indices(user, show_all=show_all, show_archived=show_archived):
-        image_url = f"{domain_url}/index/{ix.id}/image/{ix.image.id}" if ix.image else None
+        image_url = f"{domain_url}/api/index/{ix.id}/image/{ix.image.id}" if ix.image else None
 
         if minimal:
             ix_dict[ix.id] = role.role if role else None
