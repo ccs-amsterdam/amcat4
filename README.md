@@ -13,6 +13,7 @@ Server for document management and automatic text analysis, developed as part of
 
 The recommended way to install AmCAT either for local use or in a production environment is through docker:
 
+0. [Install docker compose](https://docs.docker.com/compose/install/) if needed
 1. Download the [amcat4-deploy.zip](https://github.com/ccs-amsterdam/amcat4/releases/latest/download/amcat4-deploy.zip)
 2. Unzip the the archive, creating the amcat4-deploy folder on your computer
 3. If needed, edit the .env file (which is based on [.env.example](deploy/.env.example)) for local configuration. For private use, this step can be skipped. For setting up a shared server you certainly want to set up authentication, change the cookie secret, add a https address etc.
