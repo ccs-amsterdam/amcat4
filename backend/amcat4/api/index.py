@@ -1,12 +1,14 @@
 """API Endpoints for document and index management."""
 
 import base64
+import gzip
+import io
 import json
 import zlib
 from typing import Annotated
 
 from elastic_transport import ApiError
-from elasticsearch import NotFoundError
+from elasticsearch import ConflictError, NotFoundError
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Path, Query, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -16,6 +18,7 @@ from amcat4.api.index_query import FiltersType, QueriesType, _standardize_filter
 from amcat4.config import get_settings
 from amcat4.models import (
     ContactInfo,
+    CreateDocumentField,
     FieldSpec,
     FieldType,
     GuestRole,
@@ -40,15 +43,18 @@ from amcat4.projects.index import (
     register_project_index,
     update_project_index,
 )
+from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.query import query_documents, reindex
-from amcat4.systemdata.fields import list_fields
+from amcat4.systemdata.fields import create_fields, list_fields
 from amcat4.systemdata.roles import (
     HTTPException_if_not_project_index_role,
     HTTPException_if_not_server_role,
+    create_project_role,
     get_project_guest_role,
     get_user_project_role,
     list_project_roles,
     set_project_guest_role,
+    update_project_role,
 )
 from amcat4.systemdata.settings import get_project_image, get_project_settings
 
@@ -434,18 +440,23 @@ async def download_index(
         compressor = zlib.compressobj(wbits=31)  # wbits=31 = gzip format
 
         async def ndjson_lines():
-            # 1. Project settings
+            # 1. Project settings (image is excluded from get_project_settings, fetch separately)
             settings = await get_project_settings(ix)
-            yield json.dumps({"_type": "settings", **settings.model_dump(exclude={"image"})}) + "\n"
+            settings_dict: dict = {"_type": "settings", **settings.model_dump()}
+            image = await get_project_image(ix)
+            if image:
+                settings_dict["image"] = image.model_dump()
+            yield json.dumps(settings_dict) + "\n"
 
             # 2. Field definitions
             fields = await list_fields(ix)
             for name, field in fields.items():
                 yield json.dumps({"_type": "field", "name": name, **field.model_dump()}) + "\n"
 
-            # 3. User roles for this project
+            # 3. User roles for this project (skip NONE roles — they carry no access)
             async for role in list_project_roles(project_ids=[ix]):
-                yield json.dumps({"_type": "user_role", "email": role.email, "role": role.role}) + "\n"
+                if role.role != "NONE":
+                    yield json.dumps({"_type": "user_role", "email": role.email, "role": role.role}) + "\n"
 
             # 4. Documents via scroll
             field_specs = [FieldSpec(name=name) for name in fields]
@@ -466,3 +477,91 @@ async def download_index(
         media_type="application/gzip",
         headers={"Content-Disposition": f'attachment; filename="{ix}.ndjson.gz"'},
     )
+
+
+@app_index.post("/index/import", status_code=status.HTTP_201_CREATED)
+async def import_index(
+    file: UploadFile = File(...),
+    override_id: str | None = Query(None),
+    user: User = Depends(authenticated_user),
+):
+    """
+    Import a project from a .ndjson or .ndjson.gz file produced by the download endpoint.
+    Restores project settings, fields, user roles, and documents.
+    Requires WRITER or ADMIN server role.
+    """
+    await HTTPException_if_not_server_role(user, Roles.WRITER)
+
+    content = await file.read()
+    if content[:2] == b"\x1f\x8b":
+        lines_iter = gzip.open(io.BytesIO(content), "rt", encoding="utf-8")
+    else:
+        lines_iter = iter(content.decode("utf-8").splitlines())
+
+    settings_data: dict | None = None
+    fields: dict[str, dict] = {}
+    roles: list[dict] = []
+    project_settings: ProjectSettings | None = None
+    created_project_id: str | None = None
+    has_identifiers = False
+    n_docs = 0
+    batch: list[dict] = []
+
+    async def setup_project() -> ProjectSettings:
+        nonlocal has_identifiers, created_project_id
+        if settings_data is None:
+            raise HTTPException(status_code=422, detail="No settings record found in file")
+        sd = {**settings_data, "id": override_id} if override_id else settings_data
+        ps = ProjectSettings.model_validate(sd)
+        await create_project_index(ps, admin_email=user.email)
+        created_project_id = ps.id
+        if fields:
+            field_defs = {name: CreateDocumentField.model_validate(f) for name, f in fields.items()}
+            await create_fields(ps.id, field_defs)
+        has_identifiers = any(f.get("identifier") for f in fields.values())
+        for role in roles:
+            if Roles[role["role"]] == Roles.NONE:
+                continue
+            try:
+                await create_project_role(role["email"], ps.id, Roles[role["role"]])
+            except ConflictError:
+                await update_project_role(role["email"], ps.id, Roles[role["role"]])
+        return ps
+
+    try:
+        for raw_line in lines_iter:
+            line = raw_line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            record_type = obj.pop("_type", None)
+            if record_type == "settings":
+                settings_data = obj
+            elif record_type == "field":
+                name = obj.pop("name")
+                fields[name] = obj
+            elif record_type == "user_role":
+                roles.append(obj)
+            elif record_type == "document":
+                if project_settings is None:
+                    project_settings = await setup_project()
+                doc = {k: v for k, v in obj.items() if k != "_id"} if has_identifiers else obj
+                batch.append(doc)
+                n_docs += 1
+                if len(batch) >= 500:
+                    await create_or_update_documents(project_settings.id, batch)
+                    batch = []
+
+        if project_settings is None:
+            project_settings = await setup_project()
+        if batch:
+            await create_or_update_documents(project_settings.id, batch)
+
+    except IndexAlreadyExists as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception:
+        if created_project_id is not None:
+            await delete_project_index(created_project_id, ignore_missing=True)
+        raise
+
+    return {"project_id": project_settings.id, "n_fields": len(fields), "n_roles": len(roles), "n_documents": n_docs}

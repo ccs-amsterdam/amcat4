@@ -13,6 +13,7 @@ import { Label } from "../ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { CreateProject } from "./CreateProject";
+import { ImportProject } from "./ImportProject";
 import { FolderBreadcrumbs } from "./FolderBreadcrumbs";
 import { ProjectCard } from "./ProjectCard";
 import { PendingProjectRequests } from "./PendingProjectRequests";
@@ -126,6 +127,7 @@ export function SelectProject() {
           <h3 className="">Projects</h3>
         </div>
         <CreateProject folder={currentPath ?? undefined} request={!canCreate} />
+        <ImportProject />
         <PendingProjectRequests />
       </div>
 
