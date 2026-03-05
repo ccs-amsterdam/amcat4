@@ -29,7 +29,7 @@ from amcat4.models import (
     Roles,
     User,
 )
-from amcat4.objectstorage.image_processing import create_image_from_bytes, create_image_from_url
+from amcat4.objectstorage.image_processing import create_image_from_bytes
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import (
     IndexAlreadyExists,
@@ -213,8 +213,7 @@ async def register_index(
         user, Roles.ADMIN, message="Registering an existing index requires ADMIN permission on the server"
     )
 
-    d = body.model_dump(exclude={"image_url"})
-    d["image"] = await create_image_from_url(body.image_url) if body.image_url else None
+    d = body.model_dump()
     d["id"] = ix
 
     try:

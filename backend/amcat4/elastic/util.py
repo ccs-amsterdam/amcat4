@@ -53,7 +53,7 @@ async def es_upsert(index: str, id: str, doc: dict, refresh: bool = True) -> Non
 async def es_bulk_create(
     generator: AsyncGenerator[BulkInsertAction, None], batchsize: int = 1000, overwrite: bool = False
 ) -> None:
-    op_type = "index" if overwrite else "create"
+    op_type: Literal["index", "create"] = "index" if overwrite else "create"
     return await es_bulk_action(generator, op_type=op_type, batchsize=batchsize)
 
 
@@ -136,7 +136,7 @@ async def index_scan(
     Helpers scan is much faster without sorting (which sets preserve_order to TRUE), so avoid it if you can.
     """
 
-    query_body = {}
+    query_body: dict[str, Any] = {}
     if query is not None:
         query_body["query"] = query
     if sort is not None:
