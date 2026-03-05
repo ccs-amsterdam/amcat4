@@ -25,11 +25,11 @@ function App() {
     const bar = document.getElementById("loading-bar");
     if (loader && bar) {
       bar.style.width = "100%";
-      bar.style.animation = "progress 0.2s ease-in-out";
+      bar.style.animation = "progress 0.05s ease-in-out";
       loader.classList.add("loading-fade-out");
       const removeTimeout = setTimeout(() => {
         loader.remove();
-      }, 200);
+      }, 20);
       return () => {
         clearTimeout(removeTimeout);
       };

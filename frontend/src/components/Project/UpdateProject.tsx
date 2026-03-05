@@ -1,4 +1,4 @@
-import { useMutateProject } from "@/api/project";
+import { useMutateProject, useUploadProjectImage } from "@/api/project";
 import {
   Dialog,
   DialogContent,
@@ -19,19 +19,33 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { JSONForm } from "../ui/jsonForm";
+import { Label } from "../ui/label";
 
 export function UpdateProject({ project, children }: { project: AmcatProject; children?: React.ReactNode }) {
   const { user } = useAmcatSession();
   const { mutateAsync } = useMutateProject(user);
+  const { mutateAsync: mutateAsyncImage } = useUploadProjectImage(user);
   const [open, setOpen] = useState(false);
   const form = useForm<z.input<typeof amcatProjectUpdateSchema>>({
     resolver: zodResolver(amcatProjectUpdateSchema),
     defaultValues: { ...project, archive: undefined },
   });
+  const [image, setImage] = useState<File | null>(null);
   if (!project) return null;
 
+  async function uploadImage() {
+    if (!image) return null;
+    return mutateAsyncImage({ projectId: project.id, file: image });
+  }
+
   function onSubmit(values: z.input<typeof amcatProjectUpdateSchema>) {
-    mutateAsync(amcatProjectUpdateSchema.parse(values)).then(() => setOpen(false));
+    // await both mutates and then close
+    Promise.all([uploadImage(), mutateAsync(amcatProjectUpdateSchema.parse(values))]).then(() => setOpen(false));
+  }
+
+  function onSelectImage(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) setImage(file);
   }
 
   return (
@@ -94,18 +108,16 @@ export function UpdateProject({ project, children }: { project: AmcatProject; ch
 
               <JSONForm control={form.control} name="contact" label="Contact information" schema={contactInfoSchema} />
 
-              <FormField
-                control={form.control}
-                name="image_url"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Image URL</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Optional image URL for good vibes" {...field} value={field.value ?? ""} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+              <div className="mt-3 flex flex-col gap-4">
+                <Label htmlFor="thumbnail">Thumbnail Image</Label>
+                <Input
+                  id="thumbnail"
+                  type="file"
+                  accept="image/jpeg, image/jpg, image/png, image/webp"
+                  className="w-full"
+                  onChange={onSelectImage}
+                ></Input>
+              </div>
             </div>
             <Button className="mt-3" type="submit">
               Update Project Settings

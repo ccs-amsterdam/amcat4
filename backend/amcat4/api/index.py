@@ -5,7 +5,7 @@ from typing import Annotated
 
 from elastic_transport import ApiError
 from elasticsearch import NotFoundError
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Path, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth_helpers import authenticated_user
@@ -22,7 +22,7 @@ from amcat4.models import (
     Roles,
     User,
 )
-from amcat4.objectstorage.image_processing import create_image_from_url
+from amcat4.objectstorage.image_processing import create_image_from_bytes, create_image_from_url
 from amcat4.projects.index import (
     IndexAlreadyExists,
     IndexDoesNotExist,
@@ -63,7 +63,6 @@ class UpdateIndexBody(BaseModel):
     description: str | None = Field(default=None, description="Description of the index")
     guest_role: GuestRole | None = Field(default=None, description="Guest role for the index")
     folder: str | None = Field(default=None, description="Folder for the index")
-    image_url: str | None = Field(default=None, description="Image URL for the index")
     contact: list[ContactInfo] | None = Field(default=None, description="Contact info for the index")
 
 
@@ -130,12 +129,10 @@ async def index_list(
     if show_all:
         await HTTPException_if_not_server_role(user, Roles.ADMIN)
 
-    domain_url = get_settings().host
-
     ix_list: list = []
     ix_dict: dict[IndexId, Role | None] = {}
     async for ix, role in list_user_project_indices(user, show_all=show_all, show_archived=show_archived):
-        image_url = f"{domain_url}/api/index/{ix.id}/image/{ix.image.id}" if ix.image else None
+        image_url = f"{get_settings().host}/api/index/{ix.id}/image/{ix.image.id}" if ix.image else None
 
         if minimal:
             ix_dict[ix.id] = role.role if role else None
@@ -171,8 +168,7 @@ async def create_index(
         user, Roles.WRITER, message="Creating a new project requires WRITER permission on the server"
     )
 
-    d = body.model_dump(exclude={"image_url"})
-    d["image"] = await create_image_from_url(body.image_url) if body.image_url else None
+    d = body.model_dump()
 
     try:
         await create_project_index(
@@ -241,17 +237,11 @@ async def modify_index(
     """
     await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
 
-    if body.image_url:
-        current = await get_project_image(ix)
-        if current and current.id == body.image_url.split("/")[-1]:
-            body.image_url = None  # no change
-
     try:
         await update_project_index(
             ProjectSettings(
                 id=ix,
-                **body.model_dump(exclude={"image_url"}),
-                image=await create_image_from_url(body.image_url) if body.image_url else None,
+                **body.model_dump(),
             )
         )
     except NotFoundError:
@@ -280,8 +270,7 @@ async def view_index(
 
     bytes = await index_size_in_bytes(ix)
 
-    domain_url = str(request.base_url).rstrip("/")
-    image_url = f"{domain_url}/api/index/{ix}/image/{d.image.id}" if d.image else None
+    image_url = f"{get_settings().host}/api/index/{ix}/image/{d.image.id}" if d.image else None
 
     return IndexViewResponse(
         id=d.id,
@@ -375,3 +364,49 @@ async def get_index_image(ix: IndexId, id: str):
 
     content = base64.b64decode(image.base64)
     return Response(content=content, media_type="image/jpeg", headers=headers)
+
+
+@app_index.post("/index/{ix}/image", status_code=status.HTTP_204_NO_CONTENT)
+async def upload_index_image(
+    request: Request,
+    ix: Annotated[IndexId, Path(..., description="ID of the index")],
+    file: UploadFile = File(...),
+    user: User = Depends(authenticated_user),
+):
+    """
+    Upload an image for a project with size and type validation.
+    """
+    allowed_image_types = ["image/jpeg", "image/webp", "image/jpg", "image/png"]
+    max_file_size = 10 * 1024 * 1024
+
+    await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
+
+    if file.content_type not in allowed_image_types:
+        raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {', '.join(allowed_image_types)}")
+
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > max_file_size:
+        raise HTTPException(status_code=413, detail="File too large (header check)")
+
+    full_contents = b""
+    try:
+        total_size = 0
+        chunk_size = 1024 * 1024
+        while chunk := await file.read(chunk_size):
+            total_size += len(chunk)
+            if total_size > max_file_size:
+                await file.close()
+                raise HTTPException(status_code=413, detail="File too large (stream check)")
+            full_contents += chunk
+    finally:
+        await file.close()
+
+    try:
+        await update_project_index(
+            ProjectSettings(
+                id=ix,
+                image=await create_image_from_bytes(full_contents),
+            )
+        )
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail=f"Index {ix} does not exist")

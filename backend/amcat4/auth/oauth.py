@@ -3,7 +3,7 @@ import hashlib
 import json
 import secrets
 import time
-import urllib
+import urllib.parse
 from urllib.parse import urlencode
 
 import httpx
@@ -118,6 +118,11 @@ async def oauth_callback(request: Request, code: str, state: str):
     tokens = res.json()
 
     claims = decode_claims(tokens["access_token"])
+    name = claims.get("name")
+    exp = claims.get("exp")
+    email = claims.get("email")
+    if not (name and exp and email):
+        raise ValueError("Invalid access token")
 
     # Create session
     request.session.update(
@@ -126,7 +131,7 @@ async def oauth_callback(request: Request, code: str, state: str):
             "access_token": tokens["access_token"],
             "refresh_token": tokens.get("refresh_token"),
             "exp": claims.get("exp"),
-            "user": {"sub": claims.get("sub"), "name": claims.get("name"), "email": claims.get("email")},
+            "user": {"sub": claims.get("sub"), "name": name, "email": email},
         }
     )
 
@@ -134,7 +139,7 @@ async def oauth_callback(request: Request, code: str, state: str):
     response = RedirectResponse(url=request.session.get("rd") or "/")
 
     # Session data the client should be able to see
-    response = set_client_session_cookie(response, exp=claims.get("exp"), email=claims.get("email"))
+    response = set_client_session_cookie(response, exp=exp, email=email)
 
     return response
 

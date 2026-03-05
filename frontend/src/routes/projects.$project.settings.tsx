@@ -15,6 +15,7 @@ import { AmcatProject } from "@/interfaces";
 import { Edit, Trash2 } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useState } from "react";
+import { UploadProjectImage } from "@/components/Project/UploadProjectImage";
 
 function SettingsPage() {
   const { project } = Route.useParams();

@@ -10,36 +10,36 @@ from amcat4.connections import http
 from amcat4.models import ImageObject
 
 
-async def create_image_from_url(url: str | None) -> ImageObject | None:
+async def create_image_from_url(url: str | None, max_download_kb: int = 1024 * 10) -> ImageObject | None:
     if url is None:
         return None
 
     try:
-        base64 = await _compress_image_from_url_to_base64(url)
-        hash = hashlib.sha256(base64.encode("utf-8")).hexdigest() if base64 else "missing"
-        return ImageObject(id=hash[:16], base64=base64)
+        img = await _load_image_from_url(url, max_download_kb * 1024)
+        return _create_image_object(img)
     except Exception as e:
         raise ValueError(f"Error creating image from URL '{url}': {e}") from e
-        return None
 
 
-async def _compress_image_from_url_to_base64(
-    url: str, max_kb: int = 50, format: str = "JPEG", max_download_kb: int = 1024 * 10
-) -> str:
-    """
-    Loads an image from a URL, compresses it, and returns the Base64 string.
-    """
-    img = await _load_image_from_url(url, max_download_kb * 1024)
-    compressed_data = _iterative_compress(img, max_kb * 1024, format, max_quality=80)
-    return _encode_to_base64(compressed_data)
+async def create_image_from_bytes(image_data: bytes) -> ImageObject | None:
+    try:
+        img = _load_image_from_bytes(image_data)
+        return _create_image_object(img)
+    except Exception as e:
+        raise ValueError(f"Error creating image from uploaded data': {e}") from e
 
 
-def _compress_image_from_bytes_to_base64(image_data: bytes, max_kb: int = 100, format: str = "JPEG") -> str:
+def _create_image_object(img: Image.Image) -> ImageObject:
+    base64 = _compress_image_to_base64(img)
+    hash = hashlib.sha256(base64.encode("utf-8")).hexdigest() if base64 else "missing"
+    return ImageObject(id=hash[:16], base64=base64)
+
+
+def _compress_image_to_base64(image: Image.Image, max_kb: int = 100, format: str = "JPEG") -> str:
     """
-    Loads an image from binary data, compresses it, and returns the Base64 string.
+    Compresses an image and returns the Base64 string.
     """
-    img = _load_image_from_bytes(image_data, max_kb * 1024)
-    compressed_data = _iterative_compress(img, max_kb * 1024, format, max_quality=95)
+    compressed_data = _iterative_compress(image, max_kb * 1024, format, max_quality=90)
     return _encode_to_base64(compressed_data)
 
 
@@ -72,7 +72,7 @@ async def _chunked_download(url: str, max_bytes: int, chunk_size=8192):
     return b"".join(chunks)
 
 
-def _load_image_from_bytes(image_data: bytes, max_bytes: int) -> Image.Image:
+def _load_image_from_bytes(image_data: bytes, max_bytes: int | None = None) -> Image.Image:
     """Loads an image from raw binary data into a PIL Image object."""
 
     allowed_mime_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
@@ -80,7 +80,7 @@ def _load_image_from_bytes(image_data: bytes, max_bytes: int) -> Image.Image:
     img = Image.open(io.BytesIO(image_data))
     bytes = len(image_data)
 
-    if bytes > max_bytes:
+    if max_bytes and bytes > max_bytes:
         raise ValueError(f"Image size {bytes / 1024:.2f} KB exceeds maximum allowed size of {max_bytes / 1024:.2f} KB.")
 
     if img.get_format_mimetype() not in allowed_mime_types:

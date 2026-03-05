@@ -146,3 +146,19 @@ async function deleteProject(user: AmcatSessionUser | undefined, projectId: stri
   if (!user) throw new Error("Not logged in");
   return await user.api.delete(`index/${projectId}`);
 }
+
+export function useUploadProjectImage(user: AmcatSessionUser | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: { projectId: string; file: File }) => {
+      if (!user) throw new Error("Not logged in");
+      const formData = new FormData();
+      formData.append("file", params.file);
+      return await user.api.post(`index/${params.projectId}/image`, formData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", user] });
+    },
+  });
+}
