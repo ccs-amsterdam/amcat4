@@ -29,6 +29,17 @@ editor .env   # if needed; replace 'editor' by an editor of your choice
 docker compose up -d
 ```
 
+## General code overview
+
+AmCAT4 is a 'monorepo' containing the code for both the [python FastAPI backend API](backend/) and the [vite react frontend](frontend/). 
+The root folder contains a [package.json](package.json) script which contains a number of commands to manage both frontend and backend. 
+
+In production, the front-end is built and statically served. In development, the front-end is dynamically served using vite, which can be started with the various `pnpm` commands listed in the next section.
+
+The backend uses a ElasticSearch document storage as a database. Each project in AmCAT is represented as a single index within elastic. In addition, a number of 'system indices' represent server and project metadata including users, roles, and fields. 
+
+A number of important configuration options for both AmCAT and Elastic are set using a `.env` file, with reasonable defaults for single-user. See [deploy/.env.example](deploy/.env.example) for an overview of options.  
+
 ## Development
 
 ### Before starting, ensure you have the following installed:
