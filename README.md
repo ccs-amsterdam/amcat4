@@ -60,10 +60,10 @@ pnpm dev:install
 pnpm dev:config
 ```
 
-Then we need an ElasticSearch instance, and optionally a SeaweedFS instance, using the hosts specified in `dev:config`. An easy way to fire this up is to use the `dev/docker-compose.yml`. 
+Then we need an ElasticSearch instance, and optionally a SeaweedFS instance. An easy way to fire this up is to use the [deploy/docker-compose.yml](deploy/docker-compose.yml) file with the `dev` profile. The `start:db` command runs this from the root folder, ensuring the root `.env` file is used to configure the elastic:
 
 ```
-docker compose -f dev/docker-compose.yml up -d
+pnpm start:db
 ```
 
 Then to start the development servers for both the frontend and backend, run
@@ -76,24 +76,7 @@ When you stop the dev server, the docker containers will keep running.
 To shut them down, run:
 
 ```
-docker compose -f dev/docker-compose.yml down
+pnpm stop:db
 ```
 
-## ElasticSearch and SeaweedFS
-
-AmCAT requires as least an elasticsearch instance, and optionally a SeaweedFS instance for file storage. The easiest way to set these up for development is to use docker-compose:
-
-```
-docker compose -f dev/docker-compose.yml up -d
-```
-
-This creates an elasticsearch instance at localhost:9200 and a SeaweedFS instance at localhost:9333. Note that this docker-compose file is completely unsecured, so this should be configured differently in production.
-
-### Alternatively, only run Elasticsearch
-
-If you just want to run elasticsearch without using docker-compose, you can run:
-
-```
-sudo docker run --name elastic8 -dp 9200:9200 -e "xpack.security.enabled=false" -e ES_JAVA_OPTS="-Xms1g -Xmx1g" -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:8.6.1
-```
 
