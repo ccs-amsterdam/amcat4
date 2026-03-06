@@ -60,10 +60,12 @@ function longToWide(
     secondary.interval && can_transform(secondary.interval)
       ? transform_datepart_value(val, secondary.interval).label
       : val;
+
   const columnNames = Array.from(new Set(data.map((row) => String(t_col(row[secondary.name])))));
   const dmap = new Map(
-    data.map((p) => [JSON.stringify([p[primary.name], t_col(p[secondary.name])]), Number(p[target])]),
+    data.map((p) => [JSON.stringify([String(p[primary.name]), String(t_col(p[secondary.name]))]), Number(p[target])]),
   );
+
   let rowNames = Array.from(new Set(data.map((row) => String(row[primary.name]))));
   if (interval === "year") rowNames = daterange(rowNames, interval);
 

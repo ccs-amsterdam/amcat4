@@ -42,38 +42,37 @@ async def upload_test_data() -> str:
     image = await create_image_from_url(img_url)
 
     # creates the index info on the sqlite db
-    async with amcat_connections():
-        await create_or_update_systemdata()
-        await create_project_index(
-            ProjectSettings(
-                id=SOTU_INDEX,
-                name="State of the Union Speeches",
-                description="State of the Union speeches from 1790 to 2020",
-                image=image,
-            )
+    await create_or_update_systemdata()
+    await create_project_index(
+        ProjectSettings(
+            id=SOTU_INDEX,
+            name="State of the Union Speeches",
+            description="State of the Union speeches from 1790 to 2020",
+            image=image,
         )
+    )
 
-        docs = [
-            dict(
-                title="{Year}: {President}".format(**row),
-                text=row["Text"],
-                date=row["Date"],
-                president=row["President"],
-                year=row["Year"],
-                party=row["Party"],
-            )
-            for row in csvfile
-        ]
-        fields: dict[str, FieldType] = {
-            "text": "text",
-            "title": "text",
-            "date": "date",
-            "president": "keyword",
-            "party": "keyword",
-            "year": "integer",
-        }
-        await create_or_update_documents(SOTU_INDEX, docs, fields)
-        return SOTU_INDEX
+    docs = [
+        dict(
+            title="{Year}: {President}".format(**row),
+            text=row["Text"],
+            date=row["Date"],
+            president=row["President"],
+            year=row["Year"],
+            party=row["Party"],
+        )
+        for row in csvfile
+    ]
+    fields: dict[str, FieldType] = {
+        "text": "text",
+        "title": "text",
+        "date": "date",
+        "president": "keyword",
+        "party": "keyword",
+        "year": "integer",
+    }
+    await create_or_update_documents(SOTU_INDEX, docs, fields)
+    return SOTU_INDEX
 
 
 async def _check_elastic_connection():
@@ -164,9 +163,10 @@ def create_env(args):
 
 async def create_test_index(_args):
     logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
-    await create_or_update_systemdata()
-    await delete_project_index(SOTU_INDEX, ignore_missing=True)
-    await upload_test_data()
+    async with amcat_connections():
+        await create_or_update_systemdata()
+        await delete_project_index(SOTU_INDEX, ignore_missing=True)
+        await upload_test_data()
 
 
 async def add_admin(args):
@@ -176,14 +176,15 @@ async def add_admin(args):
 
 
 async def list_users(_args):
-    await create_or_update_systemdata()
-    roles = list_server_roles()
+    async with amcat_connections():
+        await create_or_update_systemdata()
+        roles = list_server_roles()
 
-    if roles:
-        async for role in roles:
-            print(f"{role.role}: {role.email}")
-    if not roles:
-        print("(No users defined yet, use add-admin to add users by email)")
+        if roles:
+            async for role in roles:
+                print(f"{role.role}: {role.email}")
+        if not roles:
+            print("(No users defined yet, use add-admin to add users by email)")
 
 
 def config_amcat(args):

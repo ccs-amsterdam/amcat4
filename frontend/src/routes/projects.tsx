@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorMsg } from "@/components/ui/error-message";
 import { LogInIcon } from "lucide-react";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
+import { Loading } from "@/components/ui/loading";
 
 export const Route = createFileRoute("/projects")({
   component: ProjectsLayout,

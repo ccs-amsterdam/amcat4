@@ -84,7 +84,7 @@ export default function AggregateResult({
     const data = infiniteData?.pages.flatMap((page) => page.data);
     return { meta, data };
   }, [infiniteData]);
-  const [chartData] = useCreateChartData(data, true);
+  const chartData = useCreateChartData(data, true);
   const { paginatedData, pagination } = useAggregatePagination(chartData, defaultPageSize, defaultNColumns);
 
   if (error) return <ErrorMsg>Could not aggregate data</ErrorMsg>;

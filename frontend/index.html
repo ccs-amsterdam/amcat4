@@ -28,6 +28,17 @@
       :root.dark {
         background-color: hsl(0, 0%, 14%); /* Matches your --background variable */
       }
+
+      body {
+        overflow-y: scroll;
+      }
+
+      /* width */
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 6px;
+      }
+
       #loading-screen {
         position: fixed;
         inset: 0;

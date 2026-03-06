@@ -12,6 +12,7 @@
     "// Dev scripts": "",
     "dev:install": "pnpm install && pnpm install:frontend && pnpm install:backend",
     "dev:config": "uv run --project ./backend amcat4 config -d",
+    "dev:test-index": "uv run --project ./backend amcat4 create-test-index",
     "dev": "pnpm start",
     "// Test scripts": "",
     "test:backend": "./backend/.venv/bin/pytest"
