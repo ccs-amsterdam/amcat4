@@ -19,6 +19,7 @@ from amcat4.api.index_query import app_index_query
 from amcat4.api.index_users import app_index_users
 from amcat4.api.requests import app_requests
 from amcat4.api.server import app_info
+from amcat4.api.snapshots import app_snapshots
 from amcat4.api.users import app_users
 from amcat4.auth.CSRFMiddleware import CSRFMiddleware
 from amcat4.auth.oauth import MAX_AGE_SESSION
@@ -52,6 +53,7 @@ app = FastAPI(
         dict(name="query", description="Endpoints to list or query documents or run aggregate queries"),
         dict(name="middlecat", description="MiddleCat authentication"),
         dict(name="api keys", description="Endpoints for API key management"),
+        dict(name="snapshots", description="Endpoints for Elasticsearch snapshot management"),
     ],
     lifespan=lifespan,
 )
@@ -68,6 +70,7 @@ api_router.include_router(app_index_query)
 api_router.include_router(app_requests)
 api_router.include_router(app_multimedia)
 api_router.include_router(app_api_keys)
+api_router.include_router(app_snapshots)
 app.include_router(api_router)
 
 

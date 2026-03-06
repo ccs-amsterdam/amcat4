@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsersRouteImport } from './routes/users'
+import { Route as SnapshotsRouteImport } from './routes/snapshots'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as BrandingRouteImport } from './routes/branding'
 import { Route as Api_keysRouteImport } from './routes/api_keys'
@@ -28,6 +29,11 @@ import { Route as ProjectsProjectAccessRouteImport } from './routes/projects.$pr
 const UsersRoute = UsersRouteImport.update({
   id: '/users',
   path: '/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SnapshotsRoute = SnapshotsRouteImport.update({
+  id: '/snapshots',
+  path: '/snapshots',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/api_keys': typeof Api_keysRoute
   '/branding': typeof BrandingRoute
   '/projects': typeof ProjectsRouteWithChildren
+  '/snapshots': typeof SnapshotsRoute
   '/users': typeof UsersRoute
   '/projects/$project': typeof ProjectsProjectRouteWithChildren
   '/task/$task': typeof TaskTaskRoute
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/access': typeof AccessRoute
   '/api_keys': typeof Api_keysRoute
   '/branding': typeof BrandingRoute
+  '/snapshots': typeof SnapshotsRoute
   '/users': typeof UsersRoute
   '/projects/$project': typeof ProjectsProjectRouteWithChildren
   '/task/$task': typeof TaskTaskRoute
@@ -142,6 +150,7 @@ export interface FileRoutesById {
   '/api_keys': typeof Api_keysRoute
   '/branding': typeof BrandingRoute
   '/projects': typeof ProjectsRouteWithChildren
+  '/snapshots': typeof SnapshotsRoute
   '/users': typeof UsersRoute
   '/projects/$project': typeof ProjectsProjectRouteWithChildren
   '/task/$task': typeof TaskTaskRoute
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/api_keys'
     | '/branding'
     | '/projects'
+    | '/snapshots'
     | '/users'
     | '/projects/$project'
     | '/task/$task'
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/access'
     | '/api_keys'
     | '/branding'
+    | '/snapshots'
     | '/users'
     | '/projects/$project'
     | '/task/$task'
@@ -194,6 +205,7 @@ export interface FileRouteTypes {
     | '/api_keys'
     | '/branding'
     | '/projects'
+    | '/snapshots'
     | '/users'
     | '/projects/$project'
     | '/task/$task'
@@ -212,6 +224,7 @@ export interface RootRouteChildren {
   Api_keysRoute: typeof Api_keysRoute
   BrandingRoute: typeof BrandingRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
+  SnapshotsRoute: typeof SnapshotsRoute
   UsersRoute: typeof UsersRoute
   TaskTaskRoute: typeof TaskTaskRoute
 }
@@ -223,6 +236,13 @@ declare module '@tanstack/react-router' {
       path: '/users'
       fullPath: '/users'
       preLoaderRoute: typeof UsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/snapshots': {
+      id: '/snapshots'
+      path: '/snapshots'
+      fullPath: '/snapshots'
+      preLoaderRoute: typeof SnapshotsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -368,6 +388,7 @@ const rootRouteChildren: RootRouteChildren = {
   Api_keysRoute: Api_keysRoute,
   BrandingRoute: BrandingRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
+  SnapshotsRoute: SnapshotsRoute,
   UsersRoute: UsersRoute,
   TaskTaskRoute: TaskTaskRoute,
 }

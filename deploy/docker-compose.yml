@@ -70,11 +70,11 @@ services:
       - xpack.security.enabled=false
       # Set ELASTIC_MEMORY in .env to at most half available memory, and at most 32g
       - ES_JAVA_OPTS=-Xms${ELASTIC_MEMORY:-1g} -Xmx${ELASTIC_MEMORY:-1g}
-      # Set ELASTIC_SNAPSHOT_REPO to enable snapshot repository support
-      - path.repo=/usr/share/elasticsearch/snapshots
+      # Snapshot repositories must be within this path. Defaults to a subdirectory of the data volume.
+      # For production, override with e.g. ELASTIC_SNAPSHOT_PATH=/mnt/backup (bind mount that path separately).
+      - path.repo=${ELASTIC_SNAPSHOT_PATH:-/usr/share/elasticsearch/data/snapshots}
     volumes:
       - ${ELASTIC_DATA_STORAGE:-elasticsearch_data}:/usr/share/elasticsearch/data:rw
-      - ${ELASTIC_SNAPSHOT_STORAGE:-elasticsearch_snapshots}:/usr/share/elasticsearch/snapshots
 
   # SeaweedFS S3-compatible storage — only used in local dev (run with --profile dev)
   seaweedfs:
@@ -107,7 +107,6 @@ networks:
 
 volumes:
   elasticsearch_data:
-  elasticsearch_snapshots:
   caddy_data:
   caddy_config:
   seaweedfs_data:
