@@ -2,7 +2,7 @@ import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
-import "./app/globals.css";
+import "./globals.css";
 import { AuthSessionProvider } from "./components/Contexts/AuthProvider";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { NuqsAdapter } from "nuqs/adapters/tanstack-router";
@@ -25,11 +25,11 @@ function App() {
     const bar = document.getElementById("loading-bar");
     if (loader && bar) {
       bar.style.width = "100%";
-      bar.style.animation = "progress 0.05s ease-in-out";
+      bar.style.animation = "progress 0.2s ease-in-out";
       loader.classList.add("loading-fade-out");
       const removeTimeout = setTimeout(() => {
         loader.remove();
-      }, 20);
+      }, 200);
       return () => {
         clearTimeout(removeTimeout);
       };

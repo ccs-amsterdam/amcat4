@@ -36,6 +36,7 @@ frontend/out/
 frontend/.env*.local
 frontend/*.log*
 frontend/tsconfig.tsbuildinfo
+frontend/bundle-analysis.html
 
 # -- Monorepo stuff
 node_modules

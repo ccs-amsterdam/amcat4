@@ -17,7 +17,7 @@ function ProjectsPage() {
   return (
     <div className="h-full w-full max-w-7xl animate-fade-in px-0 dark:prose-invert md:px-4">
       <div className="mt-[4vh]">
-        <SelectProject />
+        <SelectProject config={serverConfig} />
       </div>
     </div>
   );

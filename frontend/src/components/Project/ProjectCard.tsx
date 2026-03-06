@@ -39,14 +39,17 @@ export const ProjectCard = ({
       <Link to={`/projects/$project/dashboard`} params={{ project: project.id }}>
         <Card
           style={style}
-          className="relative aspect-video w-full max-w-[400px] animate-fade-in justify-self-end  overflow-hidden  shadow-md"
+          className="relative aspect-video w-full max-w-[400px] animate-fade-in justify-self-end  overflow-hidden  shadow-md shadow-gray-700"
         >
           <div
-            className={`group h-full w-full ${hasImage ? "bg-gradient-to-b from-black/90 via-black/30 to-transparent" : "rounded-md border-4 border-foreground/10 bg-gradient-to-br from-black/30 to-black/20"}    `}
+            className={`group h-full w-full ${hasImage ? "bg-gradient-to-b from-black/95 via-black/30 to-transparent" : "rounded-md border-4 border-foreground/10 bg-gradient-to-br from-black/30 to-black/20"}    `}
           >
             <CardHeader className="flex h-full  flex-col justify-between p-0">
               <div className="flex items-start justify-between  p-3 text-white">
-                <CardTitle className={`line-clamp-2 text-base leading-5 `}>{project.name}</CardTitle>
+                <div>
+                  <CardTitle className={`line-clamp-2  text-base leading-5 `}>{project.name}</CardTitle>
+                  <span className="font-extralight">{project.id}</span>
+                </div>
                 <ProjectDropdownMenu
                   project={project}
                   folders={folders}
@@ -54,6 +57,7 @@ export const ProjectCard = ({
                   activateConfirm={activate}
                 />
               </div>
+
               <CardDescription className="h-16 overflow-hidden break-words rounded-b-md     bg-black/50 px-3 text-sm leading-4 text-white backdrop-blur-[2px] transition-all group-hover:line-clamp-4 group-hover:opacity-100 md:opacity-70">
                 <div className="my-2 line-clamp-3">{project.description || ""}</div>
               </CardDescription>

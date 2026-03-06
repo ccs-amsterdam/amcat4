@@ -3,7 +3,7 @@ import { useHasGlobalRole } from "@/api/userDetails";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Loading } from "@/components/ui/loading";
-import { AmcatProject } from "@/interfaces";
+import { AmcatConfig, AmcatProject } from "@/interfaces";
 import { Folder, FolderOpen, LogInIcon, Search, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ErrorMsg } from "../ui/error-message";
@@ -25,9 +25,12 @@ interface Folder {
   projects: AmcatProject[];
 }
 
-export function SelectProject() {
+interface Props {
+  config: AmcatConfig;
+}
+
+export function SelectProject({ config }: Props) {
   const { user } = useAmcatSession();
-  const { data: config } = useAmcatConfig();
   const [currentPath, setCurrentPath] = useQueryState("folder");
 
   const [search, setSearch] = useState("");
@@ -37,7 +40,7 @@ export function SelectProject() {
   const [path, setPath] = useState<string | null>(null);
 
   const [showArchived, setShowArchived] = useState(false);
-  const [showAllProjects, setShowAllProjects] = useState(false);
+  const [showAllProjects, setShowAllProjects] = useState(config.authorization === "no_auth");
   const { data: allProjects, isLoading: loadingProjects } = useAmcatProjects(user, {
     showAll: showAllProjects,
     showArchived: showArchived,
@@ -57,13 +60,6 @@ export function SelectProject() {
     });
   }, [allProjects, showAllProjects, showArchived]);
 
-  // In no_auth mode, set showAllProjects to true by default
-  useEffect(() => {
-    if (config?.authorization === "no_auth" && !showAllProjects) {
-      setShowAllProjects(true);
-    }
-  }, [allProjects, config]);
-
   useEffect(() => {
     function setVisible() {
       if (!myProjects) return;
@@ -77,7 +73,7 @@ export function SelectProject() {
         return true;
       });
 
-      let prefix = currentPath?.replace(/^\/|\/$/, "") ?? "";
+      const prefix = currentPath?.replace(/^\/|\/$/, "") ?? "";
 
       const projectMap = new Map<string, AmcatProject[]>();
       projectMap.set("", []);
@@ -282,7 +278,7 @@ const ProjectFolder = ({ folder, onClick }: { folder: string; onClick: () => voi
   </Button>
 );
 
-function NoPublicProjectsMessage({}: {}) {
+function NoPublicProjectsMessage() {
   const { signIn } = useAmcatSession();
 
   return (

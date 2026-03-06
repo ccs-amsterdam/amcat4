@@ -41,7 +41,7 @@ function ServerRole() {
   //       <div className=" mt-6  max-w-xl items-center gap-3 rounded-md">
   //         <div className="p-3">
   //           <div className="text-lg font-bold">Contact information</div>
-  //           <div className="text-sm">
+  //           <div className="text-sm>
   //             For other questions or comments about the accessibility of data in this project, you can reach out to:
   //           </div>
   //         </div>

@@ -4,11 +4,14 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AmcatProject, AmcatProjectId, RecentProjects } from "@/interfaces";
 import { CommandEmpty } from "cmdk";
-import { ChevronDown } from "lucide-react";
+import { Book, ChevronDown, DatabaseZapIcon, Dot, LayoutDashboard, Library } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -39,9 +42,7 @@ export default function ProjectMenu() {
         </span>
       );
     return (
-      <span className={`overflow-hidden text-ellipsis whitespace-nowrap font-normal text-foreground/80 `}>
-        recent project
-      </span>
+      <span className={`overflow-hidden text-ellipsis whitespace-nowrap font-normal text-foreground/80 `}>project</span>
     );
   }
 
@@ -60,14 +61,22 @@ export default function ProjectMenu() {
         {noRecent ? null : <ChevronDown className="h-4 w-4 opacity-30" />}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="ml-2 w-[200px] max-w-[95vw] border-[1px] border-foreground">
-        <DropdownMenuLabel>Select project</DropdownMenuLabel>
-        {recentProjects.map((project) => {
+        <DropdownMenuItem className="flex items-center gap-2" onClick={() => navigate({ to: "/projects" })}>
+          <Library className="h-4 w-4" />
+          <span>Show all projects</span>
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Recent projects</DropdownMenuLabel>
+        {recentProjects.slice(0, 6).map((project) => {
           return (
             <DropdownMenuItem
               key={project.id}
               onClick={() => onSelectProject(project.id)}
               disabled={project.id === projectId}
+              className="flex items-center gap-2"
             >
+              <DatabaseZapIcon className="h-4 w-4" />
               {project.name}
             </DropdownMenuItem>
           );

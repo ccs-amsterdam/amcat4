@@ -20,8 +20,9 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { JSONForm } from "../ui/jsonForm";
 import { Label } from "../ui/label";
+import { Edit } from "lucide-react";
 
-export function UpdateProject({ project, children }: { project: AmcatProject; children?: React.ReactNode }) {
+export function UpdateProject({ project }: { project: AmcatProject }) {
   const { user } = useAmcatSession();
   const { mutateAsync } = useMutateProject(user);
   const { mutateAsync: mutateAsyncImage } = useUploadProjectImage(user);
@@ -50,13 +51,17 @@ export function UpdateProject({ project, children }: { project: AmcatProject; ch
 
   return (
     <Dialog open={open} onOpenChange={(open) => setOpen(open)}>
-      <DialogTrigger asChild className="text-lg">
-        {children}
+      <DialogTrigger asChild className="">
+        <Button variant={"outline"} className="flex w-min gap-2">
+          <Edit className="h-5 w-5" />
+          Edit
+        </Button>
       </DialogTrigger>
+
       <DialogContent aria-describedby={undefined} className="w-[500px] max-w-[90vw]">
         <DialogHeader>
           <DialogTitle>Edit Project</DialogTitle>
-          <DialogDescription>{project.id}</DialogDescription>
+          <DialogDescription>ID: {project.id}</DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
@@ -114,7 +119,7 @@ export function UpdateProject({ project, children }: { project: AmcatProject; ch
                   id="thumbnail"
                   type="file"
                   accept="image/jpeg, image/jpg, image/png, image/webp"
-                  className="w-full"
+                  className="w-full font-extralight  file:mr-3 file:rounded file:text-foreground"
                   onChange={onSelectImage}
                 ></Input>
               </div>

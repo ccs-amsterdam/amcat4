@@ -27,14 +27,13 @@ export function useArticles(
     // whenever the query changes (or component mounts) reset the page.
     // this is necessary because react query otherwise refetches ALL pages at once,
     // both slowing down the UI and making needless API requests
-    return () =>
-      queryClient.setQueryData(["articles", user, projectId, query, params, projectRole], (oldData: any) => {
-        if (!oldData) return oldData;
-        return {
-          pageParams: [0],
-          pages: [oldData.pages[0]],
-        };
-      });
+    queryClient.setQueryData(["articles", user, projectId, query, params, projectRole], (oldData: any) => {
+      if (!oldData) return oldData;
+      return {
+        pageParams: [0],
+        pages: [oldData.pages[0]],
+      };
+    });
   }, [queryClient, user, projectId, query, params, projectRole]);
 
   return useInfiniteQuery({

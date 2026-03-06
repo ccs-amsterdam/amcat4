@@ -30,6 +30,7 @@ from amcat4.models import (
     User,
 )
 from amcat4.objectstorage.image_processing import create_image_from_bytes, create_image_from_url
+from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import (
     IndexAlreadyExists,
     IndexDoesNotExist,
@@ -43,7 +44,6 @@ from amcat4.projects.index import (
     register_project_index,
     update_project_index,
 )
-from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.query import query_documents, reindex
 from amcat4.systemdata.fields import create_fields, list_fields
 from amcat4.systemdata.roles import (
@@ -446,6 +446,8 @@ async def download_index(
             image = await get_project_image(ix)
             if image:
                 settings_dict["image"] = image.model_dump()
+            if settings_dict["archived"]:
+                settings_dict["archived"] = str(settings_dict["archived"])
             yield json.dumps(settings_dict) + "\n"
 
             # 2. Field definitions

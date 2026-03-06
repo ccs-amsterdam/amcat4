@@ -73,6 +73,7 @@ export function ImportProject() {
               ref={fileRef}
               type="file"
               accept=".ndjson,.gz,.ndjson.gz"
+              className="font-extralight file:mr-3 file:text-foreground"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </div>
@@ -86,7 +87,7 @@ export function ImportProject() {
               autoComplete="off"
             />
           </div>
-          {error && <div className="text-center text-destructive text-sm">{error}</div>}
+          {error && <div className="text-center text-sm text-destructive">{error}</div>}
           <Button type="submit" disabled={!file || loading} className="w-full">
             {loading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : null}
             Import project

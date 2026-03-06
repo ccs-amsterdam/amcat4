@@ -21,7 +21,7 @@ import {
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 
-interface Props {
+interface RequestRoleChangeProps {
   user: AmcatSessionUser;
   roles: string[];
   currentRole: string;
@@ -29,20 +29,39 @@ interface Props {
   onSend?: () => void;
 }
 
-export function RequestRoleChange({ user, roles, currentRole, project, onSend }: Props) {
+type RequestRoleChangeReadyProps = RequestRoleChangeProps & {
+  pending: { request: AmcatRequestServerRole | AmcatRequestProjectRole | null; loading: boolean };
+};
+
+export function RequestRoleChange({ user, roles, currentRole, project, onSend }: RequestRoleChangeProps) {
+  const pending = usePendingRequest(user, project?.id);
+  if (pending.loading) return <Loader />;
+
+  return (
+    <RequestRoleChangeReady
+      pending={pending}
+      user={user}
+      roles={roles}
+      currentRole={currentRole}
+      project={project}
+      onSend={onSend}
+    />
+  );
+}
+
+export function RequestRoleChangeReady({
+  pending,
+  user,
+  roles,
+  currentRole,
+  project,
+  onSend,
+}: RequestRoleChangeReadyProps) {
   const { signIn } = useAmcatSession();
   const { mutateAsync: submitRequest } = useSubmitRequest(user);
-  const [role, setRole] = useState<string | undefined>(undefined);
-  const pending = usePendingRequest(user, project?.id);
-  const [message, setMessage] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (pending.request) {
-      setRole(pending.request.role);
-      setMessage(pending.request.message || "");
-    }
-  }, [pending.request]);
+  const [role, setRole] = useState<string | undefined>(pending?.request?.role);
+  const [message, setMessage] = useState<string>(pending?.request?.message || "");
+  const [loading, setLoading] = useState<boolean>(false);
 
   function onSubmit(role: string | undefined) {
     if (!role) return;
@@ -81,8 +100,6 @@ export function RequestRoleChange({ user, roles, currentRole, project, onSend }:
         </Button>
       </div>
     );
-
-  if (pending.loading) return <Loader />;
 
   const titleText = pending.request ? "Role change request pending" : "Request a role change";
   const buttonText = pending.request ? "Update request" : "Send request";
@@ -158,6 +175,7 @@ function usePendingRequest(
 
     for (const r of myRequests) {
       if (r.email !== user.email) continue;
+      if (r.status !== "pending") continue;
       if (project) {
         if (r.request.type === "project_role" && r.request.project_id === project) return r.request;
       } else {

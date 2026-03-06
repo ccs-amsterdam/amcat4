@@ -14,7 +14,7 @@
     "dev:config": "uv run --project ./backend amcat4 config -d",
     "dev": "pnpm start",
     "// Test scripts": "",
-    "test:backend": "./backend/env/bin/pytest"
+    "test:backend": "./backend/.venv/bin/pytest"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",
