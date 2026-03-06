@@ -1,5 +1,6 @@
 services:
   caddy:
+    profiles: [deploy]
     image: ccsamsterdam/amcat4_frontend:${AMCAT4_VERSION:-latest}
     container_name: katty
     restart: unless-stopped
@@ -17,13 +18,14 @@ services:
       - api
 
   api:
+    profiles: [deploy]
     image: ccsamsterdam/amcat4_backend:${AMCAT4_VERSION:-latest}
     container_name: amcat4
     restart: unless-stopped
     networks:
       - amcat-net
     environment:
-      - amcat4_elastic_host=http://elastic8:9200
+      - amcat4_elastic_host=http://elasticsearch:9200
       - amcat4_host=${AMCAT4_URL:-http://localhost}
       - FORWARDED_ALLOW_IPS=*
       # Passthrough environment variables for the API configuration
@@ -34,17 +36,20 @@ services:
       - amcat4_middlecat_url
       - amcat4_admin_email
     depends_on:
-      db:
+      elasticsearch:
         condition: service_healthy
 
-  db:
+  elasticsearch:
+    profiles: [deploy, dev]
     image: docker.elastic.co/elasticsearch/elasticsearch:8.18.4
-    container_name: elastic8
     restart: unless-stopped
     ulimits:
       memlock:
         soft: -1
         hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     healthcheck:
       test:
         [
@@ -54,8 +59,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 15
-    # For security reasons, the database is only exposed to the other containers in the amcat-net network.
-    # To make it available on the host, set ELASTIC_PUBLISHED_PORT=9200 in the .env file.
+    # Set ELASTIC_PUBLISHED_PORT=9200: in .env to expose Elasticsearch on the host
     ports:
       - "${ELASTIC_PUBLISHED_PORT:-}9200"
     networks:
@@ -64,10 +68,13 @@ services:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - xpack.security.enabled=false
-      # Set heap memory in .env to at most half available memory, and at most 32g
+      # Set ELASTIC_MEMORY in .env to at most half available memory, and at most 32g
       - ES_JAVA_OPTS=-Xms${ELASTIC_MEMORY:-1g} -Xmx${ELASTIC_MEMORY:-1g}
+      # Set ELASTIC_SNAPSHOT_REPO to enable snapshot repository support
+      - path.repo=/usr/share/elasticsearch/snapshots
     volumes:
-      - ${ELASTIC_DATA_STORAGE:-elastic-volume}:/usr/share/elasticsearch/data:rw
+      - ${ELASTIC_DATA_STORAGE:-elasticsearch_data}:/usr/share/elasticsearch/data:rw
+      - ${ELASTIC_SNAPSHOT_STORAGE:-elasticsearch_snapshots}:/usr/share/elasticsearch/snapshots
 
   # SeaweedFS S3-compatible storage — only used in local dev (run with --profile dev)
   seaweedfs:
@@ -99,7 +106,8 @@ networks:
   amcat-net:
 
 volumes:
-  elastic-volume:
+  elasticsearch_data:
+  elasticsearch_snapshots:
   caddy_data:
   caddy_config:
   seaweedfs_data:
