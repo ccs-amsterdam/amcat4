@@ -1,5 +1,5 @@
 import { useMyProjectRole } from "@/api/project";
-import { useMyGlobalRole } from "@/api/userDetails";
+import { useHasGlobalRole } from "@/api/userDetails";
 import { AmcatUserRole } from "@/interfaces";
 import { hasMinAmcatRole } from "@/lib/utils";
 import { Ellipsis } from "lucide-react";
@@ -21,17 +21,17 @@ export function useSubMenuPaths(paths: SubMenuPath[]) {
   const { user } = useAmcatSession();
   const params = useParams({ strict: false }) as any;
   const projectId = decodeURI(params?.project || "");
-  const globalRole = useMyGlobalRole(user);
+  const hasAdminRole = useHasGlobalRole(user, "ADMIN");
   const { role: projectRole } = useMyProjectRole(user, projectId);
 
   const allowedPaths = useMemo(() => {
     return paths.filter((path) => {
       if (path.requiresAuth && !user.authenticated) return false;
-      if (path.minServerRole && !hasMinAmcatRole(globalRole, path.minServerRole)) return false;
+      if (path.minServerRole === "ADMIN" && !hasAdminRole) return false;
       if (path.minProjectRole && !hasMinAmcatRole(projectRole, path.minProjectRole)) return false;
       return true;
     });
-  }, [paths, user.authenticated, globalRole, projectRole]);
+  }, [paths, user.authenticated, hasAdminRole, projectRole]);
 
   return allowedPaths;
 }

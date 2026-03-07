@@ -39,9 +39,20 @@ services:
       elasticsearch:
         condition: service_healthy
 
+  elasticsearch-init:
+    profiles: [deploy, dev]
+    image: busybox
+    user: root
+    command: chown -R 1000:0 /snapshots
+    volumes:
+      - ${ELASTIC_SNAPSHOT_PATH:-snapshot_data}:/snapshots
+
   elasticsearch:
     profiles: [deploy, dev]
     image: docker.elastic.co/elasticsearch/elasticsearch:8.18.4
+    depends_on:
+      elasticsearch-init:
+        condition: service_completed_successfully
     restart: unless-stopped
     ulimits:
       memlock:
@@ -70,11 +81,12 @@ services:
       - xpack.security.enabled=false
       # Set ELASTIC_MEMORY in .env to at most half available memory, and at most 32g
       - ES_JAVA_OPTS=-Xms${ELASTIC_MEMORY:-1g} -Xmx${ELASTIC_MEMORY:-1g}
-      # Snapshot repositories must be within this path. Defaults to a subdirectory of the data volume.
-      # For production, override with e.g. ELASTIC_SNAPSHOT_PATH=/mnt/backup (bind mount that path separately).
-      - path.repo=${ELASTIC_SNAPSHOT_PATH:-/usr/share/elasticsearch/data/snapshots}
+      # Snapshot repositories must be within this path. By default uses a named Docker volume;
+      # set ELASTIC_SNAPSHOT_PATH in .env to a host path to access snapshots outside the container.
+      - path.repo=/usr/share/elasticsearch/data/snapshots
     volumes:
       - ${ELASTIC_DATA_STORAGE:-elasticsearch_data}:/usr/share/elasticsearch/data:rw
+      - ${ELASTIC_SNAPSHOT_PATH:-snapshot_data}:/usr/share/elasticsearch/data/snapshots:rw
 
   # SeaweedFS S3-compatible storage — only used in local dev (run with --profile dev)
   seaweedfs:
@@ -90,7 +102,7 @@ services:
       ]
     volumes:
       - seaweedfs_data:/data
-      - ./s3config.json:/etc/seaweedfs/s3config.json:ro
+      - ./deploy/s3config.json:/etc/seaweedfs/s3config.json:ro
     ports:
       - "8333:8333" # S3 Gateway
       - "8889:8888" # Web UI
@@ -107,6 +119,7 @@ networks:
 
 volumes:
   elasticsearch_data:
+  snapshot_data:
   caddy_data:
   caddy_config:
   seaweedfs_data:

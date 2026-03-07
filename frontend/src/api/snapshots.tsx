@@ -72,6 +72,10 @@ export function useSnapshots(user?: AmcatSessionUser, repository?: string) {
       return z.array(snapshotInfoSchema).parse(res.data);
     },
     enabled: !!user,
+    refetchInterval: (query) => {
+      const data = query.state.data as SnapshotInfo[] | undefined;
+      return data?.some((s) => s.state === "IN_PROGRESS") ? 3000 : false;
+    },
   });
 }
 

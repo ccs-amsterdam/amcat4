@@ -34,23 +34,48 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }
 
+function repoLocation(repo: SnapshotRepository): string {
+  const s = repo.settings as Record<string, string>;
+  if (repo.type === "fs") return s.location ?? "";
+  if (repo.type === "s3") return s.bucket ? `s3://${s.bucket}${s.base_path ? `/${s.base_path}` : ""}` : "";
+  if (repo.type === "url") return s.url ?? "";
+  return "";
+}
+
 function Snapshots() {
   const { user } = useAmcatSession();
   const { data: repositories, isLoading } = useSnapshotRepositories(user);
+  const mutate = useMutateRepositories(user);
+  const { activate, confirmDialog } = useConfirm();
   const [selectedRepo, setSelectedRepo] = useState<string | undefined>(undefined);
 
   if (isLoading) return <Loading />;
 
   const currentRepo = selectedRepo ?? repositories?.[0]?.name;
+  const currentRepoInfo = repositories?.find((r) => r.name === currentRepo);
+
+  function handleDelete(repo: SnapshotRepository) {
+    activate(
+      () =>
+        mutate.mutateAsync({ action: "delete", name: repo.name }).then(() => {
+          toast.success(`Repository '${repo.name}' unregistered`);
+          setSelectedRepo(undefined);
+        }),
+      {
+        description: `Unregister repository '${repo.name}'? This does not delete existing snapshots.`,
+        confirmText: "Unregister",
+      },
+    );
+  }
 
   return (
     <div className="mx-auto mt-12 w-full max-w-5xl px-6 py-6">
+      {confirmDialog}
       <div className="mb-6 flex items-center gap-3">
         <DatabaseBackup className="h-6 w-6" />
         <h1 className="text-2xl font-bold">Snapshots</h1>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto">
           <RegisterRepositoryDialog />
-          {currentRepo && <CreateSnapshotDialog repository={currentRepo} repositories={repositories ?? []} />}
         </div>
       </div>
 
@@ -59,14 +84,52 @@ function Snapshots() {
       {!repositories || repositories.length === 0 ? (
         <NoRepositoriesMessage />
       ) : (
-        <>
-          <RepositorySelector
-            repositories={repositories}
-            selected={currentRepo}
-            onSelect={setSelectedRepo}
-          />
-          {currentRepo && <SnapshotTable repository={currentRepo} />}
-        </>
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <Label>Repository</Label>
+            <Select value={currentRepo} onValueChange={setSelectedRepo}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Select a repository…" />
+              </SelectTrigger>
+              <SelectContent>
+                {repositories.map((r) => (
+                  <SelectItem key={r.name} value={r.name}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {currentRepoInfo && (
+            <>
+              <div className="rounded border bg-muted/30 px-4 py-3 text-sm">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <div>
+                      <span className="text-muted-foreground">Repository type: </span>
+                      <span className="font-medium">{currentRepoInfo.type}</span>
+                    </div>
+                    {repoLocation(currentRepoInfo) && (
+                      <div>
+                        <span className="text-muted-foreground">Location: </span>
+                        <span className="font-mono">{repoLocation(currentRepoInfo)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <CreateSnapshotDialog repository={currentRepoInfo.name} />
+                    <Button variant="outline" size="sm" onClick={() => handleDelete(currentRepoInfo)}>
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      Unregister
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <SnapshotTable repository={currentRepoInfo.name} />
+            </>
+          )}
+        </div>
       )}
     </div>
   );
@@ -105,55 +168,6 @@ function NoRepositoriesMessage() {
   );
 }
 
-function RepositorySelector({
-  repositories,
-  selected,
-  onSelect,
-}: {
-  repositories: SnapshotRepository[];
-  selected: string | undefined;
-  onSelect: (name: string) => void;
-}) {
-  const { user } = useAmcatSession();
-  const mutate = useMutateRepositories(user);
-  const { activate, confirmDialog } = useConfirm();
-
-  function handleDelete(repo: SnapshotRepository) {
-    activate(() => mutate.mutateAsync({ action: "delete", name: repo.name }).then(() => toast.success(`Repository '${repo.name}' removed`)), {
-      description: `Unregister repository '${repo.name}'? This does not delete existing snapshots.`,
-      confirmText: "Unregister",
-    });
-  }
-
-  return (
-    <div className="mb-6">
-      {confirmDialog}
-      <div className="flex flex-wrap gap-2">
-        {repositories.map((repo) => (
-          <div
-            key={repo.name}
-            className={`flex items-center gap-2 rounded border px-3 py-2 text-sm ${selected === repo.name ? "border-primary bg-primary/10" : "cursor-pointer hover:bg-muted"}`}
-            onClick={() => onSelect(repo.name)}
-          >
-            <span className="font-medium">{repo.name}</span>
-            <Badge variant="outline">{repo.type}</Badge>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-5 w-5"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(repo);
-              }}
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function SnapshotTable({ repository }: { repository: string }) {
   const { user } = useAmcatSession();
@@ -206,17 +220,16 @@ function SnapshotRow({ snap }: { snap: SnapshotInfo }) {
   );
 }
 
-function CreateSnapshotDialog({ repository, repositories }: { repository: string; repositories: SnapshotRepository[] }) {
+function CreateSnapshotDialog({ repository }: { repository: string }) {
   const { user } = useAmcatSession();
   const create = useCreateSnapshot(user);
   const [open, setOpen] = useState(false);
-  const [repo, setRepo] = useState(repository);
   const [name, setName] = useState(() => `snapshot-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}`);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!repo || !name) return;
-    await create.mutateAsync({ repository: repo, snapshot: name });
+    if (!name) return;
+    await create.mutateAsync({ repository, snapshot: name });
     toast.success("Snapshot started");
     setOpen(false);
   }
@@ -224,8 +237,8 @@ function CreateSnapshotDialog({ repository, repositories }: { repository: string
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
-          <Plus className="mr-1 h-4 w-4" />
+        <Button size="sm">
+          <Plus className="mr-1 h-3.5 w-3.5" />
           Create Snapshot
         </Button>
       </DialogTrigger>
@@ -234,21 +247,6 @@ function CreateSnapshotDialog({ repository, repositories }: { repository: string
           <DialogTitle>Create Snapshot</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <Label>Repository</Label>
-            <Select value={repo} onValueChange={setRepo}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {repositories.map((r) => (
-                  <SelectItem key={r.name} value={r.name}>
-                    {r.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <div className="space-y-1">
             <Label>Snapshot name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} required />
