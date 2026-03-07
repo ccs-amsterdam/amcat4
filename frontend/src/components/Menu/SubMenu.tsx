@@ -15,6 +15,8 @@ export type SubMenuPath = {
   minProjectRole?: AmcatUserRole;
   minServerRole?: AmcatUserRole;
   requiresAuth?: boolean;
+  hideForServerAdmin?: boolean;
+  hideForProjectAdmin?: boolean;
 };
 
 export function useSubMenuPaths(paths: SubMenuPath[]) {
@@ -28,7 +30,9 @@ export function useSubMenuPaths(paths: SubMenuPath[]) {
     return paths.filter((path) => {
       if (path.requiresAuth && !user.authenticated) return false;
       if (path.minServerRole === "ADMIN" && !hasAdminRole) return false;
+      if (path.hideForServerAdmin && hasAdminRole) return false;
       if (path.minProjectRole && !hasMinAmcatRole(projectRole, path.minProjectRole)) return false;
+      if (path.hideForProjectAdmin && hasMinAmcatRole(projectRole, "ADMIN")) return false;
       return true;
     });
   }, [paths, user.authenticated, hasAdminRole, projectRole]);

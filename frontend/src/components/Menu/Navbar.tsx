@@ -28,7 +28,7 @@ const serverSubMenuPaths: SubMenuPath[] = [
   { href: "users", label: "Server users", Icon: Users, minServerRole: "ADMIN" },
   { href: "snapshots", label: "Snapshots", Icon: DatabaseBackup, minServerRole: "ADMIN" },
   { href: "api_keys", label: "API keys", Icon: Bot, minServerRole: "NONE", requiresAuth: true },
-  { href: "access", label: "Server role", Icon: LockKeyholeOpen, minServerRole: "NONE" },
+  { href: "access", label: "Server role", Icon: LockKeyholeOpen, minServerRole: "NONE", hideForServerAdmin: true },
 ];
 
 const indexSubMenuPaths: SubMenuPath[] = [
@@ -37,7 +37,7 @@ const indexSubMenuPaths: SubMenuPath[] = [
   { href: "fields", label: "Fields", Icon: Columns3Cog, minProjectRole: "WRITER" },
   { href: "settings", label: "Settings", Icon: Settings, minProjectRole: "ADMIN" },
   { href: "users", label: "Users", Icon: Users, minProjectRole: "ADMIN" },
-  { href: "access", label: "Access", Icon: LockKeyholeOpen, minProjectRole: "NONE" },
+  { href: "access", label: "Access", Icon: LockKeyholeOpen, minProjectRole: "NONE", hideForProjectAdmin: true },
 ];
 
 export default function Navbar() {
