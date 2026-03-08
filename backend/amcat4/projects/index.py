@@ -1,5 +1,8 @@
+import logging
 from datetime import UTC, datetime
 from typing import AsyncIterable, Mapping
+
+from botocore.exceptions import BotoCoreError
 
 from amcat4.config import get_settings
 from amcat4.connections import es, s3_enabled
@@ -117,7 +120,10 @@ async def delete_project_index(index_id: str, ignore_missing: bool = False):
     # (buckets are always optional)
     # TODO: should we actually use unique index ids?
     if s3_enabled():
-        await delete_project_multimedia(index_id)
+        try:
+            await delete_project_multimedia(index_id)
+        except BotoCoreError as e:
+            logging.warning(f"Could not delete multimedia for index {index_id}: {e}")
 
     _es = es().options(ignore_status=404) if ignore_missing else es()
     await _es.indices.delete(index=index_id)
