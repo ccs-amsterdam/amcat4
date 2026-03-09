@@ -566,3 +566,69 @@ async def import_index(
         raise
 
     return {"project_id": project_settings.id, "n_fields": len(fields), "n_roles": len(roles), "n_documents": n_docs}
+
+
+class ImportMetadataBody(BaseModel):
+    settings: dict
+    fields: dict[str, dict] = {}
+    roles: list[dict] = []
+    override_id: str | None = None
+
+
+@app_index.post("/index/import/metadata", status_code=status.HTTP_201_CREATED)
+async def import_index_metadata(
+    body: ImportMetadataBody,
+    user: User = Depends(authenticated_user),
+):
+    """
+    Create a project from metadata (settings, fields, roles) extracted from an export file.
+    Used by the chunked import flow; follow up with POST /index/{ix}/import/documents.
+    Requires WRITER or ADMIN server role.
+    """
+    await HTTPException_if_not_server_role(user, Roles.WRITER)
+    sd = {**body.settings, "id": body.override_id} if body.override_id else body.settings
+    ps = ProjectSettings.model_validate(sd)
+    created_project_id = None
+    try:
+        await create_project_index(ps, admin_email=user.email)
+        created_project_id = ps.id
+        if body.fields:
+            field_defs = {name: CreateDocumentField.model_validate(f) for name, f in body.fields.items()}
+            await create_fields(ps.id, field_defs)
+        for role in body.roles:
+            if Roles[role["role"]] == Roles.NONE:
+                continue
+            try:
+                await create_project_role(role["email"], ps.id, Roles[role["role"]])
+            except ConflictError:
+                await update_project_role(role["email"], ps.id, Roles[role["role"]])
+    except IndexAlreadyExists as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception:
+        if created_project_id is not None:
+            await delete_project_index(created_project_id, ignore_missing=True)
+        raise
+    return {"project_id": ps.id, "n_fields": len(body.fields), "n_roles": len(body.roles)}
+
+
+class DocumentBatchBody(BaseModel):
+    documents: list[dict]
+
+
+@app_index.post("/index/{ix}/import/documents", status_code=status.HTTP_200_OK)
+async def import_index_documents(
+    ix: Annotated[str, Path()],
+    body: DocumentBatchBody,
+    user: User = Depends(authenticated_user),
+):
+    """
+    Append a batch of documents to an existing project index.
+    Used by the chunked import flow after POST /index/import/metadata.
+    Requires WRITER or ADMIN role on the index.
+    """
+    await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    field_settings = await list_fields(ix)
+    has_identifiers = any(f.identifier for f in field_settings.values())
+    docs = [{k: v for k, v in doc.items() if k != "_id"} if has_identifiers else doc for doc in body.documents]
+    await create_or_update_documents(ix, docs)
+    return {"n_documents": len(docs)}
