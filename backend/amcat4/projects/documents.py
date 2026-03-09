@@ -64,7 +64,8 @@ async def upload_document_es_actions(index, documents, op_type) -> AsyncGenerato
 
         for key in document.keys():
             if key in field_settings:
-                doc[key] = coerce_type(document[key], field_settings[key].type)
+                if document[key] is not None:
+                    doc[key] = coerce_type(document[key], field_settings[key].type)
             elif key == "_id":
                 if len(identifiers) > 0:
                     raise ValueError(f"This index uses identifiers ({identifiers}), so you cannot set the _id directly.")
