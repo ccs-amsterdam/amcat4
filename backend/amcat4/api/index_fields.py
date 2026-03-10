@@ -31,7 +31,7 @@ class FieldValuesResponse(BaseModel):
 class FieldStatsResponse(BaseModel):
     """Statistics for a numeric field."""
 
-    stats: dict = Field(..., description="A dictionary of statistics for the field.")
+    stats: dict[str, Any] = Field(..., description="A dictionary of statistics for the field.")
 
 
 @app_index_fields.post("/index/{ix}/fields", status_code=status.HTTP_204_NO_CONTENT)

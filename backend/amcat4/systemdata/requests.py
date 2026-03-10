@@ -25,7 +25,7 @@ async def update_request(request: AdminPermissionRequest):
     # TODO add timestamp=datetime.now().isoformat())
     # Index requests  by type+email+index
     doc = _request_to_elastic(request)
-    id = requests_index_id(doc.get("type"), doc.get("email"), doc.get("project_id", None))
+    id = requests_index_id(doc["type"], doc["email"], doc.get("project_id", None))
     await es().update(
         index=requests_index_name(),
         id=id,

@@ -4,6 +4,7 @@ import json
 import secrets
 import time
 import urllib.parse
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
@@ -29,7 +30,7 @@ if OIDC_URL and not (OIDC_ID or OIDC_SECRET):
 IS_SECURE_CONTEXT = get_settings().host.startswith("https://")
 
 
-def decode_claims(token: str) -> dict:
+def decode_claims(token: str) -> dict[str, Any]:
     _, payload, _ = token.split(".")
     decoded = base64.urlsafe_b64decode(payload + "==").decode("utf-8")
     return json.loads(decoded)
@@ -236,8 +237,8 @@ async def oauth_refresh(request: Request):
     )
 
     # Update session data the client should be able to see
-    response = JSONResponse({"exp": claims.get("exp")})
-    response = set_client_session_cookie(response, exp=claims.get("exp"), email=claims.get("email"))
+    response = JSONResponse({"exp": claims["exp"]})
+    response = set_client_session_cookie(response, exp=claims["exp"], email=claims["email"])
     return response
 
 

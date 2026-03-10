@@ -42,10 +42,10 @@ class ApiKeyUpdateResponse(BaseModel):
 
 
 @app_api_keys.get("/api_keys")
-async def get_api_keys(user: User = Depends(authenticated_user)):
+async def get_api_keys(user: User = Depends(authenticated_user)) -> list[ApiKeyListResponse]:
     """Get statistics for a specific field. Only works for numeric (incl date) fields. Requires READER or METAREADER role."""
 
-    api_keys = []
+    api_keys: list[ApiKeyListResponse] = []
     async for id, api_key in list_api_keys(user):
         api_keys.append(
             ApiKeyListResponse(

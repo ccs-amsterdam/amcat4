@@ -1,0 +1,14 @@
+{
+  "include": ["backend"],
+  "typeCheckingMode": "basic",
+  "extraPaths": ["backend"],
+  "venvPath": "backend",
+  "venv": ".venv",
+  "reportCallInDefaultInitializer": "none",
+  "reportImplicitStringConcatenation": "none",
+  "reportUnusedCallResult": "none",
+  "reportUnusedParameter": "none",
+  "reportExplicitAny": "none",
+  "reportAny": "none",
+  "reportUnknownMemberType": "none"
+}

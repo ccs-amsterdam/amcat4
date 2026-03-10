@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from async_lru import alru_cache
 from authlib.jose import JsonWebToken, jwt
@@ -28,14 +29,14 @@ class InvalidToken(ValueError):
 
 
 @alru_cache(maxsize=1)
-async def get_middlecat_config(middlecat_url) -> dict:
+async def get_middlecat_config(middlecat_url: str) -> dict[str, Any]:
     r = await http().get(f"{middlecat_url}/api/configuration")
     r.raise_for_status()
     return r.json()
 
 
 @alru_cache(maxsize=1)
-async def get_oidc_jwks():
+async def get_oidc_jwks() -> str:
     oidc_url = get_settings().oidc_url
     if oidc_url is None:
         raise InvalidToken("No OIDC configured")
@@ -43,15 +44,18 @@ async def get_oidc_jwks():
     url = oidc_url + "/.well-known/openid-configuration"
     r = await http().get(url)
     r.raise_for_status()
-    return r.json().get("jwks_uri")
+    jwks_uri = r.json().get("jwks_uri")
+    if jwks_uri is None:
+        raise InvalidToken("OIDC configuration missing jwks_uri")
+    return jwks_uri
 
 
-async def verify_middlecat_token(token: str) -> dict:
+async def verify_middlecat_token(token: str) -> dict[str, Any]:
     url = get_settings().middlecat_url
     if not url:
         raise InvalidToken("No middlecat defined, cannot decrypt middlecat token")
-    public_key = (await get_middlecat_config(url))["public_key"]
-    payload = jwt.decode(token, public_key)
+    public_key: str = (await get_middlecat_config(url))["public_key"]
+    payload: dict[str, Any] = jwt.decode(token, public_key)
 
     if missing := {"email", "clientId", "resource", "exp"} - set(payload.keys()):
         raise InvalidToken(f"Missing keys {missing}")
@@ -69,7 +73,7 @@ async def verify_middlecat_token(token: str) -> dict:
     return payload
 
 
-async def verify_oidc_token(token: str) -> dict:
+async def verify_oidc_token(token: str) -> dict[str, Any]:
     jwks = await get_oidc_jwks()
     rsa_jwt = JsonWebToken(algorithms=["RS256"])
     options: dict = {
@@ -80,7 +84,7 @@ async def verify_oidc_token(token: str) -> dict:
     return rsa_jwt.decode(token, key=jwks, claims_options=options)
 
 
-async def verify_token(token: str) -> dict:
+async def verify_token(token: str) -> dict[str, Any]:
     """
     Verifies the given token and returns the payload
 

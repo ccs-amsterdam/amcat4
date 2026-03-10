@@ -15,7 +15,7 @@ We need to make sure that:
 """
 
 import datetime
-from typing import Any, AsyncGenerator, Iterable, Mapping, cast, get_args
+from typing import Any, AsyncGenerator, Iterable, Mapping, get_args
 
 from elasticsearch import NotFoundError
 from fastapi import HTTPException
@@ -392,7 +392,7 @@ async def create_or_verify_tag_field(index: str | list[str], field: str):
     TODO: double check, because this function looks weird
     """
     indices = [index] if isinstance(index, str) else index
-    add_to_indices = []
+    add_to_indices: list[str] = []
     for i in indices:
         current_fields = await list_fields(i)
         if field in current_fields:
@@ -421,10 +421,10 @@ async def field_values(index: str, field: str, size: int) -> list[str]:
     """
     aggs = {"unique_values": {"terms": {"field": field, "size": size}}}
     r = await es().search(index=index, size=0, aggs=aggs)
-    return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]
+    return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]  # pyright: ignore[reportAny]
 
 
-async def field_stats(index: str, field: str):
+async def field_stats(index: str, field: str) -> dict[str, Any]:
     """
     :param index: The index
     :param field: The field name
@@ -432,7 +432,7 @@ async def field_stats(index: str, field: str):
     """
     aggs = {"facets": {"stats": {"field": field}}}
     r = await es().search(index=index, size=0, aggs=aggs)
-    return r["aggregations"]["facets"]
+    return r["aggregations"]["facets"]  # pyright: ignore[reportAny]
 
 
 def _get_default_metareader(type: FieldType):
@@ -462,11 +462,11 @@ def _get_default_field(type: FieldType, elastic_type: ElasticType | None = None)
 
 
 def _standardize_createfields(fields: Mapping[str, FieldType | CreateDocumentField]) -> dict[str, CreateDocumentField]:
-    sfields = {}
+    sfields: dict[str, CreateDocumentField] = {}
     for k, v in fields.items():
         if isinstance(v, str):
             assert v in get_args(FieldType), f"Unknown amcat type {v}"
-            sfields[k] = CreateDocumentField(type=cast(FieldType, v))
+            sfields[k] = CreateDocumentField(type=v)
         else:
             sfields[k] = v
     return sfields

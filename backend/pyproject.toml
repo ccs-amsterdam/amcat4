@@ -79,6 +79,3 @@ ignore = ["E203"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["amcat4"]
-
-[tool.basedpyright]
-typeCheckingMode = "basic"  # Or "standard" / "all" for more strictness

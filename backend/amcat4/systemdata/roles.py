@@ -108,10 +108,12 @@ async def get_user_project_role(user: User, project_index: IndexId, global_admin
     """
     # If auth disabled always return the admin role, even if global_admin is False.
     if user.auth_disabled:
+        assert user.email is not None
         return RoleRule(email=user.email, role_context=project_index, role=Roles.ADMIN.name)
 
     # If the user is a superadmin, we can directly return ADMIN
     if global_admin and user.superadmin:
+        assert user.email is not None
         return RoleRule(email=user.email, role_context=project_index, role=Roles.ADMIN.name)
 
     # If we just need the project role, its a simple lookup

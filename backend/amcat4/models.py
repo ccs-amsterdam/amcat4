@@ -71,11 +71,11 @@ AuthMethod = Literal["middlecat", "api_key", "oidc", "none"]
 
 
 class User(BaseModel):
-    """For internal use only. Represents an authenticated user."""
+    """For internal use only. Represents a user (authenticated, no-auth, or guest)."""
 
     email: (
         EmailStr | NO_AUTH_USER | None
-    )  # this can only be an authenticed, full email address or None for unauthenticated users
+    )  # email address, NO_AUTH_USER ("ADMIN") if auth is disabled, or None for unauthenticated guests
     superadmin: bool = False  # if auth is disabled, or if the user is the hardcoded admin email
     auth_disabled: bool = False  # if auth is disabled on this server
     api_key_name: str | None = None  # if logged in via API key, what is its name
