@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+import logging
 import secrets
 import time
 import urllib.parse
@@ -13,6 +14,8 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from amcat4.config import get_settings
 from amcat4.connections import http
+
+log = logging.getLogger(__name__)
 
 app_auth = APIRouter(prefix="", tags=["auth"])
 
@@ -118,11 +121,16 @@ async def oauth_callback(request: Request, code: str, state: str):
     res = await http().post(token_url, data=data)
     tokens = res.json()
 
+    if "access_token" not in tokens:
+        log.error("Token exchange failed: %s", tokens)
+        raise ValueError("Token exchange failed")
+
     claims = decode_claims(tokens["access_token"])
-    name = claims.get("name")
+    name = claims.get("name") or claims.get("email") or claims.get("sub")
     exp = claims.get("exp")
     email = claims.get("email")
-    if not (name and exp and email):
+    if not (exp and email):
+        log.error("Invalid access token claims: %s", list(claims.keys()))
         raise ValueError("Invalid access token")
 
     # Create session
