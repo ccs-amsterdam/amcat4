@@ -42,7 +42,7 @@ export default function ProjectMenu() {
         </span>
       );
     return (
-      <span className={`overflow-hidden text-ellipsis whitespace-nowrap font-normal text-foreground/80 `}>project</span>
+      <span className={`overflow-hidden text-ellipsis whitespace-nowrap font-normal text-foreground/80 `}>select project</span>
     );
   }
 
