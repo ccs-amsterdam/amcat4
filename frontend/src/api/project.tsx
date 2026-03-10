@@ -136,7 +136,8 @@ export function useDeleteProject(user: AmcatSessionUser | undefined) {
 
   return useMutation({
     mutationFn: (projectId: string) => deleteProject(user, projectId),
-    onSuccess: () => {
+    onSuccess: (_, projectId) => {
+      queryClient.invalidateQueries({ queryKey: ["project", user, projectId] });
       queryClient.invalidateQueries({ queryKey: ["projects", user] });
     },
   });
@@ -157,7 +158,8 @@ export function useUploadProjectImage(user: AmcatSessionUser | undefined) {
       formData.append("file", params.file);
       return await user.api.post(`index/${params.projectId}/image`, formData);
     },
-    onSuccess: () => {
+    onSuccess: (_, { projectId }) => {
+      queryClient.invalidateQueries({ queryKey: ["project", user, projectId] });
       queryClient.invalidateQueries({ queryKey: ["projects", user] });
     },
   });

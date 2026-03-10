@@ -174,6 +174,8 @@ function RoleInfo() {
       <div className="grid grid-cols-[7rem,1fr] gap-1">
         <b className="text-primary">NO ROLE</b>
         Cannot see this project at all.
+        <b className="text-primary">OBSERVER</b>
+        Can find the project and view its metadata, but cannot search documents.
         <b className="text-primary">METAREADER</b>
         Can search documents, but can only view content approved by the project admin.
         <b className="text-primary">READER</b>

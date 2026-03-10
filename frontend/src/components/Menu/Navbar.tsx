@@ -35,7 +35,7 @@ const indexSubMenuPaths: SubMenuPath[] = [
   { href: "dashboard", label: "Dashboard", Icon: LayoutDashboard, minProjectRole: "METAREADER" },
   { href: "data", label: "Data", Icon: DatabaseZap, minProjectRole: "WRITER" },
   { href: "fields", label: "Fields", Icon: Columns3Cog, minProjectRole: "WRITER" },
-  { href: "settings", label: "Settings", Icon: Settings, minProjectRole: "ADMIN" },
+  { href: "settings", label: "Settings", Icon: Settings },
   { href: "users", label: "Users", Icon: Users, minProjectRole: "ADMIN" },
   { href: "access", label: "Access", Icon: LockKeyholeOpen, minProjectRole: "NONE", hideForProjectAdmin: true },
 ];
