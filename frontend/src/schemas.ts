@@ -41,7 +41,7 @@ export const amcatBrandingSchema = z.object({
   information_links: informationLinksSchema.nullish(),
   welcome_buttons: linkArraySchema.nullish(),
 });
-export const amcatUserRoles = ["NONE", "METAREADER", "READER", "WRITER", "ADMIN"] as const;
+export const amcatUserRoles = ["NONE", "OBSERVER", "METAREADER", "READER", "WRITER", "ADMIN"] as const;
 export const amcatUserRoleSchema = z
   .enum(amcatUserRoles)
   .nullish()

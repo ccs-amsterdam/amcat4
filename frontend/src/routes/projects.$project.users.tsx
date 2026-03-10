@@ -21,7 +21,7 @@ import { AmcatProject, AmcatUserRole } from "@/interfaces";
 import { Edit } from "lucide-react";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 
-const roles = ["METAREADER", "READER", "WRITER", "ADMIN"];
+const roles = ["OBSERVER", "METAREADER", "READER", "WRITER", "ADMIN"];
 
 function UsersPage() {
   const { project } = Route.useParams();
@@ -72,7 +72,7 @@ function Users({ project }: { project: AmcatProject }) {
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             <div className="flex flex-col gap-2">
-              {["NONE", "METAREADER", "READER", "WRITER"].map((role) => (
+              {["NONE", "OBSERVER", "METAREADER", "READER", "WRITER"].map((role) => (
                 <DropdownMenuItem
                   key={role}
                   onClick={() => {
