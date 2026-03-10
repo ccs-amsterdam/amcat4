@@ -49,7 +49,7 @@ export function CreateProject({ folder, request }: { folder?: string; request?: 
     e.preventDefault();
     setLoading(true);
     createProjectAsync(amcatProjectSchema.parse({ id, name, description, folder: folderValue }))
-      .then(() => navigate({ to: `/projects/${id}/data`, search: { tab: "upload" } as any }))
+      .then(() => navigate({ to: `/projects/${id}/dashboard` }))
       .catch((e) => {
         setError(e?.response?.data?.message || "An error occurred");
       })

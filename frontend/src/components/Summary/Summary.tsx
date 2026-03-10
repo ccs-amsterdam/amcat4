@@ -1,14 +1,15 @@
-import { useHasProjectRole } from "@/api/project";
 import { useArticles } from "@/api/articles";
 import { useFieldStats } from "@/api/fieldStats";
 import { useFields } from "@/api/fields";
+import { useHasProjectRole } from "@/api/project";
+import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { AggregationAxis, AmcatField, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { autoFormatDate } from "@/lib/autoFormatDate";
-import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
+import { Link } from "@tanstack/react-router";
+import { Columns3Cog, DatabaseZap, Settings, Users } from "lucide-react";
 import { useMemo } from "react";
 import AggregateResult from "../Aggregate/AggregateResult";
 import Articles from "../Articles/Articles";
-import { Link } from "@tanstack/react-router";
 import { Loading } from "../ui/loading";
 
 interface Props {
@@ -22,10 +23,6 @@ export default function Summary({ user, projectId, query }: Props) {
   const isWriter = useHasProjectRole(user, projectId, "WRITER");
   const { data } = useArticles(user, projectId, query);
   if (data == null) return null;
-
-  const isEmpty = data.pages[0].meta.total_count === 0;
-  const noSearch = !query.queries?.length && !query.filters;
-  if (isEmpty && noSearch) return <EmptyProject projectId={projectId} />;
 
   function renderVisualization(field: AmcatField) {
     if (!field.client_settings.inListSummary) return null;
@@ -139,17 +136,59 @@ function KeywordSummaryGraph({ user, projectId, query, field }: SummaryProps) {
   );
 }
 
-function EmptyProject({ projectId }: { projectId: AmcatProjectId }) {
+export function EmptyProject({ projectId }: { projectId: AmcatProjectId }) {
   return (
-    <div className="w-full rounded bg-primary/10 p-3">
+    <div className="w-full rounded bg-primary/10 p-6">
       <div className="prose dark:prose-invert">
         <h3>This project is empty</h3>
-        <p>
-          Congratulations on creating a project! To add documents, go to the{" "}
-          <Link to={`/projects/$project/data`} params={{ project: projectId }}>
-            Data menu
-          </Link>
-          . You can also use the API from R or Python for more powerful upload options
+        <p>Congratulations on creating a project! Here are some actions you can take to get started with this project:
+          <ul className="not-prose flex flex-col gap-3 py-2">
+            {[
+              {
+                to: "/projects/$project/data" as const,
+                Icon: DatabaseZap,
+                label: "Data",
+                description: "Upload documents from a CSV file",
+              },
+              {
+                to: "/projects/$project/fields" as const,
+                Icon: Columns3Cog,
+                label: "Fields",
+                description: "Configure the fields for each document in this project",
+              },
+              {
+                to: "/projects/$project/users" as const,
+                Icon: Users,
+                label: "Users",
+                description: "Invite collaborators and set a guest role for public access",
+              },
+              {
+                to: "/projects/$project/settings" as const,
+                Icon: Settings,
+                label: "Settings",
+                description: "Update the project name, description, and other details",
+              },
+            ].map(({ to, Icon, label, description }) => (
+              <li key={to} className="flex items-center gap-3">
+                <Link to={to} params={{ project: projectId }} className="flex items-center gap-2 font-medium no-underline hover:underline">
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {label}
+                </Link>
+                <span className="text-foreground/70">— {description}</span>
+              </li>
+            ))}
+          </ul>
+        </p>
+        <p className="mt-4 text-sm">
+          As soon as you add data to the project, you will find options to query it here in the Dashboard.
+          You can also use the menu items mentioned to perform these actions at any time.
+        </p>
+        <p className="mt-4 text-sm">
+          You can also connect to this project from{" "}
+          <a href="https://github.com/ccs-amsterdam/amcat4py" target="_blank" rel="noreferrer">Python</a>
+          {" "}or{" "}
+          <a href="https://github.com/ccs-amsterdam/amcat4r" target="_blank" rel="noreferrer">R</a>
+          {" "}to upload or query documents from a script.
         </p>
       </div>
     </div>
