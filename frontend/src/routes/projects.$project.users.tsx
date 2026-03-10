@@ -15,6 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ErrorMsg } from "@/components/ui/error-message";
 import { Loading } from "@/components/ui/loading";
 import { AmcatProject, AmcatUserRole } from "@/interfaces";
@@ -57,35 +58,110 @@ function Users({ project }: { project: AmcatProject }) {
   if (!user || !ownRole || !users || !changeRole) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
 
   return (
-    <div className="grid grid-cols-1 gap-6 p-3 lg:grid-cols-[1fr,19rem]">
+    <div className="grid grid-cols-1 gap-6 p-3 lg:grid-cols-2 lg:gap-12">
       <div className="w-full max-w-4xl">
+        <GuestRoleSelector project={project} mutateProject={mutateProject} />
         <UserRoleTable user={user} ownRole={ownRole} users={users} changeRole={changeRole} roles={roles} />
       </div>
-      <div className="ml-auto flex h-max items-center gap-5 ">
-        <h3 className="text-xl">Guest role</h3>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button className="flex gap-3">
-              <div>{project.guest_role}</div>
-              <Edit className="h-5 w-5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <div className="flex flex-col gap-2">
-              {["NONE", "OBSERVER", "METAREADER", "READER", "WRITER"].map((role) => (
-                <DropdownMenuItem
-                  key={role}
-                  onClick={() => {
-                    mutateProject({ id: project.id, guest_role: role as AmcatUserRole });
-                  }}
-                >
-                  {role}
-                </DropdownMenuItem>
-              ))}
+      <ProjectUserInstructions />
+    </div>
+  );
+}
+
+function GuestRoleSelector({
+  project,
+  mutateProject,
+}: {
+  project: AmcatProject;
+  mutateProject: (data: { id: string; guest_role: AmcatUserRole }) => void;
+}) {
+  return (
+    <div className="mb-4 flex items-center gap-3">
+      <h3 className="text-base font-semibold">Guest role</h3>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="flex gap-3">
+            <div>{project.guest_role ?? "NONE"}</div>
+            <Edit className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <div className="flex flex-col gap-2">
+            {["NONE", "OBSERVER", "METAREADER", "READER", "WRITER"].map((role) => (
+              <DropdownMenuItem
+                key={role}
+                onClick={() => {
+                  mutateProject({ id: project.id, guest_role: role as AmcatUserRole });
+                }}
+              >
+                {role}
+              </DropdownMenuItem>
+            ))}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function ProjectUserInstructions() {
+  return (
+    <div className="prose-sm flex flex-col px-3 dark:prose-invert">
+      <Tabs defaultValue="project roles">
+        <TabsList className="mb-1">
+          <TabsTrigger value="project roles">Project roles</TabsTrigger>
+          <TabsTrigger value="guest role">Guest role</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="project roles">
+          <p>Every project has its own users table, where you can set the following roles with incremental permissions</p>
+          <div className="rounded-md bg-primary/10 p-3">
+            <div className="grid grid-cols-[5rem,1fr] gap-3">
+              <b className="text-primary">OBSERVER</b>
+              Can find the project and see the project metadata, but cannot search documents
+              <b className="text-primary">META READER</b>
+              Can also search documents, but only view document metadata. Project ADMINs can determine which fields are
+              considered metadata.
+              <b className="text-primary">READER</b>
+              Can view all document data
+              <b className="text-primary">WRITER</b>
+              Can upload and edit documents
+              <b className="text-primary">ADMIN</b>
+              Can manage users, edit project settings and break things
             </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+          </div>
+          <p>
+            Project roles (except for ADMIN) can also be given to any email address on a given domain, like{" "}
+            <b>*@my-university.com</b>.
+          </p>
+        </TabsContent>
+
+        <TabsContent value="guest role">
+          <p>
+            The <b>guest role</b> determines what anyone can see in this project — even without a personal user account.
+            Depending on the server's authorization policy, this can include completely anonymous visitors.
+          </p>
+          <div className="rounded-md bg-primary/10 p-3">
+            <div className="grid grid-cols-[5.5rem,1fr] gap-3">
+              <b className="text-primary">NONE</b>
+              Guests cannot access the project at all. Only users with an explicit project role can see it.
+              <b className="text-primary">OBSERVER</b>
+              Guests can find the project and see project metadata, but cannot search documents.
+              <b className="text-primary">METAREADER</b>
+              Guests can find the project and search documents, but only see document metadata. Project ADMINs control
+              which fields count as metadata.
+              <b className="text-primary">READER</b>
+              Guests can view all document data. Use this to make a project fully public.
+              <b className="text-primary">WRITER</b>
+              Guests can upload and edit documents. Only recommended for controlled, private environments.
+            </div>
+          </div>
+          <p>
+            The guest role is the easiest way to share public data. Whether anonymous visitors are allowed depends on the
+            server's <b>authorization policy</b> — ask your server admin if you're unsure.
+          </p>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
