@@ -9,7 +9,6 @@ import VisibilityForm from "./VisibilityForm";
 
 import { Button } from "../ui/button";
 import CreateField from "./CreateField";
-import FieldsHelpDialog from "./FieldsHelpDialog";
 import TypeEditForm from "./TypeEditForm";
 
 interface Row extends AmcatField {
@@ -135,7 +134,6 @@ export default function FieldTable({ fields, mutate }: Props) {
               <span className="hidden sm:inline">Add field</span>
             </Button>
           </CreateField>
-          <FieldsHelpDialog />
         </div>
         <div className="relative ml-auto flex items-center">
           <Input

@@ -24,6 +24,7 @@ import { Loading } from "@/components/ui/loading";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DatabaseBackup, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { InfoBox } from "@/components/ui/info-box";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -79,8 +80,6 @@ function Snapshots() {
         </div>
       </div>
 
-      <HelpText />
-
       {!repositories || repositories.length === 0 ? (
         <NoRepositoriesMessage />
       ) : (
@@ -131,26 +130,23 @@ function Snapshots() {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function HelpText() {
-  return (
-    <div className="mb-6 rounded border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-      <p className="mb-1">
-        <strong>Snapshots</strong> are incremental backups of all Elasticsearch indices. A{" "}
-        <strong>repository</strong> is a storage location (filesystem path or S3 bucket) where
-        snapshots are kept. Restoring snapshots is done directly in Elasticsearch, not through this UI.
-      </p>
-      <a
-        href="https://www.elastic.co/guide/en/elasticsearch/reference/current/snapshot-restore.html"
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 text-primary hover:underline"
-      >
-        Elasticsearch snapshot &amp; restore docs <ExternalLink className="h-3 w-3" />
-      </a>
+      <InfoBox title="Information on snapshots" storageKey="infobox:snapshots" className="mt-6">
+        <div className="flex flex-col gap-2 text-sm">
+          <p>
+            <strong>Snapshots</strong> are incremental backups of all Elasticsearch indices. A{" "}
+            <strong>repository</strong> is a storage location (filesystem path or S3 bucket) where
+            snapshots are kept. Restoring snapshots is done directly in Elasticsearch, not through this UI.
+          </p>
+          <a
+            href="https://www.elastic.co/guide/en/elasticsearch/reference/current/snapshot-restore.html"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+          >
+            Elasticsearch snapshot &amp; restore docs <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      </InfoBox>
     </div>
   );
 }

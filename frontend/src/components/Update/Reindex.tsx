@@ -18,6 +18,7 @@ import {
   Loader,
   Lock,
 } from "lucide-react";
+import { InfoBox } from "@/components/ui/info-box";
 import { Link } from "@tanstack/react-router";
 import { idFromName, validateProjectId } from "@/lib/projectId";
 import { useState, useMemo } from "react";
@@ -29,6 +30,7 @@ import { Input } from "../ui/input";
 import { Progress } from "../ui/progress";
 import { DynamicIcon } from "../ui/dynamic-icon";
 import { CreateFieldSelectType } from "../Fields/CreateField";
+import { FieldTypesSection } from "../Fields/FieldTypesSection";
 import { useTaskStatus } from "@/api/task";
 
 interface Props {
@@ -306,10 +308,45 @@ export default function Reindex({ user, projectId, query }: Props) {
         </div>
       </form>
 
-      <div className="border-primary-100 mt-3 border bg-primary/10 p-2 text-sm">
-        <em>Note:</em> Fields in the source project that don't exist in the target project will be copied automatically.
-        Expand "Configure fields" to rename, retype, or exclude individual fields.
-      </div>
+      <InfoBox title="Information on copying documents" storageKey="infobox:copy-documents">
+        <div className="flex flex-col gap-4 text-sm">
+          <p>
+            Copy copies documents matching the current query to another project. You can copy to an existing project or
+            create a new one. The copy runs as a background task — you can navigate away and check back later.
+          </p>
+          <section>
+            <h4 className="mb-1.5 font-semibold text-foreground">Destination</h4>
+            <div className="rounded-md bg-primary/10 p-3">
+              <div className="grid grid-cols-[8rem_1fr] gap-3">
+                <b className="text-primary">Existing project</b>
+                Copy into a project you already have write access to. Documents are appended; existing documents are not overwritten.
+                <b className="text-primary">New project</b>
+                Create a fresh project and copy the documents into it. Requires the WRITER server role.
+              </div>
+            </div>
+          </section>
+          <section>
+            <h4 className="mb-1.5 font-semibold text-foreground">Configure fields</h4>
+            <p className="mb-2">
+              Fields that exist in the source project but not in the target are created automatically using the same name and type.
+              Expand <strong className="text-foreground">Configure fields</strong> to override this behaviour for individual fields:
+            </p>
+            <div className="rounded-md bg-primary/10 p-3">
+              <div className="grid grid-cols-[6rem_1fr] gap-3">
+                <b className="text-primary">Copy</b>
+                Use the field as-is. If copying to an existing project, the field must already exist there with a compatible type.
+                <b className="text-primary">New field</b>
+                Create the field in the target project. You can optionally choose a different type.
+                <b className="text-primary">Rename</b>
+                Copy the field to a different name in the target project.
+                <b className="text-primary">Exclude</b>
+                Do not copy this field.
+              </div>
+            </div>
+          </section>
+          <FieldTypesSection />
+        </div>
+      </InfoBox>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useFields } from "@/api/fields";
+import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import {
   AmcatElasticFieldType,
   AmcatField,
@@ -8,20 +9,19 @@ import {
   UploadOperation,
 } from "@/interfaces";
 import { AlertCircleIcon, ChevronDown, Key, Loader, Lock, RotateCcw } from "lucide-react";
-import { InfoBox } from "../ui/info-box";
-import { ZipUploader } from "./ZipUploader";
-import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
 import { Button } from "../ui/button";
+import { InfoBox } from "../ui/info-box";
+import { FieldTypesSection } from "../Fields/FieldTypesSection";
 import { autoNameColumn, autoTypeColumn, prepareUploadData, validateColumns } from "./typeValidation";
+import { ZipUploader } from "./ZipUploader";
 
 import { useMutateArticles } from "@/api/articles";
-import { useHasProjectRole } from "@/api/project";
 import { useMultimediaConcatenatedList } from "@/api/multimedia";
+import { useHasProjectRole } from "@/api/project";
 import { splitIntoBatches } from "@/api/util";
 import { Link } from "@tanstack/react-router";
 import { CreateFieldSelectType } from "../Fields/CreateField";
-import { Input } from "../ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import {
   DropdownMenu,
@@ -31,10 +31,11 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { DynamicIcon } from "../ui/dynamic-icon";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import SimpleTooltip from "../ui/simple-tooltip";
-import { Progress } from "../ui/progress";
+import { Input } from "../ui/input";
 import { Loading } from "../ui/loading";
+import { Progress } from "../ui/progress";
+import SimpleTooltip from "../ui/simple-tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 
 interface Props {
   user: AmcatSessionUser;
@@ -221,7 +222,7 @@ export default function Upload({ user, projectId }: Props) {
     startUpload();
   }
 
-if (fieldsLoading) return <Loading />;
+  if (fieldsLoading) return <Loading />;
   if (!fields) return null;
 
   return (
@@ -776,9 +777,12 @@ export function prepareData({
 
 function UploadInfoBox() {
   return (
-    <InfoBox title="Upload reference">
-      <div className="flex flex-col gap-5 text-muted-foreground">
-        <p>Upload a CSV, TSV, XLSX, or ZIP file to add documents to this index. For each column, choose whether to map it to a new or existing field, or exclude it. Then select the upload operation and click Upload.</p>
+    <InfoBox title="Information on Uploading Documents" storageKey="infobox:upload">
+      <div className="flex flex-col gap-5">
+        <p>Upload documents to this project. You can upload a spreadsheet (CSV, TSV, XLSX)
+          or a folder or zip with with text, PDF, or DOCX documents.
+          After uploading the file, you can choose what to do with each field or column in the data
+          before uploading.</p>
         <section>
           <h4 className="mb-1.5 font-semibold text-foreground">Column actions</h4>
           <div className="rounded-md bg-primary/10 p-3">
@@ -789,18 +793,6 @@ function UploadInfoBox() {
               Maps the CSV column to a field that already exists. The type is fixed and cannot be changed here.
               <b className="text-primary">Exclude</b>
               The column is ignored and not uploaded.
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h4 className="mb-1.5 font-semibold text-foreground">Upload operation</h4>
-          <div className="rounded-md bg-primary/10 p-3">
-            <div className="grid grid-cols-[9rem_1fr] gap-3">
-              <b className="text-primary">Create</b>
-              Only adds new documents. Documents already present (matched by identifier) are skipped.
-              <b className="text-primary">Create or update</b>
-              Adds new documents and updates fields on existing ones. Requires admin role and at least one identifier field.
             </div>
           </div>
         </section>
@@ -821,30 +813,19 @@ function UploadInfoBox() {
         </section>
 
         <section>
-          <h4 className="mb-1.5 font-semibold text-foreground">Field types</h4>
+          <h4 className="mb-1.5 font-semibold text-foreground">Upload operation</h4>
           <div className="rounded-md bg-primary/10 p-3">
-            <div className="grid grid-cols-[10rem_1fr] gap-3">
-              <b className="text-primary">keyword</b>
-              Short labels or categories (e.g. country, language). Searched as exact values.
-              <b className="text-primary">tag</b>
-              Like keyword, but a document can have multiple tags.
-              <b className="text-primary">text</b>
-              Longer free text (e.g. article body). Analysed word-by-word for full-text search.
-              <b className="text-primary">date</b>
-              Date or date/time values.
-              <b className="text-primary">integer</b>
-              Whole numbers without decimals.
-              <b className="text-primary">number</b>
-              Numeric values with decimals.
-              <b className="text-primary">boolean</b>
-              True or false values.
-              <b className="text-primary">url / image / video / audio</b>
-              Links to web pages or media files. Displayed as a clickable link or inline media.
-              <b className="text-primary">object</b>
-              Structured JSON objects. Not analysed or parsed by Elasticsearch.
+            <div className="grid grid-cols-[9rem_1fr] gap-3">
+              <b className="text-primary">Create</b>
+              Only adds new documents. Documents already present (matched by identifier) are skipped.
+              <b className="text-primary">Create or update</b>
+              Adds new documents and updates fields on existing ones based on the identifier. Requires admin role and at least one identifier field.
             </div>
           </div>
         </section>
+
+
+        <FieldTypesSection />
       </div>
     </InfoBox>
   );

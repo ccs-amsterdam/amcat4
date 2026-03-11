@@ -1,5 +1,6 @@
-import { AggregationOptions, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
+import { InfoBox } from "@/components/ui/info-box";
+import { AggregationOptions, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { useState } from "react";
 import AggregateResult from "./AggregateResult";
 import { AggregateResultOptions } from "./AggregateResultOptions";
@@ -28,7 +29,7 @@ export default function AggregateResultPanel({ user, projectId, query }: Props) 
   if (!user || !projectId || !query) return null;
 
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       <div className="prose p-5 pb-0 dark:prose-invert">
         <h3>Aggregate</h3>
       </div>
@@ -43,29 +44,7 @@ export default function AggregateResultPanel({ user, projectId, query }: Props) 
           />
         </div>
         <div className="w-full p-5">
-          {options.axes.length === 0 ? (
-            <div className="prose dark:prose-invert max-w-prose mt-4">
-              <p>
-                The aggregate tab groups documents by one or two fields and visualizes the result. Configure the options
-                on the left and click <strong>Submit</strong> to run.
-              </p>
-              <ul>
-                <li>
-                  <strong>Display</strong> — choose how to visualize the result: a line graph or bar chart for trends
-                  over time, a table for cross-tabulations, or a list for ranked counts.
-                </li>
-                <li>
-                  <strong>Aggregate</strong> — what to measure. Defaults to <em>Count</em> (number of documents), but
-                  you can also compute the sum, average, minimum, or maximum of a numeric field.
-                </li>
-                <li>
-                  <strong>Axis</strong> — the field to group by, such as a date (with an interval like week or month),
-                  a keyword, or a tag. A second axis is optional and adds a further grouping dimension (e.g. multiple
-                  lines in a line graph).
-                </li>
-              </ul>
-            </div>
-          ) : (
+          {options.axes.length > 0 && (
             <AggregateResult
               user={user}
               projectId={projectId}
@@ -75,6 +54,26 @@ export default function AggregateResultPanel({ user, projectId, query }: Props) 
             />
           )}
         </div>
+      </div>
+      <div className="px-5 pb-5">
+        <InfoBox title="Information on aggregation" storageKey="infobox:aggregate">
+          <div className="flex flex-col gap-3 text-sm">
+            <p>
+              The aggregate tab groups documents by one or two fields and visualizes the result. Configure the options
+              on the left and click <strong className="text-foreground">Submit</strong> to run.
+            </p>
+            <div className="rounded-md bg-primary/10 p-3">
+              <div className="grid grid-cols-[5rem_1fr] gap-3">
+                <b className="text-primary">Display</b>
+                Choose how to visualize the result: a line graph or bar chart for trends over time, a table for cross-tabulations, or a list for ranked counts.
+                <b className="text-primary">Aggregate</b>
+                <span>What to measure. Defaults to <em>Count</em> (number of documents), but you can also compute the sum, average, minimum, or maximum of a numeric field.</span>
+                <b className="text-primary">Axis</b>
+                The field to group by, such as a date (with an interval like week or month), a keyword, or a tag. A second axis is optional and adds a further grouping dimension (e.g. multiple lines in a line graph).
+              </div>
+            </div>
+          </div>
+        </InfoBox>
       </div>
     </div>
   );

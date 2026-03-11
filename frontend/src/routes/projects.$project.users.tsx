@@ -15,12 +15,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ErrorMsg } from "@/components/ui/error-message";
 import { Loading } from "@/components/ui/loading";
 import { AmcatProject, AmcatUserRole } from "@/interfaces";
 import { Edit } from "lucide-react";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
+import { InfoBox } from "@/components/ui/info-box";
 
 const roles = ["OBSERVER", "METAREADER", "READER", "WRITER", "ADMIN"];
 
@@ -58,7 +58,7 @@ function Users({ project }: { project: AmcatProject }) {
   if (!user || !ownRole || !users || !changeRole) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
 
   return (
-    <div className="grid grid-cols-1 gap-6 p-3 lg:grid-cols-2 lg:gap-12">
+    <div className="flex flex-col gap-6 p-3">
       <div className="w-full max-w-4xl">
         <GuestRoleSelector project={project} mutateProject={mutateProject} />
         <UserRoleTable user={user} ownRole={ownRole} users={users} changeRole={changeRole} roles={roles} />
@@ -106,62 +106,55 @@ function GuestRoleSelector({
 
 function ProjectUserInstructions() {
   return (
-    <div className="prose-sm flex flex-col px-3 dark:prose-invert">
-      <Tabs defaultValue="project roles">
-        <TabsList className="mb-1">
-          <TabsTrigger value="project roles">Project roles</TabsTrigger>
-          <TabsTrigger value="guest role">Guest role</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="project roles">
-          <p>Every project has its own users table, where you can set the following roles with incremental permissions</p>
+    <InfoBox title="Information on user management" storageKey="infobox:project-users" className="max-w-4xl">
+      <div className="flex flex-col gap-5 text-sm">
+        <section>
+          <h4 className="mb-1.5 font-semibold text-foreground">Project roles</h4>
+          <p className="mb-2">Every project has its own users table with the following roles and incremental permissions.</p>
           <div className="rounded-md bg-primary/10 p-3">
-            <div className="grid grid-cols-[5rem,1fr] gap-3">
+            <div className="grid grid-cols-[6rem_1fr] gap-3">
               <b className="text-primary">OBSERVER</b>
-              Can find the project and see the project metadata, but cannot search documents
-              <b className="text-primary">META READER</b>
-              Can also search documents, but only view document metadata. Project ADMINs can determine which fields are
-              considered metadata.
+              Can find the project and see project metadata, but cannot search documents.
+              <b className="text-primary">METAREADER</b>
+              Can also search documents, but only view document metadata. Project ADMINs can determine which fields are considered metadata.
               <b className="text-primary">READER</b>
-              Can view all document data
+              Can view all document data.
               <b className="text-primary">WRITER</b>
-              Can upload and edit documents
+              Can upload and edit documents.
               <b className="text-primary">ADMIN</b>
-              Can manage users, edit project settings and break things
+              Can manage users, edit project settings and break things.
             </div>
           </div>
-          <p>
-            Project roles (except for ADMIN) can also be given to any email address on a given domain, like{" "}
-            <b>*@my-university.com</b>.
+          <p className="mt-2">
+            Project roles (except ADMIN) can also be given to any email address on a given domain, like <b>*@my-university.com</b>.
           </p>
-        </TabsContent>
+        </section>
 
-        <TabsContent value="guest role">
-          <p>
-            The <b>guest role</b> determines what anyone can see in this project — even without a personal user account.
+        <section>
+          <h4 className="mb-1.5 font-semibold text-foreground">Guest role</h4>
+          <p className="mb-2">
+            The guest role determines what anyone can see in this project — even without a personal user account.
             Depending on the server's authorization policy, this can include completely anonymous visitors.
           </p>
           <div className="rounded-md bg-primary/10 p-3">
-            <div className="grid grid-cols-[5.5rem,1fr] gap-3">
+            <div className="grid grid-cols-[6rem_1fr] gap-3">
               <b className="text-primary">NONE</b>
               Guests cannot access the project at all. Only users with an explicit project role can see it.
               <b className="text-primary">OBSERVER</b>
               Guests can find the project and see project metadata, but cannot search documents.
               <b className="text-primary">METAREADER</b>
-              Guests can find the project and search documents, but only see document metadata. Project ADMINs control
-              which fields count as metadata.
+              Guests can find the project and search documents, but only see document metadata. Project ADMINs control which fields count as metadata.
               <b className="text-primary">READER</b>
               Guests can view all document data. Use this to make a project fully public.
               <b className="text-primary">WRITER</b>
               Guests can upload and edit documents. Only recommended for controlled, private environments.
             </div>
           </div>
-          <p>
-            The guest role is the easiest way to share public data. Whether anonymous visitors are allowed depends on the
-            server's <b>authorization policy</b> — ask your server admin if you're unsure.
+          <p className="mt-2">
+            The guest role is the easiest way to share public data. Whether anonymous visitors are allowed depends on the server's <b>authorization policy</b> — ask your server admin if you're unsure.
           </p>
-        </TabsContent>
-      </Tabs>
-    </div>
+        </section>
+      </div>
+    </InfoBox>
   );
 }
