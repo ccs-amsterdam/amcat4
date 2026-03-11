@@ -151,7 +151,7 @@ export function CreateProject({ folder, request }: { folder?: string; request?: 
     return (
       <Dialog open={!!open} onOpenChange={(open) => setOpen(open ? "open" : null)}>
         <DialogTrigger asChild>
-          <Button className="">Request new project</Button>
+          <Button className="">Create new project</Button>
         </DialogTrigger>
         <DialogContent aria-describedby={undefined} className="w-[600px] max-w-[95vw]">
           <DialogHeader>

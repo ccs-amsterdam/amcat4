@@ -22,7 +22,7 @@ import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useConfirm } from "@/components/ui/confirm";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -395,13 +395,17 @@ function ArchiveProject({ project }: { project: AmcatProject }) {
 
 function DeleteProject({ project }: { project: AmcatProject }) {
   const { user } = useAmcatSession();
-  const { mutateAsync: deleteAsync } = useDeleteProject(user);
+  const { mutateAsync: deleteAsync, isPending: isDeleting, isError: isDeleteError, error: deleteError, reset: resetDelete } = useDeleteProject(user);
   const navigate = useNavigate();
   const { activate, confirmDialog } = useConfirm();
 
-  function handleDelete() {
-    deleteAsync(project.id);
-    navigate({ to: "/projects" });
+  async function handleDelete() {
+    try {
+      await deleteAsync(project.id);
+      navigate({ to: "/projects" });
+    } catch {
+      // error shown in dialog
+    }
   }
 
   return (
@@ -421,6 +425,25 @@ function DeleteProject({ project }: { project: AmcatProject }) {
         <span className="hidden md:block">Delete</span>
       </Button>
       {confirmDialog}
+      <Dialog open={isDeleting || isDeleteError} onOpenChange={(open) => !open && resetDelete()}>
+        <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{isDeleteError ? "Deletion failed" : "Deleting project..."}</DialogTitle>
+            <DialogDescription>
+              {isDeleteError
+                ? (deleteError as Error)?.message ?? "An unexpected error occurred."
+                : `Deleting project "${project.name}". Please wait.`}
+            </DialogDescription>
+          </DialogHeader>
+          {isDeleteError && (
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={resetDelete}>
+                Close
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -303,7 +303,7 @@ function NoResultsMessage({ cancreate, issearching }: { cancreate: boolean; isse
           : "There are currently no projects that you have access to. "}
         {cancreate
           ? "To get started, create a new project using the 'create new project' button above"
-          : "To get started, you can ask a server administrator to create a project for you using the 'Request new project' button above "}
+          : "To get started, you can ask a server administrator to create a project for you using the 'create new project' button above "}
       </p>
     </InfoMsg>
   );

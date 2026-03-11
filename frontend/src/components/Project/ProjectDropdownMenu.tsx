@@ -34,7 +34,7 @@ export function ProjectDropdownMenu({
 
   const { user } = useAmcatSession();
   const { mutateAsync } = useMutateProject(user);
-  const { mutateAsync: deleteAsync } = useDeleteProject(user);
+  const { mutateAsync: deleteAsync, isPending: isDeleting, isError: isDeleteError, error: deleteError, reset: resetDelete } = useDeleteProject(user);
 
   const isAdmin = project.user_role === "ADMIN";
 
@@ -162,6 +162,25 @@ export function ProjectDropdownMenu({
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      <Dialog open={isDeleting || isDeleteError} onOpenChange={(open) => !open && resetDelete()}>
+        <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{isDeleteError ? "Deletion failed" : "Deleting project..."}</DialogTitle>
+            <DialogDescription>
+              {isDeleteError
+                ? (deleteError as Error)?.message ?? "An unexpected error occurred."
+                : `Deleting project "${project.name}". Please wait.`}
+            </DialogDescription>
+          </DialogHeader>
+          {isDeleteError && (
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={resetDelete}>
+                Close
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

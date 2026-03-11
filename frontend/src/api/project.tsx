@@ -49,7 +49,11 @@ export function useHasProjectRole(user: AmcatSessionUser | undefined, projectId:
 
 async function getProject(user?: AmcatSessionUser, projectId?: string) {
   if (!user || !projectId) return undefined;
-  const res = await user.api.get(`/index/${projectId}`);
+  const res = await user.api.get(`/index/${projectId}`).catch((e) => {
+    if (e?.response?.status === 404) return null;
+    throw e;
+  });
+  if (!res) return undefined;
   return amcatProjectSchema.parse(res.data);
 }
 
@@ -133,17 +137,23 @@ export function useRegisterProject(user: AmcatSessionUser | undefined) {
 
 export function useDeleteProject(user: AmcatSessionUser | undefined) {
   const queryClient = useQueryClient();
+  const [, setRecentProjects] = useLocalStorage<RecentProjects>("recentProjects", {});
 
   return useMutation({
     mutationFn: (projectId: string) => deleteProject(user, projectId),
-    onMutate: (projectId) => {
-      queryClient.setQueriesData({ queryKey: ["projects"] }, (old: AmcatProject[] | undefined) =>
-        old?.filter((p) => p.id !== projectId),
-      );
-    },
     onSuccess: (_, projectId) => {
       queryClient.removeQueries({ queryKey: ["project", user, projectId] });
+      queryClient.removeQueries({ queryKey: ["fields", user, projectId] });
+      queryClient.removeQueries({ queryKey: ["fieldValues", user, projectId] });
+      queryClient.removeQueries({ queryKey: ["fieldStats", user, projectId] });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      setRecentProjects((prev) => {
+        const updated = { ...prev };
+        for (const key of Object.keys(updated)) {
+          updated[key] = updated[key].filter((p) => p.id !== projectId);
+        }
+        return updated;
+      });
     },
     onError: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
