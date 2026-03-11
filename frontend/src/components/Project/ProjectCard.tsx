@@ -36,7 +36,7 @@ export const ProjectCard = ({
   return (
     <>
       {confirmDialog}
-      <Link to={`/projects/$project/dashboard`} params={{ project: project.id }}>
+      <Link to="/projects/$project" params={{ project: project.id }}>
         <Card
           style={style}
           className="relative aspect-video w-full max-w-[400px] animate-fade-in justify-self-end  overflow-hidden  shadow-md shadow-gray-700"

@@ -47,7 +47,7 @@ export default function ProjectMenu() {
   }
 
   function onSelectProject(projectId: string) {
-    navigate({ to: `/projects/${projectId}/dashboard` });
+    navigate({ to: `/projects/${projectId}` });
     setOpen(false);
   }
 

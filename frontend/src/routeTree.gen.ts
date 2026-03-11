@@ -19,6 +19,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as TaskTaskRouteImport } from './routes/task.$task'
 import { Route as ProjectsProjectRouteImport } from './routes/projects.$project'
+import { Route as ProjectsProjectIndexRouteImport } from './routes/projects.$project.index'
 import { Route as ProjectsProjectUsersRouteImport } from './routes/projects.$project.users'
 import { Route as ProjectsProjectSettingsRouteImport } from './routes/projects.$project.settings'
 import { Route as ProjectsProjectFieldsRouteImport } from './routes/projects.$project.fields'
@@ -76,6 +77,11 @@ const ProjectsProjectRoute = ProjectsProjectRouteImport.update({
   path: '/$project',
   getParentRoute: () => ProjectsRoute,
 } as any)
+const ProjectsProjectIndexRoute = ProjectsProjectIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProjectsProjectRoute,
+} as any)
 const ProjectsProjectUsersRoute = ProjectsProjectUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -125,6 +131,7 @@ export interface FileRoutesByFullPath {
   '/projects/$project/fields': typeof ProjectsProjectFieldsRoute
   '/projects/$project/settings': typeof ProjectsProjectSettingsRoute
   '/projects/$project/users': typeof ProjectsProjectUsersRoute
+  '/projects/$project/': typeof ProjectsProjectIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -133,7 +140,6 @@ export interface FileRoutesByTo {
   '/branding': typeof BrandingRoute
   '/snapshots': typeof SnapshotsRoute
   '/users': typeof UsersRoute
-  '/projects/$project': typeof ProjectsProjectRouteWithChildren
   '/task/$task': typeof TaskTaskRoute
   '/projects': typeof ProjectsIndexRoute
   '/projects/$project/access': typeof ProjectsProjectAccessRoute
@@ -142,6 +148,7 @@ export interface FileRoutesByTo {
   '/projects/$project/fields': typeof ProjectsProjectFieldsRoute
   '/projects/$project/settings': typeof ProjectsProjectSettingsRoute
   '/projects/$project/users': typeof ProjectsProjectUsersRoute
+  '/projects/$project': typeof ProjectsProjectIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -161,6 +168,7 @@ export interface FileRoutesById {
   '/projects/$project/fields': typeof ProjectsProjectFieldsRoute
   '/projects/$project/settings': typeof ProjectsProjectSettingsRoute
   '/projects/$project/users': typeof ProjectsProjectUsersRoute
+  '/projects/$project/': typeof ProjectsProjectIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -181,6 +189,7 @@ export interface FileRouteTypes {
     | '/projects/$project/fields'
     | '/projects/$project/settings'
     | '/projects/$project/users'
+    | '/projects/$project/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -189,7 +198,6 @@ export interface FileRouteTypes {
     | '/branding'
     | '/snapshots'
     | '/users'
-    | '/projects/$project'
     | '/task/$task'
     | '/projects'
     | '/projects/$project/access'
@@ -198,6 +206,7 @@ export interface FileRouteTypes {
     | '/projects/$project/fields'
     | '/projects/$project/settings'
     | '/projects/$project/users'
+    | '/projects/$project'
   id:
     | '__root__'
     | '/'
@@ -216,6 +225,7 @@ export interface FileRouteTypes {
     | '/projects/$project/fields'
     | '/projects/$project/settings'
     | '/projects/$project/users'
+    | '/projects/$project/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -301,6 +311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectRouteImport
       parentRoute: typeof ProjectsRoute
     }
+    '/projects/$project/': {
+      id: '/projects/$project/'
+      path: '/'
+      fullPath: '/projects/$project/'
+      preLoaderRoute: typeof ProjectsProjectIndexRouteImport
+      parentRoute: typeof ProjectsProjectRoute
+    }
     '/projects/$project/users': {
       id: '/projects/$project/users'
       path: '/users'
@@ -353,6 +370,7 @@ interface ProjectsProjectRouteChildren {
   ProjectsProjectFieldsRoute: typeof ProjectsProjectFieldsRoute
   ProjectsProjectSettingsRoute: typeof ProjectsProjectSettingsRoute
   ProjectsProjectUsersRoute: typeof ProjectsProjectUsersRoute
+  ProjectsProjectIndexRoute: typeof ProjectsProjectIndexRoute
 }
 
 const ProjectsProjectRouteChildren: ProjectsProjectRouteChildren = {
@@ -362,6 +380,7 @@ const ProjectsProjectRouteChildren: ProjectsProjectRouteChildren = {
   ProjectsProjectFieldsRoute: ProjectsProjectFieldsRoute,
   ProjectsProjectSettingsRoute: ProjectsProjectSettingsRoute,
   ProjectsProjectUsersRoute: ProjectsProjectUsersRoute,
+  ProjectsProjectIndexRoute: ProjectsProjectIndexRoute,
 }
 
 const ProjectsProjectRouteWithChildren = ProjectsProjectRoute._addFileChildren(

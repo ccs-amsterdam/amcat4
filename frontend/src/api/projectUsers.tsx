@@ -37,7 +37,7 @@ export function useMutateProjectUser(user?: AmcatSessionUser, projectId?: AmcatP
       if (!user) throw new Error("Not logged in");
       return mutateProjectUser(user, projectId || "", email, role, action);
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["projects", user] });
       queryClient.invalidateQueries({ queryKey: ["project", user, projectId] });
       queryClient.invalidateQueries({ queryKey: ["projectusers", user, projectId] });
@@ -61,7 +61,7 @@ async function mutateProjectUser(
   if (action === "delete") {
     await user.api.delete(`/index/${projectId}/users/${email}`);
   } else if (action === "update") {
-    await user.api.put(`/index/${projectId}/users/${email}`, { role });
+    await user.api.put(`/index/${projectId}/users/${email}`, { role, upsert: true });
   } else if (action === "create") {
     await user.api.post(`/index/${projectId}/users`, { email, role });
   }
