@@ -3,10 +3,11 @@ import { useFieldStats } from "@/api/fieldStats";
 import { useFields } from "@/api/fields";
 import { useHasProjectRole } from "@/api/project";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
-import { AggregationAxis, AmcatField, AmcatProjectId, AmcatQuery } from "@/interfaces";
+import { AggregationAxis, AmcatField, AmcatProjectId, AmcatQuery, AmcatUserRole } from "@/interfaces";
 import { autoFormatDate } from "@/lib/autoFormatDate";
+import { hasMinAmcatRole } from "@/lib/utils";
 import { Link } from "@tanstack/react-router";
-import { Columns3Cog, DatabaseZap, Settings, Users } from "lucide-react";
+import { Columns3Cog, DatabaseZap, LayoutDashboard, LockKeyholeOpen, Settings, Users } from "lucide-react";
 import { useMemo } from "react";
 import AggregateResult from "../Aggregate/AggregateResult";
 import Articles from "../Articles/Articles";
@@ -136,39 +137,67 @@ function KeywordSummaryGraph({ user, projectId, query, field }: SummaryProps) {
   );
 }
 
-export function EmptyProject({ projectId }: { projectId: AmcatProjectId }) {
+export function EmptyProject({ projectId, role }: { projectId: AmcatProjectId; role: AmcatUserRole }) {
+  const isAdmin = role === "ADMIN";
+  const isWriter = hasMinAmcatRole(role, "WRITER");
+
+  const tabs = [
+    {
+      to: "/projects/$project/dashboard" as const,
+      Icon: LayoutDashboard,
+      label: "Dashboard",
+      description: "Search, aggregate, and download documents",
+      show: true,
+    },
+    {
+      to: "/projects/$project/data" as const,
+      Icon: DatabaseZap,
+      label: "Data",
+      description: "Upload documents from a CSV file",
+      show: isWriter,
+    },
+    {
+      to: "/projects/$project/fields" as const,
+      Icon: Columns3Cog,
+      label: "Fields",
+      description: "Configure the fields for each document in this project",
+      show: isWriter,
+    },
+    {
+      to: "/projects/$project/users" as const,
+      Icon: Users,
+      label: "Users",
+      description: "Invite collaborators and set a guest role for public access",
+      show: isAdmin,
+    },
+    {
+      to: "/projects/$project/settings" as const,
+      Icon: Settings,
+      label: "Settings",
+      description: isAdmin
+        ? "Update the project name, description, and other details"
+        : "View project information and settings",
+      show: true,
+    },
+    {
+      to: "/projects/$project/access" as const,
+      Icon: LockKeyholeOpen,
+      label: "Access",
+      description: "View your access level or request additional permissions",
+      show: !isAdmin,
+    },
+  ].filter((t) => t.show);
+
   return (
     <div className="w-full rounded bg-primary/10 p-6">
       <div className="prose dark:prose-invert">
         <h3>This project is empty</h3>
-        <p>Congratulations on creating a project! Here are some actions you can take to get started with this project:
+        <p>
+          {isAdmin
+            ? "Congratulations on creating a project! Here are some actions you can take to get started:"
+            : "This project doesn't have any data yet. Here is an overview of what you can do:"}
           <ul className="not-prose flex flex-col gap-3 py-2">
-            {[
-              {
-                to: "/projects/$project/data" as const,
-                Icon: DatabaseZap,
-                label: "Data",
-                description: "Upload documents from a CSV file",
-              },
-              {
-                to: "/projects/$project/fields" as const,
-                Icon: Columns3Cog,
-                label: "Fields",
-                description: "Configure the fields for each document in this project",
-              },
-              {
-                to: "/projects/$project/users" as const,
-                Icon: Users,
-                label: "Users",
-                description: "Invite collaborators and set a guest role for public access",
-              },
-              {
-                to: "/projects/$project/settings" as const,
-                Icon: Settings,
-                label: "Settings",
-                description: "Update the project name, description, and other details",
-              },
-            ].map(({ to, Icon, label, description }) => (
+            {tabs.map(({ to, Icon, label, description }) => (
               <li key={to} className="flex items-center gap-3">
                 <Link to={to} params={{ project: projectId }} className="flex items-center gap-2 font-medium no-underline hover:underline">
                   <Icon className="h-4 w-4 shrink-0" />
@@ -179,17 +208,20 @@ export function EmptyProject({ projectId }: { projectId: AmcatProjectId }) {
             ))}
           </ul>
         </p>
-        <p className="mt-4 text-sm">
-          As soon as you add data to the project, you will find options to query it here in the Dashboard.
-          You can also use the menu items mentioned to perform these actions at any time.
-        </p>
-        <p className="mt-4 text-sm">
-          You can also connect to this project from{" "}
-          <a href="https://github.com/ccs-amsterdam/amcat4py" target="_blank" rel="noreferrer">Python</a>
-          {" "}or{" "}
-          <a href="https://github.com/ccs-amsterdam/amcat4r" target="_blank" rel="noreferrer">R</a>
-          {" "}to upload or query documents from a script.
-        </p>
+        {isWriter && (
+          <p className="mt-4 text-sm">
+            As soon as you add data to the project, you will be taken to the Dashboard where you can search, aggregate, and download documents.
+          </p>
+        )}
+        {isWriter && (
+          <p className="mt-4 text-sm">
+            You can also connect to this project from{" "}
+            <a href="https://github.com/ccs-amsterdam/amcat4py" target="_blank" rel="noreferrer">Python</a>
+            {" "}or{" "}
+            <a href="https://github.com/ccs-amsterdam/amcat4r" target="_blank" rel="noreferrer">R</a>
+            {" "}to upload or query documents from a script.
+          </p>
+        )}
       </div>
     </div>
   );

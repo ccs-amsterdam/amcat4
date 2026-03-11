@@ -4,10 +4,9 @@ import { AmcatQuery } from "@/interfaces";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 
 import { useMyProjectRole } from "@/api/project";
-import { useArticles } from "@/api/articles";
 import AggregateResultPanel from "@/components/Aggregate/AggregateResultPanel";
 import DownloadArticles from "@/components/Articles/DownloadArticles";
-import Summary, { EmptyProject } from "@/components/Summary/Summary";
+import Summary from "@/components/Summary/Summary";
 import { ErrorMsg } from "@/components/ui/error-message";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Reindex from "@/components/Update/Reindex";
@@ -56,13 +55,7 @@ function DashboardPage() {
     setQueryState(serializeQuery(query));
   }, [query, setQueryState]);
 
-  const { data: articleData } = useArticles(user, projectId, query);
-  const isEmpty = articleData?.pages[0]?.meta?.total_count === 0;
-  const noSearch = !query.queries?.length && !query.filters;
-
   if (projectRole === "NONE") return <NoAccess />;
-
-  if (isEmpty && noSearch) return <EmptyProject projectId={projectId} />;
 
   const isWriter = projectRole === "WRITER" || projectRole === "ADMIN";
 
