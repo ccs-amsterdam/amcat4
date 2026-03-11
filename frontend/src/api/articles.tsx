@@ -75,12 +75,16 @@ export function useMutateArticles(user?: AmcatSessionUser, projectId?: AmcatProj
     }) => {
       if (!user || !projectId) throw new Error("Not logged in");
       const res = await user.api.post(`/index/${projectId}/documents`, params);
-      return z
-        .object({
-          successes: z.number(),
-          failures: z.array(z.string()),
-        })
-        .parse(res.data);
+      const raw = z.object({ successes: z.number(), failures: z.array(z.unknown()) }).parse(res.data);
+      const failures = raw.failures.map((f): string => {
+        if (typeof f === "string") return f;
+        if (typeof f === "object" && f !== null) {
+          const inner = Object.values(f as Record<string, any>)[0];
+          return inner?.error?.reason ?? inner?.error?.type ?? JSON.stringify(f);
+        }
+        return String(f);
+      });
+      return { successes: raw.successes, failures };
     },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["article", user, projectId] });

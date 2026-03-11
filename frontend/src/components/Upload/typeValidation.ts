@@ -34,7 +34,7 @@ export function prepareUploadData(
         type: c.type,
         identifier: !!c.identifier,
       };
-      if (c.elastic_type) fields[c.field].elastic_type = c.elastic_type;
+
     }
   });
   return { documents: documents, fields, operation };
@@ -55,12 +55,17 @@ export function autoTypeColumn(data: Record<string, jsType>[], name: string): Co
     return { ...column, type: "number", elastic_type: "double" };
   }
 
+  const isUrl = data.every((d) => /^https?:\/\/\S+$/.test(String(d[name])));
+  if (isUrl) return { ...column, type: "url", elastic_type: "keyword" };
+
   const isBoolean = listInvalid(data, name, coerceBoolean).length === 0;
   if (isBoolean) return { ...column, type: "boolean", elastic_type: "boolean" };
 
   const pctUnique = percentUnique(data, name);
   if (pctUnique < 0.5 && !hasValueLongerThan(data, name, 100))
     return { ...column, type: "keyword", elastic_type: "keyword" };
+
+  if (!hasSpaces(data, name)) return { ...column, type: "keyword", elastic_type: "keyword" };
 
   return { ...column, type: "text", elastic_type: "text" };
 }
@@ -128,6 +133,18 @@ export async function validateColumns(
           status: "Type invalid",
           typeWarning: `${invalidDates.length} invalid dates`,
           invalidExamples: invalidDates.slice(0, 100),
+        };
+      }
+    }
+
+    if (column.type === "integer") {
+      const invalidIntegers = listInvalid(data, column.name, coerceInteger);
+      if (invalidIntegers.length > 0) {
+        return {
+          ...column,
+          status: "Type invalid",
+          typeWarning: `${invalidIntegers.length} invalid integers`,
+          invalidExamples: invalidIntegers.slice(0, 100),
         };
       }
     }
@@ -304,4 +321,8 @@ function percentUnique(data: Record<string, jsType>[], column: string) {
 
 function hasValueLongerThan(data: Record<string, jsType>[], column: string, max: number) {
   return data.some((d) => String(d[column]).length > max);
+}
+
+function hasSpaces(data: Record<string, jsType>[], column: string) {
+  return data.some((d) => String(d[column]).includes(" "));
 }
