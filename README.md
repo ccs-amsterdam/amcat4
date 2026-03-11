@@ -31,14 +31,14 @@ docker compose up -d
 
 ## General code overview
 
-AmCAT4 is a 'monorepo' containing the code for both the [python FastAPI backend API](backend/) and the [vite react frontend](frontend/). 
-The root folder contains a [package.json](package.json) script which contains a number of commands to manage both frontend and backend. 
+AmCAT4 is a 'monorepo' containing the code for both the [python FastAPI backend API](backend/) and the [vite react frontend](frontend/).
+The root folder contains a [package.json](package.json) script which contains a number of commands to manage both frontend and backend.
 
 In production, the front-end is built and statically served. In development, the front-end is dynamically served using vite, which can be started with the various `pnpm` commands listed in the next section.
 
-The backend uses a ElasticSearch document storage as a database. Each project in AmCAT is represented as a single index within elastic. In addition, a number of 'system indices' represent server and project metadata including users, roles, and fields. 
+The backend uses a ElasticSearch document storage as a database. Each project in AmCAT is represented as a single index within elastic. In addition, a number of 'system indices' represent server and project metadata including users, roles, and fields.
 
-A number of important configuration options for both AmCAT and Elastic are set using a `.env` file, with reasonable defaults for single-user. See [deploy/.env.example](deploy/.env.example) for an overview of options.  
+A number of important configuration options for both AmCAT and Elastic are set using a `.env` file, with reasonable defaults for single-user. See [deploy/.env.example](deploy/.env.example) for an overview of options.
 
 ## Development
 
@@ -61,7 +61,7 @@ The easiest way to install AmCAT4 for local development mode is to use the follo
 # Clone the repo
 git clone https://github.com/ccs-amsterdam/amcat4
 
-# Install the monorepo 
+# Install the monorepo
 pnpm install
 
 # install AmCAT4 in development mode
@@ -80,7 +80,7 @@ pnpm start:db
 Then to start the development servers for both the frontend and backend, run
 
 ```
-pnpm dev      
+pnpm dev
 ```
 
 When you stop the dev server, the docker containers will keep running.
@@ -90,4 +90,16 @@ To shut them down, run:
 pnpm stop:db
 ```
 
+## Releasing a new version
 
+1. Update the version number in [backend/pyproject.toml](backend/pyproject.toml), [frontend/package.json](frontend/package.json), and [deploy/.env.example](deploy/.env.example) to the new version (e.g. `4.3.0`).
+2. Commit the version bump and push to `master`.
+3. Create and push a git tag matching the version:
+   ```sh
+   git tag v4.3.0
+   git push origin v4.3.0
+   ```
+
+Pushing the tag triggers the [release workflow](.github/workflows/release.yml), which:
+- Builds and pushes Docker images for the frontend and backend to Docker Hub (tagged with both the version and `latest`).
+- Packages the deploy files into `amcat4-deploy.zip` and attaches it to a new GitHub release with auto-generated release notes.
