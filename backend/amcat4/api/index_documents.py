@@ -53,6 +53,7 @@ async def upload_documents(
     ix: Annotated[IndexId, Path(description="The index id")],
     body: Annotated[UploadDocumentsBody, Body(...)],
     user: User = Depends(authenticated_user),
+    refresh: Annotated[bool, Query(description="If true, wait for ES to refresh before returning")] = False,
 ) -> UploadResult:
     """
     Upload documents to an index. Requires WRITER role on the index.
@@ -60,7 +61,7 @@ async def upload_documents(
     await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
 
     try:
-        result = await create_or_update_documents(ix, body.documents, body.fields, body.operation)
+        result = await create_or_update_documents(ix, body.documents, body.fields, body.operation, refresh=refresh)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e))
     return UploadResult.model_validate(result)

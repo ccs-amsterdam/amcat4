@@ -16,6 +16,7 @@ async def create_or_update_documents(
     fields: Mapping[str, FieldType | DocumentFieldDefinition] | None = None,
     op_type: Literal["index", "create", "update"] = "index",
     raise_on_error=False,
+    refresh=False,
 ):
     """
     Upload documents to this index
@@ -43,6 +44,7 @@ async def create_or_update_documents(
             actions,
             stats_only=False,
             raise_on_error=raise_on_error,
+            refresh="wait_for" if refresh else False,
         )
     except elasticsearch.helpers.BulkIndexError as e:
         logging.error("Error on indexing: " + json.dumps(e.errors, indent=2, default=str))

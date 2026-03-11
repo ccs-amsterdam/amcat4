@@ -72,9 +72,12 @@ export function useMutateArticles(user?: AmcatSessionUser, projectId?: AmcatProj
       documents: Record<string, any>;
       fields?: Record<string, UpdateAmcatField>;
       operation: UploadOperation;
+      refresh?: boolean;
     }) => {
       if (!user || !projectId) throw new Error("Not logged in");
-      const res = await user.api.post(`/index/${projectId}/documents`, params);
+      const url = params.refresh ? `/index/${projectId}/documents?refresh=true` : `/index/${projectId}/documents`;
+      const { refresh: _refresh, ...body } = params;
+      const res = await user.api.post(url, body);
       const raw = z.object({ successes: z.number(), failures: z.array(z.unknown()) }).parse(res.data);
       const failures = raw.failures.map((f): string => {
         if (typeof f === "string") return f;
@@ -87,11 +90,13 @@ export function useMutateArticles(user?: AmcatSessionUser, projectId?: AmcatProj
       return { successes: raw.successes, failures };
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["article", user, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["articles", user, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["fields", user, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["fieldValues", user, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["aggregate", user, projectId] });
+      // removeQueries for data queries: avoids a race where setQueryData in useArticles clears the
+      // isInvalidated flag before the refetch triggers, causing stale data to persist indefinitely.
+      queryClient.removeQueries({ queryKey: ["article"] });
+      queryClient.removeQueries({ queryKey: ["articles"] });
+      queryClient.removeQueries({ queryKey: ["aggregate"] });
+      queryClient.invalidateQueries({ queryKey: ["fields"] });
+      queryClient.invalidateQueries({ queryKey: ["fieldValues"] });
     },
   });
 }
