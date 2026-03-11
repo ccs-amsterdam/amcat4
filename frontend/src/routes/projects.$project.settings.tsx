@@ -400,7 +400,8 @@ function DeleteProject({ project }: { project: AmcatProject }) {
   const { activate, confirmDialog } = useConfirm();
 
   function handleDelete() {
-    deleteAsync(project.id).then(() => navigate({ to: "/projects" }));
+    deleteAsync(project.id);
+    navigate({ to: "/projects" });
   }
 
   return (

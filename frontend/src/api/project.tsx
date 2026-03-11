@@ -136,9 +136,17 @@ export function useDeleteProject(user: AmcatSessionUser | undefined) {
 
   return useMutation({
     mutationFn: (projectId: string) => deleteProject(user, projectId),
+    onMutate: (projectId) => {
+      queryClient.setQueriesData({ queryKey: ["projects"] }, (old: AmcatProject[] | undefined) =>
+        old?.filter((p) => p.id !== projectId),
+      );
+    },
     onSuccess: (_, projectId) => {
-      queryClient.invalidateQueries({ queryKey: ["project", user, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["projects", user] });
+      queryClient.removeQueries({ queryKey: ["project", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
   });
 }
