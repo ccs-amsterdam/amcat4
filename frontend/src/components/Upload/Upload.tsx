@@ -8,6 +8,7 @@ import {
   UploadOperation,
 } from "@/interfaces";
 import { AlertCircleIcon, ChevronDown, Key, Loader, Lock, RotateCcw } from "lucide-react";
+import { InfoBox } from "../ui/info-box";
 import { ZipUploader } from "./ZipUploader";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
@@ -236,6 +237,17 @@ if (fieldsLoading) return <Loading />;
         </div>
       )}
       <div className={`flex flex-col gap-8 ${data.length === 0 ? "hidden" : ""}`}>
+        {columns.some((c) => c.field === null) && (
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setColumns(columns.map((c) => c.field === null ? autoTypeColumn(data, c.name) : c))}
+            >
+              Include all fields
+            </Button>
+          </div>
+        )}
         <UploadTable columns={columns} data={data} fields={fields} setColumn={setColumn} />
         <div className="prose max-w-none rounded border p-6 dark:prose-invert">
           <h3>Confirm upload</h3>
@@ -267,6 +279,7 @@ if (fieldsLoading) return <Loading />;
         </div>
       </div>
       <UploadDialog uploadStatus={uploadStatus} setUploadStatus={setUploadStatus} projectId={projectId} onUploadMore={resetUpload} />
+      <UploadInfoBox />
     </div>
   );
 }
@@ -743,7 +756,7 @@ export function prepareData({
       if (usedFields.has(f.name)) return false;
       return autoNameColumn(name) === f.name;
     });
-    if (!field) return autoTypeColumn(data, name);
+    if (!field) return { name, field: null, type: null, elastic_type: null, status: "Not used", exists: false };
 
     usedFields.add(field.name);
     return {
@@ -759,6 +772,82 @@ export function prepareData({
 
   setData(data);
   setColumns(columns.filter((column) => !!column.name));
+}
+
+function UploadInfoBox() {
+  return (
+    <InfoBox title="Upload reference">
+      <div className="flex flex-col gap-5 text-muted-foreground">
+        <p>Upload a CSV, TSV, XLSX, or ZIP file to add documents to this index. For each column, choose whether to map it to a new or existing field, or exclude it. Then select the upload operation and click Upload.</p>
+        <section>
+          <h4 className="mb-1.5 font-semibold text-foreground">Column actions</h4>
+          <div className="rounded-md bg-primary/10 p-3">
+            <div className="grid grid-cols-[7rem_1fr] gap-3">
+              <b className="text-primary">New field</b>
+              Creates a new field in the index. You can customize the name and type before uploading.
+              <b className="text-primary">Existing field</b>
+              Maps the CSV column to a field that already exists. The type is fixed and cannot be changed here.
+              <b className="text-primary">Exclude</b>
+              The column is ignored and not uploaded.
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h4 className="mb-1.5 font-semibold text-foreground">Upload operation</h4>
+          <div className="rounded-md bg-primary/10 p-3">
+            <div className="grid grid-cols-[9rem_1fr] gap-3">
+              <b className="text-primary">Create</b>
+              Only adds new documents. Documents already present (matched by identifier) are skipped.
+              <b className="text-primary">Create or update</b>
+              Adds new documents and updates fields on existing ones. Requires admin role and at least one identifier field.
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h4 className="mb-1.5 flex items-center gap-1.5 font-semibold text-foreground">
+            <Key className="h-3.5 w-3.5" /> Identifier fields
+          </h4>
+          <p>
+            Identifier fields act as a primary key — they uniquely identify a document and prevent duplicates. Use a
+            naturally unique value such as an article URL or ID. You can combine multiple identifier fields for a
+            composite key (e.g. author + timestamp).
+          </p>
+          <p className="mt-1.5 text-primary">
+            Identifier status cannot be changed after a field is created, and identifier values cannot be updated once
+            a document has been indexed.
+          </p>
+        </section>
+
+        <section>
+          <h4 className="mb-1.5 font-semibold text-foreground">Field types</h4>
+          <div className="rounded-md bg-primary/10 p-3">
+            <div className="grid grid-cols-[10rem_1fr] gap-3">
+              <b className="text-primary">keyword</b>
+              Short labels or categories (e.g. country, language). Searched as exact values.
+              <b className="text-primary">tag</b>
+              Like keyword, but a document can have multiple tags.
+              <b className="text-primary">text</b>
+              Longer free text (e.g. article body). Analysed word-by-word for full-text search.
+              <b className="text-primary">date</b>
+              Date or date/time values.
+              <b className="text-primary">integer</b>
+              Whole numbers without decimals.
+              <b className="text-primary">number</b>
+              Numeric values with decimals.
+              <b className="text-primary">boolean</b>
+              True or false values.
+              <b className="text-primary">url / image / video / audio</b>
+              Links to web pages or media files. Displayed as a clickable link or inline media.
+              <b className="text-primary">object</b>
+              Structured JSON objects. Not analysed or parsed by Elasticsearch.
+            </div>
+          </div>
+        </section>
+      </div>
+    </InfoBox>
+  );
 }
 
 function hasDuplicates(data: Record<string, jsType>[], columns: Column[]) {
