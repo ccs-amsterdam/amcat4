@@ -32,6 +32,8 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes("node_modules")) {
+            // Keep lazily-imported heavy parsers out of vendor chunks so they stay as separate lazy chunks
+            if (id.includes("pdfjs-dist") || id.includes("mammoth") || id.includes("xlsx")) return undefined;
             // 1. Keep the absolute heavyweights in their own dedicated files
             if (id.includes("recharts") || id.includes("react-dom") || id.includes("jszip")) {
               return "vendor-large";

@@ -7,11 +7,10 @@ import {
   UpdateAmcatField,
   UploadOperation,
 } from "@/interfaces";
-import { AlertCircleIcon, ChevronDown, Key, Loader, Lock, X } from "lucide-react";
+import { AlertCircleIcon, ChevronDown, Key, Loader, Lock, RotateCcw } from "lucide-react";
+import { ZipUploader } from "./ZipUploader";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
-import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
+import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
 import { Button } from "../ui/button";
 import { autoNameColumn, autoTypeColumn, prepareUploadData, validateColumns } from "./typeValidation";
 
@@ -226,7 +225,16 @@ if (fieldsLoading) return <Loading />;
 
   return (
     <div className="mb-12 flex flex-col gap-4">
-      <CSVUploader fields={fields} setData={setData} setColumns={setColumns} />
+      {data.length === 0 ? (
+        <ZipUploader fields={fields} setData={setData} setColumns={setColumns} />
+      ) : (
+        <div className="flex justify-end">
+          <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={resetUpload}>
+            <RotateCcw className="h-3.5 w-3.5" />
+            Change file
+          </Button>
+        </div>
+      )}
       <div className={`flex flex-col gap-8 ${data.length === 0 ? "hidden" : ""}`}>
         <UploadTable columns={columns} data={data} fields={fields} setColumn={setColumn} />
         <div className="prose max-w-none rounded border p-6 dark:prose-invert">
@@ -700,108 +708,8 @@ function getTypeWarningIndicator(column: Column) {
   );
 }
 
-const ACCEPTED_EXTENSIONS = [".csv", ".tsv", ".xlsx", ".xls", ".xlsm", ".ods"];
 
-function CSVUploader({
-  fields,
-  setData,
-  setColumns,
-}: {
-  fields: AmcatField[];
-  setData: Dispatch<SetStateAction<Record<string, jsType>[]>>;
-  setColumns: Dispatch<SetStateAction<Column[]>>;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [zoneHover, setZoneHover] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
-
-  function handleFile(file: File) {
-    const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
-    if (!ACCEPTED_EXTENSIONS.includes(ext)) return;
-    setFileName(file.name);
-
-    if (ext === ".csv" || ext === ".tsv") {
-      Papa.parse(file, {
-        skipEmptyLines: true,
-        dynamicTyping: true,
-        header: false,
-        complete: (result) => {
-          prepareData({ importedData: result.data as jsType[][], fields, setData, setColumns });
-        },
-      });
-    } else {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const buf = new Uint8Array(e.target!.result as ArrayBuffer);
-        const workbook = XLSX.read(buf, { type: "array", cellDates: true });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
-        const rows = rawRows.map((row) =>
-          row.map((cell) => (cell instanceof Date ? cell.toISOString() : cell)),
-        ) as jsType[][];
-        prepareData({ importedData: rows, fields, setData, setColumns });
-      };
-      reader.readAsArrayBuffer(file);
-    }
-  }
-
-  function clear() {
-    setFileName(null);
-    setData([]);
-    setColumns([]);
-    if (inputRef.current) inputRef.current.value = "";
-  }
-
-  if (fileName) {
-    return (
-      <div className="flex w-full items-center justify-end gap-2">
-        <Button className="px-1" variant="ghost" onClick={clear}>
-          <X className="h-8 w-8" />
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex">
-      <div className="w-full">
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".csv,.tsv,.xlsx,.xls,.xlsm,.ods"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleFile(file);
-          }}
-        />
-        <Button
-          variant="outline"
-          className={`${zoneHover ? "bg-primary/30" : ""} text-md w-full flex-auto border-dotted bg-primary/10 px-10 py-14 hover:bg-primary/20`}
-          onClick={() => inputRef.current?.click()}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setZoneHover(true);
-          }}
-          onDragLeave={(e) => {
-            e.preventDefault();
-            setZoneHover(false);
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            setZoneHover(false);
-            const file = e.dataTransfer?.files?.[0];
-            if (file) handleFile(file);
-          }}
-        >
-          Click to upload CSV, TSV, or spreadsheet (XLSX, XLS, ODS), or drag and drop
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function prepareData({
+export function prepareData({
   importedData,
   fields,
   setData,
