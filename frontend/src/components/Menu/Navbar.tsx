@@ -1,18 +1,15 @@
 import { useAmcatBranding } from "@/api/branding";
 import { AmcatBranding } from "@/interfaces";
 import {
-  Bot,
   ChevronRight,
   Columns3Cog,
   DatabaseBackup,
   DatabaseZap,
-  Home,
   LayoutDashboard,
   Library,
   LockKeyholeOpen,
   Paintbrush,
   Settings,
-  Slash,
   Users,
 } from "lucide-react";
 import { Link, useParams, useNavigate, useLocation } from "@tanstack/react-router";
@@ -22,12 +19,10 @@ import { Notifications } from "./Notifications";
 import { SubMenu, SubMenuPath } from "./SubMenu";
 
 const serverSubMenuPaths: SubMenuPath[] = [
-  { href: "", label: "Home", Icon: Home, minServerRole: "NONE" },
   { href: "projects", label: "Projects", Icon: Library, minServerRole: "NONE" },
   { href: "branding", label: "Branding", Icon: Paintbrush, minServerRole: "ADMIN" },
   { href: "users", label: "Server users", Icon: Users, minServerRole: "ADMIN" },
   { href: "snapshots", label: "Snapshots", Icon: DatabaseBackup, minServerRole: "ADMIN" },
-  { href: "api_keys", label: "API keys", Icon: Bot, minServerRole: "NONE", requiresAuth: true },
   { href: "access", label: "Server role", Icon: LockKeyholeOpen, minServerRole: "NONE", hideForServerAdmin: true },
 ];
 
