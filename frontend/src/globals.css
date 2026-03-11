@@ -23,6 +23,9 @@
     --muted: 0, 0%, 50%;
     --muted-foreground: 0.4, 16.3%, 46.9%;
 
+    --popover: 0, 0%, 100%;
+    --popover-foreground: 222.2, 84%, 10%;
+
     --accent: 174, 40%, 96.1%;
     --accent-foreground: 174, 47.4%, 11.2%;
 
@@ -61,6 +64,9 @@
 
     --muted: 0, 0%, 50%;
     --muted-foreground: 0.4, 16.3%, 46.9%;
+
+    --popover: 0, 0%, 14%;
+    --popover-foreground: 222.2, 84%, 90%;
 
     --accent: 0, 0%, 11.1%;
     --accent-foreground: 0, 0%, 90.2%;

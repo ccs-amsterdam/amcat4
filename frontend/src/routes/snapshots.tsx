@@ -262,6 +262,13 @@ function CreateSnapshotDialog({ repository }: { repository: string }) {
 
 type RepoType = "fs" | "s3" | "url";
 
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function RegisterRepositoryDialog() {
   const { user } = useAmcatSession();
   const mutate = useMutateRepositories(user);
@@ -272,6 +279,7 @@ function RegisterRepositoryDialog() {
   // fs fields
   const [fsBase, setFsBase] = useState<string>("");
   const [fsSubdir, setFsSubdir] = useState("");
+  const [subdirTouched, setSubdirTouched] = useState(false);
   // s3 fields
   const [bucket, setBucket] = useState("");
   const [region, setRegion] = useState("");
@@ -281,6 +289,16 @@ function RegisterRepositoryDialog() {
 
   const effectiveFsBase = fsBase || pathRepo?.[0] || "";
   const fsLocation = fsSubdir ? `${effectiveFsBase}/${fsSubdir}` : effectiveFsBase;
+
+  function handleRepoNameChange(name: string) {
+    setRepoName(name);
+    if (!subdirTouched) setFsSubdir(slugify(name));
+  }
+
+  function handleFsSubdirChange(value: string) {
+    setSubdirTouched(true);
+    setFsSubdir(value);
+  }
 
   function buildSettings(): Record<string, string> {
     if (repoType === "fs") return { location: fsLocation };
@@ -292,22 +310,33 @@ function RegisterRepositoryDialog() {
     return { url };
   }
 
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await mutate.mutateAsync({ action: "create", name: repoName, type: repoType, settings: buildSettings() });
+    setSubmitError(null);
+    try {
+      await mutate.mutateAsync({ action: "create", name: repoName, type: repoType, settings: buildSettings() });
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setSubmitError(detail ?? "Failed to register repository");
+      return;
+    }
     toast.success(`Repository '${repoName}' registered`);
     setOpen(false);
     setRepoName("");
     setFsBase("");
     setFsSubdir("");
+    setSubdirTouched(false);
     setBucket("");
     setRegion("");
     setBasePath("");
     setUrl("");
+    setSubmitError(null);
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setSubmitError(null); setSubdirTouched(false); } }}>
       <DialogTrigger asChild>
         <Button variant="outline">Register Repository</Button>
       </DialogTrigger>
@@ -318,7 +347,7 @@ function RegisterRepositoryDialog() {
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1">
             <Label>Repository name</Label>
-            <Input value={repoName} onChange={(e) => setRepoName(e.target.value)} required placeholder="my-backups" />
+            <Input value={repoName} onChange={(e) => handleRepoNameChange(e.target.value)} required placeholder="my-backups" />
           </div>
           <div className="space-y-1">
             <Label>Type</Label>
@@ -360,7 +389,7 @@ function RegisterRepositoryDialog() {
                   </div>
                   <div className="space-y-1">
                     <Label>Subdirectory (optional)</Label>
-                    <Input value={fsSubdir} onChange={(e) => setFsSubdir(e.target.value)} placeholder="my-backups" />
+                    <Input value={fsSubdir} onChange={(e) => handleFsSubdirChange(e.target.value)} placeholder="my-backups" />
                     {effectiveFsBase && (
                       <p className="font-mono text-xs text-muted-foreground">Location: {fsLocation}</p>
                     )}
@@ -395,6 +424,11 @@ function RegisterRepositoryDialog() {
                 placeholder="https://example.com/snapshots"
               />
             </div>
+          )}
+          {submitError && (
+            <p className="rounded border border-red-400 bg-red-50 px-3 py-2 text-xs text-red-800 dark:bg-red-950 dark:text-red-200">
+              {submitError}
+            </p>
           )}
           <Button type="submit" disabled={mutate.isPending}>
             {mutate.isPending ? "Registering…" : "Register"}

@@ -68,6 +68,22 @@ async def list_repositories(user: User = Depends(authenticated_user)) -> list[Sn
 async def register_repository(body: CreateRepositoryBody, user: User = Depends(authenticated_user)) -> SnapshotRepository:
     """Register a new Elasticsearch snapshot repository. Requires ADMIN server role."""
     await HTTPException_if_not_server_role(user, Roles.ADMIN)
+    existing = await es().snapshot.get_repository(name="*")
+    if body.type == "fs":
+        new_loc = body.settings.get("location", "")
+        for name, repo in existing.items():
+            if repo.get("type") == "fs" and repo.get("settings", {}).get("location") == new_loc:
+                raise HTTPException(status_code=409, detail=f"Location '{new_loc}' is already used by repository '{name}'")
+    elif body.type == "s3":
+        new_bucket = body.settings.get("bucket", "")
+        new_path = body.settings.get("base_path", "")
+        for name, repo in existing.items():
+            s = repo.get("settings", {})
+            if repo.get("type") == "s3" and s.get("bucket") == new_bucket and s.get("base_path", "") == new_path:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"S3 bucket/path '{new_bucket}/{new_path}' is already used by repository '{name}'",
+                )
     await es().snapshot.create_repository(
         name=body.name,
         repository={"type": body.type, "settings": body.settings},
