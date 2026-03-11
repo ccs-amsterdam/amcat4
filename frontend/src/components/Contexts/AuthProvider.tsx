@@ -85,8 +85,8 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   });
 
   const signIn = useCallback(async () => {
-    const returnTo = encodeURIComponent(window.location.href);
-    const loginUrl = `/api/auth/login?returnTo=${returnTo}`;
+    const destination = window.location.pathname === "/" ? `${window.location.origin}/projects` : window.location.href;
+    const loginUrl = `/api/auth/login?returnTo=${encodeURIComponent(destination)}`;
     window.location.href = loginUrl;
   }, []);
 
