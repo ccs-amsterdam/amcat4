@@ -20,6 +20,7 @@ export default function Multimedia({ projectId, user }: Props) {
   const [format, setFormat] = useState<"list" | "panes">("list");
 
   const { data: multimediaList, isLoading: loadingMultimediaList } = useMultimediaList(user, projectId, { prefix });
+  console.log("wtf");
 
   const items = multimediaList?.filter((item) => !item.is_dir) || [];
   const pageSize = format === "list" ? 20 : 4;
@@ -52,7 +53,12 @@ export default function Multimedia({ projectId, user }: Props) {
         <h3 className="mt-0">Multimedia list</h3>
         {loadingMultimediaList ? <Loading /> : null}
         <div className="min-h-[4rem]">
-          <DirectoryBrowser projectId={projectId} prefix={prefix} setPrefix={setPrefix} multimediaList={multimediaList} />
+          <DirectoryBrowser
+            projectId={projectId}
+            prefix={prefix}
+            setPrefix={setPrefix}
+            multimediaList={multimediaList}
+          />
         </div>
         <div className={` flex items-center justify-between ${showItems.length ? "" : "hidden"} `}>
           <div className="flex items-center ">

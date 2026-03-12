@@ -173,7 +173,10 @@ export function ZipUploader({ fields, setData, setColumns }: Props) {
 
     // Only include folder column if at least one file has a subfolder; fill others with "."
     const hasFolders = rows.some((r) => r.folder !== "");
-    if (hasFolders) rows.forEach((r) => { if (!r.folder) r.folder = "."; });
+    if (hasFolders)
+      rows.forEach((r) => {
+        if (!r.folder) r.folder = ".";
+      });
 
     // Only include date column if at least one file has a date
     const hasDates = rows.some((r) => r.date !== "");
@@ -228,7 +231,10 @@ export function ZipUploader({ fields, setData, setColumns }: Props) {
           variant="outline"
           className={`${zoneHover ? "bg-primary/30" : ""} text-md flex h-auto w-full flex-col gap-1 border-dotted bg-primary/10 px-10 py-14 hover:bg-primary/20`}
           onClick={() => fileInputRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setZoneHover(true); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setZoneHover(true);
+          }}
           onDragLeave={() => setZoneHover(false)}
           onDrop={(e) => {
             e.preventDefault();

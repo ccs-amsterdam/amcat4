@@ -26,7 +26,6 @@ import AggregateTable from "./AggregateTable";
 import useCreateChartData from "./useCreateChartData";
 
 import { DownloadIcon } from "lucide-react";
-import { useCSVDownloader } from "react-papaparse";
 import { Input } from "../ui/input";
 import AggregatePagination, { useAggregatePagination } from "./AggregatePagination";
 
@@ -193,29 +192,56 @@ export default function AggregateResult({
   );
 }
 
-function DownloadData({
+export function DownloadData({
   data,
   axes,
   projectId,
   disabled,
 }: {
-  data: AggregateDataPoint[];
-  axes: AggregationAxis[];
-  projectId: AmcatProjectId;
-
+  data: any[];
+  axes: any[];
+  projectId: string;
   disabled: boolean;
 }) {
-  const { CSVDownloader, Type } = useCSVDownloader();
   const [filename, setFilename] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
 
   const defaultFilename = `${projectId}_${axes.map((a) => a.name).join("_X_")}`;
+
+  const handleDownload = async () => {
+    setIsExporting(true);
+    try {
+      // dynamic import of papaparse to reduce initial bundle size, since this is only used when downloading
+      const Papa = (await import("papaparse")).default;
+
+      const csv = Papa.unparse(data);
+      const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8;" });
+
+      // 4. Trigger the browser download
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `${filename || defaultFilename}.csv`);
+      document.body.appendChild(link);
+      link.click();
+
+      // Cleanup
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Export failed", error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <Dialog>
       <DialogTrigger disabled={disabled} className="disabled:opacity-50">
-        <DownloadIcon className="h-5 w-5 " />
+        <DownloadIcon className="h-5 w-5" />
       </DialogTrigger>
       <DialogContent>
-        <div className="flex-between flex items-center gap-1">
+        <div className="flex items-center gap-1">
           <Input
             placeholder={defaultFilename}
             className="selection:bg-foreground/20 focus-visible:ring-transparent"
@@ -224,16 +250,14 @@ function DownloadData({
           />
           <div className="text-foreground/70">.csv</div>
         </div>
-        <CSVDownloader
-          type={Type.Button}
-          className="rounded-md border bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/80"
-          download={true}
-          data={data}
-          bom={true}
-          filename={`${filename || defaultFilename}`}
+
+        <button
+          onClick={handleDownload}
+          disabled={isExporting}
+          className="rounded-md border bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/80 disabled:bg-primary/50"
         >
-          Download data
-        </CSVDownloader>
+          {isExporting ? "Processing..." : "Download data"}
+        </button>
       </DialogContent>
     </Dialog>
   );

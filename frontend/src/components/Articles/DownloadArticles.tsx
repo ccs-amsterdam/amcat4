@@ -4,7 +4,6 @@ import { AmcatField, AmcatProjectId, AmcatQuery, AmcatUserRole } from "@/interfa
 import { ChevronDown, Download, EyeOff } from "lucide-react";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { MouseEvent, useEffect, useState } from "react";
-import { useCSVDownloader } from "react-papaparse";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Dialog, DialogContent } from "../ui/dialog";
@@ -99,7 +98,8 @@ interface DownloaderProps {
 function Downloader({ user, projectId, query, fields, projectRole }: DownloaderProps) {
   const [enabled, setEnabled] = useState(false);
   const [filename, setFilename] = useState<string>("");
-  const { CSVDownloader, Type } = useCSVDownloader();
+  const [isProcessing, setIsProcessing] = useState(false); // Track the CSV conversion step
+
   const { articles, pageIndex, pageCount, isLoading, nextPage } = usePaginatedArticles({
     user,
     projectId,
@@ -117,6 +117,33 @@ function Downloader({ user, projectId, query, fields, projectRole }: DownloaderP
     if (pageIndex < pageCount - 1) nextPage();
   }, [nextPage, pageIndex, pageCount]);
 
+  // The actual download logic
+  const handleDownload = async () => {
+    setIsProcessing(true);
+    try {
+      const Papa = (await import("papaparse")).default;
+      const csv = Papa.unparse(articles);
+
+      const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `${filename || defaultFilename}.csv`);
+      document.body.appendChild(link);
+      link.click();
+
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      // Close the dialog after success
+      setEnabled(false);
+    } catch (error) {
+      console.error("CSV generation failed", error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   if (!enabled)
     return (
       <Button onClick={() => setEnabled(true)} className="flex items-center gap-2">
@@ -124,23 +151,25 @@ function Downloader({ user, projectId, query, fields, projectRole }: DownloaderP
       </Button>
     );
 
-  function render() {
-    if (isLoading || pageIndex < pageCount - 1)
+  function renderContent() {
+    const isFetching = isLoading || pageIndex < pageCount - 1;
+
+    if (isFetching)
       return (
-        <div className=" ">
+        <div>
           <div className="mb-1 flex justify-between">
             <div>Fetching pages</div>
             <div className={pageCount ? "" : "hidden"}>
               {pageIndex + 1} / {pageCount}
             </div>
           </div>
-          <Progress className="mt-2" value={(100 * pageIndex) / pageCount - 1} />
+          <Progress className="mt-2" value={(100 * pageIndex) / (pageCount - 1 || 1)} />
         </div>
       );
 
     return (
       <>
-        <div className="flex-between flex items-center gap-1">
+        <div className="flex items-center gap-1">
           <Input
             placeholder={defaultFilename}
             className="selection:bg-foreground/20 focus-visible:ring-transparent"
@@ -150,18 +179,9 @@ function Downloader({ user, projectId, query, fields, projectRole }: DownloaderP
           <div className="text-foreground/70">.csv</div>
         </div>
 
-        <div onClick={() => setEnabled(false)}>
-          <CSVDownloader
-            type={Type.Button}
-            className="w-full rounded-md border bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/80"
-            download={true}
-            data={articles}
-            bom={true}
-            filename={`${filename || defaultFilename}`}
-          >
-            Download
-          </CSVDownloader>
-        </div>
+        <Button onClick={handleDownload} disabled={isProcessing} className="w-full">
+          {isProcessing ? "Preparing file..." : "Download"}
+        </Button>
       </>
     );
   }
@@ -169,7 +189,7 @@ function Downloader({ user, projectId, query, fields, projectRole }: DownloaderP
   return (
     <Dialog open={true} onOpenChange={(open) => setEnabled(open)}>
       <DialogContent>
-        <div className="mt-5 flex flex-col gap-3">{render()}</div>
+        <div className="mt-5 flex flex-col gap-3">{renderContent()}</div>
       </DialogContent>
     </Dialog>
   );

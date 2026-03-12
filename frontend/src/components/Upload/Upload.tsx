@@ -9,7 +9,7 @@ import {
   UploadOperation,
 } from "@/interfaces";
 import { AlertCircleIcon, ChevronDown, Key, Loader, Lock, RotateCcw } from "lucide-react";
-import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../ui/button";
 import { InfoBox } from "../ui/info-box";
 import { FieldTypesSection } from "../Fields/FieldTypesSection";
@@ -33,9 +33,11 @@ import {
 import { DynamicIcon } from "../ui/dynamic-icon";
 import { Input } from "../ui/input";
 import { Loading } from "../ui/loading";
+
 import { Progress } from "../ui/progress";
 import SimpleTooltip from "../ui/simple-tooltip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 
 interface Props {
   user: AmcatSessionUser;
@@ -94,25 +96,6 @@ export default function Upload({ user, projectId }: Props) {
   });
   const [noIdentifierWarning, setNoIdentifierWarning] = useState(false);
 
-  const multimediaPrefixes = useMemo(() => {
-    // If there are multimedia columns, grab all prefixes from the keys
-    // (not external urls). This is used to fetch the list of existing
-    // multimedia items, but only within the specified prefixes (aka directories)
-    const prefixes = new Set<string>();
-    for (const column of columns) {
-      if (column.type === "image" || column.type === "video") {
-        for (const row of data) {
-          const value = String(row[column.name]);
-          if (/^https?:\/\//.test(value)) continue;
-          const prefix = value?.replace(/\/[^/]*$/, "/");
-          prefixes.add(prefix);
-        }
-      }
-    }
-    return Array.from(prefixes);
-  }, [data, columns]);
-  const multimedia = useMultimediaConcatenatedList(user, projectId, multimediaPrefixes);
-
   useEffect(() => {
     const needsValidation = columns.filter((c) => c.status === "Validating");
     if (needsValidation.length === 0) {
@@ -121,13 +104,10 @@ export default function Upload({ user, projectId }: Props) {
     }
     setValidating(true);
 
-    // need to wait until multimedia is collected to perform validation
-    if (multimediaPrefixes.length > 0 && !multimedia) return;
-
-    validateColumns(columns, data, multimedia).then((newColumns) => {
+    validateColumns(columns, data).then((newColumns) => {
       setColumns(newColumns);
     });
-  }, [columns, data, multimedia, multimediaPrefixes]);
+  }, [columns, data]);
 
   useEffect(() => {
     // upload batches
@@ -162,7 +142,11 @@ export default function Upload({ user, projectId }: Props) {
   const duplicates = useMemo(() => hasDuplicates(data, columns), [data, columns]);
   const nonePending = columns.length > 0 && columns.every((c) => !["Validating", "Type not set"].includes(c.status));
   const hasInvalid = columns.some((c) => c.status === "Type invalid");
-  const ready = !duplicates && nonePending && !hasInvalid && columns.some((c) => c.status === "Ready" || c.status === "Type warning");
+  const ready =
+    !duplicates &&
+    nonePending &&
+    !hasInvalid &&
+    columns.some((c) => c.status === "Ready" || c.status === "Type warning");
   const hasIdentifiers = useMemo(() => columns.some((c) => c.identifier), [columns]);
 
   useEffect(() => {
@@ -243,7 +227,7 @@ export default function Upload({ user, projectId }: Props) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setColumns(columns.map((c) => c.field === null ? autoTypeColumn(data, c.name) : c))}
+              onClick={() => setColumns(columns.map((c) => (c.field === null ? autoTypeColumn(data, c.name) : c)))}
             >
               Include all fields
             </Button>
@@ -253,10 +237,15 @@ export default function Upload({ user, projectId }: Props) {
         <div className="prose max-w-none rounded border p-6 dark:prose-invert">
           <h3>Confirm upload</h3>
           <UnusedFields columns={columns} fields={fields} />
-          {hasInvalid && (() => {
-            const n = columns.filter((c) => c.status === "Type invalid").length;
-            return <p className="text-sm text-destructive">{n} field{n !== 1 ? "s" : ""} failed to validate</p>;
-          })()}
+          {hasInvalid &&
+            (() => {
+              const n = columns.filter((c) => c.status === "Type invalid").length;
+              return (
+                <p className="text-sm text-destructive">
+                  {n} field{n !== 1 ? "s" : ""} failed to validate
+                </p>
+              );
+            })()}
           <div className="flex items-center">
             <Button disabled={!ready} onClick={onUpload}>
               Upload {data.length || ""} documents
@@ -266,7 +255,12 @@ export default function Upload({ user, projectId }: Props) {
               setNoIdentifierWarning={setNoIdentifierWarning}
               onIgnoreNoIdentifierWarning={onIgnoreNoIdentifierWarning}
             />
-            <UploadOptions isAdmin={!!isAdmin} operation={operation} setOperation={setOperation} hasIdentifiers={hasIdentifiers} />
+            <UploadOptions
+              isAdmin={!!isAdmin}
+              operation={operation}
+              setOperation={setOperation}
+              hasIdentifiers={hasIdentifiers}
+            />
 
             <div className="flex flex-col gap-2">
               {duplicates ? (
@@ -279,7 +273,12 @@ export default function Upload({ user, projectId }: Props) {
           </div>
         </div>
       </div>
-      <UploadDialog uploadStatus={uploadStatus} setUploadStatus={setUploadStatus} projectId={projectId} onUploadMore={resetUpload} />
+      <UploadDialog
+        uploadStatus={uploadStatus}
+        setUploadStatus={setUploadStatus}
+        projectId={projectId}
+        onUploadMore={resetUpload}
+      />
       <UploadInfoBox />
     </div>
   );
@@ -298,12 +297,14 @@ function UploadTable({
 }) {
   return (
     <div className="border-t text-sm">
-      <div className="grid grid-cols-[1fr_7rem_1fr_10rem_1.5rem] gap-x-3 border-b bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+      <div className="grid grid-cols-2 gap-3 border-b bg-primary/10  px-3 py-3 text-xs font-medium text-foreground md:grid-cols-[1fr,8rem,1fr,12rem,1.5rem]">
         <span>CSV column</span>
         <span>Action</span>
         <span>AmCAT field</span>
         <span>Type</span>
-        <span></span>
+        <span>
+          <Key className="h-5 w-5" />
+        </span>
       </div>
       {columns.map((column) => (
         <UploadColumnRow
@@ -336,9 +337,7 @@ function UploadColumnRow({
 }) {
   const action: ColumnAction = column.field === null ? "exclude" : column.exists ? "existing" : "new";
 
-  const availableFields = fields.filter(
-    (f) => !columns.some((c) => c.field === f.name && c.name !== column.name),
-  );
+  const availableFields = fields.filter((f) => !columns.some((c) => c.field === f.name && c.name !== column.name));
 
   function onActionChange(newAction: ColumnAction) {
     if (newAction === "new") {
@@ -362,28 +361,34 @@ function UploadColumnRow({
 
   return (
     <div
-      className={`grid grid-cols-[1fr_7rem_1fr_10rem_1.5rem] items-center gap-x-3 border-b px-3 py-1.5 ${action === "exclude" ? "opacity-40" : ""}`}
+      className={`grid grid-cols-2 items-center gap-x-3 gap-y-1 border-b px-3 py-1.5 md:grid-cols-[1fr,8rem,1fr,12rem,1.5rem]`}
     >
       {/* CSV column name */}
-      <div className="overflow-hidden text-ellipsis font-mono text-xs" title={column.name}>
-        {column.name}
+      <div className="flex items-center gap-3">
+        {/*{getTypeWarningIndicator(column)}*/}
+        <div className={`truncate text-xs font-light ${action === "exclude" ? "opacity-40" : ""}`} title={column.name}>
+          {column.name}
+        </div>
       </div>
 
       {/* Action */}
-      <select
-        value={action}
-        onChange={(e) => onActionChange(e.target.value as ColumnAction)}
-        className="h-7 rounded border border-input bg-background px-2 text-xs"
-      >
-        <option value="new">New field</option>
-        {availableFields.length > 0 && <option value="existing">Existing field</option>}
-        <option value="exclude">Exclude</option>
-      </select>
+      <Select value={action} onValueChange={(value) => onActionChange(value as ColumnAction)}>
+        <SelectTrigger className="h-7 border-none bg-primary text-xs text-primary-foreground">
+          <SelectValue placeholder="Select action" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="new">New field</SelectItem>
+          <SelectItem value="existing" disabled={availableFields.length === 0}>
+            Existing field
+          </SelectItem>
+          <SelectItem value="exclude">Exclude</SelectItem>
+        </SelectContent>
+      </Select>
 
       {/* Target field */}
       {action === "new" ? (
         <Input
-          className="h-7 text-xs"
+          className="h-7 truncate text-xs"
           value={column.field ?? ""}
           placeholder={autoNameColumn(column.name)}
           onChange={(e) =>
@@ -391,10 +396,10 @@ function UploadColumnRow({
           }
         />
       ) : action === "existing" ? (
-        <select
+        <Select
           value={column.field ?? ""}
-          onChange={(e) => {
-            const f = fields.find((f) => f.name === e.target.value);
+          onValueChange={(value) => {
+            const f = fields.find((f) => f.name === value);
             if (f)
               setColumn({
                 ...column,
@@ -406,32 +411,36 @@ function UploadColumnRow({
                 identifier: f.identifier,
               });
           }}
-          className="h-7 rounded border border-input bg-background px-2 text-xs"
         >
-          {availableFields.map((f) => (
-            <option key={f.name} value={f.name}>
-              {f.name}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="h-7 border-none bg-foreground/10 text-xs">
+            <SelectValue placeholder="Select field" />
+          </SelectTrigger>
+          <SelectContent>
+            {availableFields.map((f) => (
+              <SelectItem key={f.name} value={f.name}>
+                {f.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       ) : (
         <span className="text-xs text-muted-foreground">—</span>
       )}
 
       {/* Type + inline warning */}
       {action === "new" ? (
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-3">
+          {getTypeWarningIndicator(column)}
           <CreateFieldSelectType
             type={column.type}
             setType={(type) => setColumn({ ...column, type, status: "Validating" })}
           />
-          {getTypeWarningIndicator(column)}
         </div>
       ) : action === "existing" ? (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {getTypeWarningIndicator(column)}
           <Lock className="h-3 w-3 shrink-0" />
           {column.type}
-          {getTypeWarningIndicator(column)}
         </div>
       ) : (
         <span />
@@ -446,7 +455,7 @@ function UploadColumnRow({
             className={`h-6 w-6 ${column.identifier ? "" : "opacity-30"}`}
             onClick={() => setColumn({ ...column, identifier: !column.identifier })}
           >
-            <Key className="h-4 w-4" />
+            <Key className="h-5 w-5" />
           </Button>
         </SimpleTooltip>
       ) : (
@@ -500,7 +509,7 @@ function UploadDialog({
             <p>
               {uploadStatus.successes} document{uploadStatus.successes !== 1 ? "s" : ""} uploaded successfully.
               {uploadStatus.failures > 0 && (
-                <span className="text-destructive ml-1">
+                <span className="ml-1 text-destructive">
                   {uploadStatus.failures} document{uploadStatus.failures !== 1 ? "s" : ""} failed.
                 </span>
               )}
@@ -508,7 +517,9 @@ function UploadDialog({
             {uploadStatus.failureReasons.length > 0 && (
               <div className="max-h-40 overflow-auto rounded border p-2 text-xs text-destructive">
                 {uploadStatus.failureReasons.map((reason, i) => (
-                  <div key={i} className="py-0.5">{reason}</div>
+                  <div key={i} className="py-0.5">
+                    {reason}
+                  </div>
                 ))}
               </div>
             )}
@@ -693,7 +704,8 @@ function UploadOptions({
 }
 
 function getTypeWarningIndicator(column: Column) {
-  if (column.status === "Validating") return <Loader className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />;
+  if (column.status === "Validating")
+    return <Loader className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />;
   if (column.status !== "Type invalid" && column.status !== "Type warning") return null;
 
   const isInvalid = column.status === "Type invalid";
@@ -702,7 +714,7 @@ function getTypeWarningIndicator(column: Column) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <AlertCircleIcon className={`h-3.5 w-3.5 shrink-0 ${isInvalid ? "text-warn" : "text-secondary"}`} />
+        <AlertCircleIcon className={`h-5 w-5 shrink-0 ${isInvalid ? "text-warn" : "text-secondary"}`} />
       </TooltipTrigger>
       <TooltipContent className="bg-background">
         <div className="flex max-h-56 flex-col gap-2 overflow-auto">
@@ -722,6 +734,107 @@ function getTypeWarningIndicator(column: Column) {
   );
 }
 
+// function CSVUploader({
+//   fields,
+//   setData,
+//   setColumns,
+// }: {
+//   fields: AmcatField[];
+//   setData: Dispatch<SetStateAction<Record<string, jsType>[]>>;
+//   setColumns: Dispatch<SetStateAction<Column[]>>;
+// }) {
+//   const inputRef = useRef<HTMLInputElement>(null);
+//   const [zoneHover, setZoneHover] = useState(false);
+//   const [fileName, setFileName] = useState<string | null>(null);
+
+//   async function handleFile(file: File) {
+//     const Papa = (await import("papaparse")).default;
+//     const XLSX = await import("xlsx");
+
+//     const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
+//     if (!ACCEPTED_EXTENSIONS.includes(ext)) return;
+//     setFileName(file.name);
+
+//     if (ext === ".csv" || ext === ".tsv") {
+//       Papa.parse(file, {
+//         skipEmptyLines: true,
+//         dynamicTyping: true,
+//         header: false,
+//         complete: (result) => {
+//           prepareData({ importedData: result.data as jsType[][], fields, setData, setColumns });
+//         },
+//       });
+//     } else {
+//       const reader = new FileReader();
+//       reader.onload = (e) => {
+//         const buf = new Uint8Array(e.target!.result as ArrayBuffer);
+//         const workbook = XLSX.read(buf, { type: "array", cellDates: true });
+//         const sheet = workbook.Sheets[workbook.SheetNames[0]];
+//         const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
+//         const rows = rawRows.map((row) =>
+//           row.map((cell) => (cell instanceof Date ? cell.toISOString() : cell)),
+//         ) as jsType[][];
+//         prepareData({ importedData: rows, fields, setData, setColumns });
+//       };
+//       reader.readAsArrayBuffer(file);
+//     }
+//   }
+
+//   function clear() {
+//     setFileName(null);
+//     setData([]);
+//     setColumns([]);
+//     if (inputRef.current) inputRef.current.value = "";
+//   }
+
+//   if (fileName) {
+//     return (
+//       <div className="flex w-full items-center justify-end gap-2">
+//         <Button className="px-1" variant="ghost" onClick={clear}>
+//           <X className="h-8 w-8" />
+//         </Button>
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <div className="flex">
+//       <div className="w-full">
+//         <input
+//           ref={inputRef}
+//           type="file"
+//           accept=".csv,.tsv,.xlsx,.xls,.xlsm,.ods"
+//           className="hidden"
+//           onChange={(e) => {
+//             const file = e.target.files?.[0];
+//             if (file) handleFile(file);
+//           }}
+//         />
+//         <Button
+//           variant="outline"
+//           className={`${zoneHover ? "bg-primary/30" : ""} text-md w-full flex-auto border-dotted bg-primary/10 px-10 py-14 hover:bg-primary/20`}
+//           onClick={() => inputRef.current?.click()}
+//           onDragOver={(e) => {
+//             e.preventDefault();
+//             setZoneHover(true);
+//           }}
+//           onDragLeave={(e) => {
+//             e.preventDefault();
+//             setZoneHover(false);
+//           }}
+//           onDrop={(e) => {
+//             e.preventDefault();
+//             setZoneHover(false);
+//             const file = e.dataTransfer?.files?.[0];
+//             if (file) handleFile(file);
+//           }}
+//         >
+//           Click to upload CSV, TSV, or spreadsheet (XLSX, XLS, ODS), or drag and drop
+//         </Button>
+//       </div>
+//     </div>
+//   );
+// }
 
 export function prepareData({
   importedData,
@@ -779,10 +892,11 @@ function UploadInfoBox() {
   return (
     <InfoBox title="Information on Uploading Documents" storageKey="infobox:upload">
       <div className="flex flex-col gap-5">
-        <p>Upload documents to this project. You can upload a spreadsheet (CSV, TSV, XLSX)
-          or a folder or zip with with text, PDF, or DOCX documents.
-          After uploading the file, you can choose what to do with each field or column in the data
-          before uploading.</p>
+        <p>
+          Upload documents to this project. You can upload a spreadsheet (CSV, TSV, XLSX) or a folder or zip with with
+          text, PDF, or DOCX documents. After uploading the file, you can choose what to do with each field or column in
+          the data before uploading.
+        </p>
         <section>
           <h4 className="mb-1.5 font-semibold text-foreground">Column actions</h4>
           <div className="rounded-md bg-primary/10 p-3">
@@ -807,8 +921,8 @@ function UploadInfoBox() {
             composite key (e.g. author + timestamp).
           </p>
           <p className="mt-1.5 text-primary">
-            Identifier status cannot be changed after a field is created, and identifier values cannot be updated once
-            a document has been indexed.
+            Identifier status cannot be changed after a field is created, and identifier values cannot be updated once a
+            document has been indexed.
           </p>
         </section>
 
@@ -819,11 +933,11 @@ function UploadInfoBox() {
               <b className="text-primary">Create</b>
               Only adds new documents. Documents already present (matched by identifier) are skipped.
               <b className="text-primary">Create or update</b>
-              Adds new documents and updates fields on existing ones based on the identifier. Requires admin role and at least one identifier field.
+              Adds new documents and updates fields on existing ones based on the identifier. Requires admin role and at
+              least one identifier field.
             </div>
           </div>
         </section>
-
 
         <FieldTypesSection />
       </div>

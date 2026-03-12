@@ -155,17 +155,17 @@ export function CreateFieldSelectType({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex h-full items-center justify-between gap-3 rounded border border-primary px-3 text-primary outline-none">
+      <DropdownMenuTrigger className="flex h-7 w-44  items-center justify-between gap-3 rounded bg-foreground/10 px-3  outline-none">
         {type ? (
           <>
-            <DynamicIcon type={type} /> {type}
+            <DynamicIcon className="h-4 w-4" type={type} /> {type}
           </>
         ) : (
           "Select type"
         )}
-        <ChevronDown className="h-5 w-5" />
+        <ChevronDown className="h-4 w-4 text-foreground/50" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="h-64 overflow-auto">
+      <DropdownMenuContent className="h-64 w-44 overflow-auto">
         <DropdownMenuRadioGroup value={type ?? undefined} onValueChange={(value) => setType(value as AmcatFieldType)}>
           {Array.from(types.entries()).map(([x, help]) => {
             return (
@@ -186,4 +186,3 @@ export function CreateFieldSelectType({
     </DropdownMenu>
   );
 }
-

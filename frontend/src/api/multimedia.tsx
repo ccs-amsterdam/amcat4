@@ -90,7 +90,11 @@ export function useMultimediaPresignedPost(
   });
 }
 
-export function useMultimediaPresignedGet(user?: AmcatSessionUser, projectId?: AmcatProjectId | undefined, key?: string) {
+export function useMultimediaPresignedGet(
+  user?: AmcatSessionUser,
+  projectId?: AmcatProjectId | undefined,
+  key?: string,
+) {
   return useQuery({
     queryKey: ["presignedUrl", user, projectId, key],
     queryFn: async () => {
