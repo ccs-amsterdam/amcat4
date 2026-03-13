@@ -49,7 +49,7 @@ export function CreateProject({ folder, request }: { folder?: string; request?: 
     e.preventDefault();
     setLoading(true);
     createProjectAsync(amcatProjectSchema.parse({ id, name, description, folder: folderValue }))
-      .then(() => navigate({ to: `/projects/${id}/dashboard` }))
+      .then(() => navigate({ to: `/projects/${id}` }))
       .catch((e) => {
         setError(e?.response?.data?.message || "An error occurred");
       })
@@ -60,7 +60,7 @@ export function CreateProject({ folder, request }: { folder?: string; request?: 
     e.preventDefault();
     setLoading(true);
     registerProjectAsync(amcatProjectSchema.parse({ id: registerId, name, description, folder: folderValue }))
-      .then(() => navigate({ to: `/projects/${registerId}/dashboard` }))
+      .then(() => navigate({ to: `/projects/${registerId}` }))
       .catch((e) => {
         setError(e?.response?.data?.detail || e?.response?.data?.message || "An error occurred");
       })
