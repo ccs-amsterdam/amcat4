@@ -1,16 +1,11 @@
 import { useMyProjectRole } from "@/api/project";
-import { useFields } from "@/api/fields";
 import { AmcatField, AmcatProjectId, AmcatQuery, AmcatUserRole } from "@/interfaces";
-import { ChevronDown, Download, EyeOff } from "lucide-react";
+import { Download } from "lucide-react";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
-import { MouseEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../ui/button";
-import { Checkbox } from "../ui/checkbox";
 import { Dialog, DialogContent } from "../ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
-import { Loading } from "../ui/loading";
 import { Progress } from "../ui/progress";
-import ArticleTable from "./ArticleTable";
 import usePaginatedArticles from "./usePaginatedArticles";
 
 import { Input } from "../ui/input";
@@ -19,72 +14,15 @@ interface Props {
   user: AmcatSessionUser;
   projectId: AmcatProjectId;
   query: AmcatQuery;
+  fields: AmcatField[];
 }
 
-export default function DownloadArticles({ user, projectId, query }: Props) {
-  const [fields, setFields] = useState<AmcatField[] | undefined>();
-
+export default function DownloadArticles({ user, projectId, query, fields }: Props) {
   const { role: projectRole } = useMyProjectRole(user, projectId);
-  const { data: allFields, isLoading } = useFields(user, projectId);
 
-  useEffect(() => {
-    if (!allFields) return;
-    setFields(
-      allFields.filter((field) => {
-        if (!field.client_settings.inList) return false;
-        if (projectRole === "METAREADER" && field.metareader.access === "none") return false;
-        return true;
-      }),
-    );
-  }, [projectRole, allFields]);
+  if (!projectRole) return null;
 
-  function toggleField(e: MouseEvent, field: AmcatField) {
-    e.preventDefault();
-    if (!fields) return;
-    if (fields.find((f) => f.name === field.name)) {
-      setFields(fields.filter((f) => f !== field));
-    } else {
-      setFields([...fields, field]);
-    }
-  }
-
-  if (isLoading) return <Loading />;
-  if (!projectRole || !fields) return null;
-
-  return (
-    <ArticleTable user={user} projectId={projectId} query={query} fields={fields}>
-      <div className="flex justify-end gap-3 ">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="flex items-center gap-2">
-              {fields.length} fields <ChevronDown className="h-5 w-5" />{" "}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent onClick={(e) => e.preventDefault()} className="max-h-60 overflow-auto">
-            {allFields?.map((field) => {
-              const selected = fields.find((f) => f.name === field.name);
-              const forbidden = projectRole === "METAREADER" && field.metareader.access === "none";
-              const snippet = projectRole === "METAREADER" && field.metareader.access === "snippet";
-              return (
-                <DropdownMenuItem
-                  disabled={forbidden}
-                  onClick={(e) => toggleField(e, field)}
-                  key={field.name}
-                  className="flex gap-2"
-                >
-                  {selected ? <Checkbox checked={true} /> : <Checkbox checked={false} />}
-                  {field.name}
-                  <span className="text-destructive">{forbidden ? <EyeOff className="h-4 w-4" /> : ""}</span>
-                  <span className="text-foreground/50">{snippet ? "(snippet)" : ""}</span>
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Downloader user={user} projectId={projectId} query={query} fields={fields} projectRole={projectRole} />
-      </div>
-    </ArticleTable>
-  );
+  return <Downloader user={user} projectId={projectId} query={query} fields={fields} projectRole={projectRole} />;
 }
 
 interface DownloaderProps {
@@ -148,6 +86,7 @@ function Downloader({ user, projectId, query, fields, projectRole }: DownloaderP
     return (
       <Button onClick={() => setEnabled(true)} className="flex items-center gap-2">
         <Download className="h-5 w-5" />
+        Download
       </Button>
     );
 

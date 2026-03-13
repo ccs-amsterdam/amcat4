@@ -1,5 +1,4 @@
 
-
 import {
   ColumnDef,
   SortingState,
@@ -13,7 +12,7 @@ import {
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "./button";
-import { StepBack, StepForward } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, StepBack, StepForward } from "lucide-react";
 import { useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
 
@@ -30,6 +29,10 @@ interface DataTableProps<TData extends Record<string, any>, TValue> {
   loading?: boolean;
   pageSize?: number;
   sortable?: boolean; // !!! only works if all data is known (so pagination not manual)
+  sorting?: {
+    state: SortingState;
+    onChange: (s: SortingState) => void;
+  };
 }
 
 export function DataTable<TData extends Record<string, any>, TValue>({
@@ -38,9 +41,12 @@ export function DataTable<TData extends Record<string, any>, TValue>({
   globalFilter,
   pagination,
   pageSize = 6,
+  sorting: externalSorting,
 }: DataTableProps<TData, TValue>) {
   const manualPagination = !!pagination;
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [localSorting, setLocalSorting] = useState<SortingState>([]);
+  const sorting = externalSorting?.state ?? localSorting;
+  const onSortingChange = externalSorting?.onChange ?? setLocalSorting;
 
   const table = useReactTable({
     data,
@@ -49,10 +55,10 @@ export function DataTable<TData extends Record<string, any>, TValue>({
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    onSortingChange: setSorting,
-    getSortedRowModel: getSortedRowModel(),
+    onSortingChange: externalSorting ? undefined : onSortingChange,
+    getSortedRowModel: externalSorting ? undefined : getSortedRowModel(),
     state: manualPagination
-      ? { globalFilter, pagination: { pageIndex: pagination.pageIndex, pageSize } }
+      ? { globalFilter, sorting, pagination: { pageIndex: pagination.pageIndex, pageSize } }
       : { globalFilter, sorting },
     initialState: {
       pagination: {
@@ -72,9 +78,34 @@ export function DataTable<TData extends Record<string, any>, TValue>({
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
+                  const canSort = externalSorting && header.column.columnDef.enableSorting !== false;
+                  const sortEntry = externalSorting?.state.find((s) => s.id === header.column.id);
+                  const sorted = sortEntry ? (sortEntry.desc ? "desc" : "asc") : false;
+                  const handleSortClick = canSort
+                    ? () => {
+                        const next = !sortEntry
+                          ? [{ id: header.column.id, desc: false }]
+                          : !sortEntry.desc
+                            ? [{ id: header.column.id, desc: true }]
+                            : externalSorting!.state.filter((s) => s.id !== header.column.id);
+                        externalSorting!.onChange(next);
+                      }
+                    : undefined;
                   return (
                     <TableHead key={header.id} style={{ width: `${header.getSize()}px` }}>
-                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.isPlaceholder ? null : (
+                        <div
+                          className={canSort ? "flex cursor-pointer select-none items-start gap-1 hover:text-foreground" : undefined}
+                          onClick={handleSortClick}
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {canSort && (
+                            <span className="mt-1 shrink-0 text-muted-foreground">
+                              {sorted === "asc" ? <ArrowUp className="h-3 w-3" /> : sorted === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3" />}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </TableHead>
                   );
                 })}

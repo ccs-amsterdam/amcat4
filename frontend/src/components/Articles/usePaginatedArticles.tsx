@@ -1,5 +1,5 @@
 import { useArticles } from "@/api/articles";
-import { AmcatArticle, AmcatField, AmcatProjectId, AmcatQuery, AmcatSnippet, AmcatUserRole } from "@/interfaces";
+import { AmcatArticle, AmcatField, AmcatProjectId, AmcatQuery, AmcatQueryParams, AmcatSnippet, AmcatUserRole } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useListFields from "./useListFields";
@@ -15,6 +15,7 @@ interface params {
   defaultSnippets?: AmcatSnippet;
   combineResults?: boolean;
   enabled?: boolean;
+  sort?: AmcatQueryParams["sort"];
 }
 
 export default function usePaginatedArticles({
@@ -28,11 +29,12 @@ export default function usePaginatedArticles({
   defaultSnippets,
   combineResults,
   enabled = true,
+  sort,
 }: params) {
   const { listFields, layout } = useListFields(projectRole || "NONE", fields || [], defaultSnippets);
   const params = useMemo(
-    () => ({ per_page: pageSize, highlight: !!highlight, fields: listFields }),
-    [pageSize, listFields],
+    () => ({ per_page: pageSize, highlight: !!highlight, fields: listFields, ...(sort ? { sort } : {}) }),
+    [pageSize, listFields, sort],
   );
 
   const [articles, setArticles] = useState<AmcatArticle[]>([]);

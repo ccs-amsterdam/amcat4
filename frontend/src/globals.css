@@ -12,7 +12,7 @@
     --foreground-reverse: 222.2, 84%, 90%;
 
     --card: 0, 0%, 100%;
-    --card-foreground: 222.2, 84%, 4rgb (0, 0, 0) 0.9%;
+    --card-foreground: 222.2, 84%, 4.9%;
 
     --primary: 174, 80%, 30%;
     --primary-foreground: 222.2, 47.4%, 100%;
@@ -53,8 +53,8 @@
     --foreground: 222.2, 84%, 90%;
     --foreground-reverse: 222.2, 84%, 10%;
 
-    --card: 0, 0%, 100%;
-    --card-foreground: 222.2, 84%, 4rgb (0, 0, 0) 0.9%;
+    --card: 0, 0%, 19%;
+    --card-foreground: 222.2, 84%, 90%;
 
     --primary: 174, 56%, 50%;
     --primary-foreground: 222.2, 47.4%, 0%;

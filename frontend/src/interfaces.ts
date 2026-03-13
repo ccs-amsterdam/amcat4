@@ -134,6 +134,7 @@ export interface AmcatQueryParams {
   page?: number;
   fields?: (string | AmcatQueryFieldSpec)[];
   highlight?: boolean;
+  sort?: SortSpec;
 }
 
 export interface AggregateVisualizerProps {

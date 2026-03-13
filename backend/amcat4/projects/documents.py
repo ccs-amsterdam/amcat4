@@ -132,6 +132,11 @@ UPDATE_SCRIPTS = dict(
     if (ctx._source[params.field] == null) {
       ctx._source[params.field] = [params.tag]
     } else {
+      if (!(ctx._source[params.field] instanceof List)) {
+        def existing = ctx._source[params.field];
+        ctx._source[params.field] = new ArrayList();
+        ctx._source[params.field].add(existing);
+      }
       if (ctx._source[params.field].contains(params.tag)) {
         ctx.op = 'noop';
       } else {
@@ -140,7 +145,14 @@ UPDATE_SCRIPTS = dict(
     }
     """,
     remove="""
-    if (ctx._source[params.field] != null && ctx._source[params.field].contains(params.tag)) {
+    if (ctx._source[params.field] == null) {
+      ctx.op = 'noop';
+    } else {
+      if (!(ctx._source[params.field] instanceof List)) {
+        def existing = ctx._source[params.field];
+        ctx._source[params.field] = new ArrayList();
+        ctx._source[params.field].add(existing);
+      }
       ctx._source[params.field].removeAll([params.tag]);
       if (ctx._source[params.field].size() == 0) {
         ctx._source.remove(params.field);
@@ -185,7 +197,7 @@ async def update_documents_by_query(index: str | list[str], query: dict, field: 
 
 
 async def delete_documents_by_query(index: str | list[str], query: dict):
-    result = await es().delete_by_query(index=index, query=query)
+    result = await es().delete_by_query(index=index, query=query, refresh=True)
     return dict(updated=result["deleted"], total=result["total"])
 
 

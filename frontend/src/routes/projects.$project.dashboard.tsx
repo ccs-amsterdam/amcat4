@@ -5,7 +5,6 @@ import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 
 import { useMyProjectRole } from "@/api/project";
 import AggregateResultPanel from "@/components/Aggregate/AggregateResultPanel";
-import DownloadArticles from "@/components/Articles/DownloadArticles";
 import Summary from "@/components/Summary/Summary";
 import { ErrorMsg } from "@/components/ui/error-message";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,9 +18,15 @@ enum Tab {
   Summary = "summary",
   Aggregate = "aggregate",
   Copy = "copy",
-  Update = "update",
-  Download = "download",
+  Manage = "manage",
 }
+
+const TAB_LABELS: Record<Tab, string> = {
+  [Tab.Summary]: "Summary",
+  [Tab.Aggregate]: "Aggregate",
+  [Tab.Copy]: "Copy",
+  [Tab.Manage]: "Document actions",
+};
 
 type DashboardSearch = {
   tab?: Tab;
@@ -50,8 +55,6 @@ function DashboardPage() {
   const [query, setQuery] = useState<AmcatQuery>(() => deserializeQuery(queryState));
 
   useEffect(() => {
-    // when query is edited, store it compressed in the URL (if it's not too long).
-    // This allows sharing URLs with queries for most queries.
     setQueryState(serializeQuery(query));
   }, [query, setQueryState]);
 
@@ -71,12 +74,11 @@ function DashboardPage() {
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-5 min-h-[500px] w-full px-1">
         <TabsList className="mb-8 overflow-auto text-sm">
-          {Object.keys(Tab).map((tab) => {
-            if (tab === "Update" && !isWriter) return null;
-            const tabValue = Tab[tab as keyof typeof Tab];
+          {Object.values(Tab).map((tabValue) => {
+            if (tabValue === Tab.Manage && !isWriter) return null;
             return (
               <TabsTrigger key={tabValue} value={tabValue}>
-                {tab}
+                {TAB_LABELS[tabValue]}
               </TabsTrigger>
             );
           })}
@@ -88,14 +90,11 @@ function DashboardPage() {
           <TabsContent value={Tab.Aggregate}>
             <AggregateResultPanel user={user} projectId={projectId} query={query} />
           </TabsContent>
-          <TabsContent value={Tab.Update}>
+          <TabsContent value={Tab.Manage}>
             <Update user={user} projectId={projectId} query={query} />
           </TabsContent>
           <TabsContent value={Tab.Copy}>
             <Reindex user={user} projectId={projectId} query={query} />
-          </TabsContent>
-          <TabsContent value={Tab.Download}>
-            <DownloadArticles user={user} projectId={projectId} query={query} />
           </TabsContent>
         </div>
       </Tabs>

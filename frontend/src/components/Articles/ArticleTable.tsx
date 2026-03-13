@@ -1,24 +1,46 @@
 import { useMyProjectRole } from "@/api/project";
 import { AmcatArticle, AmcatField, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { formatField } from "@/lib/formatField";
-import { ColumnDef } from "@tanstack/react-table";
+import { ColumnDef, SortingState } from "@tanstack/react-table";
 import { DataTable } from "../ui/datatable";
 import usePaginatedArticles from "./usePaginatedArticles";
+import { Checkbox } from "../ui/checkbox";
 
 interface Props {
   user: AmcatSessionUser;
   projectId: AmcatProjectId;
   query: AmcatQuery;
   fields: AmcatField[];
+  pageSize?: number;
   children?: React.ReactNode;
+  selectedIds?: string[];
+  onToggleId?: (id: string) => void;
+  onSetPageIds?: (ids: string[], checked: boolean) => void;
 }
 
-export default function ArticleTable({ user, projectId, query, fields, children }: Props) {
-  const [pageSize] = useState(6);
+export default function ArticleTable({ user, projectId, query, fields, pageSize = 10, children, selectedIds, onToggleId, onSetPageIds }: Props) {
   const { role: projectRole } = useMyProjectRole(user, projectId);
+
+  const identifierKey = useMemo(
+    () => fields.filter((f) => f.identifier).map((f) => f.name).join(","),
+    [fields],
+  );
+  const defaultSort: SortingState = useMemo(() => {
+    const idFields = fields.filter((f) => f.identifier);
+    return idFields.map((f) => ({ id: f.name, desc: false }));
+  }, [fields]);
+  const [sorting, setSorting] = useState<SortingState>(defaultSort);
+  useEffect(() => { setSorting(defaultSort); }, [identifierKey]);
+
+  const effectiveSorting = sorting.length > 0 ? sorting : defaultSort;
+  const apiSort = useMemo(
+    () => effectiveSorting.map((s) => ({ [s.id]: { order: s.desc ? "desc" as const : "asc" as const } })),
+    [effectiveSorting],
+  );
+
   const { articles, pageIndex, prevPage, nextPage, isFetching, pageCount } = usePaginatedArticles({
     user,
     projectId,
@@ -26,8 +48,8 @@ export default function ArticleTable({ user, projectId, query, fields, children 
     fields,
     projectRole,
     pageSize,
-
     combineResults: true,
+    sort: apiSort,
   });
 
   const columns: ColumnDef<AmcatArticle>[] = useMemo(() => {
@@ -43,13 +65,13 @@ export default function ArticleTable({ user, projectId, query, fields, children 
       ),
       cell: ({ row }) => {
         return (
-          <div className="max-w-[5rem] overflow-hidden text-ellipsis whitespace-nowrap">
-            <span title={row.original._id}>{row.original._id}</span>
+          <div className="max-w-[5rem] overflow-hidden text-ellipsis whitespace-nowrap" title={row.original._id}>
+            {row.original._id}
           </div>
         );
       },
     };
-    const columns: ColumnDef<AmcatArticle>[] = fields.map((field) => {
+    const fieldColumns: ColumnDef<AmcatArticle>[] = fields.map((field) => {
       let restricted = "";
       if (projectRole === "METAREADER" && field.metareader.access === "none") restricted = "forbidden";
       if (projectRole === "METAREADER" && field.metareader.access === "snippet") restricted = "snippet";
@@ -65,15 +87,40 @@ export default function ArticleTable({ user, projectId, query, fields, children 
         ),
         cell: ({ row }) => {
           return (
-            <div className="line-clamp-3 max-h-20 min-w-[5rem] overflow-hidden text-ellipsis break-words">
+            <div className="min-w-[5rem] max-w-[20rem] overflow-hidden text-ellipsis whitespace-nowrap" title={String(row.original[field.name] ?? "")}>
               {formatField(row.original, field)}
             </div>
           );
         },
       };
     });
-    return [idColumn, ...columns];
-  }, [projectRole, fields]);
+
+    if (selectedIds && onToggleId && onSetPageIds) {
+      const pageIds = articles.map((a) => a._id);
+      const allChecked = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
+      const checkboxColumn: ColumnDef<AmcatArticle> = {
+        id: "__select__",
+        enableSorting: false,
+        header: () => (
+          <Checkbox
+            checked={allChecked}
+            onCheckedChange={(checked) => onSetPageIds(pageIds, !!checked)}
+            aria-label="Select all on page"
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            checked={selectedIds.includes(row.original._id)}
+            onCheckedChange={() => onToggleId(row.original._id)}
+            aria-label="Select row"
+          />
+        ),
+      };
+      return [checkboxColumn, idColumn, ...fieldColumns];
+    }
+
+    return [idColumn, ...fieldColumns];
+  }, [projectRole, fields, selectedIds, onToggleId, onSetPageIds, articles]);
 
   return (
     <div>
@@ -84,6 +131,7 @@ export default function ArticleTable({ user, projectId, query, fields, children 
         pagination={{ pageIndex, pageCount, nextPage, prevPage }}
         loading={isFetching}
         pageSize={pageSize}
+        sorting={{ state: sorting, onChange: setSorting }}
       />
     </div>
   );
