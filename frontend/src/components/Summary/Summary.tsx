@@ -11,6 +11,7 @@ import { Columns3Cog, DatabaseZap, LayoutDashboard, LockKeyholeOpen, Settings, U
 import { useMemo } from "react";
 import AggregateResult from "../Aggregate/AggregateResult";
 import Articles from "../Articles/Articles";
+import CodeExample from "../CodeExample/CodeExample";
 import { Loading } from "../ui/loading";
 
 interface Props {
@@ -39,7 +40,12 @@ export default function Summary({ user, projectId, query }: Props) {
   return (
     <div className="grid snap-x snap-mandatory grid-cols-[100%,100%] gap-1 overflow-auto md:grid-cols-2 md:gap-3 md:overflow-visible">
       <div className="border-foreground/31 snap-center  rounded-l">
-        <Articles user={user} projectId={projectId} query={query} />
+        <Articles
+          user={user}
+          projectId={projectId}
+          query={query}
+          headerRight={<CodeExample action="search" projectId={projectId} query={query} />}
+        />
       </div>
       <div className="mt-12 flex snap-center flex-col  gap-3 md:gap-6">
         {visualizations.length === 0 ? (

@@ -17,6 +17,7 @@ interface Props {
   query: AmcatQuery;
   fields: AmcatField[];
   onClick?: (doc: AmcatArticle) => void;
+  headerRight?: ReactNode;
 }
 
 const defaultSnippets = {
@@ -25,7 +26,7 @@ const defaultSnippets = {
   match_chars: 50,
 };
 
-export default function ArticleSnippets({ user, projectId, projectRole, query, fields, onClick }: Props) {
+export default function ArticleSnippets({ user, projectId, projectRole, query, fields, onClick, headerRight }: Props) {
   const { articles, layout, listFields, isLoading, isFetching, pageIndex, pageCount, totalCount, prevPage, nextPage } =
     usePaginatedArticles({
       user,
@@ -48,23 +49,28 @@ export default function ArticleSnippets({ user, projectId, projectRole, query, f
             {totalCount} article{totalCount === 1 ? "" : "s"}
           </h3>
         </div>
-        <div className={`flex select-none items-center justify-end ${pageCount > 1 ? "" : "hidden"}`}>
-          <Button variant="ghost" className="hover:bg-transparent" onClick={() => prevPage()} disabled={pageIndex <= 0}>
-            <SkipBack />
-          </Button>
-          <div className="grid grid-cols-[1fr,auto,1fr] gap-2">
-            <div className="text-center">{pageIndex + 1}</div>
-            <div>of</div>
-            <div>{pageCount}</div>
-          </div>
-          <Button
-            variant="ghost"
-            className="hover:bg-transparent"
-            onClick={nextPage}
-            disabled={pageIndex > pageCount - 2 || isFetching}
-          >
-            <SkipForward />
-          </Button>
+        <div className="flex select-none items-center justify-end gap-2">
+          {headerRight}
+          {pageCount > 1 && (
+            <>
+              <Button variant="ghost" className="hover:bg-transparent" onClick={() => prevPage()} disabled={pageIndex <= 0}>
+                <SkipBack />
+              </Button>
+              <div className="grid grid-cols-[1fr,auto,1fr] gap-2">
+                <div className="text-center">{pageIndex + 1}</div>
+                <div>of</div>
+                <div>{pageCount}</div>
+              </div>
+              <Button
+                variant="ghost"
+                className="hover:bg-transparent"
+                onClick={nextPage}
+                disabled={pageIndex > pageCount - 2 || isFetching}
+              >
+                <SkipForward />
+              </Button>
+            </>
+          )}
         </div>
       </div>
       <div className="relative h-full rounded ">

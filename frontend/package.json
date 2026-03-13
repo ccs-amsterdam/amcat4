@@ -56,6 +56,7 @@
     "react-dropzone": "^14.2.3",
     "react-hook-form": "^7.54.2",
     "react-markdown": "^9.0.3",
+    "react-syntax-highlighter": "^16.1.1",
     "recharts": "^2.9.3",
     "remark": "^14.0.3",
     "remark-html": "^15.0.2",
@@ -67,7 +68,7 @@
     "zod-validation-error": "^2.1.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^5.1.4",
+    "@eslint/js": "^9.39.3",
     "@tailwindcss/typography": "^0.5.9",
     "@tanstack/react-query-devtools": "^5.14.0",
     "@tanstack/react-router-devtools": "^1.162.2",
@@ -84,9 +85,10 @@
     "@types/randomcolor": "^0.5.9",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "@types/unist": "^3.0.3",
+    "@vitejs/plugin-react": "^5.1.4",
     "autoprefixer": "10.4.14",
-    "@eslint/js": "^9.39.3",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.0",
     "favicons": "^7.2.0",
