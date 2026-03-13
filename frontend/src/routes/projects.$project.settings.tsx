@@ -6,25 +6,26 @@ export const Route = createFileRoute("/projects/$project/settings")({
 
 import { useArchiveProject, useDeleteProject, useMutateProject, useProject, useUploadProjectImage } from "@/api/project";
 import { useAmcatProjects } from "@/api/projects";
+import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { ContactInfo } from "@/components/Project/ContactInfo";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ErrorMsg } from "@/components/ui/error-message";
 import { Form } from "@/components/ui/form";
+import { InfoBox } from "@/components/ui/info-box";
+import { Input } from "@/components/ui/input";
 import { JSONForm } from "@/components/ui/jsonForm";
 import { Loading } from "@/components/ui/loading";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Textarea } from "@/components/ui/textarea";
 import { AmcatProject } from "@/interfaces";
 import { amcatProjectUpdateSchema, contactInfoSchema } from "@/schemas";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Download, FolderArchive, ImagePlus, Pencil, Trash2, X, Check, FolderInput } from "lucide-react";
-import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
+import { Check, Download, FolderArchive, FolderInput, ImagePlus, Pencil, Trash2, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { useConfirm } from "@/components/ui/confirm";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 
 function SettingsPage() {
   const { project: projectParam } = Route.useParams();
@@ -36,6 +37,7 @@ function SettingsPage() {
   if (!project) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
 
   const isAdmin = project.user_role === "ADMIN";
+  const isReader = ["READER", "WRITER", "ADMIN"].includes(project.user_role);
 
   return (
     <div className="flex w-full  flex-col">
@@ -47,6 +49,39 @@ function SettingsPage() {
         </div>
       </div>
       <Settings user={user} project={project} isAdmin={isAdmin} />
+      <InfoBox title="Information on project settings" storageKey="settings-infobox" defaultOpen={false} className="mt-3">
+        <div className="flex flex-col gap-3">
+          <p>
+            This screen contains general information about the project such as title, description and image.
+            {isAdmin && <>As project administrator, you can edit these properties with the pencil icon that appears when you hover over them</>}
+          </p>
+          <p>
+            <strong>Folders</strong> let you organise projects on the overview page. A folder is just a label — moving
+            a project to a folder does not affect its data or access. You can create new folders by typing a name in
+            the folder selector, and a project at the &ldquo;root&rdquo; level (no folder) will appear ungrouped.
+            Folders are not stored outside of projects, so empty folders are automatically deleted.
+          </p>
+          {isReader && (
+            <>
+              <p>The buttons at the top allow you to perform administrative actions on the project:</p>
+              <div className="rounded-md bg-primary/10 p-3">
+                <div className="grid grid-cols-[6rem_1fr] gap-3">
+                  <b className="text-primary">Export</b>
+                  <span>Downloads all documents and metadata as a compressed NDJSON file (.ndjson.gz), suitable for backup or import into another AmCAT instance.</span>
+                  {isAdmin && (
+                    <>
+                      <b className="text-primary">Archive</b>
+                      <span>Marks the project as read-only and hides it from the default project list. The data is preserved and the project can be unarchived at any time.</span>
+                      <b className="text-primary">Delete</b>
+                      <span>Permanently removes the project and all its documents. This cannot be undone — you will be asked to confirm by typing the project ID before deletion proceeds.</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </InfoBox>
     </div>
   );
 }
