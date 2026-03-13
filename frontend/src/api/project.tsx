@@ -142,7 +142,6 @@ export function useDeleteProject(user: AmcatSessionUser | undefined) {
   return useMutation({
     mutationFn: (projectId: string) => deleteProject(user, projectId),
     onSuccess: (_, projectId) => {
-      queryClient.removeQueries({ queryKey: ["project", user, projectId] });
       queryClient.removeQueries({ queryKey: ["fields", user, projectId] });
       queryClient.removeQueries({ queryKey: ["fieldValues", user, projectId] });
       queryClient.removeQueries({ queryKey: ["fieldStats", user, projectId] });
