@@ -29,9 +29,10 @@ interface Props {
   query: AmcatQuery;
   options: AggregationOptions;
   setOptions: Dispatch<SetStateAction<AggregationOptions>>;
+  onOptionsChange?: (options: AggregationOptions) => void;
 }
 
-export function AggregateResultOptions({ user, projectId, query, options, setOptions }: Props) {
+export function AggregateResultOptions({ user, projectId, query, options, setOptions, onOptionsChange }: Props) {
   const [newOptions, setNewOptions] = useState(options);
 
   useEffect(() => {
@@ -39,6 +40,10 @@ export function AggregateResultOptions({ user, projectId, query, options, setOpt
     // since we want options to be serializable anyway
     setNewOptions(JSON.parse(JSON.stringify(options)));
   }, [options]);
+
+  useEffect(() => {
+    onOptionsChange?.(newOptions);
+  }, [newOptions, onOptionsChange]);
 
   function setAxis(i: number, newval?: AggregationAxis) {
     const axes = newOptions.axes == null ? [] : [...newOptions.axes];

@@ -1,4 +1,4 @@
-import { AmcatProjectId, AmcatQuery } from "@/interfaces";
+import { AggregationOptions, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { useFields } from "@/api/fields";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -17,10 +17,12 @@ SyntaxHighlighter.registerLanguage("python", python);
 SyntaxHighlighter.registerLanguage("r", r);
 
 type CodeExampleProps =
-  | { action: "search"; projectId: AmcatProjectId; query: AmcatQuery };
-// Future: | { action: "aggregate"; projectId: AmcatProjectId; query: AmcatQuery; options: AggregationOptions }
+  | { action: "search"; projectId: AmcatProjectId; query: AmcatQuery }
+  | { action: "aggregate"; projectId: AmcatProjectId; query: AmcatQuery; options: AggregationOptions };
 
 type Language = "python" | "r";
+
+const LANGUAGE_KEY = "codeExample:language";
 
 function useDarkMode() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
@@ -34,7 +36,14 @@ function useDarkMode() {
 
 export default function CodeExample(props: CodeExampleProps) {
   const [open, setOpen] = useState(false);
-  const [language, setLanguage] = useState<Language>("python");
+  const [language, setLanguage] = useState<Language>(
+    () => (localStorage.getItem(LANGUAGE_KEY) as Language | null) ?? "python"
+  );
+
+  function changeLanguage(lang: Language) {
+    setLanguage(lang);
+    localStorage.setItem(LANGUAGE_KEY, lang);
+  }
   const [includeInstall, setIncludeInstall] = useState(true);
   const [includeConnect, setIncludeConnect] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -56,7 +65,9 @@ export default function CodeExample(props: CodeExampleProps) {
     if (props.action === "search") {
       return { action: "search", params: { serverUrl, projectId: props.projectId, query: props.query, fields, auth } };
     }
-    // exhaustive — future actions handled here
+    if (props.action === "aggregate") {
+      return { action: "aggregate", params: { serverUrl, projectId: props.projectId, query: props.query, options: props.options, auth } };
+    }
     throw new Error("Unknown action");
   })();
 
@@ -90,7 +101,7 @@ export default function CodeExample(props: CodeExampleProps) {
               {(["python", "r"] as Language[]).map((lang) => (
                 <button
                   key={lang}
-                  onClick={() => setLanguage(lang)}
+                  onClick={() => changeLanguage(lang)}
                   className={`rounded px-3 py-1 text-sm font-medium transition-colors ${
                     language === lang
                       ? "bg-primary text-primary-foreground"

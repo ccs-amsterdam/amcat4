@@ -2,6 +2,7 @@ import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { InfoBox } from "@/components/ui/info-box";
 import { AggregationOptions, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { useState } from "react";
+import CodeExample from "../CodeExample/CodeExample";
 import AggregateResult from "./AggregateResult";
 import { AggregateResultOptions } from "./AggregateResultOptions";
 
@@ -18,6 +19,7 @@ interface Props {
 
 export default function AggregateResultPanel({ user, projectId, query }: Props) {
   const [options, setOptions] = useState<AggregationOptions>(initialState);
+  const [liveOptions, setLiveOptions] = useState<AggregationOptions>(initialState);
 
   function defaultPageSize() {
     if (options.display === "linechart") return 200;
@@ -30,8 +32,9 @@ export default function AggregateResultPanel({ user, projectId, query }: Props) 
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="prose p-5 pb-0 dark:prose-invert">
+      <div className="prose p-5 pb-0 dark:prose-invert flex items-center justify-between">
         <h3>Aggregate</h3>
+        <CodeExample action="aggregate" projectId={projectId} query={query} options={liveOptions} />
       </div>
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[auto,1fr]">
         <div className="flex justify-center p-5">
@@ -41,6 +44,7 @@ export default function AggregateResultPanel({ user, projectId, query }: Props) 
             query={query}
             options={options}
             setOptions={setOptions}
+            onOptionsChange={setLiveOptions}
           />
         </div>
         <div className="w-full p-5">
