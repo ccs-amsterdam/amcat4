@@ -12,6 +12,7 @@ interface Props {
   fields: AmcatField[];
   setData: Dispatch<SetStateAction<Record<string, jsType>[]>>;
   setColumns: Dispatch<SetStateAction<Column[]>>;
+  setFileName: (name: string) => void;
 }
 
 interface ParseProgress {
@@ -59,7 +60,7 @@ async function extractText(ext: string, content: ArrayBuffer | string): Promise<
   return "";
 }
 
-export function ZipUploader({ fields, setData, setColumns }: Props) {
+export function ZipUploader({ fields, setData, setColumns, setFileName }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState<ParseProgress | null>(null);
@@ -67,6 +68,7 @@ export function ZipUploader({ fields, setData, setColumns }: Props) {
 
   function handleFile(file: File) {
     const ext = getExt(file.name);
+    setFileName(file.name);
 
     if (ext === ".csv" || ext === ".tsv") {
       Papa.parse(file, {
@@ -120,6 +122,7 @@ export function ZipUploader({ fields, setData, setColumns }: Props) {
   }
 
   async function handleFolderFiles(files: FileList) {
+    setFileName(files[0]?.webkitRelativePath?.split("/")[0] ?? "");
     const entries: ParserEntry[] = [];
     for (const file of Array.from(files)) {
       const relPath = file.webkitRelativePath || file.name;

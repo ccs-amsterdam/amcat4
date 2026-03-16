@@ -16,6 +16,7 @@ import { AmcatRequestProject } from "@/interfaces";
 import { idFromName } from "@/lib/projectId";
 import { Check, ChevronsUpDown, Loader } from "lucide-react";
 import { useQueryState } from "nuqs";
+import CodeExample from "@/components/CodeExample/CodeExample";
 
 export function CreateProject({ folder, request }: { folder?: string; request?: boolean }) {
   const navigate = useNavigate();
@@ -204,9 +205,12 @@ export function CreateProject({ folder, request }: { folder?: string; request?: 
             <form className="flex flex-col gap-3 pt-2" onSubmit={onCreate}>
               {sharedFields()}
               <div className={`${error ? "" : "hidden"} text-center text-destructive`}>{error}</div>
-              <Button className="mt-2 w-full">
-                {loading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : "Create project"}
-              </Button>
+              <div className="mt-2 flex items-center gap-2">
+                <CodeExample action="create_project" projectId={id} name={name} description={description} />
+                <Button className="flex-1">
+                  {loading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : "Create project"}
+                </Button>
+              </div>
             </form>
           </TabsContent>
           <TabsContent value="register">

@@ -17,6 +17,8 @@ import { autoNameColumn, autoTypeColumn, prepareUploadData, validateColumns } fr
 import { ZipUploader } from "./ZipUploader";
 
 import { useMutateArticles } from "@/api/articles";
+import CodeExample from "@/components/CodeExample/CodeExample";
+import { UploadColumn } from "@/components/CodeExample/codeGenerators";
 import { useMultimediaConcatenatedList } from "@/api/multimedia";
 import { useHasProjectRole } from "@/api/project";
 import { splitIntoBatches } from "@/api/util";
@@ -81,6 +83,7 @@ export default function Upload({ user, projectId }: Props) {
   const isAdmin = useHasProjectRole(user, projectId, "ADMIN");
   const [data, setData] = useState<Record<string, jsType>[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
+  const [fileName, setFileName] = useState("");
   const { mutateAsync: mutateArticles } = useMutateArticles(user, projectId);
   const [_validating, setValidating] = useState(false);
   const [operation, setOperation] = useState<UploadOperation>("update");
@@ -139,6 +142,10 @@ export default function Upload({ user, projectId }: Props) {
       });
   }, [uploadStatus]);
 
+  const uploadColumns: UploadColumn[] = columns
+    .filter((c) => c.field !== null && c.type !== null)
+    .map((c) => ({ csvName: c.name, fieldName: c.field!, fieldType: c.type!, identifier: !!c.identifier, isNew: !c.exists }));
+
   const duplicates = useMemo(() => hasDuplicates(data, columns), [data, columns]);
   const nonePending = columns.length > 0 && columns.every((c) => !["Validating", "Type not set"].includes(c.status));
   const hasInvalid = columns.some((c) => c.status === "Type invalid");
@@ -187,6 +194,7 @@ export default function Upload({ user, projectId }: Props) {
   function resetUpload() {
     setData([]);
     setColumns([]);
+    setFileName("");
     setUploadStatus((prev) => ({ ...prev, status: "idle" }));
   }
 
@@ -212,7 +220,7 @@ export default function Upload({ user, projectId }: Props) {
   return (
     <div className="mb-12 flex flex-col gap-4">
       {data.length === 0 ? (
-        <ZipUploader fields={fields} setData={setData} setColumns={setColumns} />
+        <ZipUploader fields={fields} setData={setData} setColumns={setColumns} setFileName={setFileName} />
       ) : (
         <div className="flex justify-end">
           <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={resetUpload}>
@@ -246,10 +254,11 @@ export default function Upload({ user, projectId }: Props) {
                 </p>
               );
             })()}
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
             <Button disabled={!ready} onClick={onUpload}>
               Upload {data.length || ""} documents
             </Button>
+            <CodeExample action="upload" projectId={projectId} uploadColumns={uploadColumns} fileName={fileName} />
             <IdentifiersWarningDialog
               noIdentifierWarning={noIdentifierWarning}
               setNoIdentifierWarning={setNoIdentifierWarning}

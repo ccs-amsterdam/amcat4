@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Code, Check, Clipboard } from "lucide-react";
 import { toast } from "sonner";
-import { AddUserParams, AuthInfo, CodeAction, CreateFieldParams, FieldsParams, UsersParams, generatePython, generateR } from "./codeGenerators";
+import { AddUserParams, AuthInfo, CodeAction, CreateFieldParams, CreateProjectParams, DeleteParams, FieldsParams, UploadColumn, UploadParams, UsersParams, generatePython, generateR } from "./codeGenerators";
 import { useAmcatConfig } from "@/api/config";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -22,7 +22,10 @@ type CodeExampleProps =
   | { action: "fields"; projectId: AmcatProjectId }
   | { action: "create_field"; projectId: AmcatProjectId; fieldName: string; fieldType: string; identifier: boolean }
   | { action: "users"; projectId?: AmcatProjectId }
-  | { action: "add_user"; projectId?: AmcatProjectId; emails: string[]; role: string };
+  | { action: "add_user"; projectId?: AmcatProjectId; emails: string[]; role: string }
+  | { action: "create_project"; projectId: string; name: string; description: string }
+  | { action: "upload"; projectId: AmcatProjectId; uploadColumns: UploadColumn[]; fileName?: string }
+  | { action: "delete"; projectId: AmcatProjectId; query: AmcatQuery };
 
 type Language = "python" | "r";
 
@@ -90,6 +93,15 @@ export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "d
     if (props.action === "add_user") {
       return { action: "add_user", params: { serverUrl, projectId: props.projectId, emails: props.emails, role: props.role, auth } satisfies AddUserParams };
     }
+    if (props.action === "create_project") {
+      return { action: "create_project", params: { serverUrl, projectId: props.projectId, name: props.name, description: props.description, auth } satisfies CreateProjectParams };
+    }
+    if (props.action === "upload") {
+      return { action: "upload", params: { serverUrl, projectId: props.projectId, uploadColumns: props.uploadColumns, fileName: props.fileName, auth } satisfies UploadParams };
+    }
+    if (props.action === "delete") {
+      return { action: "delete", params: { serverUrl, projectId: props.projectId, query: props.query, auth } satisfies DeleteParams };
+    }
     throw new Error("Unknown action");
   })();
 
@@ -143,7 +155,7 @@ export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "d
                   onChange={(e) => { setIncludeConnect(e.target.checked); localStorage.setItem(INCLUDE_CONNECT_KEY, String(e.target.checked)); }}
                   className="h-4 w-4"
                 />
-                Include connecting
+                Include initialization
               </label>
               <label className={`flex cursor-pointer items-center gap-2 text-sm ${!includeConnect ? "opacity-40 pointer-events-none" : ""}`}>
                 <input

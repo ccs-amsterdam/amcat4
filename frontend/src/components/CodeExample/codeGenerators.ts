@@ -14,6 +14,13 @@ export interface SearchParams {
   auth?: AuthInfo;
 }
 
+export interface DeleteParams {
+  serverUrl: string;
+  projectId: AmcatProjectId;
+  query: AmcatQuery;
+  auth?: AuthInfo;
+}
+
 export interface AggregateParams {
   serverUrl: string;
   projectId: AmcatProjectId;
@@ -51,13 +58,40 @@ export interface AddUserParams {
   auth?: AuthInfo;
 }
 
+export interface UploadColumn {
+  csvName: string;
+  fieldName: string;
+  fieldType: string;
+  identifier: boolean;
+  isNew: boolean;
+}
+
+export interface UploadParams {
+  serverUrl: string;
+  projectId: AmcatProjectId;
+  uploadColumns: UploadColumn[];
+  fileName?: string;
+  auth?: AuthInfo;
+}
+
+export interface CreateProjectParams {
+  serverUrl: string;
+  projectId: string;
+  name: string;
+  description: string;
+  auth?: AuthInfo;
+}
+
 export type CodeAction =
   | { action: "search"; params: SearchParams }
   | { action: "aggregate"; params: AggregateParams }
   | { action: "fields"; params: FieldsParams }
   | { action: "create_field"; params: CreateFieldParams }
   | { action: "users"; params: UsersParams }
-  | { action: "add_user"; params: AddUserParams };
+  | { action: "add_user"; params: AddUserParams }
+  | { action: "create_project"; params: CreateProjectParams }
+  | { action: "upload"; params: UploadParams }
+  | { action: "delete"; params: DeleteParams };
 
 // --- Python code generation ---
 
@@ -122,6 +156,25 @@ function generatePythonSearch(params: SearchParams, includeInstall: boolean, inc
 
   lines.push(`results = conn.query(\n${args.join(",\n")}\n)`);
 
+  return lines.join("\n");
+}
+
+function generatePythonDelete(params: DeleteParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, projectId, query, auth } = params;
+  const lines: string[] = [];
+  if (includeConnect) lines.push(...pyConnect(serverUrl, auth, includeInstall));
+  const idValues = query.filters?.["_id"]?.values;
+  const otherFilters = query.filters
+    ? Object.fromEntries(Object.entries(query.filters).filter(([k]) => k !== "_id"))
+    : {};
+  const hasQueries = query.queries && query.queries.length > 0;
+  const hasOtherFilters = Object.keys(otherFilters).length > 0;
+  const args: string[] = [`    index=${pyString(projectId)}`];
+  if (idValues && idValues.length > 0)
+    args.push(`    ids=[${idValues.map((v) => pyString(String(v))).join(", ")}]`);
+  if (hasQueries) args.push(`    queries=${pyQueries(query.queries!)}`);
+  if (hasOtherFilters) args.push(`    filters=${pyFilters(otherFilters).replace(/\n/g, "\n    ")}`);
+  lines.push(`conn.delete_by_query(\n${args.join(",\n")}\n)`);
   return lines.join("\n");
 }
 
@@ -223,6 +276,28 @@ function generateRSearch(params: SearchParams, includeInstall: boolean, includeC
 
   lines.push(`results <- query_documents(\n${args.join(",\n")}\n)`);
 
+  return lines.join("\n");
+}
+
+function generateRDelete(params: DeleteParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, projectId, query, auth } = params;
+  const lines: string[] = [];
+  if (includeConnect) lines.push(...rConnect(serverUrl, auth, includeInstall));
+  const idValues = query.filters?.["_id"]?.values;
+  const otherFilters = query.filters
+    ? Object.fromEntries(Object.entries(query.filters).filter(([k]) => k !== "_id"))
+    : {};
+  const hasQueries = query.queries && query.queries.length > 0;
+  const hasOtherFilters = Object.keys(otherFilters).length > 0;
+  const args: string[] = [`  ${rString(projectId)}`];
+  if (idValues && idValues.length > 0)
+    args.push(`  ids = c(${idValues.map((v) => rString(String(v))).join(", ")})`);
+  if (hasQueries) {
+    const queryStr = query.queries!.map((q) => q.query).join(" OR ");
+    args.push(`  queries = ${rString(queryStr)}`);
+  }
+  if (hasOtherFilters) args.push(`  filters = ${rFilters(otherFilters).replace(/\n/g, "\n  ")}`);
+  lines.push(`delete_by_query(\n${args.join(",\n")}\n)`);
   return lines.join("\n");
 }
 
@@ -370,6 +445,202 @@ function generateRAddUser(params: AddUserParams, includeInstall: boolean, includ
   return lines.join("\n");
 }
 
+// --- Upload documents code generation ---
+
+function fileExt(fileName: string | undefined): string {
+  return fileName?.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
+}
+
+function pyReadFile(fileName: string | undefined): string {
+  const name = fileName ? pyString(fileName) : '"your_file.csv"';
+  const ext = fileExt(fileName);
+  if (ext === ".tsv") return `pd.read_csv(${name}, sep="\\t")`;
+  if ([".xlsx", ".xls", ".xlsm", ".ods"].includes(ext)) return `pd.read_excel(${name})`;
+  return `pd.read_csv(${name})`;
+}
+
+function rReadFile(fileName: string | undefined): string {
+  const name = fileName ? rString(fileName) : '"your_file.csv"';
+  const ext = fileExt(fileName);
+  if (ext === ".tsv") return `read_tsv(${name})`;
+  if ([".xlsx", ".xls", ".xlsm", ".ods"].includes(ext)) return `read_excel(${name})`;
+  return `read_csv(${name})`;
+}
+
+function generatePythonUpload(params: UploadParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, projectId, uploadColumns, fileName, auth } = params;
+  const lines: string[] = [];
+
+  if (includeConnect) {
+    if (includeInstall) lines.push("# pip install amcat4py pandas");
+    lines.push("import pandas as pd");
+    lines.push("from amcat4py import AmcatClient", "");
+    if (auth) {
+      lines.push(`# Get your API key at: ${auth.apiKeysUrl}`);
+      lines.push(`conn = AmcatClient(${pyString(serverUrl)}, api_key="your_api_key")`);
+    } else {
+      lines.push(`conn = AmcatClient(${pyString(serverUrl)})`);
+    }
+    lines.push("");
+  }
+
+  const newFields = uploadColumns.filter((c) => c.isNew);
+  if (newFields.length > 0) {
+    lines.push("# Add all new fields to the project");
+    lines.push(`conn.set_fields(`);
+    lines.push(`    index=${pyString(projectId)},`);
+    lines.push(`    body={`);
+    for (const col of newFields) {
+      const spec: string[] = [`"type": ${pyString(col.fieldType)}`];
+      if (col.identifier) spec.push(`"identifier": True`);
+      lines.push(`        ${pyString(col.fieldName)}: {${spec.join(", ")}},`);
+    }
+    lines.push(`    }`);
+    lines.push(`)`);
+    lines.push("");
+  }
+
+  if (fileExt(fileName) === ".zip") {
+    const cols = uploadColumns.length > 0
+      ? uploadColumns.map((c) => `${pyString(c.fieldName)}: ...`).join(", ")
+      : `"field1": ..., "field2": ...`;
+    lines.push(`# We don't provide example code for reading zip-files`);
+    lines.push(`# Add code here to read the documents your data source into a list of dicts, e.g.:`);
+    lines.push(`# documents = [{${cols}}, ...]`);
+    lines.push("");
+    lines.push("# Upload the articles to AmCAT");
+    lines.push(`conn.upload_documents(index=${pyString(projectId)}, articles=documents)`);
+  } else {
+    lines.push(`# Read your data file (adjust path and format as needed)`);
+    lines.push(`df = ${pyReadFile(fileName)}`);
+    lines.push("");
+
+    const renames = uploadColumns.filter((c) => c.csvName !== c.fieldName);
+    if (renames.length > 0) {
+      lines.push("# Rename columns as needed");
+
+      lines.push(`df = df.rename(columns={`);
+      for (const col of renames) {
+        lines.push(`    ${pyString(col.csvName)}: ${pyString(col.fieldName)},`);
+      }
+      lines.push(`})`);
+      lines.push("");
+    }
+
+    if (uploadColumns.length > 0) {
+      lines.push("# Select the appropriate columns");
+
+      lines.push(`df = df[[${uploadColumns.map((c) => pyString(c.fieldName)).join(", ")}]]`);
+      lines.push("");
+    }
+
+    lines.push("# Upload the articles to AmCAT");
+    lines.push(`conn.upload_documents(index=${pyString(projectId)}, articles=df.to_dict(orient="records"))`);
+  }
+  return lines.join("\n");
+}
+
+function generateRUpload(params: UploadParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, projectId, uploadColumns, fileName, auth } = params;
+  const lines: string[] = [];
+
+  if (includeConnect) {
+    if (includeInstall) {
+      lines.push(`# install.packages("tidyverse")`);
+      lines.push(`# install.packages("amcat4r", repos = "https://ccs-amsterdam.r-universe.dev")`);
+    }
+    lines.push("library(tidyverse)");
+    lines.push("library(amcat4r)", "");
+    if (auth) {
+      lines.push(`# Get your API key at: ${auth.apiKeysUrl}`);
+      lines.push(`amcat_login(${rString(serverUrl)}, api_key = "your_api_key")`);
+    } else {
+      lines.push(`amcat_login(${rString(serverUrl)})`);
+    }
+    lines.push("");
+  }
+
+  const newFields = uploadColumns.filter((c) => c.isNew);
+  if (newFields.length > 0) {
+    lines.push("# Add all new fields to the project");
+    lines.push(`set_fields(${rString(projectId)}, list(`);
+    for (const col of newFields) {
+      const spec: string[] = [`type = ${rString(col.fieldType)}`];
+      if (col.identifier) spec.push(`identifier = TRUE`);
+      lines.push(`  ${col.fieldName} = list(${spec.join(", ")}),`);
+    }
+    lines.push(`))`);
+    lines.push("");
+  }
+
+  if (fileExt(fileName) === ".zip") {
+    const cols = uploadColumns.length > 0
+      ? uploadColumns.map((c) => `${c.fieldName} = ...`).join(", ")
+      : `field1 = ..., field2 = ...`;
+    lines.push(`# We don't provide example code for reading zip-files`);
+    lines.push(`# Add code here to read the documents your data source into a data frame, e.g.:`);
+    lines.push(`# df <- tibble(${cols})`);
+    lines.push("");
+    lines.push("# Upload the articles to AmCAT");
+    lines.push(`upload_documents(${rString(projectId)}, df)`);
+  } else {
+    lines.push(`# Read your data file (adjust path and format as needed)`);
+    lines.push(`df <- ${rReadFile(fileName)}`);
+    lines.push("");
+
+    if (uploadColumns.length > 0) {
+      lines.push("# Select (and rename) columns as needed");
+      lines.push(`df <- df |>`);
+      lines.push(`  select(`);
+      for (const col of uploadColumns) {
+        if (col.csvName !== col.fieldName) {
+          lines.push(`    ${col.fieldName} = ${col.csvName},`);
+        } else {
+          lines.push(`    ${col.fieldName},`);
+        }
+      }
+      lines.push(`  )`);
+      lines.push("");
+    }
+
+    lines.push("# Upload the articles to AmCAT");
+    lines.push(`upload_documents(${rString(projectId)}, df)`);
+  }
+  return lines.join("\n");
+}
+
+// --- Create project code generation ---
+
+function generatePythonCreateProject(params: CreateProjectParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, projectId, name, description, auth } = params;
+  const lines: string[] = [];
+  if (includeConnect) lines.push(...pyConnect(serverUrl, auth, includeInstall));
+  const id = projectId ? pyString(projectId) : "PROJECT_ID";
+  const placeholders: string[] = [];
+  if (!projectId) placeholders.push("PROJECT_ID");
+  if (placeholders.length) lines.push(`# Replace ${placeholders.join(" and ")} with the desired values`);
+  const args: string[] = [`    index=${id}`];
+  if (name) args.push(`    name=${pyString(name)}`);
+  if (description) args.push(`    description=${pyString(description)}`);
+  lines.push(`conn.create_index(\n${args.join(",\n")}\n)`);
+  return lines.join("\n");
+}
+
+function generateRCreateProject(params: CreateProjectParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, projectId, name, description, auth } = params;
+  const lines: string[] = [];
+  if (includeConnect) lines.push(...rConnect(serverUrl, auth, includeInstall));
+  const id = projectId ? rString(projectId) : "PROJECT_ID";
+  const placeholders: string[] = [];
+  if (!projectId) placeholders.push("PROJECT_ID");
+  if (placeholders.length) lines.push(`# Replace ${placeholders.join(" and ")} with the desired values`);
+  const args: string[] = [`  ${id}`];
+  if (name) args.push(`  name = ${rString(name)}`);
+  if (description) args.push(`  description = ${rString(description)}`);
+  lines.push(`create_index(\n${args.join(",\n")}\n)`);
+  return lines.join("\n");
+}
+
 // --- Aggregate helpers (used by both Python and R generators above) ---
 
 function pyAxis(axis: AggregationOptions["axes"][number]): string {
@@ -393,6 +664,9 @@ export function generatePython(action: CodeAction, includeInstall: boolean, incl
   if (action.action === "create_field") return generatePythonCreateField(action.params, includeInstall, includeConnect);
   if (action.action === "users") return generatePythonUsers(action.params, includeInstall, includeConnect);
   if (action.action === "add_user") return generatePythonAddUser(action.params, includeInstall, includeConnect);
+  if (action.action === "create_project") return generatePythonCreateProject(action.params, includeInstall, includeConnect);
+  if (action.action === "upload") return generatePythonUpload(action.params, includeInstall, includeConnect);
+  if (action.action === "delete") return generatePythonDelete(action.params, includeInstall, includeConnect);
   return "# Unsupported action";
 }
 
@@ -403,5 +677,8 @@ export function generateR(action: CodeAction, includeInstall: boolean, includeCo
   if (action.action === "create_field") return generateRCreateField(action.params, includeInstall, includeConnect);
   if (action.action === "users") return generateRUsers(action.params, includeInstall, includeConnect);
   if (action.action === "add_user") return generateRAddUser(action.params, includeInstall, includeConnect);
+  if (action.action === "create_project") return generateRCreateProject(action.params, includeInstall, includeConnect);
+  if (action.action === "upload") return generateRUpload(action.params, includeInstall, includeConnect);
+  if (action.action === "delete") return generateRDelete(action.params, includeInstall, includeConnect);
   return "# Unsupported action";
 }

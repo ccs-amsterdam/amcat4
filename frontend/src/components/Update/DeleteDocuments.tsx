@@ -5,6 +5,7 @@ import { useDeleteByQuery } from "@/api/updateByQuery";
 import { useConfirm } from "../ui/confirm";
 import { Button } from "../ui/button";
 import { Trash2 } from "lucide-react";
+import CodeExample from "@/components/CodeExample/CodeExample";
 
 interface Props {
   user: AmcatSessionUser;
@@ -29,10 +30,13 @@ export default function DeleteDocuments({ user, projectId, query, onSuccess }: P
 
   return (
     <div className="flex flex-col gap-3">
-      <Button variant="destructive" disabled={!count || isPending} onClick={handleDelete} className="flex w-max gap-2">
-        <Trash2 className="h-4 w-4" />
-        Delete {count ?? "..."} documents
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button variant="destructive" disabled={!count || isPending} onClick={handleDelete} className="flex w-max gap-2">
+          <Trash2 className="h-4 w-4" />
+          Delete {count ?? "..."} documents
+        </Button>
+        <CodeExample action="delete" projectId={projectId} query={query} />
+      </div>
       <p className="text-sm text-muted-foreground">
         Permanently delete all {count ?? "..."} document{count === 1 ? "" : "s"} matching the current query. This
         action cannot be undone.
