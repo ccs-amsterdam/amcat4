@@ -61,7 +61,7 @@ function Users({ project }: { project: AmcatProject }) {
     <div className="flex flex-col gap-6 p-3">
       <div className="w-full max-w-4xl">
         <GuestRoleSelector project={project} mutateProject={mutateProject} />
-        <UserRoleTable user={user} ownRole={ownRole} users={users} changeRole={changeRole} roles={roles} />
+        <UserRoleTable user={user} ownRole={ownRole} users={users} changeRole={changeRole} roles={roles} projectId={project.id} />
       </div>
       <ProjectUserInstructions />
     </div>

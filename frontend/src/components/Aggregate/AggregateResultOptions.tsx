@@ -30,9 +30,10 @@ interface Props {
   options: AggregationOptions;
   setOptions: Dispatch<SetStateAction<AggregationOptions>>;
   onOptionsChange?: (options: AggregationOptions) => void;
+  children?: React.ReactNode;
 }
 
-export function AggregateResultOptions({ user, projectId, query, options, setOptions, onOptionsChange }: Props) {
+export function AggregateResultOptions({ user, projectId, query, options, setOptions, onOptionsChange, children }: Props) {
   const [newOptions, setNewOptions] = useState(options);
 
   useEffect(() => {
@@ -126,9 +127,12 @@ export function AggregateResultOptions({ user, projectId, query, options, setOpt
             />
           </div>
         </div>
-        <Button disabled={optionsIdentical() || optionsInvalid()} onClick={submit}>
-          Submit
-        </Button>
+        <div className="flex items-center gap-2">
+          {children}
+          <Button disabled={optionsIdentical() || optionsInvalid()} onClick={submit}>
+            Submit
+          </Button>
+        </div>
       </div>
     </div>
   );

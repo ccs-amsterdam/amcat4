@@ -1,5 +1,6 @@
 import { DataTable, tooltipHeader } from "@/components/ui/datatable";
-import { AmcatClientSettings, AmcatField, AmcatMetareaderAccess, UpdateAmcatField } from "@/interfaces";
+import { AmcatClientSettings, AmcatField, AmcatMetareaderAccess, AmcatProjectId, UpdateAmcatField } from "@/interfaces";
+import CodeExample from "@/components/CodeExample/CodeExample";
 import { ColumnDef } from "@tanstack/react-table";
 import { Key, ListPlus, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -86,11 +87,12 @@ const tableColumns: ColumnDef<Row>[] = [
 ];
 
 interface Props {
+  projectId: AmcatProjectId;
   fields: AmcatField[];
   mutate: (action: "create" | "delete" | "update", fields: UpdateAmcatField[]) => void;
 }
 
-export default function FieldTable({ fields, mutate }: Props) {
+export default function FieldTable({ projectId, fields, mutate }: Props) {
   const [globalFilter, setGlobalFilter] = useState("");
   const [debouncedGlobalFilter, setDebouncedGlobalFilter] = useState(globalFilter);
 
@@ -128,7 +130,7 @@ export default function FieldTable({ fields, mutate }: Props) {
       <div className="flex items-center justify-between pb-4">
         <div className="flex items-center gap-1 md:gap-3">
           <h3 className="">Fields</h3>
-          <CreateField fields={fields} onCreate={onCreate}>
+          <CreateField projectId={projectId} fields={fields} onCreate={onCreate}>
             <Button variant="ghost" className="flex gap-2 p-4">
               <ListPlus />
               <span className="hidden sm:inline">Add field</span>
@@ -145,6 +147,9 @@ export default function FieldTable({ fields, mutate }: Props) {
         </div>
       </div>
       <DataTable columns={tableColumns} data={data} globalFilter={globalFilter} pageSize={50} />
+      <div className="mt-3 flex justify-end">
+        <CodeExample action="fields" projectId={projectId} />
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { AmcatField, AmcatFieldType, UpdateAmcatField } from "@/interfaces";
+import { AmcatField, AmcatFieldType, AmcatProjectId, UpdateAmcatField } from "@/interfaces";
 import { ChevronDown, Key } from "lucide-react";
 import FieldsHelpDialog from "./FieldsHelpDialog";
 import { useEffect, useState } from "react";
@@ -15,14 +15,16 @@ import {
 import { DynamicIcon } from "../ui/dynamic-icon";
 import { Input } from "../ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import CodeExample from "@/components/CodeExample/CodeExample";
 
 interface Props {
+  projectId: AmcatProjectId;
   fields: AmcatField[];
   onCreate: (field: UpdateAmcatField) => void;
   children?: React.ReactNode;
 }
 
-export default function CreateField({ children, fields, onCreate }: Props) {
+export default function CreateField({ children, projectId, fields, onCreate }: Props) {
   const [open, setOpen] = useState(false);
   const doCreateField = async (field: UpdateAmcatField) => {
     onCreate(field);
@@ -35,18 +37,19 @@ export default function CreateField({ children, fields, onCreate }: Props) {
         <DialogHeader>
           <DialogTitle>Add Field</DialogTitle>
         </DialogHeader>
-        <CreateFieldForm fields={fields} createField={doCreateField} />
+        <CreateFieldForm projectId={projectId} fields={fields} createField={doCreateField} />
       </DialogContent>
     </Dialog>
   );
 }
 interface CreateFieldProps {
+  projectId: AmcatProjectId;
   fields: AmcatField[];
   createField: (field: UpdateAmcatField) => void;
   children?: React.ReactNode;
 }
 
-function CreateFieldForm({ fields, createField }: CreateFieldProps) {
+function CreateFieldForm({ projectId, fields, createField }: CreateFieldProps) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [identifier, setIdentifier] = useState(false);
@@ -82,9 +85,12 @@ function CreateFieldForm({ fields, createField }: CreateFieldProps) {
       <div className="mt-2 flex items-center justify-between gap-2">
         <FieldsHelpDialog />
         <span className="text-destructive">{error}</span>
-        <Button className="" onClick={onSubmit} disabled={disabled}>
-          Create
-        </Button>
+        <div className="flex items-center gap-2">
+          <CodeExample action="create_field" projectId={projectId} fieldName={name} fieldType={type ?? ""} identifier={identifier} />
+          <Button onClick={onSubmit} disabled={disabled}>
+            Create
+          </Button>
+        </div>
       </div>
     </div>
   );

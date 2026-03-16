@@ -120,7 +120,7 @@ function Fields({ project }: { project: AmcatProject }) {
 
   return (
     <div className="flex flex-col gap-6 p-3">
-      <FieldTable fields={fields || []} mutate={(action, fields) => mutate({ action, fields })} />
+      <FieldTable projectId={project.id} fields={fields || []} mutate={(action, fields) => mutate({ action, fields })} />
       <FieldsInfoBox />
     </div>
   );

@@ -1,5 +1,6 @@
 import { DataTable } from "@/components/ui/datatable";
-import { AmcatUserDetails, AmcatUserRole } from "@/interfaces";
+import { AmcatProjectId, AmcatUserDetails, AmcatUserRole } from "@/interfaces";
+import CodeExample from "@/components/CodeExample/CodeExample";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { ColumnDef } from "@tanstack/react-table";
 import {
@@ -34,12 +35,13 @@ interface Props {
   users: AmcatUserDetails[];
   roles: string[];
   changeRole: (email: string | undefined, role: string, action: "create" | "delete" | "update") => void;
+  projectId?: AmcatProjectId;
 }
 
 // This components works for both Server and Project users, depending
 // on the props passed in.
 
-export default function UserRoleTable({ user, ownRole, users, roles, changeRole }: Props) {
+export default function UserRoleTable({ user, ownRole, users, roles, changeRole, projectId }: Props) {
   const [changeOwnRole, setChangeOwnRole] = useState<string | undefined>(undefined);
   const [tableColumns] = useState<ColumnDef<Row>[]>(() => createTableColumns(roles));
   const [globalFilter, setGlobalFilter] = useState("");
@@ -87,7 +89,7 @@ export default function UserRoleTable({ user, ownRole, users, roles, changeRole 
     <div className=" w-full max-w-7xl grid-cols-1">
       <div className="flex items-center justify-between pb-4">
         <div className="prose-xl flex gap-1 md:gap-3">
-          <CreateUser ownRole={ownRole} roles={roles} changeRole={changeRole}>
+          <CreateUser ownRole={ownRole} roles={roles} changeRole={changeRole} projectId={projectId}>
             <Button variant="ghost" className="flex gap-2 p-4">
               <UserPlus />
               <span className="hidden sm:inline">Add user</span>
@@ -105,6 +107,9 @@ export default function UserRoleTable({ user, ownRole, users, roles, changeRole 
       </div>
       <div>
         <DataTable columns={tableColumns} data={data} globalFilter={globalFilter} pageSize={50} />
+        <div className="mt-3 flex justify-end">
+          <CodeExample action="users" projectId={projectId} />
+        </div>
         <AlertDialog open={changeOwnRole !== undefined} onOpenChange={() => setChangeOwnRole(undefined)}>
           <AlertDialogContent>
             <AlertDialogHeader>Are you sure you want to limit your own role?</AlertDialogHeader>

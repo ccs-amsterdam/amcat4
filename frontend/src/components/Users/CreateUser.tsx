@@ -13,15 +13,19 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Textarea } from "../ui/textarea";
+import { AmcatProjectId } from "@/interfaces";
+import CodeExample from "@/components/CodeExample/CodeExample";
+import UsersHelpDialog from "./UsersHelpDialog";
 
 interface Props {
   ownRole: string;
   roles: string[];
   changeRole: (email: string, role: string, action: "create" | "delete" | "update") => void | Promise<void>;
+  projectId?: AmcatProjectId;
   children?: React.ReactNode;
 }
 
-export default function CreateUser({ children, ownRole, roles, changeRole }: Props) {
+export default function CreateUser({ children, ownRole, roles, changeRole, projectId }: Props) {
   const [open, setOpen] = useState(false);
   const doCreateUser = async (email: string, role: string) => {
     changeRole(email, role, "create");
@@ -34,7 +38,7 @@ export default function CreateUser({ children, ownRole, roles, changeRole }: Pro
         <DialogHeader>
           <DialogTitle>Add Users</DialogTitle>
         </DialogHeader>
-        <CreateUserForm ownRole={ownRole} roles={roles} createUser={doCreateUser} />
+        <CreateUserForm ownRole={ownRole} roles={roles} projectId={projectId} createUser={doCreateUser} />
       </DialogContent>
     </Dialog>
   );
@@ -43,11 +47,12 @@ export default function CreateUser({ children, ownRole, roles, changeRole }: Pro
 interface CreateUserProps {
   ownRole: string;
   roles: string[];
+  projectId?: AmcatProjectId;
   createUser: (email: string, role: string) => void;
   children?: React.ReactNode;
 }
 
-function CreateUserForm({ ownRole, roles, createUser }: CreateUserProps) {
+function CreateUserForm({ ownRole, roles, projectId, createUser }: CreateUserProps) {
   const [emails, setEmails] = useState("");
   const [role, setRole] = useState(() => roles[0]);
 
@@ -84,28 +89,32 @@ function CreateUserForm({ ownRole, roles, createUser }: CreateUserProps) {
         onChange={(e) => setEmails(e.target.value)}
         placeholder="user1@userland.com&#10;user2@userland.com&#10;*@my-university.com"
       />
-      <div className="grid grid-cols-[2fr,1fr] gap-3">
-        <DropdownMenu>
-          <DropdownMenuTrigger className="flex h-full items-center justify-between gap-3 rounded border border-primary px-3 text-primary outline-none">
-            {role}
-            <ChevronDown className="h-5 w-5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuRadioGroup value={role} onValueChange={setRole}>
-              {roles.map((role) => {
-                if (ownRole !== "ADMIN" && ownRole !== "WRITER") return null;
-                if (ownRole === "WRITER" && role === "ADMIN") return null;
-                if (role === "NONE") return null;
-                return (
-                  <DropdownMenuRadioItem key={role} value={role}>
-                    {role}
-                  </DropdownMenuRadioItem>
-                );
-              })}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button disabled={!user}>Create</Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger className="flex h-9 w-full items-center justify-between gap-3 rounded border border-primary px-3 text-primary outline-none">
+          {role}
+          <ChevronDown className="h-5 w-5" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuRadioGroup value={role} onValueChange={setRole}>
+            {roles.map((role) => {
+              if (ownRole !== "ADMIN" && ownRole !== "WRITER") return null;
+              if (ownRole === "WRITER" && role === "ADMIN") return null;
+              if (role === "NONE") return null;
+              return (
+                <DropdownMenuRadioItem key={role} value={role}>
+                  {role}
+                </DropdownMenuRadioItem>
+              );
+            })}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <div className="flex items-center justify-between gap-2">
+        <UsersHelpDialog roles={roles} />
+        <div className="flex items-center gap-2">
+          <CodeExample action="add_user" projectId={projectId} emails={emails.split("\n").map((e) => e.trim()).filter(Boolean)} role={role} />
+          <Button disabled={!user}>Create</Button>
+        </div>
       </div>
     </form>
   );

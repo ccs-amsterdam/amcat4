@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Code, Check, Clipboard } from "lucide-react";
 import { toast } from "sonner";
-import { AuthInfo, CodeAction, generatePython, generateR } from "./codeGenerators";
+import { AddUserParams, AuthInfo, CodeAction, CreateFieldParams, FieldsParams, UsersParams, generatePython, generateR } from "./codeGenerators";
 import { useAmcatConfig } from "@/api/config";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -18,11 +18,17 @@ SyntaxHighlighter.registerLanguage("r", r);
 
 type CodeExampleProps =
   | { action: "search"; projectId: AmcatProjectId; query: AmcatQuery }
-  | { action: "aggregate"; projectId: AmcatProjectId; query: AmcatQuery; options: AggregationOptions };
+  | { action: "aggregate"; projectId: AmcatProjectId; query: AmcatQuery; options: AggregationOptions }
+  | { action: "fields"; projectId: AmcatProjectId }
+  | { action: "create_field"; projectId: AmcatProjectId; fieldName: string; fieldType: string; identifier: boolean }
+  | { action: "users"; projectId?: AmcatProjectId }
+  | { action: "add_user"; projectId?: AmcatProjectId; emails: string[]; role: string };
 
 type Language = "python" | "r";
 
 const LANGUAGE_KEY = "codeExample:language";
+const INCLUDE_CONNECT_KEY = "codeExample:includeConnect";
+const INCLUDE_INSTALL_KEY = "codeExample:includeInstall";
 
 function useDarkMode() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
@@ -34,7 +40,7 @@ function useDarkMode() {
   return dark;
 }
 
-export default function CodeExample(props: CodeExampleProps) {
+export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "default" }) {
   const [open, setOpen] = useState(false);
   const [language, setLanguage] = useState<Language>(
     () => (localStorage.getItem(LANGUAGE_KEY) as Language | null) ?? "python"
@@ -44,8 +50,12 @@ export default function CodeExample(props: CodeExampleProps) {
     setLanguage(lang);
     localStorage.setItem(LANGUAGE_KEY, lang);
   }
-  const [includeInstall, setIncludeInstall] = useState(true);
-  const [includeConnect, setIncludeConnect] = useState(true);
+  const [includeConnect, setIncludeConnect] = useState(
+    () => localStorage.getItem(INCLUDE_CONNECT_KEY) !== "false"
+  );
+  const [includeInstall, setIncludeInstall] = useState(
+    () => localStorage.getItem(INCLUDE_INSTALL_KEY) !== "false"
+  );
   const [copied, setCopied] = useState(false);
   const dark = useDarkMode();
 
@@ -68,6 +78,18 @@ export default function CodeExample(props: CodeExampleProps) {
     if (props.action === "aggregate") {
       return { action: "aggregate", params: { serverUrl, projectId: props.projectId, query: props.query, options: props.options, auth } };
     }
+    if (props.action === "fields") {
+      return { action: "fields", params: { serverUrl, projectId: props.projectId, auth } satisfies FieldsParams };
+    }
+    if (props.action === "create_field") {
+      return { action: "create_field", params: { serverUrl, projectId: props.projectId, fieldName: props.fieldName, fieldType: props.fieldType, identifier: props.identifier, auth } satisfies CreateFieldParams };
+    }
+    if (props.action === "users") {
+      return { action: "users", params: { serverUrl, projectId: props.projectId, auth } satisfies UsersParams };
+    }
+    if (props.action === "add_user") {
+      return { action: "add_user", params: { serverUrl, projectId: props.projectId, emails: props.emails, role: props.role, auth } satisfies AddUserParams };
+    }
     throw new Error("Unknown action");
   })();
 
@@ -84,8 +106,8 @@ export default function CodeExample(props: CodeExampleProps) {
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)} className="gap-1.5">
-        <Code className="h-3.5 w-3.5" />
+      <Button type="button" variant="outline" size={props.size ?? "sm"} onClick={() => setOpen(true)} className="gap-1.5">
+        <Code className={props.size === "default" ? "h-4 w-4" : "h-3.5 w-3.5"} />
         Show code
       </Button>
 
@@ -118,7 +140,7 @@ export default function CodeExample(props: CodeExampleProps) {
                 <input
                   type="checkbox"
                   checked={includeConnect}
-                  onChange={(e) => setIncludeConnect(e.target.checked)}
+                  onChange={(e) => { setIncludeConnect(e.target.checked); localStorage.setItem(INCLUDE_CONNECT_KEY, String(e.target.checked)); }}
                   className="h-4 w-4"
                 />
                 Include connecting
@@ -127,7 +149,7 @@ export default function CodeExample(props: CodeExampleProps) {
                 <input
                   type="checkbox"
                   checked={includeInstall && includeConnect}
-                  onChange={(e) => setIncludeInstall(e.target.checked)}
+                  onChange={(e) => { setIncludeInstall(e.target.checked); localStorage.setItem(INCLUDE_INSTALL_KEY, String(e.target.checked)); }}
                   disabled={!includeConnect}
                   className="h-4 w-4"
                 />
