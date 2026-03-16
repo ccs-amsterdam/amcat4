@@ -128,16 +128,16 @@ export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "d
     <>
       <Button type="button" variant="outline" size={props.size ?? "sm"} onClick={() => setOpen(true)} className="gap-1.5">
         <Code className={props.size === "default" ? "h-4 w-4" : "h-3.5 w-3.5"} />
-        Show code
+        <span className="hidden sm:inline">Show code</span>
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-none">
+        <DialogContent className="max-w-none w-[95vw] sm:w-auto">
           <DialogHeader>
             <DialogTitle>Code example</DialogTitle>
           </DialogHeader>
 
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             {/* Language toggle */}
             <div className="flex gap-1 rounded-md border p-1">
               {(["python", "r"] as Language[]).map((lang) => (
@@ -195,7 +195,7 @@ export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "d
                 lineHeight: "1.6",
                 height: "18rem",
                 width: "540px",
-                maxWidth: "85vw",
+                maxWidth: "calc(95vw - 3rem)",
               }}
             >
               {code}

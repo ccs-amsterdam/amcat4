@@ -47,13 +47,13 @@
   <body>
     <div class="header">
       <h1>AmCAT4 API <small style="color: grey"> {{ api_version }}</small></h1>
-      <h2>API Documentation: <a href="redoc">[redoc]</a> | <a href="docs">[docs]</a></h2>
+      <h2>API Documentation: <a href="docs">[API Docs]</a> | <a href="openapi.json">[openapi.json]</a></h2>
     </div>
 
     <h1>Settings</h1>
     Note: To change settings, add environment variables to the API worker process and/or in a .env file in the working
     directory. <br />
-    <a href="https://github.com/ccs-amsterdam/amcat4/tree/main/.env.example">Example .env file</a>
+    <a href="https://github.com/ccs-amsterdam/amcat4/blob/master/deploy/.env.example">Example .env file</a>
     <p>
       <b>Settings summary:</b>
     </p>
@@ -61,7 +61,7 @@
     <table class="center">
       <tr>
         <th>Host:</th>
-        <td>{{ host }}</td>
+        <td>{{ host }}/api</td>
       </tr>
       <tr>
         <th>Elasticsearch:</th>
@@ -73,13 +73,6 @@
         <th>Authorization mode:</th>
         <td>
           <span class="{% if auth == 'no_auth'%}bad{%else%}good{%endif%}"> {{auth.name}}: {{ auth.__doc__ }} </span>
-        </td>
-      </tr>
-      <tr>
-        <th>Middlecat:</th>
-        <td>
-          {% if middlecat_alive %}<span class="good">Connected</span>{% else %}<span class="bad">Not Connected</span
-          >{%endif%}
         </td>
       </tr>
       <tr>

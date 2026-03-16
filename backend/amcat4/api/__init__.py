@@ -41,7 +41,7 @@ app = FastAPI(
     description=__doc__ if __doc__ else "",
     openapi_url="/api/openapi.json",
     docs_url="/api/docs",
-    redoc_url="/api/redoc",
+    redoc_url=None,
     openapi_tags=[
         dict(name="auth", description="Endpoints for authentication"),
         dict(name="users", description="Endpoints for server user management"),
