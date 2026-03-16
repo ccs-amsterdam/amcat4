@@ -82,6 +82,25 @@ export interface CreateProjectParams {
   auth?: AuthInfo;
 }
 
+export interface UpdateFieldParams {
+  serverUrl: string;
+  projectId: AmcatProjectId;
+  query: AmcatQuery;
+  field: string;
+  value: string | number | boolean | null;
+  auth?: AuthInfo;
+}
+
+export interface UpdateTagsParams {
+  serverUrl: string;
+  projectId: AmcatProjectId;
+  query: AmcatQuery;
+  field: string;
+  tag: string;
+  action: "add" | "remove";
+  auth?: AuthInfo;
+}
+
 export type CodeAction =
   | { action: "search"; params: SearchParams }
   | { action: "aggregate"; params: AggregateParams }
@@ -91,7 +110,9 @@ export type CodeAction =
   | { action: "add_user"; params: AddUserParams }
   | { action: "create_project"; params: CreateProjectParams }
   | { action: "upload"; params: UploadParams }
-  | { action: "delete"; params: DeleteParams };
+  | { action: "delete"; params: DeleteParams }
+  | { action: "update_field"; params: UpdateFieldParams }
+  | { action: "update_tags"; params: UpdateTagsParams };
 
 // --- Python code generation ---
 
@@ -609,6 +630,126 @@ function generateRUpload(params: UploadParams, includeInstall: boolean, includeC
   return lines.join("\n");
 }
 
+// --- Update field / tags code generation ---
+
+function pyValue(v: string | number | boolean | null): string {
+  if (v === null) return "None";
+  if (typeof v === "boolean") return v ? "True" : "False";
+  if (typeof v === "number") return String(v);
+  return pyString(v);
+}
+
+function rValue(v: string | number | boolean | null): string {
+  if (v === null) return "NULL";
+  if (typeof v === "boolean") return v ? "TRUE" : "FALSE";
+  if (typeof v === "number") return String(v);
+  return rString(v);
+}
+
+function generatePythonUpdateField(params: UpdateFieldParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, projectId, query, field, value, auth } = params;
+  const lines: string[] = [];
+  if (includeConnect) lines.push(...pyConnect(serverUrl, auth, includeInstall));
+  const idValues = query.filters?.["_id"]?.values;
+  const otherFilters = query.filters
+    ? Object.fromEntries(Object.entries(query.filters).filter(([k]) => k !== "_id"))
+    : {};
+  const hasQueries = query.queries && query.queries.length > 0;
+  const hasOtherFilters = Object.keys(otherFilters).length > 0;
+  const valueStr = value === null ? "YOUR_VALUE" : pyValue(value);
+  if (value === null) lines.push(`# Replace YOUR_VALUE with the new value for ${field}`);
+  const args: string[] = [
+    `    index=${pyString(projectId)}`,
+    `    field=${pyString(field)}`,
+    `    value=${valueStr}`,
+  ];
+  if (idValues && idValues.length > 0)
+    args.push(`    ids=[${idValues.map((v) => pyString(String(v))).join(", ")}]`);
+  if (hasQueries) args.push(`    queries=${pyQueries(query.queries!)}`);
+  if (hasOtherFilters) args.push(`    filters=${pyFilters(otherFilters).replace(/\n/g, "\n    ")}`);
+  lines.push(`conn.update_by_query(\n${args.join(",\n")}\n)`);
+  return lines.join("\n");
+}
+
+function generateRUpdateField(params: UpdateFieldParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, projectId, query, field, value, auth } = params;
+  const lines: string[] = [];
+  if (includeConnect) lines.push(...rConnect(serverUrl, auth, includeInstall));
+  const idValues = query.filters?.["_id"]?.values;
+  const otherFilters = query.filters
+    ? Object.fromEntries(Object.entries(query.filters).filter(([k]) => k !== "_id"))
+    : {};
+  const hasQueries = query.queries && query.queries.length > 0;
+  const hasOtherFilters = Object.keys(otherFilters).length > 0;
+  const valueStr = value === null ? "YOUR_VALUE" : rValue(value);
+  if (value === null) lines.push(`# Replace YOUR_VALUE with the new value for ${field}`);
+  const args: string[] = [
+    `  index = ${rString(projectId)}`,
+    `  field = ${rString(field)}`,
+    `  value = ${valueStr}`,
+  ];
+  if (idValues && idValues.length > 0)
+    args.push(`  ids = c(${idValues.map((v) => rString(String(v))).join(", ")})`);
+  if (hasQueries) {
+    const queryStr = query.queries!.map((q) => q.query).join(" OR ");
+    args.push(`  queries = ${rString(queryStr)}`);
+  }
+  if (hasOtherFilters) args.push(`  filters = ${rFilters(otherFilters).replace(/\n/g, "\n  ")}`);
+  lines.push(`update_by_query(\n${args.join(",\n")}\n)`);
+  return lines.join("\n");
+}
+
+function generatePythonUpdateTags(params: UpdateTagsParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, projectId, query, field, tag, action, auth } = params;
+  const lines: string[] = [];
+  if (includeConnect) lines.push(...pyConnect(serverUrl, auth, includeInstall));
+  const idValues = query.filters?.["_id"]?.values;
+  const otherFilters = query.filters
+    ? Object.fromEntries(Object.entries(query.filters).filter(([k]) => k !== "_id"))
+    : {};
+  const hasQueries = query.queries && query.queries.length > 0;
+  const hasOtherFilters = Object.keys(otherFilters).length > 0;
+  const args: string[] = [
+    `    index=${pyString(projectId)}`,
+    `    action=${pyString(action)}`,
+    `    field=${pyString(field)}`,
+    `    tag=${pyString(tag)}`,
+  ];
+  if (idValues && idValues.length > 0)
+    args.push(`    ids=[${idValues.map((v) => pyString(String(v))).join(", ")}]`);
+  if (hasQueries) args.push(`    queries=${pyQueries(query.queries!)}`);
+  if (hasOtherFilters) args.push(`    filters=${pyFilters(otherFilters).replace(/\n/g, "\n    ")}`);
+  lines.push(`conn.tags_update(\n${args.join(",\n")}\n)`);
+  return lines.join("\n");
+}
+
+function generateRUpdateTags(params: UpdateTagsParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, projectId, query, field, tag, action, auth } = params;
+  const lines: string[] = [];
+  if (includeConnect) lines.push(...rConnect(serverUrl, auth, includeInstall));
+  const idValues = query.filters?.["_id"]?.values;
+  const otherFilters = query.filters
+    ? Object.fromEntries(Object.entries(query.filters).filter(([k]) => k !== "_id"))
+    : {};
+  const hasQueries = query.queries && query.queries.length > 0;
+  const hasOtherFilters = Object.keys(otherFilters).length > 0;
+  const args: string[] = [
+    `  ${rString(projectId)}`,
+    `  ${rString(action)}`,
+    `  ${rString(field)}`,
+    `  ${rString(tag)}`,
+  ];
+  if (idValues && idValues.length > 0)
+    args.push(`  ids = c(${idValues.map((v) => rString(String(v))).join(", ")})`);
+  if (hasQueries) {
+    const queryStr = query.queries!.map((q) => q.query).join(" OR ");
+    args.push(`  queries = ${rString(queryStr)}`);
+  }
+  if (hasOtherFilters) args.push(`  filters = ${rFilters(otherFilters).replace(/\n/g, "\n  ")}`);
+  lines.push(`update_tags(\n${args.join(",\n")}\n)`);
+  return lines.join("\n");
+}
+
 // --- Create project code generation ---
 
 function generatePythonCreateProject(params: CreateProjectParams, includeInstall: boolean, includeConnect: boolean): string {
@@ -667,6 +808,8 @@ export function generatePython(action: CodeAction, includeInstall: boolean, incl
   if (action.action === "create_project") return generatePythonCreateProject(action.params, includeInstall, includeConnect);
   if (action.action === "upload") return generatePythonUpload(action.params, includeInstall, includeConnect);
   if (action.action === "delete") return generatePythonDelete(action.params, includeInstall, includeConnect);
+  if (action.action === "update_field") return generatePythonUpdateField(action.params, includeInstall, includeConnect);
+  if (action.action === "update_tags") return generatePythonUpdateTags(action.params, includeInstall, includeConnect);
   return "# Unsupported action";
 }
 
@@ -680,5 +823,7 @@ export function generateR(action: CodeAction, includeInstall: boolean, includeCo
   if (action.action === "create_project") return generateRCreateProject(action.params, includeInstall, includeConnect);
   if (action.action === "upload") return generateRUpload(action.params, includeInstall, includeConnect);
   if (action.action === "delete") return generateRDelete(action.params, includeInstall, includeConnect);
+  if (action.action === "update_field") return generateRUpdateField(action.params, includeInstall, includeConnect);
+  if (action.action === "update_tags") return generateRUpdateTags(action.params, includeInstall, includeConnect);
   return "# Unsupported action";
 }

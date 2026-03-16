@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Code, Check, Clipboard } from "lucide-react";
 import { toast } from "sonner";
-import { AddUserParams, AuthInfo, CodeAction, CreateFieldParams, CreateProjectParams, DeleteParams, FieldsParams, UploadColumn, UploadParams, UsersParams, generatePython, generateR } from "./codeGenerators";
+import { AddUserParams, AuthInfo, CodeAction, CreateFieldParams, CreateProjectParams, DeleteParams, FieldsParams, UpdateFieldParams, UpdateTagsParams, UploadColumn, UploadParams, UsersParams, generatePython, generateR } from "./codeGenerators";
 import { useAmcatConfig } from "@/api/config";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -25,7 +25,9 @@ type CodeExampleProps =
   | { action: "add_user"; projectId?: AmcatProjectId; emails: string[]; role: string }
   | { action: "create_project"; projectId: string; name: string; description: string }
   | { action: "upload"; projectId: AmcatProjectId; uploadColumns: UploadColumn[]; fileName?: string }
-  | { action: "delete"; projectId: AmcatProjectId; query: AmcatQuery };
+  | { action: "delete"; projectId: AmcatProjectId; query: AmcatQuery }
+  | { action: "update_field"; projectId: AmcatProjectId; query: AmcatQuery; field: string; value: string | number | boolean | null }
+  | { action: "update_tags"; projectId: AmcatProjectId; query: AmcatQuery; field: string; tag: string; tagAction: "add" | "remove" };
 
 type Language = "python" | "r";
 
@@ -102,6 +104,12 @@ export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "d
     if (props.action === "delete") {
       return { action: "delete", params: { serverUrl, projectId: props.projectId, query: props.query, auth } satisfies DeleteParams };
     }
+    if (props.action === "update_field") {
+      return { action: "update_field", params: { serverUrl, projectId: props.projectId, query: props.query, field: props.field, value: props.value, auth } satisfies UpdateFieldParams };
+    }
+    if (props.action === "update_tags") {
+      return { action: "update_tags", params: { serverUrl, projectId: props.projectId, query: props.query, field: props.field, tag: props.tag, action: props.tagAction, auth } satisfies UpdateTagsParams };
+    }
     throw new Error("Unknown action");
   })();
 
@@ -169,6 +177,11 @@ export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "d
               </label>
             </div>
           </div>
+
+          {/* Disclaimer */}
+          <p className="text-xs text-muted-foreground">
+            Generated code examples are experimental. Please check code before running.
+          </p>
 
           {/* Code block */}
           <div className="relative">

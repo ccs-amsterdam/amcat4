@@ -15,6 +15,7 @@ import { DynamicIcon } from "../ui/dynamic-icon";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { CalendarIcon, Clock2, X } from "lucide-react";
 import { ValueSelector } from "../ui/value-selector";
+import CodeExample from "@/components/CodeExample/CodeExample";
 
 function TimeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [h, m, s] = value ? value.split(":") : ["", "", ""];
@@ -224,12 +225,23 @@ function NonTagUpdateForm({ user, projectId, query, field }: NonTagProps) {
     );
   };
 
+  const parsedValue: string | number | boolean | null = (() => {
+    if (field.type === "number" || field.type === "integer") return value === "" ? null : Number(value);
+    if (field.type === "boolean") return boolValue;
+    if (field.type === "date")
+      return dateValue ? (timeValue ? `${formatLocalDate(dateValue)}T${timeValue}` : formatLocalDate(dateValue)) : null;
+    return value || null;
+  })();
+
   return (
     <div className="flex flex-col gap-3">
       {renderInput()}
-      <Button onClick={handleSubmit} disabled={isDisabled}>
-        Change {field.name} in {count ?? "..."} document{count === 1 ? "" : "s"}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button onClick={handleSubmit} disabled={isDisabled} className="flex-1">
+          Change {field.name} in {count ?? "..."} document{count === 1 ? "" : "s"}
+        </Button>
+        <CodeExample action="update_field" projectId={projectId} query={query} field={field.name} value={parsedValue} />
+      </div>
     </div>
   );
 }

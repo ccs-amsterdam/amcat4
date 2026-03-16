@@ -31,7 +31,7 @@ export default function DeleteDocuments({ user, projectId, query, onSuccess }: P
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <Button variant="destructive" disabled={!count || isPending} onClick={handleDelete} className="flex w-max gap-2">
+        <Button variant="destructive" disabled={!count || isPending} onClick={handleDelete} className="flex flex-1 gap-2">
           <Trash2 className="h-4 w-4" />
           Delete {count ?? "..."} documents
         </Button>
