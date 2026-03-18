@@ -5,8 +5,9 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing_extensions import Self
 
-IndexId = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_-]*$", title="Index ID")]
-IndexIds = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_-]*(,[a-z0-9][a-z0-9_-]*)*$", title="Index ID or comma-separated IDs")]
+_IX = r"[a-z0-9][a-z0-9_-]*"
+IndexId = Annotated[str, Field(pattern=rf"^{_IX}$", title="Index ID")]
+IndexIds = Annotated[str, Field(pattern=rf"^{_IX}(,{_IX})*$", title="Index ID or comma-separated IDs")]
 
 
 ######################## ROLE SPECIFICATIONS #########################
