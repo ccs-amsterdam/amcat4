@@ -50,8 +50,8 @@ export function useHasProjectRole(user: AmcatSessionUser | undefined, projectId:
 async function getProject(user?: AmcatSessionUser, projectId?: string) {
   if (!user || !projectId) return undefined;
   const res = await user.api.get(`/index/${projectId}`).catch((e) => {
-    if (e?.response?.status === 404) return null;
-    throw e;
+    const detail = e?.response?.data?.detail;
+    throw new Error(detail || e?.message || "Unknown error");
   });
   if (!res) return undefined;
   return amcatProjectSchema.parse(res.data);

@@ -1,4 +1,6 @@
+import logging
 import uuid
+from datetime import datetime
 from typing import AsyncGenerator, Literal
 
 from amcat4.connections import es
@@ -191,9 +193,9 @@ async def check_deprecated_version(index: str):
     """
     global_doc = await es().get(index=index, id="_global", source_includes="version")
     version = global_doc["_source"].get("version", 0)
-    if version != 2:
+    if version != 1:
         raise ValueError(
-            "Cannot automatically migrate from current system index, because its a very old version. "
+            f"Cannot automatically migrate from current system index, because its a very old version ({version}). "
             "So old that we would be surprised if you ever even see this message, but if you do, "
             "and you really need to migrate, please contact us. Or may we recommend a fresh start...? :)"
         )
@@ -220,7 +222,11 @@ async def migrate_server_settings(doc: dict):
 
 
 async def migrate_project_settings(index: str, doc: dict):
-    image = await create_image_from_url(doc.get("image_url"))
+    try:
+        image = await create_image_from_url(doc.get("image_url"))
+    except Exception as e:
+        logging.warning(f"Could not retrieve image for project '{index}' from '{doc.get('image_url')}': {e}. Skipping image.")
+        image = None
     if image:
         image = image.model_dump()
     return BulkInsertAction(
@@ -232,7 +238,7 @@ async def migrate_project_settings(index: str, doc: dict):
                 "name": doc.get("name"),
                 "description": doc.get("description"),
                 "contact": doc.get("contact"),
-                "archived": doc.get("archived"),
+                "archived": datetime.fromisoformat(doc["archived"]).isoformat() if doc.get("archived") else None,
                 "folder": doc.get("folder"),
                 "image": image,
             }

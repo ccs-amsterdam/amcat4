@@ -279,7 +279,10 @@ async def view_index(
     await HTTPException_if_not_project_index_role(user, ix, Roles.OBSERVER)
     role = await get_user_project_role(user, project_index=ix, global_admin=False)
 
-    bytes = await index_size_in_bytes(ix)
+    try:
+        bytes = await index_size_in_bytes(ix)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail=f"Index {ix} exists in the system index but has no corresponding Elasticsearch index")
 
     image_url = f"{get_settings().host}/api/index/{ix}/image/{d.image.id}" if d.image else None
 
