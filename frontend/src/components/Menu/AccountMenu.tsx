@@ -98,7 +98,7 @@ function AboutDialog({ config }: { config: AmcatConfig | undefined }) {
           <dt className="font-medium text-muted-foreground">Server version</dt>
           <dd>{config?.api_version ?? "unknown"}</dd>
           <dt className="font-medium text-muted-foreground">API URL</dt>
-          <dd className="break-all">{config?.resource ?? window.location.origin}</dd>
+          <dd className="break-all">{(config?.resource ?? window.location.origin) + "/api"}</dd>
         </dl>
       </DialogContent>
     </Dialog>
