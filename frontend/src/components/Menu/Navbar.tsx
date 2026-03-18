@@ -1,5 +1,7 @@
 import { useAmcatBranding } from "@/api/branding";
+import { useAmcatConfig } from "@/api/config";
 import { AmcatBranding } from "@/interfaces";
+import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import {
   ChevronRight,
   Columns3Cog,
@@ -77,33 +79,35 @@ function BreadCrumbs({ branding, hasIndex }: { branding?: AmcatBranding; hasInde
   const location = useLocation();
   const path = location.pathname;
   const homepage = path === "/";
+  const { user } = useAmcatSession();
+  const { data: config } = useAmcatConfig();
 
   const serverLinkLabel = branding?.name || "Server";
+  const requiresAuth = config?.authorization !== "no_auth";
+  const canNavigate = !requiresAuth || user.authenticated;
 
   return (
     <>
       <div className="hidden h-full items-center overflow-hidden  text-sm   sm:flex  md:text-lg">
-        <BreadCrumbLink name={serverLinkLabel} href="/projects" active={!homepage && !hasIndex} />
+        <BreadCrumbLink name={serverLinkLabel} href="/projects" active={!homepage && !hasIndex} disabled={!canNavigate} />
         <ChevronRight className="h-4 w-4 min-w-4 flex-shrink opacity-50" />
-        {/*<span className="text-primary/50">|</span>*/}
-        {/*<span className="text-foreground/30">/</span>*/}
-        <ProjectMenu />
+        {canNavigate && <ProjectMenu />}
       </div>
       <div className="flex  flex-col items-start overflow-hidden py-1  pl-2 text-sm sm:hidden  md:text-base">
-        <BreadCrumbLink name={serverLinkLabel} href="/projects" active={!homepage && !hasIndex} />
-        <ProjectMenu />
+        <BreadCrumbLink name={serverLinkLabel} href="/projects" active={!homepage && !hasIndex} disabled={!canNavigate} />
+        {canNavigate && <ProjectMenu />}
       </div>
     </>
   );
 }
 
-function BreadCrumbLink({ name, href, active = true }: { name: string; href: string; active?: boolean }) {
+function BreadCrumbLink({ name, href, active = true, disabled = false }: { name: string; href: string; active?: boolean; disabled?: boolean }) {
   const navigate = useNavigate();
   return (
     <button
       className={`${active ? "font-medium" : "text-foreground/90"}
-        flex h-full min-w-0  select-none items-center gap-1  text-ellipsis whitespace-nowrap border-primary  px-1 outline-none hover:font-semibold md:px-3`}
-      onClick={() => navigate({ to: href })}
+        flex h-full min-w-0  select-none items-center gap-1  text-ellipsis whitespace-nowrap border-primary  px-1 outline-none ${disabled ? "cursor-default" : "hover:font-semibold"} md:px-3`}
+      onClick={() => !disabled && navigate({ to: href })}
     >
       {name}
     </button>
