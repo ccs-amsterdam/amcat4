@@ -63,7 +63,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^1.14.0",
     "tailwindcss-animate": "^1.0.7",
-    "xlsx": "^0.18.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^3.24.1",
     "zod-validation-error": "^2.1.0"
   },
@@ -105,6 +105,9 @@
     "vite-tsconfig-paths": "^6.1.1"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "sharp"]
+    "onlyBuiltDependencies": ["esbuild", "sharp"],
+    "overrides": {
+      "minimatch": "^10.0.0"
+    }
   }
 }
