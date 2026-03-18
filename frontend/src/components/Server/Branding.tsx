@@ -79,7 +79,7 @@ function EnterServerButton() {
   return (
     <Link to="/projects">
       <Button size="lg">
-        Enter server
+        View projects
         <ArrowRight className="ml-2 h-5 w-5" />
       </Button>
     </Link>

@@ -1,5 +1,4 @@
 
-
 import { useAmcatConfig } from "@/api/config";
 import {
   DropdownMenu,
@@ -9,11 +8,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AmcatConfig } from "@/interfaces";
-import { AlertCircle, Bot, Loader, LogInIcon, LogOut, User } from "lucide-react";
+import { AlertCircle, Bot, Info, Loader, LogInIcon, LogOut, User } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useNavigate } from "@tanstack/react-router";
 import ThemeToggle from "./ThemeToggle";
+import packageJson from "../../../package.json";
 
 export default function AccountMenu() {
   const { user, signIn, signOut } = useAmcatSession();
@@ -71,8 +72,36 @@ export default function AccountMenu() {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <ThemeToggle label={true} />
+        <DropdownMenuSeparator />
+        <AboutDialog config={config} />
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function AboutDialog({ config }: { config: AmcatConfig | undefined }) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+          <Info className="mr-3 h-5 w-5" />
+          <span>About</span>
+        </DropdownMenuItem>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>About AmCAT</DialogTitle>
+        </DialogHeader>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+          <dt className="font-medium text-muted-foreground">Client version</dt>
+          <dd>{packageJson.version}</dd>
+          <dt className="font-medium text-muted-foreground">Server version</dt>
+          <dd>{config?.api_version ?? "unknown"}</dd>
+          <dt className="font-medium text-muted-foreground">API URL</dt>
+          <dd className="break-all">{config?.resource ?? window.location.origin}</dd>
+        </dl>
+      </DialogContent>
+    </Dialog>
   );
 }
 
