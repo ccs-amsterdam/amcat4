@@ -1,6 +1,6 @@
 services:
   caddy:
-    profiles: [deploy]
+    profiles: [deploy, deploy-noelastic]
     image: ccsamsterdam/amcat4_frontend:${AMCAT4_VERSION:-latest}
     container_name: katty
     restart: unless-stopped
@@ -18,14 +18,15 @@ services:
       - api
 
   api:
-    profiles: [deploy]
+    profiles: [deploy, deploy-noelastic]
     image: ccsamsterdam/amcat4_backend:${AMCAT4_VERSION:-latest}
     container_name: amcat4
     restart: unless-stopped
     networks:
       - amcat-net
     environment:
-      - amcat4_elastic_host=http://elasticsearch:9200
+      # For deploy-noelastic, set amcat4_elastic_host in .env to point to your external Elasticsearch
+      - amcat4_elastic_host=${amcat4_elastic_host:-http://elasticsearch:9200}
       - amcat4_host=${AMCAT4_URL:-http://localhost}
       - FORWARDED_ALLOW_IPS=*
       # Passthrough environment variables for the API configuration
@@ -35,9 +36,6 @@ services:
       - amcat4_auth
       - amcat4_middlecat_url
       - amcat4_admin_email
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
 
   elasticsearch-init:
     profiles: [deploy, dev]
