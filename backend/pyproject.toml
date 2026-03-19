@@ -28,7 +28,7 @@ dependencies = [
     "python-multipart",
     "python-dotenv",
     "requests",
-    "authlib",
+    "authlib>=1.6.9",
     "pydantic[email]",
     "pydantic-settings",
     "typing_extensions",
