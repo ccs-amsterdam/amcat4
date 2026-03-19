@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AmcatConfig } from "@/interfaces";
-import { AlertCircle, Bot, Loader, LogInIcon, LogOut, User } from "lucide-react";
+import { AlertCircle, Bot, Loader, LogInIcon, LogOut, Sparkles, User } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useNavigate } from "@tanstack/react-router";
 import ThemeToggle from "./ThemeToggle";
@@ -68,6 +68,10 @@ export default function AccountMenu() {
         <DropdownMenuItem onClick={() => navigate({ to: "/api_keys" })} className={user.authenticated ? "" : "hidden"}>
           <Bot className="mr-3 h-5 w-5" />
           <span>API Keys</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => window.dispatchEvent(new Event("start-amcat-tour"))}>
+          <Sparkles className="mr-3 h-5 w-5" />
+          <span>Take a tour</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <ThemeToggle label={true} />
