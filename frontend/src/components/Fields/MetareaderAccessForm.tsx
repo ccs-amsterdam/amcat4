@@ -8,8 +8,8 @@ import { useEffect, useRef, useState } from "react";
 interface Props {
   field: AmcatField;
   metareader_access: AmcatMetareaderAccess;
-  onChangeAccess: (access: "none" | "snippet" | "read") => void;
-  onChangeMaxSnippet: (nomatch_chars: number, max_matches: number, match_chars: number) => void;
+  onChangeAccess?: (access: "none" | "snippet" | "read") => void;
+  onChangeMaxSnippet?: (nomatch_chars: number, max_matches: number, match_chars: number) => void;
 }
 
 const noneIcon = (
@@ -36,6 +36,10 @@ export default function MetareaderAccessForm({ field, metareader_access, onChang
     if (metareader_access.access === "none") return noneIcon;
     if (metareader_access.access === "snippet") return snippetIcon;
     if (metareader_access.access === "read") return readIcon;
+  }
+
+  if (!onChangeAccess) {
+    return <div className="flex items-center gap-2">{renderAccess()}</div>;
   }
 
   return (

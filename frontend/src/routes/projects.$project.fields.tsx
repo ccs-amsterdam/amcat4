@@ -115,12 +115,16 @@ function Fields({ project }: { project: AmcatProject }) {
 
   const ownRole = config?.authorization === "no_auth" ? "ADMIN" : project?.user_role;
   if (!ownRole || !mutate) return <ErrorMsg type="Not Allowed">Need to be logged in</ErrorMsg>;
-  if (ownRole !== "ADMIN" && ownRole !== "WRITER")
-    return <ErrorMsg type="Not Allowed">Need to have the WRITER or ADMIN role to edit project fields</ErrorMsg>;
+
+  const canEdit = ownRole === "ADMIN" || ownRole === "WRITER";
 
   return (
     <div className="flex flex-col gap-6 p-3">
-      <FieldTable projectId={project.id} fields={fields || []} mutate={(action, fields) => mutate({ action, fields })} />
+      <FieldTable
+        projectId={project.id}
+        fields={fields || []}
+        mutate={canEdit ? (action, fields) => mutate({ action, fields }) : undefined}
+      />
       <FieldsInfoBox />
     </div>
   );

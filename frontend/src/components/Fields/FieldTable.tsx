@@ -55,7 +55,7 @@ const tableColumns: ColumnDef<Row>[] = [
         field.onChange?.({ name: field.name, client_settings });
       }
 
-      return <VisibilityForm field={field} client_settings={field.client_settings} onChange={onChange} />;
+      return <VisibilityForm field={field} client_settings={field.client_settings} onChange={field.onChange ? onChange : undefined} />;
     },
   },
   {
@@ -78,8 +78,8 @@ const tableColumns: ColumnDef<Row>[] = [
         <MetareaderAccessForm
           field={field}
           metareader_access={metareader_access}
-          onChangeAccess={changeAccess}
-          onChangeMaxSnippet={changeMaxSnippet}
+          onChangeAccess={field.onChange ? changeAccess : undefined}
+          onChangeMaxSnippet={field.onChange ? changeMaxSnippet : undefined}
         />
       );
     },
@@ -89,7 +89,7 @@ const tableColumns: ColumnDef<Row>[] = [
 interface Props {
   projectId: AmcatProjectId;
   fields: AmcatField[];
-  mutate: (action: "create" | "delete" | "update", fields: UpdateAmcatField[]) => void;
+  mutate?: (action: "create" | "delete" | "update", fields: UpdateAmcatField[]) => void;
 }
 
 export default function FieldTable({ projectId, fields, mutate }: Props) {
@@ -120,7 +120,7 @@ export default function FieldTable({ projectId, fields, mutate }: Props) {
     fields?.map((field) => {
       const row: Row = {
         ...field,
-        onChange,
+        onChange: mutate ? onChange : undefined,
       };
       return row;
     }) || [];
@@ -130,12 +130,14 @@ export default function FieldTable({ projectId, fields, mutate }: Props) {
       <div className="flex items-center justify-between pb-4">
         <div className="flex items-center gap-1 md:gap-3">
           <h3 className="">Fields</h3>
-          <CreateField projectId={projectId} fields={fields} onCreate={onCreate}>
-            <Button variant="ghost" className="flex gap-2 p-4">
-              <ListPlus />
-              <span className="hidden sm:inline">Add field</span>
-            </Button>
-          </CreateField>
+          {mutate && (
+            <CreateField projectId={projectId} fields={fields} onCreate={onCreate}>
+              <Button variant="ghost" className="flex gap-2 p-4">
+                <ListPlus />
+                <span className="hidden sm:inline">Add field</span>
+              </Button>
+            </CreateField>
+          )}
         </div>
         <div className="relative ml-auto flex items-center">
           <Input

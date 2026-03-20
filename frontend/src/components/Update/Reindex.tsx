@@ -212,7 +212,7 @@ export default function Reindex({ user, projectId, query }: Props) {
                       <CommandGroup>
                         {projects
                           ?.sort((a, b) => projectLabel(a).localeCompare(projectLabel(b)))
-                          .filter((ix) => !user.authenticated || ix.user_role === "WRITER" || ix.user_role === "ADMIN")
+                          .filter((ix) => ix.user_role === "WRITER" || ix.user_role === "ADMIN")
                           .filter((ix) => !ix.archived)
                           .filter((ix) => ix.id !== projectId)
                           .map((ix) => (

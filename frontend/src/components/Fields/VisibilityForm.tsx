@@ -8,7 +8,7 @@ import { Switch } from "../ui/switch";
 interface Props {
   field: AmcatField;
   client_settings: AmcatClientSettings;
-  onChange: (client_settings: AmcatClientSettings) => void;
+  onChange?: (client_settings: AmcatClientSettings) => void;
 }
 
 const IconClass = "h-5 w-5";
@@ -42,6 +42,10 @@ export default function VisibilityForm({ field, client_settings, onChange }: Pro
   function onClose() {
     if (newClientSettings !== client_settings) onChange(newClientSettings);
   }
+  if (!onChange) {
+    return <div className="flex items-center gap-1">{renderLabel()}</div>;
+  }
+
   return (
     <div className="flex flex-col gap-1">
       <DropdownMenu onOpenChange={(open) => !open && onClose()}>
