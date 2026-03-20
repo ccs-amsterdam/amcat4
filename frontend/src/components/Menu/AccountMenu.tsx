@@ -10,9 +10,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AmcatConfig } from "@/interfaces";
-import { AlertCircle, Bot, Info, Loader, LogInIcon, LogOut, User } from "lucide-react";
+import { AlertCircle, Bot, Info, Loader, LogInIcon, LogOut, Map, User } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useNavigate } from "@tanstack/react-router";
+import useLocalStorage from "@/lib/useLocalStorage";
 import ThemeToggle from "./ThemeToggle";
 import packageJson from "../../../package.json";
 
@@ -20,6 +21,8 @@ export default function AccountMenu() {
   const { user, signIn, signOut } = useAmcatSession();
   const { data: config, isLoading: loadingConfig } = useAmcatConfig();
   const navigate = useNavigate();
+  const tourKey = `amcat-onboarding-seen-${user.email ?? "guest"}`;
+  const [, setTourSeen] = useLocalStorage<boolean>(tourKey, false);
   function renderAuthStatus() {
     if (config?.authorization === "no_auth") return "Authorization disabled";
     if (!user) return "not signed in";
@@ -70,6 +73,12 @@ export default function AccountMenu() {
           <Bot className="mr-3 h-5 w-5" />
           <span>API Keys</span>
         </DropdownMenuItem>
+        {user.authenticated && (
+          <DropdownMenuItem onClick={() => setTourSeen(false)}>
+            <Map className="mr-3 h-5 w-5" />
+            <span>Take Tour</span>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <ThemeToggle label={true} />
         <DropdownMenuSeparator />
