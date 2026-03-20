@@ -38,6 +38,7 @@ export default function SimpleQueryForm({
       <div className="flex flex-nowrap items-center gap-1 p-1">
         <div className="relative  w-auto min-w-[50%] flex-auto">
           <Input
+            data-tour="search-input"
             className="pl-10"
             placeholder="search"
             value={queriesToString(query.queries || [], false)}
@@ -57,9 +58,11 @@ export default function SimpleQueryForm({
           </div>
         </div>
         <div className="flex items-center pl-2">
-          <AddFilterButton user={user} projectId={projectId} value={query} onSubmit={(value) => updateQuery(value, 0)}>
-            <Filter />
-          </AddFilterButton>
+          <div data-tour="filter-button">
+            <AddFilterButton user={user} projectId={projectId} value={query} onSubmit={(value) => updateQuery(value, 0)}>
+              <Filter />
+            </AddFilterButton>
+          </div>
           <ChevronsUpDown role="button" onClick={switchAdvanced} className="h-8 w-8 cursor-pointer select-none p-1" />
         </div>
       </div>

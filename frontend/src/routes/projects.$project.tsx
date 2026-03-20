@@ -8,6 +8,7 @@ import { ErrorMsg } from "@/components/ui/error-message";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useMyProjectRole, useProject } from "@/api/project";
 import { Loading } from "@/components/ui/loading";
+import ProjectTour from "@/components/Onboarding/ProjectTour";
 
 function ProjectLayout() {
   const { project } = Route.useParams();
@@ -19,7 +20,12 @@ function ProjectLayout() {
   if (error) return <CouldNotOpenProject message={(error as Error).message} />;
   if (!projectRole) return <NoAccessToThisProject />;
 
-  return <Outlet />;
+  return (
+    <>
+      <Outlet />
+      <ProjectTour projectId={decodeURI(project)} user={user} projectRole={projectRole} />
+    </>
+  );
 }
 
 function CouldNotOpenProject({ message }: { message: string }) {

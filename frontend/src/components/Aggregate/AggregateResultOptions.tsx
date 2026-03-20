@@ -73,7 +73,7 @@ export function AggregateResultOptions({ user, projectId, query, options, setOpt
   return (
     <div className=" prose w-72 dark:prose-invert">
       <div className="flex flex-col gap-3">
-        <div className="">
+        <div data-tour="aggregate-display" className="">
           <div className="label">Display</div>
           <div className={rowClassName}>
             <DisplayPicker options={newOptions} setOptions={setNewOptions} />
@@ -97,7 +97,7 @@ export function AggregateResultOptions({ user, projectId, query, options, setOpt
           </div>
         </div>
 
-        <div className="">
+        <div data-tour="aggregate-axis" className="">
           <div className="label">{labels[0]}</div>
 
           <div className={rowClassName}>

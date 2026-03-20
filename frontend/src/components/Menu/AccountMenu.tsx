@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AmcatConfig } from "@/interfaces";
 import { AlertCircle, Bot, Info, Loader, LogInIcon, LogOut, Map, User } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import useLocalStorage from "@/lib/useLocalStorage";
 import ThemeToggle from "./ThemeToggle";
 import packageJson from "../../../package.json";
@@ -21,8 +21,19 @@ export default function AccountMenu() {
   const { user, signIn, signOut } = useAmcatSession();
   const { data: config, isLoading: loadingConfig } = useAmcatConfig();
   const navigate = useNavigate();
-  const tourKey = `amcat-onboarding-seen-${user.email ?? "guest"}`;
-  const [, setTourSeen] = useLocalStorage<boolean>(tourKey, false);
+  const { project } = useParams({ strict: false });
+  const onboardingKey = `amcat-onboarding-seen-${user.email ?? "guest"}`;
+  const projectTourKey = `project-tour-${user.email ?? "guest"}`;
+  const [, setOnboardingSeen] = useLocalStorage<boolean>(onboardingKey, false);
+  const [, setProjectTourSeen] = useLocalStorage<boolean>(projectTourKey, false);
+
+  function takeTour() {
+    if (project) {
+      setProjectTourSeen(false);
+    } else {
+      setOnboardingSeen(false);
+    }
+  }
   function renderAuthStatus() {
     if (config?.authorization === "no_auth") return "Authorization disabled";
     if (!user) return "not signed in";
@@ -74,7 +85,7 @@ export default function AccountMenu() {
           <span>API Keys</span>
         </DropdownMenuItem>
         {user.authenticated && (
-          <DropdownMenuItem onClick={() => setTourSeen(false)}>
+          <DropdownMenuItem onClick={takeTour}>
             <Map className="mr-3 h-5 w-5" />
             <span>Take Tour</span>
           </DropdownMenuItem>
