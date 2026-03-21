@@ -174,8 +174,8 @@ async def list_slm_policies(user: User = Depends(authenticated_user)) -> list[SL
                 schedule=policy.get("schedule", ""),
                 max_count=retention.get("max_count", 0),
                 next_execution=_millis_to_iso(entry.get("next_execution_millis")),
-                last_success=_millis_to_iso(entry.get("last_success", {}).get("time_millis")),
-                last_failure=_millis_to_iso(entry.get("last_failure", {}).get("time_millis")),
+                last_success=_millis_to_iso(entry.get("last_success", {}).get("time")),
+                last_failure=_millis_to_iso(entry.get("last_failure", {}).get("time")),
             )
         )
     return policies
