@@ -33,7 +33,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 function shortIso(s: string): string {
-  return s.slice(0, 16);
+  return s.slice(0, 16).replace("T", " ");
 }
 
 function formatBytes(bytes: number): string {
@@ -244,8 +244,8 @@ function SnapshotRow({ snap, onDelete }: { snap: SnapshotInfo; onDelete: (snap: 
       </TableCell>
       <TableCell>{snap.indices.length}</TableCell>
       <TableCell className="text-sm">{snap.size_in_bytes != null ? formatBytes(snap.size_in_bytes) : "—"}</TableCell>
-      <TableCell className="text-sm" title={snap.start_time || undefined}>{snap.start_time ? shortIso(snap.start_time) : "—"}</TableCell>
-      <TableCell className="text-sm" title={snap.end_time || undefined}>{snap.end_time ? shortIso(snap.end_time) : "—"}</TableCell>
+      <TableCell className="whitespace-nowrap text-sm" title={snap.start_time || undefined}>{snap.start_time ? shortIso(snap.start_time) : "—"}</TableCell>
+      <TableCell className="whitespace-nowrap text-sm" title={snap.end_time || undefined}>{snap.end_time ? shortIso(snap.end_time) : "—"}</TableCell>
       <TableCell>
         <Button variant="ghost" size="sm" title="Delete snapshot" onClick={() => onDelete(snap)}>
           <Trash2 className="h-3.5 w-3.5" />
@@ -378,14 +378,14 @@ function SLMPoliciesSection({ repositories, repository }: { repositories: Snapsh
                   <TableCell className="font-mono text-sm">{policy.policy_id}</TableCell>
                   <TableCell>{cronToLabel(policy.schedule)}</TableCell>
                   <TableCell>{policy.max_count}</TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell className="whitespace-nowrap text-sm">
                     {lastRun ? (
-                      <span className={lastRun.ok ? "text-green-600" : "text-red-600"}>
-                        {lastRun.ok ? "✓" : "✗"} {lastRun.ts}
+                      <span className={lastRun.ok ? "text-green-600" : "text-red-600"} title={lastRun.ts}>
+                        {lastRun.ok ? "✓" : "✗"} {shortIso(lastRun.ts)}
                       </span>
                     ) : "—"}
                   </TableCell>
-                  <TableCell className="text-sm">{policy.next_execution ?? "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap text-sm" title={policy.next_execution ?? undefined}>{policy.next_execution ? shortIso(policy.next_execution) : "—"}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="sm" title="Run now" onClick={() => handleExecute(policy)}>
