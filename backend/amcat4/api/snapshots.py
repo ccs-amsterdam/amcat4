@@ -159,6 +159,7 @@ async def list_slm_policies(user: User = Depends(authenticated_user)) -> list[SL
         if "404" in str(e) or "policy_missing_exception" in str(e):
             return []
         raise
+
     def _millis_to_iso(millis: int | None) -> str | None:
         return datetime.fromtimestamp(millis / 1000, tz=timezone.utc).isoformat() if millis is not None else None
 
