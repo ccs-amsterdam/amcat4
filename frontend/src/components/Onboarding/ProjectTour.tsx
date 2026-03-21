@@ -17,9 +17,13 @@ interface Props {
 interface StepConfig {
   overlayClassName?: string;
   highlights?: string[];
+  highlightMinWidth?: number;
 }
 
-const STEPS: { title: string; description: string; body: React.ReactNode; config?: StepConfig }[] = [
+function getSteps(windowWidth: number): { title: string; description: string; body: React.ReactNode; config?: StepConfig }[] {
+  const summaryHighlights = windowWidth >= 640;
+  const aggregateHighlights = windowWidth >= 1024;
+  return [
   {
     title: "Your Project Dashboard",
     description: "This is the Dashboard — your main workspace for exploring the project's documents.",
@@ -36,7 +40,7 @@ const STEPS: { title: string; description: string; body: React.ReactNode; config
     description: "The Summary view shows a live sample of your documents alongside auto-generated visualizations.",
     body: (
       <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-        <li>• <span className="font-medium text-secondary">Highlighted above:</span> the search bar filters by keyword; the filter button adds structured field filters</li>
+        <li>• The search bar filters by keyword; the filter button adds structured field filters{summaryHighlights && <span className="text-secondary"> (highlighted above)</span>}</li>
         <li>• The document list on the left updates with your active query</li>
         <li>• Charts are generated automatically for date, keyword, and number fields</li>
       </ul>
@@ -44,6 +48,7 @@ const STEPS: { title: string; description: string; body: React.ReactNode; config
     config: {
       overlayClassName: "bg-black/15",
       highlights: ["search-input", "filter-button"],
+      highlightMinWidth: 640,
     },
   },
   {
@@ -51,7 +56,7 @@ const STEPS: { title: string; description: string; body: React.ReactNode; config
     description: "The Aggregate view lets you group and chart your documents across any field.",
     body: (
       <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-        <li>• <span className="font-medium text-secondary">Highlighted left:</span> pick a display type (line chart, bar chart, table, or list) and an axis field to group by</li>
+        <li>• Pick a display type (line chart, bar chart, table, or list) and an axis field to group by{aggregateHighlights && <span className="text-secondary"> (highlighted left)</span>}</li>
         <li>• Add a second axis for cross-tabulation (e.g. multiple lines per category)</li>
         <li>• Combine with the search bar to aggregate only a filtered subset</li>
       </ul>
@@ -59,7 +64,20 @@ const STEPS: { title: string; description: string; body: React.ReactNode; config
     config: {
       overlayClassName: "bg-black/15",
       highlights: ["aggregate-display", "aggregate-axis"],
+      highlightMinWidth: 1024,
     },
+  },
+  {
+    title: "Fields",
+    description: "Fields define the structure of documents in this project — each field has a name and an Elasticsearch data type.",
+    body: (
+      <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+        <li>• Field types are set by Elasticsearch and <span className="font-medium text-foreground">cannot be changed after the first document is added</span> — choose carefully</li>
+        <li>• Writers and admins can add new fields and make limited type changes within the same Elasticsearch type group</li>
+        <li>• The Dashboard column controls which fields appear in document previews and summaries</li>
+        <li>• The METAREADER access column controls what users with limited access can see</li>
+      </ul>
+    ),
   },
   {
     title: "Settings",
@@ -71,13 +89,14 @@ const STEPS: { title: string; description: string; body: React.ReactNode; config
       </ul>
     ),
   },
-];
+];}
 
-function TourHighlight({ targets }: { targets: string[] }) {
+function TourHighlight({ targets, active }: { targets: string[]; active: boolean }) {
   const [rects, setRects] = useState<{ top: number; left: number; width: number; height: number }[]>([]);
 
   useEffect(() => {
     function update() {
+      if (!active) { setRects([]); return; }
       const newRects = targets.flatMap((t) => {
         const el = document.querySelector(`[data-tour="${t}"]`);
         if (!el) return [];
@@ -93,14 +112,14 @@ function TourHighlight({ targets }: { targets: string[] }) {
       clearInterval(interval);
       window.removeEventListener("resize", update);
     };
-  }, [targets]);
+  }, [targets, active]);
 
   return createPortal(
     <>
       {rects.map((r, i) => (
         <div
           key={i}
-          className="pointer-events-none fixed z-[55] rounded-md ring-[3px] ring-secondary ring-offset-1"
+          className="pointer-events-none fixed z-[45] rounded-md ring-[3px] ring-secondary ring-offset-1"
           style={{ top: r.top - 3, left: r.left - 3, width: r.width + 6, height: r.height + 6 }}
         />
       ))}
@@ -113,7 +132,17 @@ export default function ProjectTour({ projectId, user, projectRole }: Props) {
   const storageKey = `project-tour-${user.email ?? "guest"}`;
   const [seen, setSeen] = useLocalStorage<boolean>(storageKey, false);
   const [step, setStep] = useState(0);
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    function onResize() { setWindowWidth(window.innerWidth); }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isMobile = windowWidth < 640;
+  const STEPS = getSteps(windowWidth);
 
   const open = user.authenticated && !seen && hasMinAmcatRole(projectRole, "METAREADER");
 
@@ -130,6 +159,8 @@ export default function ProjectTour({ projectId, user, projectRole }: Props) {
     } else if (step === 2) {
       navigate({ to: "/projects/$project/dashboard", params: { project: projectId }, search: (prev) => ({ ...prev, tab: "aggregate" }) });
     } else if (step === 3) {
+      navigate({ to: "/projects/$project/fields", params: { project: projectId } });
+    } else if (step === 4) {
       navigate({ to: "/projects/$project/settings", params: { project: projectId } });
     }
   }, [step]);
@@ -146,13 +177,18 @@ export default function ProjectTour({ projectId, user, projectRole }: Props) {
   const isFirst = step === 0;
   const isLast = step === STEPS.length - 1;
   const current = STEPS[step];
-  const { overlayClassName, highlights = [] } = current.config ?? {};
+  const { overlayClassName, highlights = [], highlightMinWidth = 1024 } = current.config ?? {};
+  const showHighlights = windowWidth >= highlightMinWidth;
 
   return (
     <>
-    {open && highlights.length > 0 && <TourHighlight targets={highlights} />}
+    {open && highlights.length > 0 && <TourHighlight targets={highlights} active={showHighlights} />}
     <Dialog open={open} onOpenChange={(o) => { if (!o) dismiss(); }}>
-      <DialogContent hideClose overlayClassName={overlayClassName} className="max-w-md">
+      <DialogContent
+        hideClose
+        overlayClassName={overlayClassName}
+        className="max-w-md max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-b-none max-sm:rounded-t-xl"
+      >
         <DialogHeader>
           <DialogTitle>{current.title}</DialogTitle>
           <DialogDescription>{current.description}</DialogDescription>
