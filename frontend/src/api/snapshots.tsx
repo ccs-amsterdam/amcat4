@@ -98,6 +98,8 @@ const slmPolicySchema = z.object({
   schedule: z.string(),
   max_count: z.number(),
   next_execution: z.string().nullable().optional(),
+  last_success: z.string().nullable().optional(),
+  last_failure: z.string().nullable().optional(),
 });
 
 export type SLMPolicy = z.infer<typeof slmPolicySchema>;
@@ -147,6 +149,19 @@ export function useMutateSLMPolicy(user?: AmcatSessionUser) {
         // ES may not register the snapshot immediately; re-check after a short delay
         setTimeout(() => queryClient.invalidateQueries({ queryKey: ["snapshots"] }), 1000);
       }
+    },
+  });
+}
+
+export function useDeleteSnapshot(user?: AmcatSessionUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { repository: string; snapshot: string }) => {
+      if (!user) throw new Error("Not logged in");
+      await user.api.delete(`snapshots/${params.repository}/${params.snapshot}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["snapshots"] });
     },
   });
 }

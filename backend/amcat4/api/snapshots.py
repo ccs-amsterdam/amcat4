@@ -48,6 +48,8 @@ class SLMPolicy(BaseModel):
     schedule: str
     max_count: int
     next_execution: str | None = None
+    last_success: str | None = None
+    last_failure: str | None = None
 
 
 class CreateSLMPolicyBody(BaseModel):
@@ -161,10 +163,9 @@ async def list_slm_policies(user: User = Depends(authenticated_user)) -> list[SL
     for policy_id, entry in result.items():
         policy = entry.get("policy", {})
         retention = policy.get("retention", {})
-        millis = entry.get("next_execution_millis")
-        next_execution = (
-            datetime.fromtimestamp(millis / 1000, tz=timezone.utc).isoformat() if millis is not None else None
-        )
+        def _millis_to_iso(millis: int | None) -> str | None:
+            return datetime.fromtimestamp(millis / 1000, tz=timezone.utc).isoformat() if millis is not None else None
+
         policies.append(
             SLMPolicy(
                 policy_id=policy_id,
@@ -172,7 +173,9 @@ async def list_slm_policies(user: User = Depends(authenticated_user)) -> list[SL
                 repository=policy.get("repository", ""),
                 schedule=policy.get("schedule", ""),
                 max_count=retention.get("max_count", 0),
-                next_execution=next_execution,
+                next_execution=_millis_to_iso(entry.get("next_execution_millis")),
+                last_success=_millis_to_iso(entry.get("last_success", {}).get("time_millis")),
+                last_failure=_millis_to_iso(entry.get("last_failure", {}).get("time_millis")),
             )
         )
     return policies
@@ -222,6 +225,18 @@ async def execute_slm_policy(policy_id: str, user: User = Depends(authenticated_
             raise HTTPException(status_code=404, detail=f"Policy '{policy_id}' not found")
         raise
     return {"snapshot_name": result.get("snapshot_name", "")}
+
+
+@app_snapshots.delete("/snapshots/{repository}/{snapshot_name}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_snapshot(repository: str, snapshot_name: str, user: User = Depends(authenticated_user)) -> None:
+    """Delete a snapshot from a repository. Requires ADMIN server role."""
+    await HTTPException_if_not_server_role(user, Roles.ADMIN)
+    try:
+        await es().snapshot.delete(repository=repository, snapshot=snapshot_name)
+    except Exception as e:
+        if "snapshot_missing_exception" in str(e) or "404" in str(e):
+            raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_name}' not found")
+        raise
 
 
 @app_snapshots.post("/snapshots", status_code=status.HTTP_202_ACCEPTED)

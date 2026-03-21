@@ -9,6 +9,7 @@ import {
   SnapshotInfo,
   SnapshotRepository,
   useCreateSnapshot,
+  useDeleteSnapshot,
   useMutateRepositories,
   useMutateSLMPolicy,
   useSLMPolicies,
@@ -26,7 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Loading } from "@/components/ui/loading";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CalendarClock, DatabaseBackup, ExternalLink, Play, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, DatabaseBackup, ExternalLink, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { InfoBox } from "@/components/ui/info-box";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -182,33 +183,46 @@ function NoRepositoriesMessage() {
 function SnapshotTable({ repository }: { repository: string }) {
   const { user } = useAmcatSession();
   const { data: snapshots, isLoading } = useSnapshots(user, repository);
+  const deleteSnap = useDeleteSnapshot(user);
+  const { activate, confirmDialog } = useConfirm();
 
   if (isLoading) return <Loading />;
   if (!snapshots || snapshots.length === 0)
     return <p className="text-sm text-muted-foreground">No snapshots in this repository yet.</p>;
 
+  function handleDelete(snap: SnapshotInfo) {
+    activate(
+      () => deleteSnap.mutateAsync({ repository, snapshot: snap.snapshot }).then(() => toast.success(`Snapshot '${snap.snapshot}' deleted`)),
+      { description: `Delete snapshot '${snap.snapshot}'? This cannot be undone.`, confirmText: "Delete" },
+    );
+  }
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>State</TableHead>
-          <TableHead>Indices</TableHead>
-          <TableHead>Size</TableHead>
-          <TableHead>Started</TableHead>
-          <TableHead>Finished</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {snapshots.map((snap) => (
-          <SnapshotRow key={snap.uuid} snap={snap} />
-        ))}
-      </TableBody>
-    </Table>
+    <>
+      {confirmDialog}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>State</TableHead>
+            <TableHead>Indices</TableHead>
+            <TableHead>Size</TableHead>
+            <TableHead>Started</TableHead>
+            <TableHead>Finished</TableHead>
+            <TableHead />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {snapshots.map((snap) => (
+            <SnapshotRow key={snap.uuid} snap={snap} onDelete={handleDelete} />
+          ))}
+        </TableBody>
+      </Table>
+    </>
   );
 }
 
-function SnapshotRow({ snap }: { snap: SnapshotInfo }) {
+function SnapshotRow({ snap, onDelete }: { snap: SnapshotInfo; onDelete: (snap: SnapshotInfo) => void }) {
   const stateVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
     SUCCESS: "default",
     IN_PROGRESS: "secondary",
@@ -224,8 +238,13 @@ function SnapshotRow({ snap }: { snap: SnapshotInfo }) {
       </TableCell>
       <TableCell>{snap.indices.length}</TableCell>
       <TableCell className="text-sm">{snap.size_in_bytes != null ? formatBytes(snap.size_in_bytes) : "—"}</TableCell>
-      <TableCell className="text-sm">{snap.start_time ? new Date(snap.start_time).toLocaleString() : "—"}</TableCell>
-      <TableCell className="text-sm">{snap.end_time ? new Date(snap.end_time).toLocaleString() : "—"}</TableCell>
+      <TableCell className="text-sm">{snap.start_time ? snap.start_time : "—"}</TableCell>
+      <TableCell className="text-sm">{snap.end_time ? snap.end_time : "—"}</TableCell>
+      <TableCell>
+        <Button variant="ghost" size="sm" title="Delete snapshot" onClick={() => onDelete(snap)}>
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </TableCell>
     </TableRow>
   );
 }
@@ -314,7 +333,16 @@ function SLMPoliciesSection({ repositories, repository }: { repositories: Snapsh
         <CalendarClock className="h-4 w-4 text-muted-foreground" />
         <h2 className="text-base font-semibold">Snapshot Policies</h2>
         <div className="ml-auto">
-          <CreateSLMPolicyDialog repositories={repositories} repository={repository} />
+          <SLMPolicyDialog
+            repositories={repositories}
+            repository={repository}
+            trigger={
+              <Button variant="outline" size="sm">
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Add Policy
+              </Button>
+            }
+          />
         </div>
       </div>
       {isLoading ? null : !policies || policies.length === 0 ? (
@@ -324,35 +352,57 @@ function SLMPoliciesSection({ repositories, repository }: { repositories: Snapsh
           <TableHeader>
             <TableRow>
               <TableHead>Policy ID</TableHead>
-              <TableHead>Repository</TableHead>
               <TableHead>Frequency</TableHead>
               <TableHead>Retain</TableHead>
+              <TableHead>Last run</TableHead>
               <TableHead>Next run</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {policies.map((policy) => (
-              <TableRow key={policy.policy_id}>
-                <TableCell className="font-mono text-sm">{policy.policy_id}</TableCell>
-                <TableCell>{policy.repository}</TableCell>
-                <TableCell>{cronToLabel(policy.schedule)}</TableCell>
-                <TableCell>{policy.max_count}</TableCell>
-                <TableCell className="text-sm">
-                  {policy.next_execution ?? "—"}
-                </TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" title="Run now" onClick={() => handleExecute(policy)}>
-                      <Play className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm" title="Delete policy" onClick={() => handleDelete(policy)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+            {policies.map((policy) => {
+              const lastRun = policy.last_success && policy.last_failure
+                ? (policy.last_success > policy.last_failure ? { ts: policy.last_success, ok: true } : { ts: policy.last_failure, ok: false })
+                : policy.last_success ? { ts: policy.last_success, ok: true }
+                : policy.last_failure ? { ts: policy.last_failure, ok: false }
+                : null;
+              const initFrequency = FREQUENCY_OPTIONS.find((f) => f.cron === policy.schedule)?.value ?? "daily";
+              return (
+                <TableRow key={policy.policy_id}>
+                  <TableCell className="font-mono text-sm">{policy.policy_id}</TableCell>
+                  <TableCell>{cronToLabel(policy.schedule)}</TableCell>
+                  <TableCell>{policy.max_count}</TableCell>
+                  <TableCell className="text-sm">
+                    {lastRun ? (
+                      <span className={lastRun.ok ? "text-green-600" : "text-red-600"}>
+                        {lastRun.ok ? "✓" : "✗"} {lastRun.ts}
+                      </span>
+                    ) : "—"}
+                  </TableCell>
+                  <TableCell className="text-sm">{policy.next_execution ?? "—"}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" title="Run now" onClick={() => handleExecute(policy)}>
+                        <Play className="h-3.5 w-3.5" />
+                      </Button>
+                      <SLMPolicyDialog
+                        repositories={repositories}
+                        repository={repository}
+                        initial={{ policy_id: policy.policy_id, frequency: initFrequency, max_count: policy.max_count }}
+                        trigger={
+                          <Button variant="ghost" size="sm" title="Edit policy">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        }
+                      />
+                      <Button variant="ghost" size="sm" title="Delete policy" onClick={() => handleDelete(policy)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       )}
@@ -360,15 +410,28 @@ function SLMPoliciesSection({ repositories, repository }: { repositories: Snapsh
   );
 }
 
-function CreateSLMPolicyDialog({ repositories, repository: defaultRepository }: { repositories: SnapshotRepository[]; repository: string }) {
+type FrequencyValue = (typeof FREQUENCY_OPTIONS)[number]["value"];
+
+function SLMPolicyDialog({
+  repositories,
+  repository: defaultRepository,
+  initial,
+  trigger,
+}: {
+  repositories: SnapshotRepository[];
+  repository: string;
+  initial?: { policy_id: string; frequency: FrequencyValue; max_count: number };
+  trigger: React.ReactNode;
+}) {
   const { user } = useAmcatSession();
   const mutate = useMutateSLMPolicy(user);
   const [open, setOpen] = useState(false);
-  const [policyId, setPolicyId] = useState("");
+  const [policyId, setPolicyId] = useState(initial?.policy_id ?? "");
   const [repository, setRepository] = useState(defaultRepository);
-  const [frequency, setFrequency] = useState<(typeof FREQUENCY_OPTIONS)[number]["value"]>("daily");
-  const [maxCount, setMaxCount] = useState(7);
+  const [frequency, setFrequency] = useState<FrequencyValue>(initial?.frequency ?? "daily");
+  const [maxCount, setMaxCount] = useState(initial?.max_count ?? 7);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const isEdit = !!initial;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -378,35 +441,36 @@ function CreateSLMPolicyDialog({ repositories, repository: defaultRepository }: 
       await mutate.mutateAsync({ action: "create", policy_id: policyId, repository, schedule: cron, max_count: maxCount });
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setSubmitError(detail ?? "Failed to create policy");
+      setSubmitError(detail ?? "Failed to save policy");
       return;
     }
-    toast.success(`Policy '${policyId}' created`);
+    toast.success(`Policy '${policyId}' ${isEdit ? "updated" : "created"}`);
     setOpen(false);
-    setPolicyId("");
+    if (!isEdit) setPolicyId("");
     setSubmitError(null);
   }
 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSubmitError(null); }}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Add Policy
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create Snapshot Policy</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit Snapshot Policy" : "Create Snapshot Policy"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1">
             <Label>Policy ID</Label>
-            <Input value={policyId} onChange={(e) => setPolicyId(e.target.value)} required placeholder="daily-backup" />
+            <Input
+              value={policyId}
+              onChange={(e) => setPolicyId(e.target.value)}
+              required
+              placeholder="daily-backup"
+              disabled={isEdit}
+            />
           </div>
           <div className="space-y-1">
             <Label>Repository</Label>
-            <Select value={repository} onValueChange={setRepository}>
+            <Select value={repository} onValueChange={setRepository} disabled={isEdit}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -421,7 +485,7 @@ function CreateSLMPolicyDialog({ repositories, repository: defaultRepository }: 
           </div>
           <div className="space-y-1">
             <Label>Frequency</Label>
-            <Select value={frequency} onValueChange={(v) => setFrequency(v as typeof frequency)}>
+            <Select value={frequency} onValueChange={(v) => setFrequency(v as FrequencyValue)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -451,7 +515,7 @@ function CreateSLMPolicyDialog({ repositories, repository: defaultRepository }: 
             </p>
           )}
           <Button type="submit" disabled={mutate.isPending}>
-            {mutate.isPending ? "Creating…" : "Create Policy"}
+            {mutate.isPending ? "Saving…" : isEdit ? "Save" : "Create Policy"}
           </Button>
         </form>
       </DialogContent>
