@@ -5,10 +5,13 @@ export const Route = createFileRoute("/snapshots")({
 });
 
 import {
+  SLMPolicy,
   SnapshotInfo,
   SnapshotRepository,
   useCreateSnapshot,
   useMutateRepositories,
+  useMutateSLMPolicy,
+  useSLMPolicies,
   useSnapshotPathRepo,
   useSnapshotRepositories,
   useSnapshots,
@@ -23,7 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Loading } from "@/components/ui/loading";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DatabaseBackup, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, DatabaseBackup, ExternalLink, Play, Plus, Trash2 } from "lucide-react";
 import { InfoBox } from "@/components/ui/info-box";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -100,30 +103,32 @@ function Snapshots() {
             </Select>
           </div>
 
+          {currentRepo && <SLMPoliciesSection repositories={repositories} repository={currentRepo} />}
+
           {currentRepoInfo && (
             <>
-              <div className="rounded border bg-muted/30 px-4 py-3 text-sm">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1">
-                    <div>
-                      <span className="text-muted-foreground">Repository type: </span>
-                      <span className="font-medium">{currentRepoInfo.type}</span>
-                    </div>
-                    {repoLocation(currentRepoInfo) && (
-                      <div>
-                        <span className="text-muted-foreground">Location: </span>
-                        <span className="font-mono">{repoLocation(currentRepoInfo)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <CreateSnapshotDialog repository={currentRepoInfo.name} />
-                    <Button variant="outline" size="sm" onClick={() => handleDelete(currentRepoInfo)}>
-                      <Trash2 className="mr-1 h-3.5 w-3.5" />
-                      Unregister
-                    </Button>
-                  </div>
+              <div className="flex items-center gap-2 pt-2">
+                <DatabaseBackup className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-base font-semibold">Snapshots</h2>
+                <div className="ml-auto flex gap-2">
+                  <CreateSnapshotDialog repository={currentRepoInfo.name} />
+                  <Button variant="outline" size="sm" onClick={() => handleDelete(currentRepoInfo)}>
+                    <Trash2 className="mr-1 h-3.5 w-3.5" />
+                    Unregister
+                  </Button>
                 </div>
+              </div>
+              <div className="rounded border bg-muted/30 px-4 py-2 text-sm">
+                <span className="text-muted-foreground">Type: </span>
+                <span className="font-medium">{currentRepoInfo.type}</span>
+                {repoLocation(currentRepoInfo) && (
+                  <>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span className="text-muted-foreground">Location: </span>
+                    <span className="font-mono">{repoLocation(currentRepoInfo)}</span>
+                    <span className="ml-1 text-xs text-muted-foreground">(path on the Elasticsearch server or Docker container)</span>
+                  </>
+                )}
               </div>
               <SnapshotTable repository={currentRepoInfo.name} />
             </>
@@ -133,9 +138,18 @@ function Snapshots() {
       <InfoBox title="Information on snapshots" storageKey="infobox:snapshots" className="mt-6">
         <div className="flex flex-col gap-2 text-sm">
           <p>
-            <strong>Snapshots</strong> are incremental backups of all Elasticsearch indices. A{" "}
-            <strong>repository</strong> is a storage location (filesystem path or S3 bucket) where
-            snapshots are kept. Restoring snapshots is done directly in Elasticsearch, not through this UI.
+            <strong>Snapshots</strong> are incremental backups of all Elasticsearch indices — each snapshot
+            stores only what has changed since the previous one, so they are space-efficient. A{" "}
+            <strong>repository</strong> is a storage location (filesystem path or S3 bucket) where snapshots
+            are kept. <strong>Snapshot policies</strong> automate this on a schedule and manage retention.
+            Restoring snapshots is done directly in Elasticsearch, not through this UI.
+          </p>
+          <p>
+            <strong>Important:</strong> the presence of snapshots in this list does not guarantee that your
+            data is safe. The server administrator is responsible for ensuring that the snapshot repository
+            (e.g. the filesystem directory or S3 bucket) is itself stored or copied to a safe, off-site
+            location. It is also strongly recommended to periodically perform recovery tests to verify that
+            snapshots can actually be restored successfully.
           </p>
           <a
             href="https://www.elastic.co/guide/en/elasticsearch/reference/current/snapshot-restore.html"
@@ -249,6 +263,195 @@ function CreateSnapshotDialog({ repository }: { repository: string }) {
           </div>
           <Button type="submit" disabled={create.isPending}>
             {create.isPending ? "Starting…" : "Create"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const FREQUENCY_OPTIONS = [
+  { label: "Hourly", value: "hourly", cron: "0 0 * * * ?" },
+  { label: "Daily", value: "daily", cron: "0 0 1 * * ?" },
+  { label: "Weekly (Mon)", value: "weekly", cron: "0 0 1 ? * MON" },
+  { label: "Monthly", value: "monthly", cron: "0 0 1 1 * ?" },
+] as const;
+
+function cronToLabel(cron: string): string {
+  return FREQUENCY_OPTIONS.find((f) => f.cron === cron)?.label ?? cron;
+}
+
+function SLMPoliciesSection({ repositories, repository }: { repositories: SnapshotRepository[]; repository: string }) {
+  const { user } = useAmcatSession();
+  const { data: allPolicies, isLoading } = useSLMPolicies(user);
+  const policies = allPolicies?.filter((p) => p.repository === repository);
+  const mutate = useMutateSLMPolicy(user);
+  const { activate, confirmDialog } = useConfirm();
+
+  function handleDelete(policy: SLMPolicy) {
+    activate(
+      () =>
+        mutate.mutateAsync({ action: "delete", policy_id: policy.policy_id }).then(() => {
+          toast.success(`Policy '${policy.policy_id}' deleted`);
+        }),
+      {
+        description: `Delete policy '${policy.policy_id}'? Snapshots already taken will not be removed.`,
+        confirmText: "Delete",
+      },
+    );
+  }
+
+  function handleExecute(policy: SLMPolicy) {
+    mutate.mutateAsync({ action: "execute", policy_id: policy.policy_id }).then(() => {
+      toast.success(`Policy '${policy.policy_id}' executed — snapshot starting`);
+    });
+  }
+
+  return (
+    <div className="space-y-3 pt-2">
+      {confirmDialog}
+      <div className="flex items-center gap-2">
+        <CalendarClock className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-base font-semibold">Snapshot Policies</h2>
+        <div className="ml-auto">
+          <CreateSLMPolicyDialog repositories={repositories} repository={repository} />
+        </div>
+      </div>
+      {isLoading ? null : !policies || policies.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No snapshot policies configured.</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Policy ID</TableHead>
+              <TableHead>Repository</TableHead>
+              <TableHead>Frequency</TableHead>
+              <TableHead>Retain</TableHead>
+              <TableHead>Next run</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {policies.map((policy) => (
+              <TableRow key={policy.policy_id}>
+                <TableCell className="font-mono text-sm">{policy.policy_id}</TableCell>
+                <TableCell>{policy.repository}</TableCell>
+                <TableCell>{cronToLabel(policy.schedule)}</TableCell>
+                <TableCell>{policy.max_count}</TableCell>
+                <TableCell className="text-sm">
+                  {policy.next_execution ?? "—"}
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-1">
+                    <Button variant="ghost" size="sm" title="Run now" onClick={() => handleExecute(policy)}>
+                      <Play className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="sm" title="Delete policy" onClick={() => handleDelete(policy)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}
+
+function CreateSLMPolicyDialog({ repositories, repository: defaultRepository }: { repositories: SnapshotRepository[]; repository: string }) {
+  const { user } = useAmcatSession();
+  const mutate = useMutateSLMPolicy(user);
+  const [open, setOpen] = useState(false);
+  const [policyId, setPolicyId] = useState("");
+  const [repository, setRepository] = useState(defaultRepository);
+  const [frequency, setFrequency] = useState<(typeof FREQUENCY_OPTIONS)[number]["value"]>("daily");
+  const [maxCount, setMaxCount] = useState(7);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitError(null);
+    const cron = FREQUENCY_OPTIONS.find((f) => f.value === frequency)!.cron;
+    try {
+      await mutate.mutateAsync({ action: "create", policy_id: policyId, repository, schedule: cron, max_count: maxCount });
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setSubmitError(detail ?? "Failed to create policy");
+      return;
+    }
+    toast.success(`Policy '${policyId}' created`);
+    setOpen(false);
+    setPolicyId("");
+    setSubmitError(null);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSubmitError(null); }}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add Policy
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create Snapshot Policy</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="space-y-1">
+            <Label>Policy ID</Label>
+            <Input value={policyId} onChange={(e) => setPolicyId(e.target.value)} required placeholder="daily-backup" />
+          </div>
+          <div className="space-y-1">
+            <Label>Repository</Label>
+            <Select value={repository} onValueChange={setRepository}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {repositories.map((r) => (
+                  <SelectItem key={r.name} value={r.name}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Frequency</Label>
+            <Select value={frequency} onValueChange={(v) => setFrequency(v as typeof frequency)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FREQUENCY_OPTIONS.map((f) => (
+                  <SelectItem key={f.value} value={f.value}>
+                    {f.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Retain last N snapshots</Label>
+            <Input
+              type="number"
+              min={1}
+              max={100}
+              value={maxCount}
+              onChange={(e) => setMaxCount(Number(e.target.value))}
+              required
+            />
+          </div>
+          {submitError && (
+            <p className="rounded border border-red-400 bg-red-50 px-3 py-2 text-xs text-red-800 dark:bg-red-950 dark:text-red-200">
+              {submitError}
+            </p>
+          )}
+          <Button type="submit" disabled={mutate.isPending}>
+            {mutate.isPending ? "Creating…" : "Create Policy"}
           </Button>
         </form>
       </DialogContent>

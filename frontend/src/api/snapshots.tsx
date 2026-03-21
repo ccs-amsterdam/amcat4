@@ -91,6 +91,66 @@ export function useSnapshotPathRepo(user?: AmcatSessionUser) {
   });
 }
 
+const slmPolicySchema = z.object({
+  policy_id: z.string(),
+  name: z.string(),
+  repository: z.string(),
+  schedule: z.string(),
+  max_count: z.number(),
+  next_execution: z.string().nullable().optional(),
+});
+
+export type SLMPolicy = z.infer<typeof slmPolicySchema>;
+
+export function useSLMPolicies(user?: AmcatSessionUser) {
+  return useQuery({
+    queryKey: ["slm_policies"],
+    queryFn: async () => {
+      if (!user) return [];
+      const res = await user.api.get("snapshots/policies");
+      return z.array(slmPolicySchema).parse(res.data);
+    },
+    enabled: !!user,
+  });
+}
+
+interface MutateSLMPolicyParams {
+  action: "create" | "delete" | "execute";
+  policy_id: string;
+  repository?: string;
+  schedule?: string;
+  max_count?: number;
+}
+
+export function useMutateSLMPolicy(user?: AmcatSessionUser) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: MutateSLMPolicyParams) => {
+      if (!user) throw new Error("Not logged in");
+      if (params.action === "create") {
+        await user.api.post("snapshots/policies", {
+          policy_id: params.policy_id,
+          repository: params.repository,
+          schedule: params.schedule,
+          max_count: params.max_count,
+        });
+      } else if (params.action === "delete") {
+        await user.api.delete(`snapshots/policies/${params.policy_id}`);
+      } else {
+        await user.api.post(`snapshots/policies/${params.policy_id}/execute`);
+      }
+    },
+    onSuccess: (_, params) => {
+      queryClient.invalidateQueries({ queryKey: ["slm_policies"] });
+      if (params.action === "execute") {
+        queryClient.invalidateQueries({ queryKey: ["snapshots"] });
+        // ES may not register the snapshot immediately; re-check after a short delay
+        setTimeout(() => queryClient.invalidateQueries({ queryKey: ["snapshots"] }), 1000);
+      }
+    },
+  });
+}
+
 export function useCreateSnapshot(user?: AmcatSessionUser) {
   const queryClient = useQueryClient();
   return useMutation({

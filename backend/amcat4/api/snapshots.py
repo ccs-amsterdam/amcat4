@@ -1,7 +1,9 @@
 """API Endpoints for Elasticsearch snapshot management (disaster recovery backups)."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from amcat4.api.auth_helpers import authenticated_user
 from amcat4.connections import es
@@ -37,6 +39,22 @@ class SnapshotInfo(BaseModel):
 class CreateSnapshotBody(BaseModel):
     repository: str
     snapshot: str
+
+
+class SLMPolicy(BaseModel):
+    policy_id: str
+    name: str
+    repository: str
+    schedule: str
+    max_count: int
+    next_execution: str | None = None
+
+
+class CreateSLMPolicyBody(BaseModel):
+    policy_id: str
+    repository: str
+    schedule: str
+    max_count: int = Field(ge=1, le=100)
 
 
 @app_snapshots.get("/snapshots/path-repo")
@@ -127,6 +145,83 @@ async def list_snapshots(repository: str | None = None, user: User = Depends(aut
         )
         for s in result.get("snapshots", [])
     ]
+
+
+@app_snapshots.get("/snapshots/policies")
+async def list_slm_policies(user: User = Depends(authenticated_user)) -> list[SLMPolicy]:
+    """List all SLM snapshot lifecycle policies. Requires ADMIN server role."""
+    await HTTPException_if_not_server_role(user, Roles.ADMIN)
+    try:
+        result = await es().slm.get_lifecycle()
+    except Exception as e:
+        if "404" in str(e) or "policy_missing_exception" in str(e):
+            return []
+        raise
+    policies = []
+    for policy_id, entry in result.items():
+        policy = entry.get("policy", {})
+        retention = policy.get("retention", {})
+        millis = entry.get("next_execution_millis")
+        next_execution = (
+            datetime.fromtimestamp(millis / 1000, tz=timezone.utc).isoformat() if millis is not None else None
+        )
+        policies.append(
+            SLMPolicy(
+                policy_id=policy_id,
+                name=policy.get("name", ""),
+                repository=policy.get("repository", ""),
+                schedule=policy.get("schedule", ""),
+                max_count=retention.get("max_count", 0),
+                next_execution=next_execution,
+            )
+        )
+    return policies
+
+
+@app_snapshots.post("/snapshots/policies", status_code=status.HTTP_201_CREATED)
+async def create_slm_policy(body: CreateSLMPolicyBody, user: User = Depends(authenticated_user)) -> SLMPolicy:
+    """Create or update an SLM snapshot lifecycle policy. Requires ADMIN server role."""
+    await HTTPException_if_not_server_role(user, Roles.ADMIN)
+    snap_name = f"<{body.policy_id}-{{now/d}}>"
+    await es().slm.put_lifecycle(
+        policy_id=body.policy_id,
+        schedule=body.schedule,
+        name=snap_name,
+        repository=body.repository,
+        retention={"max_count": body.max_count},
+    )
+    return SLMPolicy(
+        policy_id=body.policy_id,
+        name=snap_name,
+        repository=body.repository,
+        schedule=body.schedule,
+        max_count=body.max_count,
+    )
+
+
+@app_snapshots.delete("/snapshots/policies/{policy_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_slm_policy(policy_id: str, user: User = Depends(authenticated_user)) -> None:
+    """Delete an SLM snapshot lifecycle policy. Requires ADMIN server role."""
+    await HTTPException_if_not_server_role(user, Roles.ADMIN)
+    try:
+        await es().slm.delete_lifecycle(policy_id=policy_id)
+    except Exception as e:
+        if "policy_missing_exception" in str(e) or "404" in str(e):
+            raise HTTPException(status_code=404, detail=f"Policy '{policy_id}' not found")
+        raise
+
+
+@app_snapshots.post("/snapshots/policies/{policy_id}/execute", status_code=status.HTTP_202_ACCEPTED)
+async def execute_slm_policy(policy_id: str, user: User = Depends(authenticated_user)) -> dict:
+    """Manually execute an SLM policy now. Requires ADMIN server role."""
+    await HTTPException_if_not_server_role(user, Roles.ADMIN)
+    try:
+        result = await es().slm.execute_lifecycle(policy_id=policy_id)
+    except Exception as e:
+        if "policy_missing_exception" in str(e) or "404" in str(e):
+            raise HTTPException(status_code=404, detail=f"Policy '{policy_id}' not found")
+        raise
+    return {"snapshot_name": result.get("snapshot_name", "")}
 
 
 @app_snapshots.post("/snapshots", status_code=status.HTTP_202_ACCEPTED)
