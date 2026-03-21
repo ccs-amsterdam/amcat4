@@ -63,13 +63,21 @@ export function useMutateRepositories(user?: AmcatSessionUser) {
 }
 
 export function useSnapshots(user?: AmcatSessionUser, repository?: string) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: ["snapshots", repository],
-    queryFn: async () => {
+    queryFn: async (ctx) => {
       if (!user) return [];
       const params = repository ? { repository } : {};
       const res = await user.api.get("snapshots", { params });
-      return z.array(snapshotInfoSchema).parse(res.data);
+      const snapshots = z.array(snapshotInfoSchema).parse(res.data);
+      // When a snapshot transitions from IN_PROGRESS to done, refresh policies
+      // so that last_success / last_failure reflects the completed run.
+      const prev = ctx.client.getQueryData<SnapshotInfo[]>(["snapshots", repository]);
+      if (prev?.some((s) => s.state === "IN_PROGRESS") && snapshots.every((s) => s.state !== "IN_PROGRESS")) {
+        queryClient.invalidateQueries({ queryKey: ["slm_policies"] });
+      }
+      return snapshots;
     },
     enabled: !!user,
     refetchInterval: (query) => {
