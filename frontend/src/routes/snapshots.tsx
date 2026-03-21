@@ -329,6 +329,9 @@ function SLMPoliciesSection({ repositories, repository }: { repositories: Snapsh
   function handleExecute(policy: SLMPolicy) {
     mutate.mutateAsync({ action: "execute", policy_id: policy.policy_id }).then(() => {
       toast.success(`Policy '${policy.policy_id}' executed — snapshot starting`);
+    }).catch((err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail ?? `Failed to execute policy '${policy.policy_id}'`);
     });
   }
 
@@ -452,12 +455,20 @@ function SLMPolicyDialog({
     }
     toast.success(`Policy '${policyId}' ${isEdit ? "updated" : "created"}`);
     setOpen(false);
-    if (!isEdit) setPolicyId("");
-    setSubmitError(null);
+  }
+
+  function handleOpenChange(v: boolean) {
+    setOpen(v);
+    if (!v) {
+      setSubmitError(null);
+      setPolicyId(initial?.policy_id ?? "");
+      setFrequency(initial?.frequency ?? "daily");
+      setMaxCount(initial?.max_count ?? 7);
+    }
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSubmitError(null); }}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -593,19 +604,26 @@ function RegisterRepositoryDialog() {
     }
     toast.success(`Repository '${repoName}' registered`);
     setOpen(false);
-    setRepoName("");
-    setFsBase("");
-    setFsSubdir("");
-    setSubdirTouched(false);
-    setBucket("");
-    setRegion("");
-    setBasePath("");
-    setUrl("");
-    setSubmitError(null);
+  }
+
+  function handleOpenChange(v: boolean) {
+    setOpen(v);
+    if (!v) {
+      setSubmitError(null);
+      setRepoName("");
+      setRepoType("fs");
+      setFsBase("");
+      setFsSubdir("");
+      setSubdirTouched(false);
+      setBucket("");
+      setRegion("");
+      setBasePath("");
+      setUrl("");
+    }
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setSubmitError(null); setSubdirTouched(false); } }}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline">Register Repository</Button>
       </DialogTrigger>
