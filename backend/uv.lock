@@ -233,7 +233,7 @@ requires-dist = [
     { name = "aioboto3" },
     { name = "aiobotocore" },
     { name = "async-lru" },
-    { name = "authlib" },
+    { name = "authlib", specifier = ">=1.6.9" },
     { name = "class-doc" },
     { name = "cryptography" },
     { name = "elasticsearch", specifier = "~=8.6" },
