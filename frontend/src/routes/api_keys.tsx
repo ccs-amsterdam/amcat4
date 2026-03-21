@@ -8,8 +8,9 @@ import { useApiKeys, useMutateApiKeys } from "@/api/api_keys";
 import { CreateApiKey } from "@/components/Server/CreateApiKey";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
+import { InfoBox } from "@/components/ui/info-box";
 import { AmcatApiKey } from "@/interfaces";
-import { Check, Clipboard, Cog, LogInIcon, Recycle, Trash2 } from "lucide-react";
+import { Check, Clipboard, Cog, ExternalLink, LogInIcon, Recycle, Trash2 } from "lucide-react";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -59,6 +60,36 @@ export default function ApiKeys() {
           </div>
         ))}
       </div>
+      <InfoBox title="Information on API keys" storageKey="infobox:api-keys" className="mt-6">
+        <div className="flex flex-col gap-2 text-sm">
+          <p>
+            An <strong>API key</strong> lets you access AmCAT programmatically — from a script or analysis pipeline —
+            without having to log in interactively. Once created, pass the key when connecting to AmCAT from Python or R.
+          </p>
+          <p>
+            Most screens in the interface have a <strong>Show code</strong> button that generates ready-to-use Python and R
+            code for the current query or dataset. This is a good starting point for your own scripts.
+          </p>
+          <div className="flex flex-wrap gap-4">
+            <a
+              href="https://github.com/ccs-amsterdam/amcat4py"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              amcat4py (Python) <ExternalLink className="h-3 w-3" />
+            </a>
+            <a
+              href="https://github.com/ccs-amsterdam/amcat4r"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              amcat4r (R) <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+        </div>
+      </InfoBox>
     </div>
   );
 }
