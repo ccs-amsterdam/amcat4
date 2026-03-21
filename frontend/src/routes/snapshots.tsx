@@ -32,6 +32,10 @@ import { InfoBox } from "@/components/ui/info-box";
 import { useState } from "react";
 import { toast } from "sonner";
 
+function shortIso(s: string): string {
+  return s.slice(0, 16);
+}
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -197,6 +201,8 @@ function SnapshotTable({ repository }: { repository: string }) {
     );
   }
 
+  const sorted = [...snapshots].sort((a, b) => b.start_time.localeCompare(a.start_time));
+
   return (
     <>
       {confirmDialog}
@@ -213,7 +219,7 @@ function SnapshotTable({ repository }: { repository: string }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {snapshots.map((snap) => (
+          {sorted.map((snap) => (
             <SnapshotRow key={snap.uuid} snap={snap} onDelete={handleDelete} />
           ))}
         </TableBody>
@@ -238,8 +244,8 @@ function SnapshotRow({ snap, onDelete }: { snap: SnapshotInfo; onDelete: (snap: 
       </TableCell>
       <TableCell>{snap.indices.length}</TableCell>
       <TableCell className="text-sm">{snap.size_in_bytes != null ? formatBytes(snap.size_in_bytes) : "—"}</TableCell>
-      <TableCell className="text-sm">{snap.start_time ? snap.start_time : "—"}</TableCell>
-      <TableCell className="text-sm">{snap.end_time ? snap.end_time : "—"}</TableCell>
+      <TableCell className="text-sm" title={snap.start_time || undefined}>{snap.start_time ? shortIso(snap.start_time) : "—"}</TableCell>
+      <TableCell className="text-sm" title={snap.end_time || undefined}>{snap.end_time ? shortIso(snap.end_time) : "—"}</TableCell>
       <TableCell>
         <Button variant="ghost" size="sm" title="Delete snapshot" onClick={() => onDelete(snap)}>
           <Trash2 className="h-3.5 w-3.5" />
