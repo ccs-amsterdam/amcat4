@@ -43,7 +43,7 @@ function Article({ user, projectId, id, query, changeArticle, link }: ArticlePro
   if (fieldsLoading || articleLoading) return <Loading />;
   if (!article || !documentFields) return null;
 
-  const hasMeta = documentFields.some((f) => f.type !== "text" && f.client_settings.inDocument);
+  const hasMeta = !!article._id || documentFields.some((f) => f.type !== "text" && f.client_settings.inDocument);
   const hasMultimedia = documentFields.some(
     (f) => ["image", "video", "audio"].includes(f.type) && f.client_settings.inDocument,
   );
@@ -60,6 +60,7 @@ function Article({ user, projectId, id, query, changeArticle, link }: ArticlePro
           <Meta
             article={article}
             fields={documentFields}
+            projectId={projectId}
             setArticle={changeArticle}
             metareader={projectRole === "METAREADER"}
           />

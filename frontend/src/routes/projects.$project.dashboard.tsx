@@ -31,6 +31,7 @@ const TAB_LABELS: Record<Tab, string> = {
 type DashboardSearch = {
   tab?: Tab;
   query?: string;
+  show_article_id?: string;
 };
 
 export const Route = createFileRoute("/projects/$project/dashboard")({
@@ -39,6 +40,7 @@ export const Route = createFileRoute("/projects/$project/dashboard")({
     return {
       tab: Object.values(Tab).includes(search.tab as Tab) ? (search.tab as Tab) : Tab.Summary,
       query: search.query as string | undefined,
+      show_article_id: search.show_article_id as string | undefined,
     };
   },
 });

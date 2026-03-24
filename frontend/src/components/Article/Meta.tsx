@@ -1,20 +1,35 @@
-import { AmcatArticle, AmcatField } from "@/interfaces";
+import { AmcatArticle, AmcatField, AmcatProjectId } from "@/interfaces";
 import { formatField } from "@/lib/formatField";
-import { Badge } from "../ui/badge";
 
 interface MetaProps {
   article: AmcatArticle;
   fields: AmcatField[];
+  projectId: AmcatProjectId;
   setArticle?: (id: string) => void;
   metareader?: boolean;
 }
 
-export default function Meta({ article, fields, setArticle, metareader }: MetaProps) {
+export default function Meta({ article, fields, projectId, metareader }: MetaProps) {
   const metaFields = fields.filter((f) => f.type !== "text" && f.client_settings.inDocument);
-  if (metaFields.length === 0) return null;
+  if (metaFields.length === 0 && !article._id) return null;
 
   return (
     <div className=" prose-sm flex flex-col gap-4">
+      {article._id && (
+        <div className="flex flex-col">
+          <span title="_id" className="line-clamp-1 overflow-hidden text-ellipsis font-semibold text-primary/80">
+            ID
+          </span>
+          <a
+            href={`/projects/${encodeURIComponent(projectId)}/articles/${article._id}`}
+            onClick={(e) => e.preventDefault()}
+            className="line-clamp-3 overflow-hidden text-ellipsis text-[0.8rem] leading-5 hover:underline"
+          >
+            {article._id}
+          </a>
+          <div className="mt-2 border-b border-foreground/10" />
+        </div>
+      )}
       {fields.map((field) => {
         if (["text", "image", "video", "preprocess"].includes(field.type)) return null;
 

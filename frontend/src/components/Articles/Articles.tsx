@@ -4,7 +4,8 @@ import ArticleModal from "@/components/Article/ArticleModal";
 import { Loading } from "@/components/ui/loading";
 import { AmcatArticle, AmcatField, AmcatProjectId, AmcatQuery, SortSpec } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
-import { ReactNode, useState } from "react";
+import { ReactNode } from "react";
+import { useQueryState } from "nuqs";
 import { ErrorMsg } from "../ui/error-message";
 import ArticleSnippets from "./ArticleSnippets";
 
@@ -35,7 +36,7 @@ interface ArticlesProps {
 export default function Articles({ user, projectId, query, onClick, showOnClick = true, headerRight }: ArticlesProps) {
   //TODO: add columns to meta OR retrieve fields (prefer the former) and pass the field types on to the table
   const { role } = useMyProjectRole(user, projectId);
-  const [articleId, setArticleId] = useState<string | null>(null);
+  const [articleId, setArticleId] = useQueryState("show_article_id");
   const { data: fields, isLoading: loadingFields } = useFields(user, projectId);
 
   if (loadingFields) return <Loading msg="Loading fields" />;
