@@ -1,8 +1,8 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ChevronsUpDown, Filter } from "lucide-react";
+import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import QueryForm from "@/components/QueryForm/QueryForm";
 import { AmcatQuery } from "@/interfaces";
-import { useAmcatSession } from "@/components/Contexts/AuthProvider";
+import { createFileRoute } from "@tanstack/react-router";
+import { ChevronsUpDown, Filter } from "lucide-react";
 
 import { useMyProjectRole } from "@/api/project";
 import AggregateResultPanel from "@/components/Aggregate/AggregateResultPanel";
@@ -13,8 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Reindex from "@/components/Update/Reindex";
 import Update from "@/components/Update/Update";
 import { deserializeQuery, serializeQuery } from "@/lib/serialieQuery";
-import { useEffect, useState } from "react";
 import { parseAsStringEnum, useQueryState } from "nuqs";
+import { useEffect, useState } from "react";
 
 enum Tab {
   Summary = "summary",
@@ -76,9 +76,10 @@ function DashboardPage() {
         </div>
       </div>
 
-      <InfoBox title="Search syntax &amp; filters" defaultOpen={false} storageKey="search-help-open" className="mb-5">
+      <InfoBox title="Information on Search syntax &amp; filters" defaultOpen={false} storageKey="search-help-open" className="mb-5">
         <div className="flex flex-col gap-5 text-sm">
-          You can enter queries here to search through the project. Results will be displayed below this box. You can minimize the box by clicking on the header.
+          You can enter queries here to search through the project. Results will be displayed below this box.
+          You can minimize this box by clicking on the header above.
           <section>
             <h4 className="mb-1.5 font-semibold text-foreground">Query syntax</h4>
             <div className="rounded-md bg-primary/10 p-3">

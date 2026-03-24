@@ -26,10 +26,14 @@ export default function Summary({ user, projectId, query }: Props) {
   const { data, isError, error } = useArticles(user, projectId, query);
   if (isError) {
     const message = (error as any)?.response?.data?.detail ?? "Search failed";
+    const isParseError = message.startsWith("parse_exception") || message.includes("Failed to parse query");
     return (
-      <div className="flex items-center gap-2 text-sm text-destructive">
-        <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span>{message}</span>
+      <div className="flex items-start gap-2 text-sm text-destructive">
+        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+        <span>
+          {isParseError && <><p>The query could not be parsed — please check your query syntax.</p>Error message from server:</>}
+          <pre>{message}</pre>
+        </span>
       </div>
     );
   }
