@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AmcatProject, AmcatProjectId, RecentProjects } from "@/interfaces";
 import { CommandEmpty } from "cmdk";
-import { Book, ChevronDown, DatabaseZapIcon, Dot, LayoutDashboard, Library } from "lucide-react";
+import { Book, ChevronDown, DatabaseZapIcon, Dot, LayoutDashboard } from "lucide-react";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -61,13 +61,7 @@ export default function ProjectMenu() {
         {noRecent ? null : <ChevronDown className="h-4 w-4 opacity-30" />}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="ml-2 w-[200px] max-w-[95vw] border-[1px] border-foreground">
-        <DropdownMenuItem className="flex items-center gap-2" onClick={() => navigate({ to: "/projects" })}>
-          <Library className="h-4 w-4" />
-          <span>Show all projects</span>
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Recent projects</DropdownMenuLabel>
+<DropdownMenuLabel>Recent projects</DropdownMenuLabel>
         {recentProjects.slice(0, 6).map((project) => {
           return (
             <DropdownMenuItem

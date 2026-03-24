@@ -106,7 +106,7 @@ function BreadCrumbLink({ name, href, active = true, disabled = false }: { name:
   return (
     <button
       className={`${active ? "font-medium" : "text-foreground/90"}
-        flex h-full min-w-0  select-none items-center gap-1  text-ellipsis whitespace-nowrap border-primary  px-1 outline-none ${disabled ? "cursor-default" : "hover:font-semibold"} md:px-3`}
+        flex h-full min-w-0  select-none items-center gap-1  text-ellipsis whitespace-nowrap border-primary  px-1 outline-none ${disabled ? "cursor-default" : ""} md:px-3`}
       onClick={() => !disabled && navigate({ to: href })}
     >
       {name}
