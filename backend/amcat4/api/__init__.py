@@ -3,6 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 
+from elasticsearch import BadRequestError as ESBadRequestError
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
@@ -94,6 +95,15 @@ app.add_middleware(
 )
 
 app.add_middleware(CSRFMiddleware)
+
+
+@app.exception_handler(ESBadRequestError)
+async def es_bad_request_handler(request: Request, exc: ESBadRequestError) -> JSONResponse:
+    try:
+        reason = exc.body["error"]["root_cause"][0]["reason"]
+    except (KeyError, IndexError, TypeError):
+        reason = str(exc)
+    return JSONResponse(status_code=422, content={"detail": reason})
 
 
 @app.exception_handler(ValueError)

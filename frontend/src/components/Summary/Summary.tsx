@@ -7,7 +7,7 @@ import { AggregationAxis, AmcatField, AmcatProjectId, AmcatQuery, AmcatUserRole 
 import { autoFormatDate } from "@/lib/autoFormatDate";
 import { hasMinAmcatRole } from "@/lib/utils";
 import { Link } from "@tanstack/react-router";
-import { Columns3Cog, DatabaseZap, LayoutDashboard, LockKeyholeOpen, Settings, Users } from "lucide-react";
+import { AlertTriangle, Columns3Cog, DatabaseZap, LayoutDashboard, LockKeyholeOpen, Settings, Users } from "lucide-react";
 import { useMemo } from "react";
 import AggregateResult from "../Aggregate/AggregateResult";
 import Articles from "../Articles/Articles";
@@ -23,7 +23,16 @@ interface Props {
 export default function Summary({ user, projectId, query }: Props) {
   const { data: fields } = useFields(user, projectId);
   const isWriter = useHasProjectRole(user, projectId, "WRITER");
-  const { data } = useArticles(user, projectId, query);
+  const { data, isError, error } = useArticles(user, projectId, query);
+  if (isError) {
+    const message = (error as any)?.response?.data?.detail ?? "Search failed";
+    return (
+      <div className="flex items-center gap-2 text-sm text-destructive">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span>{message}</span>
+      </div>
+    );
+  }
   if (data == null) return null;
 
   function renderVisualization(field: AmcatField) {

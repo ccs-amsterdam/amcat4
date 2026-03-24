@@ -27,7 +27,7 @@ const defaultSnippets = {
 };
 
 export default function ArticleSnippets({ user, projectId, projectRole, query, fields, onClick, headerRight }: Props) {
-  const { articles, layout, listFields, isLoading, isFetching, pageIndex, pageCount, totalCount, prevPage, nextPage } =
+  const { articles, layout, listFields, isLoading, isFetching, isError, error, pageIndex, pageCount, totalCount, prevPage, nextPage } =
     usePaginatedArticles({
       user,
       projectId,
@@ -39,6 +39,15 @@ export default function ArticleSnippets({ user, projectId, projectRole, query, f
       pageSize: 6,
     });
 
+  if (isError) {
+    const message = (error as any)?.response?.data?.detail ?? "Search failed";
+    return (
+      <div className="flex items-center gap-2 text-sm text-destructive">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span>{message}</span>
+      </div>
+    );
+  }
   if (isLoading) return <Loading msg="Loading articles" />;
 
   return (

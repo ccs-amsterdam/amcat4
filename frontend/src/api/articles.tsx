@@ -28,7 +28,7 @@ export function useArticles(
     // this is necessary because react query otherwise refetches ALL pages at once,
     // both slowing down the UI and making needless API requests
     queryClient.setQueryData(["articles", user, projectId, query, params, projectRole], (oldData: any) => {
-      if (!oldData) return oldData;
+      if (oldData == null) return undefined;
       return {
         pageParams: [0],
         pages: [oldData.pages[0]],

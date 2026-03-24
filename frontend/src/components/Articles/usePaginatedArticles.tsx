@@ -40,7 +40,7 @@ export default function usePaginatedArticles({
   const [articles, setArticles] = useState<AmcatArticle[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [alignedPageIndex, setAlignedPageIndex] = useState(0);
-  const { data, isLoading, isFetching, fetchNextPage } = useArticles(
+  const { data, isLoading, isFetching, fetchNextPage, isError, error } = useArticles(
     user,
     projectId,
     query,
@@ -88,6 +88,8 @@ export default function usePaginatedArticles({
     layout,
     isLoading,
     isFetching,
+    isError,
+    error,
     pageIndex: alignedPageIndex,
     pageCount,
     totalCount,

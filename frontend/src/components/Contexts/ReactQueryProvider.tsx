@@ -13,8 +13,9 @@ const defaultOptions = {
       if (!(e instanceof AxiosError)) return false;
       const unauthorized = e.response?.status == 401;
       const forbidden = e.response?.status == 403;
+      const clientError = e.response?.status != null && e.response.status >= 400 && e.response.status < 500;
       const zodError = e.name === "ZodError";
-      const doRetry = !zodError && !unauthorized && !forbidden;
+      const doRetry = !zodError && !unauthorized && !forbidden && !clientError;
       return doRetry;
     },
     cacheTime: 1000 * 60 * 60,
