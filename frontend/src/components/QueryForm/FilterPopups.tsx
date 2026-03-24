@@ -7,6 +7,36 @@ import { useMemo, useRef, useState } from "react";
 import { Input } from "../ui/input";
 import DatePicker from "./DatePicker";
 
+interface IdPopupProps {
+  value: AmcatFilter | undefined;
+  onChange: (value: AmcatFilter) => void;
+}
+
+export function IdPopup({ value, onChange }: IdPopupProps) {
+  const [text, setText] = useState(() => (value?.values || []).join("\n"));
+
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const raw = e.target.value;
+    setText(raw);
+    const ids = raw.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+    onChange({ values: ids });
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">Paste IDs, one per line or comma-separated</p>
+      <textarea
+        className="w-full rounded-md border border-primary bg-background px-3 py-2 font-mono text-sm outline-none focus:ring-1 focus:ring-primary"
+        rows={6}
+        placeholder={"id1\nid2\nid3"}
+        value={text}
+        onChange={handleChange}
+        autoFocus
+      />
+    </div>
+  );
+}
+
 interface FilterPopupProps {
   user: AmcatSessionUser;
   projectId: AmcatProjectId;
@@ -17,6 +47,7 @@ interface FilterPopupProps {
 
 export function filterLabel(name: string, field: AmcatField | undefined, filter: AmcatFilter | undefined) {
   if (filter == null) return name;
+  const displayName = name === "_id" ? "ID" : name;
 
   let values = "";
   if (field?.type === "date") {
@@ -32,14 +63,14 @@ export function filterLabel(name: string, field: AmcatField | undefined, filter:
   if (values)
     return (
       <div className="flex w-full items-center gap-2">
-        <div className="font-bold">{name}</div>
+        <div className="font-bold">{displayName}</div>
         <span className="">{values}</span>
       </div>
     );
 
   return (
     <span>
-      select <b>{name}</b>
+      select <b>{displayName}</b>
     </span>
   );
 }

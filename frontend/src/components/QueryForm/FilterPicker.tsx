@@ -1,5 +1,5 @@
 import { AmcatFilter, AmcatProjectId } from "@/interfaces";
-import { filterLabel, FilterPopup } from "./FilterPopups";
+import { filterLabel, FilterPopup, IdPopup } from "./FilterPopups";
 
 import { Button } from "@/components/ui/button";
 import { Delete } from "lucide-react";
@@ -63,13 +63,17 @@ export default function FilterPicker({
           </Button>
         </div>
       </PopoverTrigger>
-      {field != null ? (
+      {field != null || fieldName === "_id" ? (
         <PopoverContent
           collisionPadding={{ left: 10, right: 10, top: 10, bottom: -9999 }}
           side="bottom"
           className="max-h-[450px] w-full overflow-auto"
         >
-          <FilterPopup user={user} projectId={projectId} field={field} value={value} onChange={onChange} />
+          {fieldName === "_id" ? (
+            <IdPopup value={value} onChange={onChange} />
+          ) : (
+            <FilterPopup user={user} projectId={projectId} field={field} value={value} onChange={onChange} />
+          )}
         </PopoverContent>
       ) : null}
     </Popover>

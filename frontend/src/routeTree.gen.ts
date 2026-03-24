@@ -26,6 +26,7 @@ import { Route as ProjectsProjectFieldsRouteImport } from './routes/projects.$pr
 import { Route as ProjectsProjectDataRouteImport } from './routes/projects.$project.data'
 import { Route as ProjectsProjectDashboardRouteImport } from './routes/projects.$project.dashboard'
 import { Route as ProjectsProjectAccessRouteImport } from './routes/projects.$project.access'
+import { Route as ProjectsProjectArticlesArticleIdRouteImport } from './routes/projects.$project.articles.$articleId'
 
 const UsersRoute = UsersRouteImport.update({
   id: '/users',
@@ -113,6 +114,12 @@ const ProjectsProjectAccessRoute = ProjectsProjectAccessRouteImport.update({
   path: '/access',
   getParentRoute: () => ProjectsProjectRoute,
 } as any)
+const ProjectsProjectArticlesArticleIdRoute =
+  ProjectsProjectArticlesArticleIdRouteImport.update({
+    id: '/articles/$articleId',
+    path: '/articles/$articleId',
+    getParentRoute: () => ProjectsProjectRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -132,6 +139,7 @@ export interface FileRoutesByFullPath {
   '/projects/$project/settings': typeof ProjectsProjectSettingsRoute
   '/projects/$project/users': typeof ProjectsProjectUsersRoute
   '/projects/$project/': typeof ProjectsProjectIndexRoute
+  '/projects/$project/articles/$articleId': typeof ProjectsProjectArticlesArticleIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -149,6 +157,7 @@ export interface FileRoutesByTo {
   '/projects/$project/settings': typeof ProjectsProjectSettingsRoute
   '/projects/$project/users': typeof ProjectsProjectUsersRoute
   '/projects/$project': typeof ProjectsProjectIndexRoute
+  '/projects/$project/articles/$articleId': typeof ProjectsProjectArticlesArticleIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -169,6 +178,7 @@ export interface FileRoutesById {
   '/projects/$project/settings': typeof ProjectsProjectSettingsRoute
   '/projects/$project/users': typeof ProjectsProjectUsersRoute
   '/projects/$project/': typeof ProjectsProjectIndexRoute
+  '/projects/$project/articles/$articleId': typeof ProjectsProjectArticlesArticleIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -190,6 +200,7 @@ export interface FileRouteTypes {
     | '/projects/$project/settings'
     | '/projects/$project/users'
     | '/projects/$project/'
+    | '/projects/$project/articles/$articleId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -207,6 +218,7 @@ export interface FileRouteTypes {
     | '/projects/$project/settings'
     | '/projects/$project/users'
     | '/projects/$project'
+    | '/projects/$project/articles/$articleId'
   id:
     | '__root__'
     | '/'
@@ -226,6 +238,7 @@ export interface FileRouteTypes {
     | '/projects/$project/settings'
     | '/projects/$project/users'
     | '/projects/$project/'
+    | '/projects/$project/articles/$articleId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -360,6 +373,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectAccessRouteImport
       parentRoute: typeof ProjectsProjectRoute
     }
+    '/projects/$project/articles/$articleId': {
+      id: '/projects/$project/articles/$articleId'
+      path: '/articles/$articleId'
+      fullPath: '/projects/$project/articles/$articleId'
+      preLoaderRoute: typeof ProjectsProjectArticlesArticleIdRouteImport
+      parentRoute: typeof ProjectsProjectRoute
+    }
   }
 }
 
@@ -371,6 +391,7 @@ interface ProjectsProjectRouteChildren {
   ProjectsProjectSettingsRoute: typeof ProjectsProjectSettingsRoute
   ProjectsProjectUsersRoute: typeof ProjectsProjectUsersRoute
   ProjectsProjectIndexRoute: typeof ProjectsProjectIndexRoute
+  ProjectsProjectArticlesArticleIdRoute: typeof ProjectsProjectArticlesArticleIdRoute
 }
 
 const ProjectsProjectRouteChildren: ProjectsProjectRouteChildren = {
@@ -381,6 +402,7 @@ const ProjectsProjectRouteChildren: ProjectsProjectRouteChildren = {
   ProjectsProjectSettingsRoute: ProjectsProjectSettingsRoute,
   ProjectsProjectUsersRoute: ProjectsProjectUsersRoute,
   ProjectsProjectIndexRoute: ProjectsProjectIndexRoute,
+  ProjectsProjectArticlesArticleIdRoute: ProjectsProjectArticlesArticleIdRoute,
 }
 
 const ProjectsProjectRouteWithChildren = ProjectsProjectRoute._addFileChildren(
