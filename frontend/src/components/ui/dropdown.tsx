@@ -62,7 +62,7 @@ export function Dropdown({ placeholder, options, value, value2, onChange, cleara
         )}
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent className="max-h-screen overflow-auto">
+      <DropdownMenuContent className="overflow-y-auto" style={{ maxHeight: "var(--radix-dropdown-menu-content-available-height)" }}>
         {label ? <DropdownMenuLabel>{label}</DropdownMenuLabel> : null}
         {clearable && selected ? (
           <DropdownMenuItem key="_CLEAR_VALUE" onClick={() => onChange({})} className="text-destructive">
@@ -81,7 +81,7 @@ export function Dropdown({ placeholder, options, value, value2, onChange, cleara
                   {option.text}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuPortal>
-                  <DropdownMenuSubContent className="max-h-screen overflow-auto">
+                  <DropdownMenuSubContent className="overflow-y-auto" style={{ maxHeight: "var(--radix-dropdown-menu-content-available-height)" }}>
                     {option.options.map((option2) => {
                       return (
                         <DropdownMenuItem
