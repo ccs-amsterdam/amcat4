@@ -164,7 +164,7 @@ export interface MenuRoute {
   reqRole?: AmcatUserRole;
 }
 
-export type UploadOperation = "create" | "update" | "index";
+export type UploadOperation = "create" | "upsert" | "index";
 
 export type MultimediaType = "image" | "video" | "audio";
 

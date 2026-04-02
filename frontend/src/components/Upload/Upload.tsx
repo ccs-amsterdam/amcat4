@@ -86,7 +86,7 @@ export default function Upload({ user, projectId }: Props) {
   const [fileName, setFileName] = useState("");
   const { mutateAsync: mutateArticles } = useMutateArticles(user, projectId);
   const [_validating, setValidating] = useState(false);
-  const [operation, setOperation] = useState<UploadOperation>("update");
+  const [operation, setOperation] = useState<UploadOperation>("upsert");
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({
     operation,
     status: "idle",
@@ -668,7 +668,7 @@ function UploadOptions({
     switch (operation) {
       case "create":
         return "Create";
-      case "update":
+      case "upsert":
         return "Create or update";
       case "index":
         return "Create or replace";
@@ -696,7 +696,7 @@ function UploadOptions({
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={!isAdmin || !hasIdentifiers}
-              onClick={() => setOperation("update")}
+              onClick={() => setOperation("upsert")}
               className="flex-col items-start justify-start gap-1"
             >
               <span className="">
@@ -941,7 +941,7 @@ function UploadInfoBox() {
             <div className="grid grid-cols-[9rem_1fr] gap-3">
               <b className="text-primary">Create</b>
               Only adds new documents. Documents already present (matched by identifier) are skipped.
-              <b className="text-primary">Create or update</b>
+              <b className="text-primary">Create or update (upsert)</b>
               Adds new documents and updates fields on existing ones based on the identifier. Requires admin role and at
               least one identifier field.
             </div>

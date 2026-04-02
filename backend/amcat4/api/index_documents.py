@@ -30,13 +30,15 @@ class UploadDocumentsBody(BaseModel):
         description="Field type definitions need to be explicitly defined before uploading documents. "
         "By providing them here, they will be created when uploading the documents, and verified if they already exist. ",
     )
-    operation: Literal["index", "update", "create"] = Field(
+    operation: Literal["index", "upsert", "create", "update"] = Field(
         "index",
-        description="The operation to perform. Default is index, which replaces documents that already exist. "
-        "The 'update' operation behaves as an upsert (create or update). If an identical document (or document with "
-        "identical identifiers) already exists, the uploaded fields will be created or overwritten. If there are fields "
-        "in the original document that are not in the uploaded document, they will NOT be removed. "
-        "The 'create' operation only uploads new documents, and returns failures for documents with existing ids",
+        description="The operation to perform. Default is 'index', which replaces documents that already exist. "
+        "The 'upsert' operation creates or updates: if an identical document (or document with identical identifiers) "
+        "already exists, the uploaded fields will be created or overwritten; if it does not exist, it will be created. "
+        "Fields in the original document that are not in the uploaded document will NOT be removed. "
+        "The 'update' operation is like 'upsert' but only updates existing documents — it returns failures for "
+        "documents that do not already exist. "
+        "The 'create' operation only uploads new documents, and returns failures for documents with existing ids.",
     )
 
 

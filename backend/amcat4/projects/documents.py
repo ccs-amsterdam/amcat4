@@ -14,7 +14,7 @@ async def create_or_update_documents(
     index: str,
     documents: list[dict[str, Any]],
     fields: Mapping[str, FieldType | DocumentFieldDefinition] | None = None,
-    op_type: Literal["index", "create", "update"] = "index",
+    op_type: Literal["index", "create", "update", "upsert"] = "index",
     raise_on_error=False,
     refresh=False,
 ):
@@ -24,8 +24,8 @@ async def create_or_update_documents(
     :param index: The name of the index (without prefix)
     :param documents: A sequence of article dictionaries
     :param fields: A mapping of fieldname:UpdateField for field types
-    :param op_type: Whether to 'index' new documents (create or overwrite), 'create' (only create) or 'update'
-        existing documents
+    :param op_type: Whether to 'index' new documents (create or overwrite), 'create' (only create),
+        'update' (partial update, error if not exists), or 'upsert' (partial update, create if not exists)
     """
     if fields:
         create_fields_dict: dict[str, CreateDocumentField] = dict()
@@ -60,16 +60,17 @@ async def create_or_update_documents(
 async def upload_document_es_actions(index, documents, op_type) -> AsyncGenerator[dict, None]:
     field_settings = await list_fields(index)
     identifiers = [k for k, v in field_settings.items() if v.identifier is True]
+    es_op_type = "update" if op_type in ("update", "upsert") else op_type
     for document in documents:
         doc = dict()
-        action = {"_op_type": op_type, "_index": index}
+        action = {"_op_type": es_op_type, "_index": index}
 
         for key in document.keys():
             if key in field_settings:
                 if document[key] is not None:
                     doc[key] = coerce_type(document[key], field_settings[key].type)
             elif key == "_id":
-                if len(identifiers) > 0:
+                if len(identifiers) > 0 and op_type != "update":
                     raise ValueError(f"This index uses identifiers ({identifiers}), so you cannot set the _id directly.")
                 action["_id"] = document[key]
             else:
@@ -80,11 +81,11 @@ async def upload_document_es_actions(index, documents, op_type) -> AsyncGenerato
             # if no _id is given and no identifiers are used, elasticsearch creates a cool unique one
 
         # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
-        if op_type == "update":
+        if op_type in ("update", "upsert"):
             if "_id" not in action:
                 raise ValueError("Update requires _id")
             action["doc"] = doc
-            action["doc_as_upsert"] = True
+            action["doc_as_upsert"] = op_type == "upsert"
         else:
             action = {**doc, **action}
 
