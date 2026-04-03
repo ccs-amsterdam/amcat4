@@ -171,7 +171,7 @@ async def query_documents(
                 else:
                     kwargs["sort"].append({k: dict(v)})
     if scroll_id:
-        result = await es().scroll(scroll_id=scroll_id, **kwargs)
+        result = await es().scroll(scroll_id=scroll_id, scroll=kwargs.get("scroll", "2m"))
         # TODO: check why we return None here instead of just an empty result
         if not result["hits"]["hits"]:
             return None
