@@ -165,7 +165,9 @@ async def query_documents(
         for s in sort:
             for k, v in s.items():
                 if k == "?":
-                    kwargs["sort"].append({"_script": {"type": "number", "script": {"source": "Math.random()"}, "order": "asc"}})
+                    kwargs["sort"].append(
+                        {"_script": {"type": "number", "script": {"source": "Math.random()"}, "order": "asc"}}
+                    )
                 else:
                     kwargs["sort"].append({k: dict(v)})
     if scroll_id:
