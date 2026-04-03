@@ -164,7 +164,10 @@ async def query_documents(
         kwargs["sort"] = []
         for s in sort:
             for k, v in s.items():
-                kwargs["sort"].append({k: dict(v)})
+                if k == "?":
+                    kwargs["sort"].append({"_script": {"type": "number", "script": {"source": "Math.random()"}, "order": "asc"}})
+                else:
+                    kwargs["sort"].append({k: dict(v)})
     if scroll_id:
         result = await es().scroll(scroll_id=scroll_id, **kwargs)
         # TODO: check why we return None here instead of just an empty result

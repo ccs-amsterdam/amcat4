@@ -54,10 +54,11 @@ SortType = Annotated[
         None,
         description=(
             "Sort results by a field. Can be a single field name, a list of field names, "
-            "or a list of dictionaries specifying field and sort order."
+            'or a list of dictionaries specifying field and sort order. Use "?" for random order.'
         ),
         examples=[
             "date",
+            "?",
             ["date", "title"],
             [{"date": {"order": "desc"}}, {"title": {"order": "asc"}}],
         ],
