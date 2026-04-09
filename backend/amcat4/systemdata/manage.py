@@ -185,15 +185,10 @@ async def delete_pending_migrations(version: int) -> None:
     for index in indices:
         index_name = system_index_name(version, index.name)
 
-        mapping = await es().indices.get_mapping(index=index_name)
-        if not mapping:
-            raise InvalidSystemIndex(
-                f"delete_pending_migrations called for system indices version {version} "
-                "but index {index_name} does not exist"
-            )
-
-        meta = mapping[index_name]["mappings"].get("_meta", {})
-        if meta.get("migration_pending", True):
+        status = await check_index_status(index_name)
+        if status == "missing":
+            continue
+        if status == "migrating":
             await es().indices.delete(index=index_name)
 
 
