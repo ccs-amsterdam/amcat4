@@ -68,9 +68,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 15
-    # Set ELASTIC_PUBLISHED_PORT=9200: in .env to expose Elasticsearch on the host
-    ports:
-      - "${ELASTIC_PUBLISHED_PORT:-}9200"
     networks:
       - amcat-net
     environment:
