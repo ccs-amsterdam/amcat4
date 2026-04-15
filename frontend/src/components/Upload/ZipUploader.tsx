@@ -3,15 +3,14 @@ import { FolderOpen, Loader } from "lucide-react";
 import Papa from "papaparse";
 import { Dispatch, SetStateAction, useRef, useState } from "react";
 import { Button } from "../ui/button";
-import { Column, jsType, prepareData } from "./Upload";
+import { Column, UploadData, jsType, prepareData } from "./Upload";
 
 // Imported as a URL so Vite copies the file as an asset — zero runtime cost unless pdfjs is actually used.
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 interface Props {
   fields: AmcatField[];
-  setData: Dispatch<SetStateAction<Record<string, jsType>[]>>;
-  setColumns: Dispatch<SetStateAction<Column[]>>;
+  handleDataChange: (update: UploadData) => void;
   setFileName: (name: string) => void;
 }
 
@@ -60,7 +59,7 @@ async function extractText(ext: string, content: ArrayBuffer | string): Promise<
   return "";
 }
 
-export function ZipUploader({ fields, setData, setColumns, setFileName }: Props) {
+export function ZipUploader({ fields, handleDataChange, setFileName }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState<ParseProgress | null>(null);
@@ -76,7 +75,7 @@ export function ZipUploader({ fields, setData, setColumns, setFileName }: Props)
         dynamicTyping: true,
         header: false,
         complete: (result) => {
-          prepareData({ importedData: result.data as jsType[][], fields, setData, setColumns });
+          prepareData({ importedData: result.data as jsType[][], fields, handleDataChange });
         },
       });
       return;
@@ -93,7 +92,7 @@ export function ZipUploader({ fields, setData, setColumns, setFileName }: Props)
         const rows = rawRows.map((row) =>
           (row as unknown[]).map((cell) => (cell instanceof Date ? cell.toISOString() : cell)),
         ) as jsType[][];
-        prepareData({ importedData: rows, fields, setData, setColumns });
+        prepareData({ importedData: rows, fields, handleDataChange });
       };
       reader.readAsArrayBuffer(file);
       return;
@@ -188,7 +187,7 @@ export function ZipUploader({ fields, setData, setColumns, setFileName }: Props)
     const matrix: jsType[][] = [headers, ...rows.map((r) => headers.map((k) => r[k as keyof RawRow]))];
 
     setProgress(null);
-    prepareData({ importedData: matrix, fields, setData, setColumns });
+    prepareData({ importedData: matrix, fields, handleDataChange });
   }
 
   return (

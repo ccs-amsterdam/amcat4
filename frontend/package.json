@@ -105,7 +105,10 @@
     "vite-tsconfig-paths": "^6.1.1"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "sharp"],
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ],
     "overrides": {
       "minimatch": "^10.0.0",
       "flatted": ">=3.4.0"

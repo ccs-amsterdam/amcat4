@@ -16,7 +16,7 @@ from types_aiobotocore_s3.type_defs import (
 from typing_extensions import TypedDict
 
 from amcat4.config import get_settings
-from amcat4.connections import s3
+from amcat4.connections import s3, s3_public
 
 PRESIGNED_POST_HOURS_VALID = 6
 
@@ -188,7 +188,7 @@ async def presigned_post(
         conditions.append({"success_action_redirect": redirect})
         fields["success_action_redirect"] = redirect
 
-    pp = await s3().generate_presigned_post(
+    pp = await s3_public().generate_presigned_post(
         Bucket=bucket,
         Key=key,
         Fields=fields,
@@ -202,9 +202,9 @@ async def presigned_get(bucket: str, key: str, hours_valid=24, **kwargs) -> str:
     params = {"Bucket": bucket, "Key": key, **kwargs}
     params = {k: v for k, v in params.items() if v is not None}
 
-    return await s3().generate_presigned_url("get_object", Params=params, ExpiresIn=hours_valid * 3600)
+    return await s3_public().generate_presigned_url("get_object", Params=params, ExpiresIn=hours_valid * 3600)
 
 
 async def get_object_head(bucket: str, key: str) -> HeadObjectOutputTypeDef:
-    res = await s3().head_object(Bucket=bucket, Key=key)
+    res = await s3_public().head_object(Bucket=bucket, Key=key)
     return res

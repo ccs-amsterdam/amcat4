@@ -19,18 +19,20 @@ export interface AmcatSession {
 }
 
 async function createUser(signOut: () => void): Promise<AmcatSessionUser> {
-  const sessionCookie = parseClientSessionCookie();
-  console.log(sessionCookie);
-
-  // if sessionCookie is invalid, break the session.
-  // This is strict, because the sessioncookie is the only way for the client to know
-  // if an amcat session cookie (httponly) is present
-  if (sessionCookie === "broken") signOut();
+  let sessionCookie = parseClientSessionCookie();
 
   const api = axios.create({
     baseURL: "/api/",
     withCredentials: true,
   });
+
+  // if sessionCookie is invalid, break the session.
+  // This is strict, because the sessioncookie is the only way for the client to know
+  // if an amcat session cookie (httponly) is present
+  if (sessionCookie === "broken") {
+    signOut();
+    sessionCookie = null;
+  }
 
   // We use a promise to avoid multiple requests performing the refresh flow
   let refreshQueue: Promise<null> | undefined;

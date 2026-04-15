@@ -21,16 +21,18 @@ class AmcatConnections:
         self,
         elastic: AsyncElasticsearch | None = None,
         s3_client: S3Client | None = None,
+        s3_proxy_client: S3Client | None = None,
         s3_context_stack: AsyncExitStack | None = None,
         http_client: httpx.AsyncClient | None = None,
     ):
         self.elastic = elastic
         self.s3_client = s3_client
+        self.s3_proxy_client = s3_client
         self.s3_context_stack = s3_context_stack
         self.http_client = http_client
 
 
-CONNECTIONS = AmcatConnections(s3_client=None, elastic=None, http_client=None)  # type: ignore
+CONNECTIONS = AmcatConnections(s3_client=None, s3_proxy_client=None, elastic=None, http_client=None)  # type: ignore
 
 
 @asynccontextmanager
@@ -55,7 +57,7 @@ async def amcat_connections() -> AsyncGenerator[None, None]:
 
 def es() -> AsyncElasticsearch:
     """
-    Use this function to access the elasticsearch connection.
+    Access the elasticsearch connection.
     """
     if CONNECTIONS.elastic is None:
         raise ConnectionError("Elasticsearch connection not initialized")
@@ -64,11 +66,30 @@ def es() -> AsyncElasticsearch:
 
 def s3() -> S3Client:
     """
-    Use this function to access the s3 client.
+    Access the s3 client.
     """
     if CONNECTIONS.s3_client is None:
         raise ConnectionError("S3 client not started")
     return CONNECTIONS.s3_client
+
+
+def s3_public() -> S3Client:
+    """
+    Only use this for creating presigned requests for the public
+    s3 server. If the s3 server is not publicly accessible, set s3_use_proxy
+    to use the s3_proxy_client, which signs urls
+    """
+    settings = get_settings()
+    use_proxy = settings.s3_use_proxy and not settings.test_mode
+    s3 = CONNECTIONS.s3_proxy_client if use_proxy else CONNECTIONS.s3_client
+    if s3 is None:
+        raise ConnectionError("S3 client not started")
+    return s3
+
+
+def s3_enabled() -> bool:
+    settings = get_settings()
+    return all([settings.s3_host, settings.s3_access_key, settings.s3_secret_key])
 
 
 def http() -> httpx.AsyncClient:
@@ -77,9 +98,6 @@ def http() -> httpx.AsyncClient:
     return CONNECTIONS.http_client
 
 
-def s3_enabled() -> bool:
-    settings = get_settings()
-    return all([settings.s3_host, settings.s3_access_key, settings.s3_secret_key])
 
 
 async def _start_elastic():
@@ -127,8 +145,6 @@ async def _start_s3() -> None:
     if settings.s3_access_key is None or settings.s3_secret_key is None:
         raise ValueError("s3_access_key or s3_secret_key not specified")
 
-    ## It seems aioboto3 uses some of the sync boto3 types, so we need to hack around typing here.
-
     session = get_session()
     client = session.create_client(
         service_name="s3",
@@ -138,14 +154,28 @@ async def _start_s3() -> None:
         config=AioConfig(signature_version="s3v4"),
     )
 
+    # If the s3 server is hosted directly with docker compose, fastapi needs to
+    # use a client with the internal s3_host, but presigned requests need to be created
+    # for the /s3 proxy.
+    proxy_url = settings.host + '/s3' if settings.s3_use_proxy else settings.s3_host
+    proxy_client = session.create_client(
+        service_name="s3",
+        endpoint_url=proxy_url,
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+        config=AioConfig(signature_version="s3v4"),
+    )
+
     CONNECTIONS.s3_context_stack = AsyncExitStack()
     CONNECTIONS.s3_client = await CONNECTIONS.s3_context_stack.enter_async_context(client)
+    CONNECTIONS.s3_proxy_client = await CONNECTIONS.s3_context_stack.enter_async_context(proxy_client)
 
 
 async def _close_s3():
     if CONNECTIONS.s3_context_stack is not None:
         await CONNECTIONS.s3_context_stack.aclose()
         CONNECTIONS.s3_client = None
+        CONNECTIONS.s3_proxy_client = None
         CONNECTIONS.s3_context_stack = None
 
 

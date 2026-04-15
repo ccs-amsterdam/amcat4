@@ -113,6 +113,7 @@ class Settings(BaseSettings):
     s3_host: Annotated[str | None, Field(description="S3-compatible object storage host")] = None
     s3_access_key: Annotated[str | None, Field(description="S3 access key")] = None
     s3_secret_key: Annotated[str | None, Field(description="S3 secret key")] = None
+    s3_use_proxy: Annotated[str | None, Field(description="If true, use a proxy for s3_host at /s3. (proxy needs to be created by Caddy)")] = None
 
     oidc_url: Annotated[
         str | None,

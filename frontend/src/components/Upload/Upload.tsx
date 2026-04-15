@@ -9,19 +9,18 @@ import {
   UploadOperation,
 } from "@/interfaces";
 import { AlertCircleIcon, ChevronDown, Key, Loader, Lock, RotateCcw } from "lucide-react";
-import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
+import { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
+import { FieldTypesSection } from "../Fields/FieldTypesSection";
 import { Button } from "../ui/button";
 import { InfoBox } from "../ui/info-box";
-import { FieldTypesSection } from "../Fields/FieldTypesSection";
 import { autoNameColumn, autoTypeColumn, prepareUploadData, validateColumns } from "./typeValidation";
 import { ZipUploader } from "./ZipUploader";
 
 import { useMutateArticles } from "@/api/articles";
-import CodeExample from "@/components/CodeExample/CodeExample";
-import { UploadColumn } from "@/components/CodeExample/codeGenerators";
-import { useMultimediaConcatenatedList } from "@/api/multimedia";
 import { useHasProjectRole } from "@/api/project";
 import { splitIntoBatches } from "@/api/util";
+import CodeExample from "@/components/CodeExample/CodeExample";
+import { UploadColumn } from "@/components/CodeExample/codeGenerators";
 import { Link } from "@tanstack/react-router";
 import { CreateFieldSelectType } from "../Fields/CreateField";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
@@ -37,9 +36,9 @@ import { Input } from "../ui/input";
 import { Loading } from "../ui/loading";
 
 import { Progress } from "../ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import SimpleTooltip from "../ui/simple-tooltip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 
 interface Props {
   user: AmcatSessionUser;
@@ -74,6 +73,12 @@ export interface Column {
   typeWarning?: string;
   identifier?: boolean;
   invalidExamples?: string[];
+  nameExists?: boolean;
+}
+
+export interface UploadData {
+  data?: Record<string, jsType>[];
+  columns?: Column[];
 }
 
 // TODO: Operation is currently not working (always uses index)
@@ -85,8 +90,15 @@ export default function Upload({ user, projectId }: Props) {
   const [columns, setColumns] = useState<Column[]>([]);
   const [fileName, setFileName] = useState("");
   const { mutateAsync: mutateArticles } = useMutateArticles(user, projectId);
-  const [_validating, setValidating] = useState(false);
   const [operation, setOperation] = useState<UploadOperation>("upsert");
+  const [columnsStatus, setColumnsStatus] = useState({
+    hasIdentifiers: false,
+    ready: false,
+    duplicates: false,
+    hasInvalid: false,
+    duplicateNames: 0,
+    missingNames: 0,
+  });
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({
     operation,
     status: "idle",
@@ -98,19 +110,36 @@ export default function Upload({ user, projectId }: Props) {
     failureReasons: [],
   });
   const [noIdentifierWarning, setNoIdentifierWarning] = useState(false);
+  const existingFields = useMemo(() => {
+    return new Set((fields || []).map((f) => f.name));
+  }, [fields]);
 
-  useEffect(() => {
-    const needsValidation = columns.filter((c) => c.status === "Validating");
-    if (needsValidation.length === 0) {
-      setValidating(false);
-      return;
-    }
-    setValidating(true);
+  const handleDataChange = useCallback(
+    async (update: UploadData) => {
+      const newData = update.data || data;
+      let newColumns = update.columns || [...columns];
 
-    validateColumns(columns, data).then((newColumns) => {
+      // validate fields
+      const needsValidation = newColumns.filter((c) => c.status === "Validating").length !== 0;
+      newColumns = needsValidation ? await validateColumns(newColumns, newData) : newColumns;
+
+      // check existing field names
+      for (const column of newColumns) {
+        if (!column.field || column.exists) continue;
+        console.log(newColumns.filter((c) => c.field === column.field));
+        column.nameExists =
+          existingFields.has(column.field) || newColumns.filter((c) => c.field === column.field).length > 1;
+      }
+
+      const columnsStatus = getColumnsStatus(newData, newColumns);
+
+      if (data !== newData) setData(newData);
       setColumns(newColumns);
-    });
-  }, [columns, data]);
+      if (!columnsStatus.hasIdentifiers) setOperation("create");
+      setColumnsStatus(columnsStatus);
+    },
+    [existingFields, data, columns],
+  );
 
   useEffect(() => {
     // upload batches
@@ -140,35 +169,27 @@ export default function Upload({ user, projectId }: Props) {
       .catch((e) => {
         setUploadStatus((s) => ({ ...s, status: "error", error: e.message, errorDetail: e.response?.data }));
       });
-  }, [uploadStatus]);
+  }, [uploadStatus, mutateArticles]);
 
   const uploadColumns: UploadColumn[] = columns
     .filter((c) => c.field !== null && c.type !== null)
-    .map((c) => ({ csvName: c.name, fieldName: c.field!, fieldType: c.type!, identifier: !!c.identifier, isNew: !c.exists }));
-
-  const duplicates = useMemo(() => hasDuplicates(data, columns), [data, columns]);
-  const nonePending = columns.length > 0 && columns.every((c) => !["Validating", "Type not set"].includes(c.status));
-  const hasInvalid = columns.some((c) => c.status === "Type invalid");
-  const ready =
-    !duplicates &&
-    nonePending &&
-    !hasInvalid &&
-    columns.some((c) => c.status === "Ready" || c.status === "Type warning");
-  const hasIdentifiers = useMemo(() => columns.some((c) => c.identifier), [columns]);
-
-  useEffect(() => {
-    if (!hasIdentifiers) setOperation("create");
-  }, [hasIdentifiers]);
+    .map((c) => ({
+      csvName: c.name,
+      fieldName: c.field!,
+      fieldType: c.type!,
+      identifier: !!c.identifier,
+      isNew: !c.exists,
+    }));
 
   async function startUpload() {
-    if (!ready) return;
+    if (!columnsStatus.ready) return;
     const batches = splitIntoBatches(data, 100);
     setUploadStatus({
       operation,
       status: "uploading",
       error: null,
       batch_index: 0,
-      batches: batches.map((batch) => prepareUploadData(batch, columns, operation, multimedia)),
+      batches: batches.map((batch) => prepareUploadData(batch, columns, operation)),
       successes: 0,
       failures: 0,
       failureReasons: [],
@@ -178,22 +199,22 @@ export default function Upload({ user, projectId }: Props) {
   function setColumn(column: Column) {
     const newColumn = { ...column };
 
-    if (!column.exists && column.field !== null) {
-      const uniqueFields = new Set(columns.filter((c) => c.field !== newColumn.field).map((c) => c.field));
-      fields?.forEach((f) => uniqueFields.add(f.name));
-      let suffix = "";
-      let i = 2;
-      while (uniqueFields.has(`${column.field}${suffix}`)) {
-        suffix = suffix + String(i++);
-      }
-      newColumn.field = `${column.field}${suffix}`;
-    }
-    setColumns(columns.map((c) => (c.name === newColumn.name ? newColumn : c)));
+    // if (!column.exists && column.field !== null) {
+    //   const uniqueFields = new Set(columns.filter((c) => c.field !== newColumn.field).map((c) => c.field));
+    //   fields?.forEach((f) => uniqueFields.add(f.name));
+    //   let suffix = "";
+    //   let i = 2;
+    //   while (uniqueFields.has(`${column.field}${suffix}`)) {
+    //     suffix = suffix + String(i++);
+    //   }
+    //   newColumn.field = `${column.field}${suffix}`;
+    // }
+    const newColumns = columns.map((c) => (c.name === newColumn.name ? newColumn : c));
+    handleDataChange({ columns: newColumns });
   }
 
   function resetUpload() {
-    setData([]);
-    setColumns([]);
+    handleDataChange({ data: [], columns: [] });
     setFileName("");
     setUploadStatus((prev) => ({ ...prev, status: "idle" }));
   }
@@ -220,7 +241,7 @@ export default function Upload({ user, projectId }: Props) {
   return (
     <div className="mb-12 flex flex-col gap-4">
       {data.length === 0 ? (
-        <ZipUploader fields={fields} setData={setData} setColumns={setColumns} setFileName={setFileName} />
+        <ZipUploader fields={fields} handleDataChange={handleDataChange} setFileName={setFileName} />
       ) : (
         <div className="flex justify-end">
           <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={resetUpload}>
@@ -235,7 +256,10 @@ export default function Upload({ user, projectId }: Props) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setColumns(columns.map((c) => (c.field === null ? autoTypeColumn(data, c.name) : c)))}
+              onClick={() => {
+                const newColumns = columns.map((c) => (c.field === null ? autoTypeColumn(data, c.name) : c));
+                handleDataChange({ columns: newColumns });
+              }}
             >
               Include all fields
             </Button>
@@ -245,7 +269,7 @@ export default function Upload({ user, projectId }: Props) {
         <div className="prose max-w-none rounded border p-6 dark:prose-invert">
           <h3>Confirm upload</h3>
           <UnusedFields columns={columns} fields={fields} />
-          {hasInvalid &&
+          {columnsStatus.hasInvalid &&
             (() => {
               const n = columns.filter((c) => c.status === "Type invalid").length;
               return (
@@ -254,8 +278,18 @@ export default function Upload({ user, projectId }: Props) {
                 </p>
               );
             })()}
+          {columnsStatus.duplicateNames ? (
+            <p className="text-sm text-destructive">
+              {columnsStatus.duplicateNames} duplicate name{columnsStatus.duplicateNames === 1 ? "" : "s"}
+            </p>
+          ) : null}
+          {columnsStatus.missingNames ? (
+            <p className="text-sm text-destructive">
+              {columnsStatus.missingNames} missing name{columnsStatus.missingNames === 1 ? "" : "s"}
+            </p>
+          ) : null}
           <div className="flex items-center gap-2">
-            <Button disabled={!ready} onClick={onUpload}>
+            <Button disabled={!columnsStatus.ready} onClick={onUpload}>
               Upload {data.length || ""} documents
             </Button>
             <CodeExample action="upload" projectId={projectId} uploadColumns={uploadColumns} fileName={fileName} />
@@ -268,11 +302,11 @@ export default function Upload({ user, projectId }: Props) {
               isAdmin={!!isAdmin}
               operation={operation}
               setOperation={setOperation}
-              hasIdentifiers={hasIdentifiers}
+              hasIdentifiers={columnsStatus.hasIdentifiers}
             />
 
             <div className="flex flex-col gap-2">
-              {duplicates ? (
+              {columnsStatus.duplicates ? (
                 <div className="ml-4 flex items-center gap-2">
                   <AlertCircleIcon className="h-6 w-6 text-warn" />
                   <div>Some documents have duplicate identifiers</div>
@@ -396,14 +430,16 @@ function UploadColumnRow({
 
       {/* Target field */}
       {action === "new" ? (
-        <Input
-          className="h-7 truncate text-xs"
-          value={column.field ?? ""}
-          placeholder={autoNameColumn(column.name)}
-          onChange={(e) =>
-            setColumn({ ...column, field: e.target.value || autoNameColumn(column.name), status: "Validating" })
-          }
-        />
+        <div className="flex items-center gap-3">
+          <Input
+            className={`h-7 truncate text-xs ${column.nameExists || column.field === "" ? "bg-destructive/20" : ""}`}
+            value={column.field ?? ""}
+            placeholder={autoNameColumn(column.name)}
+            onChange={(e) => setColumn({ ...column, field: e.target.value || "", status: "Validating" })}
+          />
+          {column.nameExists ? <span className="text-sm font-light text-foreground/50">duplicate</span> : null}
+          {column.field === "" ? <span className="text-sm font-light text-foreground/50">missing</span> : null}
+        </div>
       ) : action === "existing" ? (
         <Select
           value={column.field ?? ""}
@@ -743,118 +779,14 @@ function getTypeWarningIndicator(column: Column) {
   );
 }
 
-// function CSVUploader({
-//   fields,
-//   setData,
-//   setColumns,
-// }: {
-//   fields: AmcatField[];
-//   setData: Dispatch<SetStateAction<Record<string, jsType>[]>>;
-//   setColumns: Dispatch<SetStateAction<Column[]>>;
-// }) {
-//   const inputRef = useRef<HTMLInputElement>(null);
-//   const [zoneHover, setZoneHover] = useState(false);
-//   const [fileName, setFileName] = useState<string | null>(null);
-
-//   async function handleFile(file: File) {
-//     const Papa = (await import("papaparse")).default;
-//     const XLSX = await import("xlsx");
-
-//     const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
-//     if (!ACCEPTED_EXTENSIONS.includes(ext)) return;
-//     setFileName(file.name);
-
-//     if (ext === ".csv" || ext === ".tsv") {
-//       Papa.parse(file, {
-//         skipEmptyLines: true,
-//         dynamicTyping: true,
-//         header: false,
-//         complete: (result) => {
-//           prepareData({ importedData: result.data as jsType[][], fields, setData, setColumns });
-//         },
-//       });
-//     } else {
-//       const reader = new FileReader();
-//       reader.onload = (e) => {
-//         const buf = new Uint8Array(e.target!.result as ArrayBuffer);
-//         const workbook = XLSX.read(buf, { type: "array", cellDates: true });
-//         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-//         const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
-//         const rows = rawRows.map((row) =>
-//           row.map((cell) => (cell instanceof Date ? cell.toISOString() : cell)),
-//         ) as jsType[][];
-//         prepareData({ importedData: rows, fields, setData, setColumns });
-//       };
-//       reader.readAsArrayBuffer(file);
-//     }
-//   }
-
-//   function clear() {
-//     setFileName(null);
-//     setData([]);
-//     setColumns([]);
-//     if (inputRef.current) inputRef.current.value = "";
-//   }
-
-//   if (fileName) {
-//     return (
-//       <div className="flex w-full items-center justify-end gap-2">
-//         <Button className="px-1" variant="ghost" onClick={clear}>
-//           <X className="h-8 w-8" />
-//         </Button>
-//       </div>
-//     );
-//   }
-
-//   return (
-//     <div className="flex">
-//       <div className="w-full">
-//         <input
-//           ref={inputRef}
-//           type="file"
-//           accept=".csv,.tsv,.xlsx,.xls,.xlsm,.ods"
-//           className="hidden"
-//           onChange={(e) => {
-//             const file = e.target.files?.[0];
-//             if (file) handleFile(file);
-//           }}
-//         />
-//         <Button
-//           variant="outline"
-//           className={`${zoneHover ? "bg-primary/30" : ""} text-md w-full flex-auto border-dotted bg-primary/10 px-10 py-14 hover:bg-primary/20`}
-//           onClick={() => inputRef.current?.click()}
-//           onDragOver={(e) => {
-//             e.preventDefault();
-//             setZoneHover(true);
-//           }}
-//           onDragLeave={(e) => {
-//             e.preventDefault();
-//             setZoneHover(false);
-//           }}
-//           onDrop={(e) => {
-//             e.preventDefault();
-//             setZoneHover(false);
-//             const file = e.dataTransfer?.files?.[0];
-//             if (file) handleFile(file);
-//           }}
-//         >
-//           Click to upload CSV, TSV, or spreadsheet (XLSX, XLS, ODS), or drag and drop
-//         </Button>
-//       </div>
-//     </div>
-//   );
-// }
-
 export function prepareData({
   importedData,
   fields,
-  setData,
-  setColumns,
+  handleDataChange,
 }: {
   importedData: jsType[][];
   fields: AmcatField[];
-  setData: Dispatch<SetStateAction<Record<string, jsType>[]>>;
-  setColumns: Dispatch<SetStateAction<Column[]>>;
+  handleDataChange: (update: UploadData) => void;
 }) {
   const names = importedData[0].map((column) => String(column));
 
@@ -893,8 +825,10 @@ export function prepareData({
     };
   });
 
-  setData(data);
-  setColumns(columns.filter((column) => !!column.name));
+  handleDataChange({
+    data,
+    columns: columns.filter((column) => !!column.name),
+  });
 }
 
 function UploadInfoBox() {
@@ -954,7 +888,7 @@ function UploadInfoBox() {
   );
 }
 
-function hasDuplicates(data: Record<string, jsType>[], columns: Column[]) {
+function dataHasDuplicates(data: Record<string, jsType>[], columns: Column[]) {
   let identifiers = columns.filter((c) => c.identifier).map((c) => c.name);
   if (identifiers.length === 0) identifiers = columns.map((c) => c.name);
   const ids = data.map((doc) => {
@@ -963,4 +897,24 @@ function hasDuplicates(data: Record<string, jsType>[], columns: Column[]) {
   });
   const uniqueIds = new Set(ids);
   return ids.length !== uniqueIds.size;
+}
+
+function getColumnsStatus(data: Record<string, jsType>[], columns: Column[]) {
+  const duplicateNames = columns.filter((c) => c.nameExists).length;
+  const missingNames = columns.filter((c) => !c.field).length;
+
+  const duplicates = dataHasDuplicates(data, columns);
+  const nonePending = columns.length > 0 && columns.every((c) => !["Validating", "Type not set"].includes(c.status));
+  const hasInvalid = columns.some((c) => c.status === "Type invalid");
+
+  const ready =
+    !duplicates &&
+    nonePending &&
+    !hasInvalid &&
+    !duplicateNames &&
+    !missingNames &&
+    columns.some((c) => c.status === "Ready" || c.status === "Type warning");
+  const hasIdentifiers = columns.some((c) => c.identifier);
+
+  return { duplicates, hasInvalid, ready, hasIdentifiers, duplicateNames, missingNames };
 }

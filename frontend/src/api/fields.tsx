@@ -38,11 +38,11 @@ export function useFields(user?: AmcatSessionUser, projectId?: AmcatProjectId | 
   });
 }
 
-async function getFields(user?: AmcatSessionUser, projectId?: AmcatProjectId) {
+async function getFields(user?: AmcatSessionUser, projectId?: AmcatProjectId): Promise<undefined | AmcatField[]> {
   if (!user || !projectId) return undefined;
   const res = await user.api.get(`/index/${projectId}/fields`);
   const fieldsArray = Object.keys(res.data).map((name) => ({ name, ...res.data[name] }));
-  const fields = z.array(amcatFieldSchema).parse(fieldsArray);
+  const fields: AmcatField[] = z.array(amcatFieldSchema).parse(fieldsArray);
   return fields.map((f) => {
     // set default values
     const default_settings = DEFAULT_CLIENT_SETTINGS[f.name] || DEFAULT_CLIENT_SETTINGS["__DEFAULT__"];

@@ -1,11 +1,17 @@
 {$AMCAT4_URL:localhost} {
     # API - Proxy to the FastAPI container
-
     handle /api {
         reverse_proxy api:5000
     }
     handle /api/* {
         reverse_proxy api:5000
+    }
+
+    # S3 - Proxy to the S3 container
+    handle /s3/* {
+        reverse_proxy {$AMCAT4_S3_HOST} {
+            header_up Host {host}
+        }
     }
 
     # UI - Static SPA logic

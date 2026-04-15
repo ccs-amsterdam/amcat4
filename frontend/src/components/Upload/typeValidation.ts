@@ -1,4 +1,4 @@
-import { AmcatElasticFieldType, MultimediaListItem, UpdateAmcatField, UploadOperation } from "@/interfaces";
+import { AmcatElasticFieldType, AmcatField, MultimediaListItem, UpdateAmcatField, UploadOperation } from "@/interfaces";
 import { Column, jsType } from "./Upload";
 import { extensionMapping } from "../Multimedia/MultimediaUpload";
 
@@ -34,7 +34,6 @@ export function prepareUploadData(
         type: c.type,
         identifier: !!c.identifier,
       };
-
     }
   });
   return { documents: documents, fields, operation };
