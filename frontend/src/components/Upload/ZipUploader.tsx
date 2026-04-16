@@ -111,64 +111,75 @@ export function ZipUploader({ fields, handleDataChange, setFileName }: Props) {
   async function handleNdjsonFile(file: File) {
     setProgress({ current: 0, total: 0 });
 
-    let text: string;
-    if (file.name.endsWith(".gz")) {
-      const ds = new DecompressionStream("gzip");
-      const decompressed = file.stream().pipeThrough(ds);
-      const reader = decompressed.getReader();
-      const chunks: Uint8Array[] = [];
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
+    try {
+      let text: string;
+      if (file.name.endsWith(".gz")) {
+        const ds = new DecompressionStream("gzip");
+        const decompressed = file.stream().pipeThrough(ds);
+        const reader = decompressed.getReader();
+        const chunks: Uint8Array[] = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        const decoder = new TextDecoder();
+        text = chunks.map((c) => decoder.decode(c, { stream: true })).join("") + decoder.decode();
+      } else {
+        text = await file.text();
       }
-      const decoder = new TextDecoder();
-      text = chunks.map((c) => decoder.decode(c, { stream: true })).join("") + decoder.decode();
-    } else {
-      text = await file.text();
-    }
 
-    const fieldTypeHints: Record<string, FieldTypeHint> = {};
-    const documents: Record<string, jsType>[] = [];
+      const fieldTypeHints: Record<string, FieldTypeHint> = {};
+      const documents: Record<string, jsType>[] = [];
 
-    for (const line of text.split("\n")) {
-      if (!line.trim()) continue;
-      const obj = JSON.parse(line);
-      const type = obj._type;
+      const lines = text.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        let obj: Record<string, unknown>;
+        try {
+          obj = JSON.parse(lines[i]);
+        } catch {
+          throw new Error(`Invalid JSON on line ${i + 1}`);
+        }
 
-      if (type === "field") {
-        fieldTypeHints[obj.name] = {
-          type: obj.type,
-          elastic_type: obj.elastic_type,
-          identifier: obj.identifier ?? false,
-        };
-      } else if (type === "document") {
-        const { _type, _id, ...doc } = obj;
-        documents.push(doc);
+        const type = obj._type;
+        if (type === "field") {
+          fieldTypeHints[obj.name as string] = {
+            type: obj.type as FieldTypeHint["type"],
+            elastic_type: obj.elastic_type as FieldTypeHint["elastic_type"],
+            identifier: (obj.identifier as boolean) ?? false,
+          };
+        } else if (type === "document") {
+          const { _type, _id, ...doc } = obj;
+          documents.push(doc as Record<string, jsType>);
+        }
+        // skip "settings" and "user_role" rows
       }
-      // skip "settings" and "user_role" rows
+
+      if (documents.length === 0) {
+        setProgress({ current: 0, total: 0, error: "No documents found in the NDJSON file." });
+        return;
+      }
+
+      // Collect all unique keys across documents to build headers
+      const headerSet = new Set<string>();
+      for (const doc of documents) {
+        for (const key of Object.keys(doc)) headerSet.add(key);
+      }
+      const headers = Array.from(headerSet);
+
+      // Convert to matrix format: [headers, ...rows]
+      const matrix: jsType[][] = [
+        headers,
+        ...documents.map((doc) => headers.map((h) => (doc[h] != null ? doc[h] : "") as jsType)),
+      ];
+
+      setProgress(null);
+      prepareData({ importedData: matrix, fields, handleDataChange, fieldTypeHints });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unknown error";
+      setProgress({ current: 0, total: 0, error: `Failed to parse NDJSON file: ${message}` });
     }
-
-    if (documents.length === 0) {
-      setProgress({ current: 0, total: 0, error: "No documents found in the NDJSON file." });
-      return;
-    }
-
-    // Collect all unique keys across documents to build headers
-    const headerSet = new Set<string>();
-    for (const doc of documents) {
-      for (const key of Object.keys(doc)) headerSet.add(key);
-    }
-    const headers = Array.from(headerSet);
-
-    // Convert to matrix format: [headers, ...rows]
-    const matrix: jsType[][] = [
-      headers,
-      ...documents.map((doc) => headers.map((h) => (doc[h] != null ? doc[h] : "") as jsType)),
-    ];
-
-    setProgress(null);
-    prepareData({ importedData: matrix, fields, handleDataChange, fieldTypeHints });
   }
 
   async function handleZipFile(file: File) {
