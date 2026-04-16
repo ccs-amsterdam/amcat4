@@ -98,8 +98,6 @@ def http() -> httpx.AsyncClient:
     return CONNECTIONS.http_client
 
 
-
-
 async def _start_elastic():
     """
     Check whether we can connect with elastic
@@ -157,7 +155,7 @@ async def _start_s3() -> None:
     # If the s3 server is hosted directly with docker compose, fastapi needs to
     # use a client with the internal s3_host, but presigned requests need to be created
     # for the /s3 proxy.
-    proxy_url = settings.host + '/s3' if settings.s3_use_proxy else settings.s3_host
+    proxy_url = settings.host + "/s3" if settings.s3_use_proxy else settings.s3_host
     proxy_client = session.create_client(
         service_name="s3",
         endpoint_url=proxy_url,
