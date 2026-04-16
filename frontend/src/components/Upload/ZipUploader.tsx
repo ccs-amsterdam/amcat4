@@ -3,7 +3,7 @@ import { FolderOpen, Loader } from "lucide-react";
 import Papa from "papaparse";
 import { Dispatch, SetStateAction, useRef, useState } from "react";
 import { Button } from "../ui/button";
-import { Column, UploadData, jsType, prepareData } from "./Upload";
+import { Column, FieldTypeHint, UploadData, jsType, prepareData } from "./Upload";
 
 // Imported as a URL so Vite copies the file as an asset — zero runtime cost unless pdfjs is actually used.
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -28,7 +28,7 @@ type ParserEntry = {
 
 const SPREADSHEET_EXTS = new Set([".xlsx", ".xls", ".xlsm", ".ods"]);
 const DOCUMENT_EXTS = new Set([".txt", ".docx", ".pdf"]);
-const ALL_EXTS = ".csv,.tsv,.xlsx,.xls,.xlsm,.ods,.zip";
+const ALL_EXTS = ".csv,.tsv,.xlsx,.xls,.xlsm,.ods,.zip,.ndjson,.ndjson.gz";
 
 function getExt(path: string): string {
   return path.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
@@ -98,9 +98,77 @@ export function ZipUploader({ fields, handleDataChange, setFileName }: Props) {
       return;
     }
 
+    if (ext === ".gz" || ext === ".ndjson") {
+      handleNdjsonFile(file);
+      return;
+    }
+
     if (ext === ".zip") {
       handleZipFile(file);
     }
+  }
+
+  async function handleNdjsonFile(file: File) {
+    setProgress({ current: 0, total: 0 });
+
+    let text: string;
+    if (file.name.endsWith(".gz")) {
+      const ds = new DecompressionStream("gzip");
+      const decompressed = file.stream().pipeThrough(ds);
+      const reader = decompressed.getReader();
+      const chunks: Uint8Array[] = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      const decoder = new TextDecoder();
+      text = chunks.map((c) => decoder.decode(c, { stream: true })).join("") + decoder.decode();
+    } else {
+      text = await file.text();
+    }
+
+    const fieldTypeHints: Record<string, FieldTypeHint> = {};
+    const documents: Record<string, jsType>[] = [];
+
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      const obj = JSON.parse(line);
+      const type = obj._type;
+
+      if (type === "field") {
+        fieldTypeHints[obj.name] = {
+          type: obj.type,
+          elastic_type: obj.elastic_type,
+          identifier: obj.identifier ?? false,
+        };
+      } else if (type === "document") {
+        const { _type, _id, ...doc } = obj;
+        documents.push(doc);
+      }
+      // skip "settings" and "user_role" rows
+    }
+
+    if (documents.length === 0) {
+      setProgress({ current: 0, total: 0, error: "No documents found in the NDJSON file." });
+      return;
+    }
+
+    // Collect all unique keys across documents to build headers
+    const headerSet = new Set<string>();
+    for (const doc of documents) {
+      for (const key of Object.keys(doc)) headerSet.add(key);
+    }
+    const headers = Array.from(headerSet);
+
+    // Convert to matrix format: [headers, ...rows]
+    const matrix: jsType[][] = [
+      headers,
+      ...documents.map((doc) => headers.map((h) => (doc[h] != null ? doc[h] : "") as jsType)),
+    ];
+
+    setProgress(null);
+    prepareData({ importedData: matrix, fields, handleDataChange, fieldTypeHints });
   }
 
   async function handleZipFile(file: File) {
@@ -247,7 +315,7 @@ export function ZipUploader({ fields, handleDataChange, setFileName }: Props) {
         >
           <span>Click to upload or drag and drop</span>
           <span className="text-xs text-muted-foreground">
-            CSV, TSV, XLSX, ODS — or a ZIP of .txt / .docx / .pdf documents
+            CSV, TSV, XLSX, ODS, NDJSON export — or a ZIP of .txt / .docx / .pdf documents
           </span>
         </Button>
       )}

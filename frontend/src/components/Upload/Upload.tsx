@@ -779,14 +779,22 @@ function getTypeWarningIndicator(column: Column) {
   );
 }
 
+export interface FieldTypeHint {
+  type: AmcatFieldType;
+  elastic_type: AmcatElasticFieldType;
+  identifier?: boolean;
+}
+
 export function prepareData({
   importedData,
   fields,
   handleDataChange,
+  fieldTypeHints,
 }: {
   importedData: jsType[][];
   fields: AmcatField[];
   handleDataChange: (update: UploadData) => void;
+  fieldTypeHints?: Record<string, FieldTypeHint>;
 }) {
   const names = importedData[0].map((column) => String(column));
 
@@ -811,18 +819,34 @@ export function prepareData({
       if (usedFields.has(f.name)) return false;
       return autoNameColumn(name) === f.name;
     });
-    if (!field) return { name, field: null, type: null, elastic_type: null, status: "Not used", exists: false };
+    if (field) {
+      usedFields.add(field.name);
+      return {
+        name,
+        field: field.name,
+        type: field.type,
+        elastic_type: field.elastic_type,
+        status: "Validating",
+        identifier: field.identifier,
+        exists: true,
+      };
+    }
 
-    usedFields.add(field.name);
-    return {
-      name,
-      field: field.name,
-      type: field.type,
-      elastic_type: field.elastic_type,
-      status: "Validating",
-      identifier: field.identifier,
-      exists: true,
-    };
+    // For NDJSON imports: use field type hints from the export to pre-set new columns
+    const hint = fieldTypeHints?.[name];
+    if (hint) {
+      return {
+        name,
+        field: autoNameColumn(name),
+        type: hint.type,
+        elastic_type: hint.elastic_type,
+        status: "Validating",
+        identifier: hint.identifier ?? false,
+        exists: false,
+      };
+    }
+
+    return { name, field: null, type: null, elastic_type: null, status: "Not used", exists: false };
   });
 
   handleDataChange({
@@ -836,9 +860,9 @@ function UploadInfoBox() {
     <InfoBox title="Information on Uploading Documents" storageKey="infobox:upload">
       <div className="flex flex-col gap-5">
         <p>
-          Upload documents to this project. You can upload a spreadsheet (CSV, TSV, XLSX) or a folder or zip with with
-          text, PDF, or DOCX documents. After uploading the file, you can choose what to do with each field or column in
-          the data before uploading.
+          Upload documents to this project. You can upload a spreadsheet (CSV, TSV, XLSX), an NDJSON project export
+          (.ndjson or .ndjson.gz), or a folder or zip with text, PDF, or DOCX documents. After uploading the file, you
+          can choose what to do with each field or column in the data before uploading.
         </p>
         <section>
           <h4 className="mb-1.5 font-semibold text-foreground">Column actions</h4>
