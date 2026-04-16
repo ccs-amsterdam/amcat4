@@ -42,15 +42,10 @@ jobs:
             ccsamsterdam/amcat4_backend:${{ steps.version.outputs.version }}
             ccsamsterdam/amcat4_backend:latest
 
-      - name: Package deploy files
-        run: |
-          mkdir amcat4-deploy
-          cp deploy/docker-compose.yml amcat4-deploy/
-          cp deploy/.env.example amcat4-deploy/.env
-          zip -r amcat4-deploy.zip amcat4-deploy
-
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: amcat4-deploy.zip
+          files: |
+            deploy/docker-compose.yml
+            deploy/.env.example
           generate_release_notes: true

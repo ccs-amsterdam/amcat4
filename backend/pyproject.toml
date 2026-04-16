@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "amcat4"
-version = "4.2.8"
+version = "4.2.9"
 description = "API for AmCAT4 Text Analysis"
 readme = "README.md"
 requires-python = ">=3.11"
