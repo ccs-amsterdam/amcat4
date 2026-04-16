@@ -4,7 +4,7 @@ export const Route = createFileRoute("/projects/$project/settings")({
   component: SettingsPage,
 });
 
-import { useArchiveProject, useDeleteProject, useMutateProject, useProject, useUploadProjectImage } from "@/api/project";
+import { useArchiveProject, useClearProject, useDeleteProject, useMutateProject, useProject, useUploadProjectImage } from "@/api/project";
 import { useAmcatProjects } from "@/api/projects";
 import { AmcatSessionUser, useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { ContactInfo } from "@/components/Project/ContactInfo";
@@ -22,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AmcatProject } from "@/interfaces";
 import { amcatProjectUpdateSchema, contactInfoSchema } from "@/schemas";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, Download, FolderArchive, FolderInput, ImagePlus, Pencil, Trash2, X } from "lucide-react";
+import { Check, Download, Eraser, FolderArchive, FolderInput, ImagePlus, Pencil, Trash2, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -45,6 +45,7 @@ function SettingsPage() {
         <div className="flex gap-2">
           <ExportProject project={project} />
           <ArchiveProject project={project} />
+          <ClearProject project={project} />
           <DeleteProject project={project} />
         </div>
       </div>
@@ -72,6 +73,8 @@ function SettingsPage() {
                     <>
                       <b className="text-primary">Archive</b>
                       <span>Marks the project as read-only and hides it from the default project list. The data is preserved and the project can be unarchived at any time.</span>
+                      <b className="text-primary">Clear</b>
+                      <span>Removes all documents and field definitions, leaving an empty project with its settings and user roles intact. Use this to reconfigure fields: export first, clear, set up new fields, then reimport.</span>
                       <b className="text-primary">Delete</b>
                       <span>Permanently removes the project and all its documents. This cannot be undone — you will be asked to confirm by typing the project ID before deletion proceeds.</span>
                     </>
@@ -425,6 +428,65 @@ function ArchiveProject({ project }: { project: AmcatProject }) {
         </Button>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function ClearProject({ project }: { project: AmcatProject }) {
+  const { user } = useAmcatSession();
+  const {
+    mutateAsync: clearAsync,
+    isPending: isClearing,
+    isError: isClearError,
+    error: clearError,
+    reset: resetClear,
+  } = useClearProject(user);
+  const { activate, confirmDialog } = useConfirm();
+
+  async function handleClear() {
+    try {
+      await clearAsync(project.id);
+    } catch {
+      // error shown in dialog
+    }
+  }
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        className="flex w-min gap-2 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+        onClick={() =>
+          activate(handleClear, {
+            description: `You are about to clear ALL documents and field definitions from project "${project.name}". Settings and user roles will be preserved, but all data will be permanently deleted. This cannot be undone!`,
+            challenge: project.id,
+            confirmText: `Clear project`,
+          })
+        }
+      >
+        <Eraser className="h-5 w-5" />
+        <span className="hidden md:block">Clear</span>
+      </Button>
+      {confirmDialog}
+      <Dialog open={isClearing || isClearError} onOpenChange={(open) => !open && resetClear()}>
+        <DialogContent onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{isClearError ? "Clear failed" : "Clearing project..."}</DialogTitle>
+            <DialogDescription>
+              {isClearError
+                ? (clearError as Error)?.message ?? "An unexpected error occurred."
+                : `Clearing all documents from "${project.name}". Please wait.`}
+            </DialogDescription>
+          </DialogHeader>
+          {isClearError && (
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={resetClear}>
+                Close
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

@@ -5,6 +5,7 @@ import pytest
 from amcat4.connections import es
 from amcat4.models import ProjectSettings, Roles, User
 from amcat4.projects.index import (
+    clear_project_index,
     create_project_index,
     delete_project_index,
     deregister_project_index,
@@ -12,6 +13,7 @@ from amcat4.projects.index import (
     list_user_project_indices,
     register_project_index,
 )
+from amcat4.systemdata.fields import list_fields
 from amcat4.systemdata.roles import (
     create_project_role,
     create_server_role,
@@ -139,14 +141,39 @@ async def test_name_description(index):
     assert indices[index].name == "test"
 
 
-# @pytest.mark.anyio
-# async def test_summary_field(index):
-#     with pytest.raises(Exception):
-#         await modify_index(index, summary_field="doesnotexist")
-#     with pytest.raises(Exception):
-#         await modify_index(index, summary_field="title")
-#     await update_fields(index, {"party": Field(type="keyword", type="keyword")})
-#     await modify_index(index, summary_field="party")
-#     assert (await get_index(index)).summary_field == "party"
-#     await modify_index(index, summary_field="date")
-#     assert (await get_index(index)).summary_field == "date"
+@pytest.mark.anyio
+async def test_clear_project_index(index_docs):
+    """Clearing a project should remove documents and fields but preserve settings and roles."""
+    index = index_docs
+    admin_email = "admin@test.nl"
+    await create_project_role(admin_email, index, Roles.ADMIN)
+
+    # Verify preconditions: documents and fields exist
+    doc_count = (await es().count(index=index))["count"]
+    assert doc_count > 0
+    fields = await list_fields(index, auto_repair=False)
+    assert len(fields) > 0
+    settings = await get_project_settings(index)
+    assert settings.id == index
+
+    # Clear the project
+    await clear_project_index(index)
+
+    # ES index still exists but is empty
+    assert await es().indices.exists(index=index)
+    doc_count = (await es().count(index=index))["count"]
+    assert doc_count == 0
+
+    # Mapping is reset to empty
+    mapping = await es().indices.get_mapping(index=index)
+    assert mapping[index]["mappings"].get("properties", {}) == {}
+
+    # Field definitions are gone from system index
+    fields = await list_fields(index, auto_repair=False)
+    assert len(fields) == 0
+
+    # Settings and roles are preserved
+    settings = await get_project_settings(index)
+    assert settings.id == index
+    role = await get_user_project_role(User(email=admin_email), index)
+    assert role.role == Roles.ADMIN.name

@@ -36,6 +36,7 @@ from amcat4.projects.index import (
     IndexDoesNotExist,
     archive_project_index,
     create_project_index,
+    clear_project_index,
     delete_project_index,
     index_size_in_bytes,
     list_unregistered_indices,
@@ -324,6 +325,16 @@ async def delete_index(ix: IndexId, user: User = Depends(authenticated_user)):
     await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
     try:
         await delete_project_index(ix)
+    except IndexDoesNotExist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
+
+
+@app_index.post("/index/{ix}/clear", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_index(ix: IndexId, user: User = Depends(authenticated_user)):
+    """Clear all documents and fields from the index, keeping settings and roles. Requires ADMIN role on the index."""
+    await HTTPException_if_not_project_index_role(user, ix, Roles.ADMIN)
+    try:
+        await clear_project_index(ix)
     except IndexDoesNotExist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 

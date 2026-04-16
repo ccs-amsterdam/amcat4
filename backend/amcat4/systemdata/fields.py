@@ -41,6 +41,15 @@ from amcat4.systemdata.typemap import infer_field_type, list_allowed_elastic_typ
 from amcat4.systemdata.versions import fields_index_id, fields_index_name
 
 
+async def delete_all_project_fields(index: str):
+    """Delete all field definitions for the given project from the system fields index."""
+    await es().delete_by_query(
+        index=fields_index_name(),
+        body={"query": {"term": {"index": index}}},
+        refresh=True,
+    )
+
+
 class UpdateFieldMapping(TypedDict):
     name: str
     type: FieldType

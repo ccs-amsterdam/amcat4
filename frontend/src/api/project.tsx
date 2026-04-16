@@ -165,6 +165,29 @@ async function deleteProject(user: AmcatSessionUser | undefined, projectId: stri
   return await user.api.delete(`index/${projectId}`);
 }
 
+export function useClearProject(user: AmcatSessionUser | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (projectId: string) => clearProject(user, projectId),
+    onSuccess: (_, projectId) => {
+      queryClient.removeQueries({ queryKey: ["fields", user, projectId] });
+      queryClient.removeQueries({ queryKey: ["fieldValues", user, projectId] });
+      queryClient.removeQueries({ queryKey: ["fieldStats", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project", user, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+}
+
+async function clearProject(user: AmcatSessionUser | undefined, projectId: string) {
+  if (!user) throw new Error("Not logged in");
+  return await user.api.post(`index/${projectId}/clear`);
+}
+
 export function useUploadProjectImage(user: AmcatSessionUser | undefined) {
   const queryClient = useQueryClient();
 

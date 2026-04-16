@@ -9,7 +9,7 @@ from amcat4.connections import es, s3_enabled
 from amcat4.elastic.util import index_scan
 from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, RoleRule, Roles, User
 from amcat4.objectstorage.multimedia import delete_project_multimedia
-from amcat4.systemdata.fields import create_fields, list_fields
+from amcat4.systemdata.fields import create_fields, delete_all_project_fields, list_fields
 from amcat4.systemdata.roles import list_user_project_roles
 from amcat4.systemdata.settings import (
     create_project_settings,
@@ -110,6 +110,22 @@ async def archive_project_index(index_id: str, archived: bool):
             script={"source": "ctx._source.project_settings.remove('archived')", "lang": "painless"},
             refresh=True,
         )
+
+
+async def clear_project_index(index_id: str):
+    """
+    Clear all documents and fields from a project index, keeping settings and roles intact.
+    Deletes multimedia, recreates an empty ES index, and removes field definitions.
+    """
+    if s3_enabled():
+        try:
+            await delete_project_multimedia(index_id)
+        except BotoCoreError as e:
+            logging.warning(f"Could not delete multimedia for index {index_id}: {e}")
+
+    await es().indices.delete(index=index_id)
+    await create_es_index(index_id)
+    await delete_all_project_fields(index_id)
 
 
 async def delete_project_index(index_id: str, ignore_missing: bool = False):
