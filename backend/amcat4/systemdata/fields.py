@@ -523,17 +523,21 @@ async def _infer_es_index_fields(index: str) -> dict[str, DocumentField]:
 
 async def _update_index_fields_mappings(index: str, fields: dict[str, DocumentField]) -> None:
     """
-    Update the elasticsearch index mapping for the given fields.
-    Note that we can only add new fields or change certain properties of existing fields.
-    We cannot change the type of an existing field.
+    Add mappings for fields not yet present in the elasticsearch index, and sync
+    the fields system index. Fields already present in the ES mapping are skipped
+    because most mapping parameters (notably `format` on date fields) are immutable;
+    re-sending them raises "Mapper for [X] conflicts with existing mapper".
     """
+    existing_in_es = {name async for name, _ in _get_es_index_fields(index)}
+
     mapping_updates: dict[str, dict[str, Any]] = {}
     for field_name, field in fields.items():
+        if field_name in existing_in_es:
+            continue
         mapping_updates[field_name] = {"type": field.elastic_type}
-
-        ## Date fields need a specific format
         if field.type == "date":
             mapping_updates[field_name]["format"] = "strict_date_optional_time"
 
-    await es().indices.put_mapping(index=index, properties=mapping_updates)
+    if mapping_updates:
+        await es().indices.put_mapping(index=index, properties=mapping_updates)
     await _update_fields(index, fields)

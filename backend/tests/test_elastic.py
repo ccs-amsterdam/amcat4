@@ -2,7 +2,8 @@ from datetime import datetime
 
 import pytest
 
-from amcat4.models import CreateDocumentField, FieldSpec
+from amcat4.connections import es
+from amcat4.models import CreateDocumentField, DocumentField, FieldSpec
 from amcat4.projects.documents import (
     create_or_update_documents,
     delete_documents_by_query,
@@ -13,7 +14,7 @@ from amcat4.projects.documents import (
 )
 from amcat4.projects.index import refresh_index
 from amcat4.projects.query import query_documents
-from amcat4.systemdata.fields import create_fields, field_values, list_fields
+from amcat4.systemdata.fields import _update_fields, create_fields, field_values, list_fields
 from tests.conftest import upload
 
 
@@ -241,3 +242,38 @@ async def _assert_n(index, n):
     res = await query_documents(index)
     assert res is not None
     assert res.total_count == n
+
+
+@pytest.mark.anyio
+async def test_list_fields_skips_repair_for_existing_es_fields(index):
+    """Regression for #112: auto-repair must not re-put_mapping fields that are
+    already in ES. Reproduces the ``sarahs-grote-data-project`` state where a
+    ``date`` field exists in ES with the default (no-format) mapping, and the
+    AmCAT fields system index holds entries for fields that are missing from ES.
+    Pre-fix, the repair branch built a put_mapping payload for every registered
+    field — including the existing ``date`` — and ES rejected the immutable
+    ``format`` change with ``Mapper for [date] conflicts with existing mapper``.
+    """
+    # ES mapping has a date field without explicit format (ES default
+    # strict_date_optional_time||epoch_millis), as if created by ES dynamic mapping.
+    await es().indices.put_mapping(index=index, properties={"date": {"type": "date"}})
+
+    # AmCAT fields registry has both the date field and an extra field that is
+    # NOT in the ES mapping — this forces update_mapping=True in the repair path.
+    await _update_fields(
+        index,
+        {
+            "date": DocumentField(type="date", elastic_type="date"),
+            "only_in_registry": DocumentField(type="keyword", elastic_type="keyword"),
+        },
+    )
+    await refresh_index(index)
+
+    # Dashboard path: must not raise. Pre-fix this raised BadRequestError from ES
+    # ("Cannot update parameter [format]").
+    fields = await list_fields(index, auto_repair=True)
+    assert "date" in fields
+
+    # The pre-existing date mapping keeps its ES-default format (no explicit format key).
+    mapping = (await es().indices.get_mapping(index=index))[index]["mappings"]["properties"]
+    assert "format" not in mapping["date"]
