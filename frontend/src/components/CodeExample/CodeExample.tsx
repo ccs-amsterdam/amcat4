@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Code, Check, Clipboard } from "lucide-react";
 import { toast } from "sonner";
-import { AddUserParams, AuthInfo, CodeAction, CreateFieldParams, CreateProjectParams, DeleteParams, FieldsParams, UpdateFieldParams, UpdateTagsParams, UploadColumn, UploadParams, UsersParams, generatePython, generateR } from "./codeGenerators";
+import { AddUserParams, AuthInfo, CodeAction, CreateFieldParams, CreateProjectParams, DeleteParams, FieldsParams, ReindexParams, UpdateFieldParams, UpdateTagsParams, UploadColumn, UploadParams, UsersParams, generatePython, generateR } from "./codeGenerators";
+import { FieldReindexOptions } from "@/api/query";
 import { useAmcatConfig } from "@/api/config";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -27,7 +28,16 @@ type CodeExampleProps =
   | { action: "upload"; projectId: AmcatProjectId; uploadColumns: UploadColumn[]; fileName?: string }
   | { action: "delete"; projectId: AmcatProjectId; query: AmcatQuery }
   | { action: "update_field"; projectId: AmcatProjectId; query: AmcatQuery; field: string; value: string | number | boolean | null }
-  | { action: "update_tags"; projectId: AmcatProjectId; query: AmcatQuery; field: string; tag: string; tagAction: "add" | "remove" };
+  | { action: "update_tags"; projectId: AmcatProjectId; query: AmcatQuery; field: string; tag: string; tagAction: "add" | "remove" }
+  | {
+      action: "reindex";
+      projectId: AmcatProjectId;
+      destProjectId: string;
+      destProjectName?: string;
+      destMode: "existing" | "new";
+      query: AmcatQuery;
+      fieldOptions: Record<string, FieldReindexOptions>;
+    };
 
 type Language = "python" | "r";
 
@@ -109,6 +119,21 @@ export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "d
     }
     if (props.action === "update_tags") {
       return { action: "update_tags", params: { serverUrl, projectId: props.projectId, query: props.query, field: props.field, tag: props.tag, action: props.tagAction, auth } satisfies UpdateTagsParams };
+    }
+    if (props.action === "reindex") {
+      return {
+        action: "reindex",
+        params: {
+          serverUrl,
+          sourceProjectId: props.projectId,
+          destProjectId: props.destProjectId,
+          destProjectName: props.destProjectName,
+          destMode: props.destMode,
+          query: props.query,
+          fieldOptions: props.fieldOptions,
+          auth,
+        } satisfies ReindexParams,
+      };
     }
     throw new Error("Unknown action");
   })();

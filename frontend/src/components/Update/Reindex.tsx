@@ -32,6 +32,7 @@ import { DynamicIcon } from "../ui/dynamic-icon";
 import { CreateFieldSelectType } from "../Fields/CreateField";
 import { FieldTypesSection } from "../Fields/FieldTypesSection";
 import { useTaskStatus } from "@/api/task";
+import CodeExample from "../CodeExample/CodeExample";
 
 interface Props {
   user: AmcatSessionUser;
@@ -56,6 +57,28 @@ function getDefaultAction(
   if (destMode === "new") return "new";
   if (!destFields) return "new";
   return destFields.some((f) => f.name === fieldName) ? "existing" : "new";
+}
+
+function buildFieldOptions(
+  sourceFields: AmcatField[] | undefined,
+  fieldConfigs: Record<string, FieldConfig>,
+  destFields: AmcatField[] | undefined,
+  destMode: DestMode,
+): Record<string, FieldReindexOptions> {
+  const result: Record<string, FieldReindexOptions> = {};
+  for (const field of sourceFields ?? []) {
+    const config = fieldConfigs[field.name] ?? {};
+    const action = config.action ?? getDefaultAction(field.name, destFields, destMode);
+    if (action === "exclude") {
+      result[field.name] = { exclude: true };
+    } else {
+      const opts: FieldReindexOptions = {};
+      if (config.targetName && config.targetName !== field.name) opts.rename = config.targetName;
+      if (action === "new" && config.type) opts.type = config.type;
+      if (Object.keys(opts).length > 0) result[field.name] = opts;
+    }
+  }
+  return result;
 }
 
 export default function Reindex({ user, projectId, query }: Props) {
@@ -112,6 +135,11 @@ export default function Reindex({ user, projectId, query }: Props) {
       return c && (c.action !== undefined || c.targetName !== undefined || c.type !== undefined);
     }).length ?? 0;
 
+  const fieldOptions = useMemo(
+    () => buildFieldOptions(sourceFields, fieldConfigs, destFields, destMode),
+    [sourceFields, fieldConfigs, destFields, destMode],
+  );
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit || !destinationId) return;
@@ -121,21 +149,7 @@ export default function Reindex({ user, projectId, query }: Props) {
       if (destMode === "new") {
         await createProjectAsync({ id: newProjectId, name: newProjectName });
       }
-      // Build field_options — only send non-default entries
-      const field_options: Record<string, FieldReindexOptions> = {};
-      for (const field of sourceFields ?? []) {
-        const config = fieldConfigs[field.name] ?? {};
-        const action = config.action ?? getDefaultAction(field.name, destFields, destMode);
-        if (action === "exclude") {
-          field_options[field.name] = { exclude: true };
-        } else {
-          const opts: FieldReindexOptions = {};
-          if (config.targetName && config.targetName !== field.name) opts.rename = config.targetName;
-          if (action === "new" && config.type) opts.type = config.type;
-          if (Object.keys(opts).length > 0) field_options[field.name] = opts;
-        }
-      }
-      const res = await postReindex(user, projectId, destinationId, query, field_options);
+      const res = await postReindex(user, projectId, destinationId, query, fieldOptions);
       setSubmittedProjectId(destinationId);
       setTaskResult(res?.data.task);
       if (destMode === "new") {
@@ -301,10 +315,20 @@ export default function Reindex({ user, projectId, query }: Props) {
 
         {submitError && <p className="text-sm text-destructive">{submitError}</p>}
 
-        <div>
+        <div className="flex gap-2">
           <Button type="submit" disabled={!canSubmit}>
             {submitting ? "Copying…" : "Copy"}
           </Button>
+          <CodeExample
+            action="reindex"
+            projectId={projectId}
+            destProjectId={destinationId ?? ""}
+            destProjectName={destMode === "new" ? newProjectName || undefined : existingProject?.name}
+            destMode={destMode}
+            query={query}
+            fieldOptions={fieldOptions}
+            size="default"
+          />
         </div>
       </form>
 

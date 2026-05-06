@@ -1,4 +1,5 @@
 import { AggregationOptions, AmcatFilter, AmcatFilters, AmcatProjectId, AmcatQuery, AmcatQueryTerm } from "@/interfaces";
+import { FieldReindexOptions } from "@/api/query";
 
 export interface AuthInfo {
   needsAuth: true;
@@ -101,6 +102,17 @@ export interface UpdateTagsParams {
   auth?: AuthInfo;
 }
 
+export interface ReindexParams {
+  serverUrl: string;
+  sourceProjectId: AmcatProjectId;
+  destProjectId: string;
+  destProjectName?: string;
+  destMode: "existing" | "new";
+  query: AmcatQuery;
+  fieldOptions: Record<string, FieldReindexOptions>;
+  auth?: AuthInfo;
+}
+
 export type CodeAction =
   | { action: "search"; params: SearchParams }
   | { action: "aggregate"; params: AggregateParams }
@@ -112,7 +124,8 @@ export type CodeAction =
   | { action: "upload"; params: UploadParams }
   | { action: "delete"; params: DeleteParams }
   | { action: "update_field"; params: UpdateFieldParams }
-  | { action: "update_tags"; params: UpdateTagsParams };
+  | { action: "update_tags"; params: UpdateTagsParams }
+  | { action: "reindex"; params: ReindexParams };
 
 // --- Python code generation ---
 
@@ -240,7 +253,8 @@ function rString(s: string): string {
 
 function rConnect(serverUrl: string, auth: AuthInfo | undefined, includeInstall: boolean): string[] {
   const lines: string[] = [];
-  if (includeInstall) lines.push(`# install.packages("amcat4r", repos = "https://ccs-amsterdam.r-universe.dev")`);
+  if (includeInstall)
+    lines.push(`# install.packages("amcat4r", repos = c("https://cloud.r-project.org", "https://ccs-amsterdam.r-universe.dev"))`);
   lines.push(`library(amcat4r)`, "");
   if (auth) {
     lines.push(`# Get your API key at: ${auth.apiKeysUrl}`);
@@ -568,7 +582,7 @@ function generateRUpload(params: UploadParams, includeInstall: boolean, includeC
   if (includeConnect) {
     if (includeInstall) {
       lines.push(`# install.packages("tidyverse")`);
-      lines.push(`# install.packages("amcat4r", repos = "https://ccs-amsterdam.r-universe.dev")`);
+      lines.push(`# install.packages("amcat4r", repos = c("https://cloud.r-project.org", "https://ccs-amsterdam.r-universe.dev"))`);
     }
     lines.push("library(tidyverse)");
     lines.push("library(amcat4r)", "");
@@ -782,6 +796,93 @@ function generateRCreateProject(params: CreateProjectParams, includeInstall: boo
   return lines.join("\n");
 }
 
+// --- Reindex code generation ---
+
+function pyFieldOptionsEntry(opts: FieldReindexOptions): string {
+  const parts: string[] = [];
+  if (opts.rename !== undefined) parts.push(`"rename": ${pyString(opts.rename)}`);
+  if (opts.exclude) parts.push(`"exclude": True`);
+  if (opts.type !== undefined) parts.push(`"type": ${pyString(opts.type)}`);
+  return `{${parts.join(", ")}}`;
+}
+
+function pyFieldOptions(fieldOptions: Record<string, FieldReindexOptions>): string {
+  const entries = Object.entries(fieldOptions).map(
+    ([k, v]) => `        ${pyString(k)}: ${pyFieldOptionsEntry(v)}`,
+  );
+  return `{\n${entries.join(",\n")}\n    }`;
+}
+
+function rFieldOptionsEntry(opts: FieldReindexOptions): string {
+  const parts: string[] = [];
+  if (opts.rename !== undefined) parts.push(`rename = ${rString(opts.rename)}`);
+  if (opts.exclude) parts.push(`exclude = TRUE`);
+  if (opts.type !== undefined) parts.push(`type = ${rString(opts.type)}`);
+  return `list(${parts.join(", ")})`;
+}
+
+function rFieldOptions(fieldOptions: Record<string, FieldReindexOptions>): string {
+  const entries = Object.entries(fieldOptions).map(([k, v]) => `    ${k} = ${rFieldOptionsEntry(v)}`);
+  return `list(\n${entries.join(",\n")}\n  )`;
+}
+
+function generatePythonReindex(params: ReindexParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, sourceProjectId, destProjectId, destProjectName, destMode, query, fieldOptions, auth } = params;
+  const lines: string[] = [];
+
+  if (includeConnect) lines.push(...pyConnect(serverUrl, auth, includeInstall));
+
+  const dest = destProjectId ? pyString(destProjectId) : "DEST_ID";
+  if (!destProjectId) lines.push(`# Replace DEST_ID with the destination project id`);
+
+  const hasFields = Object.keys(fieldOptions).length > 0;
+  const hasQueries = query.queries && query.queries.length > 0;
+  const hasFilters = query.filters && Object.keys(query.filters).length > 0;
+  const hasName = destMode === "new" && !!destProjectName;
+
+  const args: string[] = [
+    `    index=${pyString(sourceProjectId)}`,
+    `    destination=${dest}`,
+  ];
+  if (hasName) args.push(`    name=${pyString(destProjectName!)}`);
+  if (hasFields) args.push(`    fields=${pyFieldOptions(fieldOptions)}`);
+  if (hasQueries) args.push(`    queries=${pyQueries(query.queries!)}`);
+  if (hasFilters) args.push(`    filters=${pyFilters(query.filters!).replace(/\n/g, "\n    ")}`);
+
+  lines.push(`conn.reindex(\n${args.join(",\n")}\n)`);
+  return lines.join("\n");
+}
+
+function generateRReindex(params: ReindexParams, includeInstall: boolean, includeConnect: boolean): string {
+  const { serverUrl, sourceProjectId, destProjectId, destProjectName, destMode, query, fieldOptions, auth } = params;
+  const lines: string[] = [];
+
+  if (includeConnect) lines.push(...rConnect(serverUrl, auth, includeInstall));
+
+  const dest = destProjectId ? rString(destProjectId) : "DEST_ID";
+  if (!destProjectId) lines.push(`# Replace DEST_ID with the destination project id`);
+
+  const hasFields = Object.keys(fieldOptions).length > 0;
+  const hasQueries = query.queries && query.queries.length > 0;
+  const hasFilters = query.filters && Object.keys(query.filters).length > 0;
+  const hasName = destMode === "new" && !!destProjectName;
+
+  const args: string[] = [
+    `  index = ${rString(sourceProjectId)}`,
+    `  destination = ${dest}`,
+  ];
+  if (hasName) args.push(`  name = ${rString(destProjectName!)}`);
+  if (hasFields) args.push(`  fields = ${rFieldOptions(fieldOptions)}`);
+  if (hasQueries) {
+    const queryStr = query.queries!.map((q) => q.query).join(" OR ");
+    args.push(`  queries = ${rString(queryStr)}`);
+  }
+  if (hasFilters) args.push(`  filters = ${rFilters(query.filters!).replace(/\n/g, "\n  ")}`);
+
+  lines.push(`reindex(\n${args.join(",\n")}\n)`);
+  return lines.join("\n");
+}
+
 // --- Aggregate helpers (used by both Python and R generators above) ---
 
 function pyAxis(axis: AggregationOptions["axes"][number]): string {
@@ -810,6 +911,7 @@ export function generatePython(action: CodeAction, includeInstall: boolean, incl
   if (action.action === "delete") return generatePythonDelete(action.params, includeInstall, includeConnect);
   if (action.action === "update_field") return generatePythonUpdateField(action.params, includeInstall, includeConnect);
   if (action.action === "update_tags") return generatePythonUpdateTags(action.params, includeInstall, includeConnect);
+  if (action.action === "reindex") return generatePythonReindex(action.params, includeInstall, includeConnect);
   return "# Unsupported action";
 }
 
@@ -825,5 +927,6 @@ export function generateR(action: CodeAction, includeInstall: boolean, includeCo
   if (action.action === "delete") return generateRDelete(action.params, includeInstall, includeConnect);
   if (action.action === "update_field") return generateRUpdateField(action.params, includeInstall, includeConnect);
   if (action.action === "update_tags") return generateRUpdateTags(action.params, includeInstall, includeConnect);
+  if (action.action === "reindex") return generateRReindex(action.params, includeInstall, includeConnect);
   return "# Unsupported action";
 }
