@@ -42,6 +42,20 @@ async def test_query_post(client, index_docs, user):
 
 
 @pytest.mark.anyio
+async def test_query_no_role_does_not_leak_fields(client, index_docs):
+    """
+    A user with no role at all on the index (e.g. a guest on a server without a guest_role)
+    gets an empty allowed-fields list. Elasticsearch treats _source=[] as "no filter" (i.e.
+    return everything), not "return nothing" -- so query_documents must special-case the
+    empty list as _source=False, or full document content would leak to users with zero
+    field permissions. Regression test for that leak.
+    """
+    res = await post_json(client, f"/index/{index_docs}/query", expected=200, json={})
+    assert res["meta"]["total_count"] == 4
+    assert all(set(doc.keys()) == {"_id"} for doc in res["results"])
+
+
+@pytest.mark.anyio
 async def test_aggregate(client, index_docs, user):
     await create_project_role(user, index_docs, Roles.READER)
     r = await post_json(

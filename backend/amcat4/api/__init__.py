@@ -34,7 +34,16 @@ async def lifespan(app: FastAPI):
     logging.info("Initializing system data...")
     async with amcat_connections():
         await create_or_update_systemdata()
-        yield
+        if get_settings().mcp_enabled:
+            from amcat4.mcp.client import close_client
+            from amcat4.mcp.server import mcp
+
+            # the streamable HTTP transport requires its session manager to run
+            async with mcp.session_manager.run():
+                yield
+            await close_client()
+        else:
+            yield
 
 
 app = FastAPI(
@@ -81,6 +90,15 @@ app.include_router(api_router)
 @app.get("/")
 async def root_message():
     return {"message": "This is where the client goes"}
+
+
+if get_settings().mcp_enabled:
+    from amcat4.mcp.auth import MCPAuthMiddleware
+    from amcat4.mcp.server import mcp
+
+    # streamable_http_app() serves its Route at "/mcp"; mounting at "/" is the
+    # SDK-documented pattern and avoids the /mcp <-> /mcp/ trailing-slash redirect.
+    app.mount("/", MCPAuthMiddleware(mcp.streamable_http_app()))
 
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)

@@ -89,6 +89,13 @@ class Settings(BaseSettings):
 
     auth: Annotated[AuthOptions, Field(description="Do we require authorization?")] = AuthOptions.no_auth
 
+    mcp_enabled: Annotated[
+        bool,
+        Field(
+            description="Serve an MCP (Model Context Protocol) endpoint at /mcp. Clients authenticate with an AmCAT API key."
+        ),
+    ] = True
+
     cookie_secret: Annotated[
         str,
         Field(
