@@ -22,7 +22,7 @@ from amcat4.projects.documents import create_or_update_documents, fetch_document
 from amcat4.projects.index import create_project_index
 from amcat4.projects.jobs import create_job, run_pending_jobs
 from amcat4.projects.query import delete_query, query_documents, update_query, update_tag_query
-from amcat4.systemdata.fields import list_fields, rename_field, update_fields
+from amcat4.systemdata.fields import delete_fields, list_fields, rename_field, update_fields
 
 FIELDS: dict[str, FieldType] = {
     "title": "text",
@@ -323,3 +323,15 @@ async def test_not_found(index):
         await fetch_document(index, "nonexisting")
     with pytest.raises(NotFoundError):
         await list_fields("nonexisting_index")
+
+
+@pytest.mark.anyio
+async def test_delete_fields(docs_index):
+    await delete_fields(docs_index, ["source", "date"])
+    assert set(await list_fields(docs_index)) == {"title", "text", "n", "tags"}
+    doc = await fetch_document(docs_index, "1")
+    assert "source" not in doc and "date" not in doc
+    rows = await fetch_all("SELECT meta_data, sort_date FROM documents WHERE doc_id = '1'")
+    assert all(not any(k.endswith("_year") for k in r["meta_data"]) and r["sort_date"] is None for r in rows)
+    with pytest.raises(NotFoundError):
+        await delete_fields(docs_index, ["nonexisting"])

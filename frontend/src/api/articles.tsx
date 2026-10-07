@@ -30,7 +30,7 @@ export function useArticles(
     queryClient.setQueryData(["articles", user, projectId, query, params, projectRole], (oldData: any) => {
       if (oldData == null) return undefined;
       return {
-        pageParams: [0],
+        pageParams: [undefined],
         pages: [oldData.pages[0]],
       };
     });
@@ -38,16 +38,14 @@ export function useArticles(
 
   return useInfiniteQuery({
     queryKey: ["articles", user, projectId, query, params, projectRole],
-    queryFn: ({ pageParam }) => getArticles(user, projectId, query, { page: pageParam, ...(params || {}) }),
+    // pages are fetched sequentially, using the cursor (meta.next) of the previous page
+    queryFn: ({ pageParam }) =>
+      getArticles(user, projectId, query, { ...(params || {}), ...(pageParam ? { after: pageParam } : {}) }),
     enabled: enabled && !!user && !!projectId && !!query,
-    initialPageParam: 0,
+    initialPageParam: undefined as string | undefined,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
-    getNextPageParam: (lastPage) => {
-      if (lastPage?.meta?.page == undefined || lastPage?.meta?.page_count == undefined) return undefined;
-      if (lastPage.meta.page >= lastPage.meta.page_count) return undefined;
-      return lastPage.meta.page + 1;
-    },
+    getNextPageParam: (lastPage) => lastPage?.meta?.next ?? undefined,
   });
 }
 
@@ -72,22 +70,10 @@ export function useMutateArticles(user?: AmcatSessionUser, projectId?: AmcatProj
       documents: Record<string, any>;
       fields?: Record<string, UpdateAmcatField>;
       operation: UploadOperation;
-      refresh?: boolean;
     }) => {
       if (!user || !projectId) throw new Error("Not logged in");
-      const url = params.refresh ? `/index/${projectId}/documents?refresh=true` : `/index/${projectId}/documents`;
-      const { refresh: _refresh, ...body } = params;
-      const res = await user.api.post(url, body);
-      const raw = z.object({ successes: z.number(), failures: z.array(z.unknown()) }).parse(res.data);
-      const failures = raw.failures.map((f): string => {
-        if (typeof f === "string") return f;
-        if (typeof f === "object" && f !== null) {
-          const inner = Object.values(f as Record<string, any>)[0];
-          return inner?.error?.reason ?? inner?.error?.type ?? JSON.stringify(f);
-        }
-        return String(f);
-      });
-      return { successes: raw.successes, failures };
+      const res = await user.api.post(`/index/${projectId}/documents`, params);
+      return z.object({ created: z.number(), updated: z.number() }).parse(res.data);
     },
     onSuccess: (data, variables) => {
       // removeQueries for data queries: avoids a race where setQueryData in useArticles clears the

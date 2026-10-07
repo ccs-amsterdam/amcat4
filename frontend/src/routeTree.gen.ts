@@ -16,8 +16,8 @@ import { Route as Api_keysRouteImport } from './routes/api_keys'
 import { Route as AccessRouteImport } from './routes/access'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
-import { Route as TaskTaskRouteImport } from './routes/task.$task'
 import { Route as ProjectsProjectRouteImport } from './routes/projects.$project'
+import { Route as JobsJobRouteImport } from './routes/jobs.$job'
 import { Route as ProjectsProjectIndexRouteImport } from './routes/projects.$project.index'
 import { Route as ProjectsProjectUsersRouteImport } from './routes/projects.$project.users'
 import { Route as ProjectsProjectSettingsRouteImport } from './routes/projects.$project.settings'
@@ -62,15 +62,15 @@ const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProjectsRoute,
 } as any)
-const TaskTaskRoute = TaskTaskRouteImport.update({
-  id: '/task/$task',
-  path: '/task/$task',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ProjectsProjectRoute = ProjectsProjectRouteImport.update({
   id: '/$project',
   path: '/$project',
   getParentRoute: () => ProjectsRoute,
+} as any)
+const JobsJobRoute = JobsJobRouteImport.update({
+  id: '/jobs/$job',
+  path: '/jobs/$job',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsProjectIndexRoute = ProjectsProjectIndexRouteImport.update({
   id: '/',
@@ -122,8 +122,8 @@ export interface FileRoutesByFullPath {
   '/branding': typeof BrandingRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/users': typeof UsersRoute
+  '/jobs/$job': typeof JobsJobRoute
   '/projects/$project': typeof ProjectsProjectRouteWithChildren
-  '/task/$task': typeof TaskTaskRoute
   '/projects/': typeof ProjectsIndexRoute
   '/projects/$project/access': typeof ProjectsProjectAccessRoute
   '/projects/$project/dashboard': typeof ProjectsProjectDashboardRoute
@@ -140,7 +140,7 @@ export interface FileRoutesByTo {
   '/api_keys': typeof Api_keysRoute
   '/branding': typeof BrandingRoute
   '/users': typeof UsersRoute
-  '/task/$task': typeof TaskTaskRoute
+  '/jobs/$job': typeof JobsJobRoute
   '/projects': typeof ProjectsIndexRoute
   '/projects/$project/access': typeof ProjectsProjectAccessRoute
   '/projects/$project/dashboard': typeof ProjectsProjectDashboardRoute
@@ -159,8 +159,8 @@ export interface FileRoutesById {
   '/branding': typeof BrandingRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/users': typeof UsersRoute
+  '/jobs/$job': typeof JobsJobRoute
   '/projects/$project': typeof ProjectsProjectRouteWithChildren
-  '/task/$task': typeof TaskTaskRoute
   '/projects/': typeof ProjectsIndexRoute
   '/projects/$project/access': typeof ProjectsProjectAccessRoute
   '/projects/$project/dashboard': typeof ProjectsProjectDashboardRoute
@@ -180,8 +180,8 @@ export interface FileRouteTypes {
     | '/branding'
     | '/projects'
     | '/users'
+    | '/jobs/$job'
     | '/projects/$project'
-    | '/task/$task'
     | '/projects/'
     | '/projects/$project/access'
     | '/projects/$project/dashboard'
@@ -198,7 +198,7 @@ export interface FileRouteTypes {
     | '/api_keys'
     | '/branding'
     | '/users'
-    | '/task/$task'
+    | '/jobs/$job'
     | '/projects'
     | '/projects/$project/access'
     | '/projects/$project/dashboard'
@@ -216,8 +216,8 @@ export interface FileRouteTypes {
     | '/branding'
     | '/projects'
     | '/users'
+    | '/jobs/$job'
     | '/projects/$project'
-    | '/task/$task'
     | '/projects/'
     | '/projects/$project/access'
     | '/projects/$project/dashboard'
@@ -236,7 +236,7 @@ export interface RootRouteChildren {
   BrandingRoute: typeof BrandingRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   UsersRoute: typeof UsersRoute
-  TaskTaskRoute: typeof TaskTaskRoute
+  JobsJobRoute: typeof JobsJobRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -290,19 +290,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsIndexRouteImport
       parentRoute: typeof ProjectsRoute
     }
-    '/task/$task': {
-      id: '/task/$task'
-      path: '/task/$task'
-      fullPath: '/task/$task'
-      preLoaderRoute: typeof TaskTaskRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/projects/$project': {
       id: '/projects/$project'
       path: '/$project'
       fullPath: '/projects/$project'
       preLoaderRoute: typeof ProjectsProjectRouteImport
       parentRoute: typeof ProjectsRoute
+    }
+    '/jobs/$job': {
+      id: '/jobs/$job'
+      path: '/jobs/$job'
+      fullPath: '/jobs/$job'
+      preLoaderRoute: typeof JobsJobRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/projects/$project/': {
       id: '/projects/$project/'
@@ -410,7 +410,7 @@ const rootRouteChildren: RootRouteChildren = {
   BrandingRoute: BrandingRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   UsersRoute: UsersRoute,
-  TaskTaskRoute: TaskTaskRoute,
+  JobsJobRoute: JobsJobRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

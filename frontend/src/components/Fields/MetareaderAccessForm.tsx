@@ -1,15 +1,28 @@
 import { AmcatField, AmcatMetareaderAccess } from "@/interfaces";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { ChevronDown, Eye, EyeOff, Scissors } from "lucide-react";
 import { Input } from "../ui/input";
 import { useEffect, useRef, useState } from "react";
+import { QueryableIcon, QueryableRadioGroup, readerCanQuery } from "./ReaderAccessForm";
 
 interface Props {
   field: AmcatField;
   metareader_access: AmcatMetareaderAccess;
   onChangeAccess?: (access: "none" | "snippet" | "read") => void;
-  onChangeMaxSnippet?: (nomatch_chars: number, max_matches: number, match_chars: number) => void;
+  onChangeMaxSnippet?: (nomatch_words: number, max_matches: number, words_per_match: number) => void;
+  onChangeQueryable?: (queryable: boolean | null) => void;
+}
+
+export function metareaderCanQuery(metareader: AmcatMetareaderAccess) {
+  return metareader.queryable ?? metareader.access !== "none";
 }
 
 const noneIcon = (
@@ -31,11 +44,25 @@ const readIcon = (
   </>
 );
 
-export default function MetareaderAccessForm({ field, metareader_access, onChangeAccess, onChangeMaxSnippet }: Props) {
+export default function MetareaderAccessForm({
+  field,
+  metareader_access,
+  onChangeAccess,
+  onChangeMaxSnippet,
+  onChangeQueryable,
+}: Props) {
+  // fields that are not visible / queryable for readers cannot be visible / queryable for metareaders
+  const readerVisible = field.reader.visible;
+  const readerQueryable = readerCanQuery(field);
+
   function renderAccess() {
-    if (metareader_access.access === "none") return noneIcon;
-    if (metareader_access.access === "snippet") return snippetIcon;
-    if (metareader_access.access === "read") return readIcon;
+    const icon = { none: noneIcon, snippet: snippetIcon, read: readIcon }[metareader_access.access];
+    return (
+      <>
+        {icon}
+        <QueryableIcon queryable={metareaderCanQuery(metareader_access)} />
+      </>
+    );
   }
 
   if (!onChangeAccess) {
@@ -53,13 +80,33 @@ export default function MetareaderAccessForm({ field, metareader_access, onChang
             {noneIcon}
           </DropdownMenuItem>
           {field.type === "text" ? (
-            <DropdownMenuItem onClick={() => onChangeAccess("snippet")} className="flex gap-4">
+            <DropdownMenuItem
+              disabled={!readerVisible}
+              onClick={() => onChangeAccess("snippet")}
+              className="flex gap-4"
+            >
               {snippetIcon}
             </DropdownMenuItem>
           ) : null}
-          <DropdownMenuItem onClick={() => onChangeAccess("read")} className="flex gap-4">
+          <DropdownMenuItem disabled={!readerVisible} onClick={() => onChangeAccess("read")} className="flex gap-4">
             {readIcon}
           </DropdownMenuItem>
+          {!readerVisible && (
+            <DropdownMenuLabel className="max-w-56 text-xs font-normal text-muted-foreground">
+              This field is not visible for readers, so it cannot be visible for metareaders
+            </DropdownMenuLabel>
+          )}
+          {onChangeQueryable && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Use in queries and filters</DropdownMenuLabel>
+              <QueryableRadioGroup
+                queryable={metareader_access.queryable}
+                onChange={onChangeQueryable}
+                disableYes={!readerQueryable}
+              />
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <div className={`${metareader_access.access === "snippet" ? "" : "hidden"}`}>
@@ -69,7 +116,7 @@ export default function MetareaderAccessForm({ field, metareader_access, onChang
   );
 }
 
-function MaxSnippetPopover({ metareader_access, onChangeMaxSnippet }: Omit<Props, "field" | "onChangeAccess">) {
+function MaxSnippetPopover({ metareader_access, onChangeMaxSnippet }: Pick<Props, "metareader_access" | "onChangeMaxSnippet">) {
   const [MaxSnippet, setMaxSnippet] = useState(metareader_access.max_snippet);
   const currentRef = useRef(MaxSnippet);
 
@@ -82,26 +129,26 @@ function MaxSnippetPopover({ metareader_access, onChangeMaxSnippet }: Omit<Props
     <Popover
       onOpenChange={(open) => {
         if (!open && currentRef.current !== MaxSnippet) {
-          onChangeMaxSnippet(MaxSnippet?.nomatch_chars, MaxSnippet?.max_matches, MaxSnippet?.match_chars);
+          onChangeMaxSnippet?.(MaxSnippet?.nomatch_words, MaxSnippet?.max_matches, MaxSnippet?.words_per_match);
         }
       }}
     >
       <PopoverTrigger asChild className="cursor-pointer">
-        <span className="text-primary">{`${MaxSnippet.nomatch_chars}, ${MaxSnippet.max_matches} x ${MaxSnippet.match_chars}`}</span>
+        <span className="text-primary">{`${MaxSnippet.nomatch_words}, ${MaxSnippet.max_matches} x ${MaxSnippet.words_per_match} words`}</span>
       </PopoverTrigger>
       <PopoverContent className="w-full max-w-[90vw]">
         <div className="flex flex-col gap-3 text-sm">
           <div className="flex items-center gap-3">
             <div className="flex-auto ">
               <h3 className="font-semibold text-foreground/50">Full-text snippet size</h3>
-              <label>Cut of text after this number of characters*</label>
+              <label>Cut of text after this number of words</label>
             </div>
             <Input
               type="number"
-              min={1}
+              min={0}
               className="w-28"
-              onChange={(e) => setMaxSnippet({ ...MaxSnippet, nomatch_chars: Number(e.target.value) })}
-              value={MaxSnippet?.nomatch_chars}
+              onChange={(e) => setMaxSnippet({ ...MaxSnippet, nomatch_words: Number(e.target.value) })}
+              value={MaxSnippet?.nomatch_words}
             />
           </div>
           <h3 className="text-md mb-0 border-t pt-4 font-semibold ">
@@ -123,18 +170,15 @@ function MaxSnippetPopover({ metareader_access, onChangeMaxSnippet }: Omit<Props
           <div className={`flex items-center gap-3 ${!MaxSnippet?.max_matches ? "opacity-50" : ""}`}>
             <div className="flex-auto ">
               <h3 className="font-semibold text-foreground/50">Query-match snippet size</h3>
-              <label>Number of characters* around matched text</label>
+              <label>Number of words around matched text</label>
             </div>
             <Input
               type="number"
               min={1}
               className="w-28"
-              onChange={(e) => setMaxSnippet({ ...MaxSnippet, match_chars: Number(e.target.value) })}
-              value={MaxSnippet?.match_chars}
+              onChange={(e) => setMaxSnippet({ ...MaxSnippet, words_per_match: Number(e.target.value) })}
+              value={MaxSnippet?.words_per_match}
             />
-          </div>
-          <div className="mt-2 italic text-foreground/70">
-            * cuts of after last full word, so exact number of characters can be higher
           </div>
         </div>
       </PopoverContent>

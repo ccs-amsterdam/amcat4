@@ -7,7 +7,15 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from amcat4.api.auth_helpers import authenticated_user
 from amcat4.errors import NotFoundError
 from amcat4.models import CreateDocumentField, DocumentField, FieldType, IndexId, Roles, UpdateDocumentField, User
-from amcat4.systemdata.fields import create_fields, field_access, field_stats, field_values, list_fields, update_fields
+from amcat4.systemdata.fields import (
+    create_fields,
+    delete_fields,
+    field_access,
+    field_stats,
+    field_values,
+    list_fields,
+    update_fields,
+)
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_index_fields = APIRouter(prefix="", tags=["project index fields"])
@@ -65,6 +73,20 @@ async def _HTTPException_if_not_visible(user: User, ix: IndexId, field: str) -> 
     spec = (await field_access(user, [ix])).visible.get(field)
     if spec is None or spec.snippet is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, f"{user.email or 'GUEST'} cannot access field {field} on index {ix}")
+
+
+@app_index_fields.delete("/index/{ix}/fields", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_fields(
+    ix: IndexId,
+    fields: Annotated[list[str], Body(description="The names of the fields to delete")],
+    user: User = Depends(authenticated_user),
+):
+    """
+    Delete fields, including their values in all documents. Requires WRITER role on the index.
+    Fails (and deletes nothing) if removing a unique field would make documents duplicates.
+    """
+    await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    await delete_fields(ix, fields)
 
 
 @app_index_fields.get("/index/{ix}/fields/{field}/values")

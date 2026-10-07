@@ -306,6 +306,22 @@ async def ensure_vector_index(conn: AsyncConnection, field_pk: int, dims: int) -
     )
 
 
+async def delete_field_values(conn: AsyncConnection, project_pk: int, f: FieldInfo) -> None:
+    """Remove the values of a field from all documents of the project"""
+    if f.column == "vector":
+        await conn.execute("DELETE FROM document_vectors WHERE field_pk = %s", [f.pk])
+        await conn.execute(sql.SQL("DROP INDEX IF EXISTS {}").format(sql.Identifier(f"document_vectors_f{f.pk}")))
+        return
+    column = sql.Identifier(f.column)
+    sort = sql.SQL(", {} = NULL").format(sql.Identifier(f.sort_column)) if f.sort_column else sql.SQL("")
+    await conn.execute(
+        sql.SQL(
+            "UPDATE documents SET {col} = {col} - %s::text[]{sort}, updated_at = now() WHERE project_pk = %s AND {col} ? %s"
+        ).format(col=column, sort=sort),
+        [stored_keys(f), project_pk, f.key],
+    )
+
+
 def vector_select(f: FieldInfo) -> sql.Composable:
     """SQL expression to select the vector of a document for this field (as a json array)"""
     return sql.SQL(

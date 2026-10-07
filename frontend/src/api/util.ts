@@ -26,3 +26,14 @@ export function splitIntoBatches<T>(arr: T[], batchSize: number): T[][] {
   }
   return batches;
 }
+
+/**
+ * Get the error message from an API error. The server returns {detail: message} for most errors
+ * (e.g. uploads), and {message: ...} for other errors (e.g. query parse errors)
+ */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  const data = (error as any)?.response?.data;
+  if (typeof data?.detail === "string") return data.detail;
+  if (typeof data?.message === "string") return data.message;
+  return fallback;
+}

@@ -94,7 +94,7 @@ function TaskForm({
           name: name,
           // !!! TODO: type should be determined by the task definition.
           type: output.recommended_type,
-          identifier: false,
+          unique: false,
         });
       }
     }

@@ -12,6 +12,7 @@ function getListFields(role: AmcatUserRole, fields: AmcatField[], defaultSnippet
   fields.forEach((field) => {
     if (role === "NONE") return;
     if (role === "METAREADER" && field.metareader.access === "none") return;
+    if (role === "READER" && !field.reader.visible) return;
 
     const listField: AmcatQueryFieldSpec = {
       name: field.name,
@@ -20,13 +21,17 @@ function getListFields(role: AmcatUserRole, fields: AmcatField[], defaultSnippet
     if (field.type === "text" && field.client_settings?.inList) {
       if (!field.client_settings?.isHeading) layout.text.push(field.name);
 
-      const max_snippet = role === "METAREADER" ? field.metareader.max_snippet : undefined;
+      const max_snippet =
+        role === "METAREADER" && field.metareader.access === "snippet" ? field.metareader.max_snippet : undefined;
 
       if (max_snippet !== undefined || defaultSnippets !== undefined) {
         listField.snippet = {
-          nomatch_chars: Math.min(max_snippet?.nomatch_chars ?? Infinity, defaultSnippets?.nomatch_chars ?? Infinity),
+          nomatch_words: Math.min(max_snippet?.nomatch_words ?? Infinity, defaultSnippets?.nomatch_words ?? Infinity),
           max_matches: Math.min(max_snippet?.max_matches ?? Infinity, defaultSnippets?.max_matches ?? Infinity),
-          match_chars: Math.min(max_snippet?.match_chars ?? Infinity, defaultSnippets?.match_chars ?? Infinity),
+          words_per_match: Math.min(
+            max_snippet?.words_per_match ?? Infinity,
+            defaultSnippets?.words_per_match ?? Infinity,
+          ),
         };
       }
     } else {

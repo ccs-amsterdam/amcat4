@@ -146,8 +146,8 @@ export function ZipUploader({ fields, handleDataChange, setFileName }: Props) {
         if (type === "field") {
           fieldTypeHints[obj.name as string] = {
             type: obj.type as FieldTypeHint["type"],
-            elastic_type: obj.elastic_type as FieldTypeHint["elastic_type"],
-            identifier: (obj.identifier as boolean) ?? false,
+            // (exports of older servers use 'identifier' instead of 'unique')
+            unique: ((obj.unique ?? obj.identifier) as boolean) ?? false,
           };
         } else if (type === "document") {
           const { _type, _id, ...doc } = obj;

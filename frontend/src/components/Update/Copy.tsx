@@ -1,23 +1,13 @@
 import { useCount } from "@/api/aggregate";
 import { useCreateProject } from "@/api/project";
 import { useAmcatProjects } from "@/api/projects";
-import { FieldReindexOptions, postReindex } from "@/api/query";
+import { FieldCopyOptions, postCopy } from "@/api/query";
 import { useHasGlobalRole } from "@/api/userDetails";
 import { useFields } from "@/api/fields";
 import { AmcatField, AmcatProject, AmcatProjectId, AmcatQuery } from "@/interfaces";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { DialogDescription, DialogTitle } from "@radix-ui/react-dialog";
-import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowRight,
-  BarChart,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Loader,
-  Lock,
-} from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, ExternalLink, Lock } from "lucide-react";
 import { InfoBox } from "@/components/ui/info-box";
 import { Link } from "@tanstack/react-router";
 import { idFromName, validateProjectId } from "@/lib/projectId";
@@ -27,11 +17,10 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from "../ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Input } from "../ui/input";
-import { Progress } from "../ui/progress";
 import { DynamicIcon } from "../ui/dynamic-icon";
 import { CreateFieldSelectType } from "../Fields/CreateField";
 import { FieldTypesSection } from "../Fields/FieldTypesSection";
-import { useTaskStatus } from "@/api/task";
+import JobStatus from "./JobStatus";
 import CodeExample from "../CodeExample/CodeExample";
 
 interface Props {
@@ -64,15 +53,15 @@ function buildFieldOptions(
   fieldConfigs: Record<string, FieldConfig>,
   destFields: AmcatField[] | undefined,
   destMode: DestMode,
-): Record<string, FieldReindexOptions> {
-  const result: Record<string, FieldReindexOptions> = {};
+): Record<string, FieldCopyOptions> {
+  const result: Record<string, FieldCopyOptions> = {};
   for (const field of sourceFields ?? []) {
     const config = fieldConfigs[field.name] ?? {};
     const action = config.action ?? getDefaultAction(field.name, destFields, destMode);
     if (action === "exclude") {
       result[field.name] = { exclude: true };
     } else {
-      const opts: FieldReindexOptions = {};
+      const opts: FieldCopyOptions = {};
       if (config.targetName && config.targetName !== field.name) opts.rename = config.targetName;
       if (action === "new" && config.type) opts.type = config.type;
       if (Object.keys(opts).length > 0) result[field.name] = opts;
@@ -81,7 +70,7 @@ function buildFieldOptions(
   return result;
 }
 
-export default function Reindex({ user, projectId, query }: Props) {
+export default function Copy({ user, projectId, query }: Props) {
   const { count } = useCount(user, projectId, query);
   const canCreateProject = useHasGlobalRole(user, "WRITER");
   const isGlobalAdmin = useHasGlobalRole(user, "ADMIN");
@@ -96,7 +85,7 @@ export default function Reindex({ user, projectId, query }: Props) {
   const [newProjectIdEdited, setNewProjectIdEdited] = useState(false);
   const [fieldConfigs, setFieldConfigs] = useState<Record<string, FieldConfig>>({});
   const [fieldConfigOpen, setFieldConfigOpen] = useState(false);
-  const [taskResult, setTaskResult] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [submittedProjectId, setSubmittedProjectId] = useState<string | undefined>();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -149,9 +138,9 @@ export default function Reindex({ user, projectId, query }: Props) {
       if (destMode === "new") {
         await createProjectAsync({ id: newProjectId, name: newProjectName });
       }
-      const res = await postReindex(user, projectId, destinationId, query, fieldOptions);
+      const job = await postCopy(user, projectId, destinationId, query, fieldOptions);
       setSubmittedProjectId(destinationId);
-      setTaskResult(res?.data.task);
+      setJobId(job.id);
       if (destMode === "new") {
         setNewProjectId("");
         setNewProjectName("");
@@ -170,10 +159,10 @@ export default function Reindex({ user, projectId, query }: Props) {
   return (
     <div className="flex flex-col gap-6">
       <CopyOperationDialog
-        open={taskResult != null}
-        onOpenChange={() => setTaskResult(null)}
+        open={jobId != null}
+        onOpenChange={() => setJobId(null)}
         newProjectId={submittedProjectId}
-        taskResultId={taskResult ?? undefined}
+        jobId={jobId ?? undefined}
         user={user}
       />
 
@@ -320,7 +309,7 @@ export default function Reindex({ user, projectId, query }: Props) {
             {submitting ? "Copying…" : "Copy"}
           </Button>
           <CodeExample
-            action="reindex"
+            action="copy"
             projectId={projectId}
             destProjectId={destinationId ?? ""}
             destProjectName={destMode === "new" ? newProjectName || undefined : existingProject?.name}
@@ -336,7 +325,9 @@ export default function Reindex({ user, projectId, query }: Props) {
         <div className="flex flex-col gap-4 text-sm">
           <p>
             Copy copies documents matching the current query to another project. You can copy to an existing project or
-            create a new one. The copy runs as a background task — you can navigate away and check back later.
+            create a new one. The copy runs as a background job — you can navigate away and check back later, and you
+            can cancel it while it is running (documents that were already copied are kept). Copied documents remember
+            which project and document they were copied from.
           </p>
           <section>
             <h4 className="mb-1.5 font-semibold text-foreground">Destination</h4>
@@ -503,72 +494,20 @@ interface CopyOperationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   newProjectId?: string;
-  taskResultId?: string;
+  jobId?: string;
   user: AmcatSessionUser;
 }
 
-function CopyOperationDialog({ open, onOpenChange, newProjectId, taskResultId, user }: CopyOperationDialogProps) {
-  const { data: taskData } = useTaskStatus(open ? user : undefined, taskResultId);
-
-  const completed = taskData?.completed ?? false;
-  const hasTopLevelError = completed && taskData?.error != null;
-
-  // Use `response` (final counts) when complete, `task.status` when in-progress
-  const counts = completed ? taskData?.response : taskData?.task?.status;
-  const total = counts?.total ?? 0;
-  const done = (counts?.created ?? 0) + (counts?.updated ?? 0) + (counts?.deleted ?? 0);
-  const failures = completed && total > 0 ? total - done : 0;
-
-  const allFailed = completed && total > 0 && done === 0 && failures > 0;
-  const someFailed = completed && failures > 0 && done > 0;
-  const succeeded = completed && failures === 0 && !hasTopLevelError;
-
-  // Show actual proportion so 0% when all failed (not forced 100%)
-  const progressValue = total > 0 ? Math.round((done / total) * 100) : completed ? 100 : null;
-
+function CopyOperationDialog({ open, onOpenChange, newProjectId, jobId, user }: CopyOperationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            Copy Operation Started
-          </DialogTitle>
+          <DialogTitle className="flex items-center gap-2 text-xl">Copying documents</DialogTitle>
+          <DialogDescription className="sr-only">Status of the copy job</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4 py-2">
-          {/* Status line + counts */}
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              {hasTopLevelError || allFailed ? (
-                <><AlertCircle className="h-4 w-4 text-destructive" /><span className="text-destructive">{hasTopLevelError ? "Error" : "All documents failed"}</span></>
-              ) : someFailed ? (
-                <><AlertTriangle className="h-4 w-4 text-yellow-500" /><span className="text-yellow-600">Some documents failed</span></>
-              ) : succeeded ? (
-                <><CheckCircle className="h-4 w-4 text-green-500" /><span className="text-green-600">Completed</span></>
-              ) : (
-                <><Loader className="h-4 w-4 animate-spin text-primary" /><span className="text-muted-foreground">In progress…</span></>
-              )}
-            </div>
-            {total > 0 && (
-              <div className="text-xs text-muted-foreground">
-                {done.toLocaleString()} / {total.toLocaleString()} copied{failures > 0 ? `, ${failures.toLocaleString()} errors` : ""}
-              </div>
-            )}
-          </div>
-
-          {/* Progress bar */}
-          <div className={progressValue === null && !completed ? "animate-pulse" : ""}>
-            <Progress value={progressValue ?? 0} className="h-2" />
-          </div>
-
-          {!completed && (
-            <p className="text-xs text-muted-foreground">
-              The copy is running in the background. You can close this dialog and the copying will continue.
-            </p>
-          )}
-
-          {hasTopLevelError && (
-            <p className="text-xs text-destructive">{String(taskData?.error?.reason ?? "An error occurred")}</p>
-          )}
+          {open && jobId && <JobStatus user={user} jobId={jobId} />}
 
           <div className="flex flex-col gap-2 pt-2">
             {newProjectId && (
@@ -579,11 +518,11 @@ function CopyOperationDialog({ open, onOpenChange, newProjectId, taskResultId, u
                 </Link>
               </Button>
             )}
-            {taskResultId && (
+            {jobId && (
               <Button asChild variant="outline" className="justify-between">
-                <Link to="/task/$task" params={{ task: taskResultId }}>
-                  View logs
-                  <BarChart className="ml-2 h-4 w-4" />
+                <Link to="/jobs/$job" params={{ job: jobId }}>
+                  Open job status page
+                  <ExternalLink className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
             )}

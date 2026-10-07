@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/api/util";
 import { useArticles } from "@/api/articles";
 import { useFieldStats } from "@/api/fieldStats";
 import { useFields } from "@/api/fields";
@@ -25,8 +26,8 @@ export default function Summary({ user, projectId, query }: Props) {
   const isWriter = useHasProjectRole(user, projectId, "WRITER");
   const { data, isError, error } = useArticles(user, projectId, query);
   if (isError) {
-    const message = (error as any)?.response?.data?.detail ?? "Search failed";
-    const isParseError = message.startsWith("parse_exception") || message.includes("Failed to parse query");
+    const message = apiErrorMessage(error, "Search failed");
+    const isParseError = message.startsWith("Error in query");
     return (
       <div className="flex items-start gap-2 text-sm text-destructive">
         <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -81,9 +82,10 @@ function DateSummaryGraph({ user, projectId, query, field }: SummaryProps) {
   const { data: values, isLoading: valuesLoading } = useFieldStats(user, projectId, field.name);
 
   const [axes, interval] = useMemo(() => {
-    if (!values?.max_as_string || !values.min_as_string) return [[], null];
-    let minTime = new Date(values.min_as_string).getTime();
-    let maxTime = new Date(values.max_as_string).getTime();
+    // (for date fields, min and max are ISO date strings)
+    if (values?.max == null || values.min == null) return [[], null];
+    let minTime = new Date(values.min).getTime();
+    let maxTime = new Date(values.max).getTime();
 
     if (query.filters && field.name in query.filters) {
       // if there is a filter on this field, use that to set the min and max time

@@ -1,7 +1,6 @@
 import { useFields } from "@/api/fields";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import {
-  AmcatElasticFieldType,
   AmcatField,
   AmcatFieldType,
   AmcatProjectId,
@@ -17,12 +16,12 @@ import { autoNameColumn, autoTypeColumn, prepareUploadData, validateColumns } fr
 import { ZipUploader } from "./ZipUploader";
 
 import { useMutateArticles } from "@/api/articles";
-import { useHasProjectRole } from "@/api/project";
 import { splitIntoBatches } from "@/api/util";
 import CodeExample from "@/components/CodeExample/CodeExample";
 import { UploadColumn } from "@/components/CodeExample/codeGenerators";
 import { Link } from "@tanstack/react-router";
 import { CreateFieldSelectType } from "../Fields/CreateField";
+import { NOT_UNIQUE_TYPES } from "../Fields/TypeEditForm";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import {
   DropdownMenu,
@@ -58,20 +57,18 @@ interface UploadStatus {
     fields?: Record<string, UpdateAmcatField>;
     operation: UploadOperation;
   }[];
-  successes: number;
-  failures: number;
-  failureReasons: string[];
+  created: number;
+  updated: number;
 }
 
 export interface Column {
   name: string;
   field: string | null;
   type: AmcatFieldType | null;
-  elastic_type: AmcatElasticFieldType | null;
   status: Status;
   exists: boolean;
   typeWarning?: string;
-  identifier?: boolean;
+  unique?: boolean;
   invalidExamples?: string[];
   nameExists?: boolean;
 }
@@ -81,18 +78,15 @@ export interface UploadData {
   columns?: Column[];
 }
 
-// TODO: Operation is currently not working (always uses index)
-
 export default function Upload({ user, projectId }: Props) {
   const { data: fields, isLoading: fieldsLoading } = useFields(user, projectId);
-  const isAdmin = useHasProjectRole(user, projectId, "ADMIN");
   const [data, setData] = useState<Record<string, jsType>[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
   const [fileName, setFileName] = useState("");
   const { mutateAsync: mutateArticles } = useMutateArticles(user, projectId);
   const [operation, setOperation] = useState<UploadOperation>("upsert");
   const [columnsStatus, setColumnsStatus] = useState({
-    hasIdentifiers: false,
+    hasUnique: false,
     ready: false,
     duplicates: false,
     hasInvalid: false,
@@ -105,11 +99,10 @@ export default function Upload({ user, projectId }: Props) {
     error: null,
     batch_index: 0,
     batches: [],
-    successes: 0,
-    failures: 0,
-    failureReasons: [],
+    created: 0,
+    updated: 0,
   });
-  const [noIdentifierWarning, setNoIdentifierWarning] = useState(false);
+  const [noUniqueWarning, setNoUniqueWarning] = useState(false);
   const existingFields = useMemo(() => {
     return new Set((fields || []).map((f) => f.name));
   }, [fields]);
@@ -135,7 +128,7 @@ export default function Upload({ user, projectId }: Props) {
 
       if (data !== newData) setData(newData);
       setColumns(newColumns);
-      if (!columnsStatus.hasIdentifiers) setOperation("create");
+      if (!columnsStatus.hasUnique) setOperation("create");
       setColumnsStatus(columnsStatus);
     },
     [existingFields, data, columns],
@@ -145,29 +138,27 @@ export default function Upload({ user, projectId }: Props) {
     // upload batches
     if (uploadStatus.status !== "uploading") return;
     const isLastBatch = uploadStatus.batch_index === uploadStatus.batches.length - 1;
-    const batch = { ...uploadStatus.batches[uploadStatus.batch_index], refresh: isLastBatch };
+    const batch = uploadStatus.batches[uploadStatus.batch_index];
     mutateArticles(batch)
       .then((result) => {
-        if (isLastBatch) {
-          setUploadStatus((prev) => ({
-            ...prev,
-            status: "success",
-            successes: prev.successes + result.successes,
-            failures: prev.failures + result.failures.length,
-            failureReasons: [...prev.failureReasons, ...result.failures],
-          }));
-        } else {
-          setUploadStatus((uploadStatus) => ({
-            ...uploadStatus,
-            batch_index: uploadStatus.batch_index + 1,
-            successes: uploadStatus.successes + result.successes,
-            failures: uploadStatus.failures + result.failures.length,
-            failureReasons: [...uploadStatus.failureReasons, ...result.failures],
-          }));
-        }
+        setUploadStatus((prev) => ({
+          ...prev,
+          status: isLastBatch ? "success" : prev.status,
+          batch_index: isLastBatch ? prev.batch_index : prev.batch_index + 1,
+          created: prev.created + result.created,
+          updated: prev.updated + result.updated,
+        }));
       })
       .catch((e) => {
-        setUploadStatus((s) => ({ ...s, status: "error", error: e.message, errorDetail: e.response?.data }));
+        // uploads are all-or-nothing per batch: the server returns {detail: message} on failure
+        const detail = e.response?.data?.detail;
+        const error = typeof detail === "string" ? detail : e.message;
+        setUploadStatus((s) => ({
+          ...s,
+          status: "error",
+          error,
+          errorDetail: typeof detail === "string" ? undefined : detail,
+        }));
       });
   }, [uploadStatus, mutateArticles]);
 
@@ -177,7 +168,7 @@ export default function Upload({ user, projectId }: Props) {
       csvName: c.name,
       fieldName: c.field!,
       fieldType: c.type!,
-      identifier: !!c.identifier,
+      unique: !!c.unique,
       isNew: !c.exists,
     }));
 
@@ -190,9 +181,8 @@ export default function Upload({ user, projectId }: Props) {
       error: null,
       batch_index: 0,
       batches: batches.map((batch) => prepareUploadData(batch, columns, operation)),
-      successes: 0,
-      failures: 0,
-      failureReasons: [],
+      created: 0,
+      updated: 0,
     });
   }
 
@@ -222,16 +212,16 @@ export default function Upload({ user, projectId }: Props) {
   function onUpload() {
     if (!fields) return;
     const allNew = columns.every((c) => !c.exists);
-    const noIdentifiers = columns.every((c) => !c.identifier);
-    if (allNew && noIdentifiers) {
-      setNoIdentifierWarning(true);
+    const noUnique = columns.every((c) => !c.unique);
+    if (allNew && noUnique) {
+      setNoUniqueWarning(true);
     } else {
       startUpload();
     }
   }
 
-  function onIgnoreNoIdentifierWarning() {
-    setNoIdentifierWarning(false);
+  function onIgnoreNoUniqueWarning() {
+    setNoUniqueWarning(false);
     startUpload();
   }
 
@@ -293,23 +283,18 @@ export default function Upload({ user, projectId }: Props) {
               Upload {data.length || ""} documents
             </Button>
             <CodeExample action="upload" projectId={projectId} uploadColumns={uploadColumns} fileName={fileName} />
-            <IdentifiersWarningDialog
-              noIdentifierWarning={noIdentifierWarning}
-              setNoIdentifierWarning={setNoIdentifierWarning}
-              onIgnoreNoIdentifierWarning={onIgnoreNoIdentifierWarning}
+            <UniqueWarningDialog
+              noUniqueWarning={noUniqueWarning}
+              setNoUniqueWarning={setNoUniqueWarning}
+              onIgnoreNoUniqueWarning={onIgnoreNoUniqueWarning}
             />
-            <UploadOptions
-              isAdmin={!!isAdmin}
-              operation={operation}
-              setOperation={setOperation}
-              hasIdentifiers={columnsStatus.hasIdentifiers}
-            />
+            <UploadOptions operation={operation} setOperation={setOperation} hasUnique={columnsStatus.hasUnique} />
 
             <div className="flex flex-col gap-2">
               {columnsStatus.duplicates ? (
                 <div className="ml-4 flex items-center gap-2">
                   <AlertCircleIcon className="h-6 w-6 text-warn" />
-                  <div>Some documents have duplicate identifiers</div>
+                  <div>Some documents have duplicate values for the unique fields</div>
                 </div>
               ) : null}
             </div>
@@ -392,13 +377,12 @@ function UploadColumnRow({
           ...column,
           field: first.name,
           type: first.type,
-          elastic_type: first.elastic_type,
           status: "Validating",
           exists: true,
-          identifier: first.identifier,
+          unique: first.unique,
         });
     } else {
-      setColumn({ name: column.name, field: null, type: null, elastic_type: null, status: "Not used", exists: false });
+      setColumn({ name: column.name, field: null, type: null, status: "Not used", exists: false });
     }
   }
 
@@ -450,10 +434,9 @@ function UploadColumnRow({
                 ...column,
                 field: f.name,
                 type: f.type,
-                elastic_type: f.elastic_type,
                 status: "Validating",
                 exists: true,
-                identifier: f.identifier,
+                unique: f.unique,
               });
           }}
         >
@@ -491,14 +474,15 @@ function UploadColumnRow({
         <span />
       )}
 
-      {/* Identifier toggle */}
+      {/* Unique toggle */}
       {action === "new" ? (
-        <SimpleTooltip text="Use as document identifier">
+        <SimpleTooltip text="Unique field (documents with the same values for all unique fields are the same document)">
           <Button
             variant="ghost"
             size="icon"
-            className={`h-6 w-6 ${column.identifier ? "" : "opacity-30"}`}
-            onClick={() => setColumn({ ...column, identifier: !column.identifier })}
+            disabled={column.type != null && NOT_UNIQUE_TYPES.includes(column.type)}
+            className={`h-6 w-6 ${column.unique ? "" : "opacity-30"}`}
+            onClick={() => setColumn({ ...column, unique: !column.unique })}
           >
             <Key className="h-5 w-5" />
           </Button>
@@ -552,22 +536,11 @@ function UploadDialog({
         {isSuccess && (
           <div className="flex flex-col gap-4">
             <p>
-              {uploadStatus.successes} document{uploadStatus.successes !== 1 ? "s" : ""} uploaded successfully.
-              {uploadStatus.failures > 0 && (
-                <span className="ml-1 text-destructive">
-                  {uploadStatus.failures} document{uploadStatus.failures !== 1 ? "s" : ""} failed.
-                </span>
-              )}
+              {uploadStatus.created} document{uploadStatus.created !== 1 ? "s" : ""} created
+              {uploadStatus.updated > 0 &&
+                `, ${uploadStatus.updated} existing document${uploadStatus.updated !== 1 ? "s" : ""} updated`}
+              .
             </p>
-            {uploadStatus.failureReasons.length > 0 && (
-              <div className="max-h-40 overflow-auto rounded border p-2 text-xs text-destructive">
-                {uploadStatus.failureReasons.map((reason, i) => (
-                  <div key={i} className="py-0.5">
-                    {reason}
-                  </div>
-                ))}
-              </div>
-            )}
             <div className="flex gap-2">
               <Button asChild>
                 <Link to="/projects/$project/dashboard" params={{ project: projectId }}>
@@ -583,6 +556,13 @@ function UploadDialog({
         {isError && (
           <div className="flex flex-col gap-4">
             <p className="text-destructive">{uploadStatus.error}</p>
+            {uploadStatus.batch_index > 0 && (
+              <p className="text-sm">
+                The upload was done in batches. The documents in the batch that failed were not saved, but{" "}
+                {uploadStatus.created + uploadStatus.updated} documents from earlier batches were saved (
+                {uploadStatus.created} created, {uploadStatus.updated} updated).
+              </p>
+            )}
             {!!uploadStatus.errorDetail && (
               <pre className="max-h-40 overflow-auto rounded border p-2 text-xs text-muted-foreground">
                 {JSON.stringify(uploadStatus.errorDetail, null, 2)}
@@ -600,23 +580,23 @@ function UploadDialog({
 
 function UnusedFields({ columns, fields }: { columns: Column[]; fields: AmcatField[] }) {
   const unusedColumns = columns.filter((c) => !c.field);
-  const unusedIdentifiers = fields.filter((c) => c.identifier && !columns.find((col) => col.field === c.name));
-  const unusedOther = fields.filter((c) => !c.identifier && !columns.find((col) => col.field === c.name));
+  const unusedUnique = fields.filter((c) => c.unique && !columns.find((col) => col.field === c.name));
+  const unusedOther = fields.filter((c) => !c.unique && !columns.find((col) => col.field === c.name));
 
   function unusedDropdown({
     items,
     key,
-    identifier,
+    unique,
     column,
   }: {
     items: AmcatField[] | Column[];
     key: string;
-    identifier?: boolean;
+    unique?: boolean;
     column?: boolean;
   }) {
     if (items.length === 0) return null;
     function msg() {
-      if (identifier) return "identifier fields without values";
+      if (unique) return "unique fields without values";
       if (column) return "CSV columns excluded";
       return "fields without values in this upload";
     }
@@ -625,7 +605,7 @@ function UnusedFields({ columns, fields }: { columns: Column[]; fields: AmcatFie
       <div key={key} className={`${items.length > 0 ? "" : "hidden"}`}>
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-3 py-1">
-            {identifier ? (
+            {unique ? (
               <AlertCircleIcon className="h-6 w-6 text-warn" />
             ) : (
               <AlertCircleIcon className="h-6 w-6 text-secondary" />
@@ -649,98 +629,103 @@ function UnusedFields({ columns, fields }: { columns: Column[]; fields: AmcatFie
   return (
     <div className="flex flex-col py-2">
       {unusedDropdown({ key: "unusedColumns", items: unusedColumns, column: true })}
-      {unusedDropdown({ key: "unusedIdentifiers", items: unusedIdentifiers, identifier: true })}
+      {unusedDropdown({ key: "unusedUnique", items: unusedUnique, unique: true })}
       {unusedDropdown({ key: "unusedOthers", items: unusedOther })}
     </div>
   );
 }
 
-function IdentifiersWarningDialog({
-  noIdentifierWarning,
-  setNoIdentifierWarning,
-  onIgnoreNoIdentifierWarning,
+function UniqueWarningDialog({
+  noUniqueWarning,
+  setNoUniqueWarning,
+  onIgnoreNoUniqueWarning,
 }: {
-  noIdentifierWarning: boolean;
-  setNoIdentifierWarning: Dispatch<SetStateAction<boolean>>;
-  onIgnoreNoIdentifierWarning: () => void;
+  noUniqueWarning: boolean;
+  setNoUniqueWarning: Dispatch<SetStateAction<boolean>>;
+  onIgnoreNoUniqueWarning: () => void;
 }) {
   return (
-    <Dialog open={noIdentifierWarning} onOpenChange={() => setNoIdentifierWarning(false)}>
+    <Dialog open={noUniqueWarning} onOpenChange={() => setNoUniqueWarning(false)}>
       <DialogContent>
-        <DialogHeader className="text-lg font-bold">Are you sure you don't need identifiers?</DialogHeader>
+        <DialogHeader className="text-lg font-bold">Are you sure you don't need unique fields?</DialogHeader>
         <p>
-          If you select one or multiple identifiers (by clicking on the key button), they will be used to uniquely
-          identify documents. It can be a unique field like a <b>URL</b>, but also a combination of fields like{" "}
-          <b>author + timestamp</b>. Identifiers prevent accidentally uploading duplicate documents, and you can use
-          them to update existing documents.
+          If you mark one or multiple fields as unique (by clicking on the key button), documents with the same values
+          for all unique fields are considered the same document. It can be a unique field like a <b>URL</b>, but also a
+          combination of fields like <b>author + timestamp</b>. Unique fields prevent accidentally uploading duplicate
+          documents, and you can use them to update existing documents.
         </p>
         <p>
-          If no identifiers are specified before uploading the first data, you will not be able to add them later. Each
-          document will then get a unique ID, and you will only be able to update documents by this internal ID.
+          Without unique fields, each document will get a unique ID, and you will only be able to update documents by
+          this internal ID.
         </p>
         <div className="mt-5 flex justify-end gap-3">
-          <Button variant="outline" onClick={() => setNoIdentifierWarning(false)}>
+          <Button variant="outline" onClick={() => setNoUniqueWarning(false)}>
             Cancel
           </Button>
-          <Button onClick={onIgnoreNoIdentifierWarning}>Upload without identifiers</Button>
+          <Button onClick={onIgnoreNoUniqueWarning}>Upload without unique fields</Button>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
+const OPERATIONS: { operation: UploadOperation; label: string; description: string; needsUnique: boolean }[] = [
+  {
+    operation: "create",
+    label: "Create",
+    description: "Only create new documents. Fails if any document already exists.",
+    needsUnique: false,
+  },
+  {
+    operation: "upsert",
+    label: "Create or update",
+    description: "Create new documents and update the uploaded fields of existing documents.",
+    needsUnique: true,
+  },
+  {
+    operation: "replace",
+    label: "Create or replace",
+    description: "Create new documents and completely replace existing documents.",
+    needsUnique: true,
+  },
+  {
+    operation: "update",
+    label: "Update",
+    description: "Only update the uploaded fields of existing documents. Fails if any document does not exist.",
+    needsUnique: true,
+  },
+];
+
 function UploadOptions({
-  isAdmin,
   operation,
   setOperation,
-  hasIdentifiers,
+  hasUnique,
 }: {
-  isAdmin: boolean;
   operation: UploadOperation;
   setOperation: (operation: UploadOperation) => void;
-  hasIdentifiers: boolean;
+  hasUnique: boolean;
 }) {
-  function renderOperationLabel(operation: UploadOperation) {
-    switch (operation) {
-      case "create":
-        return "Create";
-      case "upsert":
-        return "Create or update";
-      case "index":
-        return "Create or replace";
-    }
-  }
-
   return (
     <div className="ml-3 flex">
       <div className="flex items-center gap-4">
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-2 rounded p-2">
-            {renderOperationLabel(operation)}
+            {OPERATIONS.find((o) => o.operation === operation)?.label}
             <ChevronDown className="h-5 w-5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" className="max-w-md">
             <DropdownMenuLabel>Upload operation</DropdownMenuLabel>
-            <DropdownMenuItem
-              onClick={() => setOperation("create")}
-              className="flex-col items-start justify-start gap-1"
-            >
-              <span className="">Create</span>
-              <div className=" font-light text-foreground/60">
-                Only create new documents. If an identifier already exists, do not upload the document.
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!isAdmin || !hasIdentifiers}
-              onClick={() => setOperation("upsert")}
-              className="flex-col items-start justify-start gap-1"
-            >
-              <span className="">
-                Create or update{" "}
-                {isAdmin ? "" : <span className="rounded bg-warn px-1 text-warn-foreground">admin only</span>}
-              </span>
-              <span className="font-light text-foreground/60">Create new documents and update existing ones </span>
-            </DropdownMenuItem>
+            {OPERATIONS.map((o) => (
+              <DropdownMenuItem
+                key={o.operation}
+                disabled={o.needsUnique && !hasUnique}
+                onClick={() => setOperation(o.operation)}
+                className="flex-col items-start justify-start gap-1"
+              >
+                <span className="">{o.label}</span>
+                <div className=" font-light text-foreground/60">{o.description}</div>
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -781,8 +766,7 @@ function getTypeWarningIndicator(column: Column) {
 
 export interface FieldTypeHint {
   type: AmcatFieldType;
-  elastic_type: AmcatElasticFieldType;
-  identifier?: boolean;
+  unique?: boolean;
 }
 
 export function prepareData({
@@ -825,9 +809,8 @@ export function prepareData({
         name,
         field: field.name,
         type: field.type,
-        elastic_type: field.elastic_type,
         status: "Validating",
-        identifier: field.identifier,
+        unique: field.unique,
         exists: true,
       };
     }
@@ -839,14 +822,13 @@ export function prepareData({
         name,
         field: autoNameColumn(name),
         type: hint.type,
-        elastic_type: hint.elastic_type,
         status: "Validating",
-        identifier: hint.identifier ?? false,
+        unique: hint.unique ?? false,
         exists: false,
       };
     }
 
-    return { name, field: null, type: null, elastic_type: null, status: "Not used", exists: false };
+    return { name, field: null, type: null, status: "Not used", exists: false };
   });
 
   handleDataChange({
@@ -871,7 +853,7 @@ function UploadInfoBox() {
               <b className="text-primary">New field</b>
               Creates a new field in the index. You can customize the name and type before uploading.
               <b className="text-primary">Existing field</b>
-              Maps the CSV column to a field that already exists. The type is fixed and cannot be changed here.
+              Maps the CSV column to a field that already exists. The type cannot be changed here (but it can be changed on the fields page).
               <b className="text-primary">Exclude</b>
               The column is ignored and not uploaded.
             </div>
@@ -880,16 +862,13 @@ function UploadInfoBox() {
 
         <section>
           <h4 className="mb-1.5 flex items-center gap-1.5 font-semibold text-foreground">
-            <Key className="h-3.5 w-3.5" /> Identifier fields
+            <Key className="h-3.5 w-3.5" /> Unique fields
           </h4>
           <p>
-            Identifier fields act as a primary key — they uniquely identify a document and prevent duplicates. Use a
-            naturally unique value such as an article URL or ID. You can combine multiple identifier fields for a
-            composite key (e.g. author + timestamp).
-          </p>
-          <p className="mt-1.5 text-primary">
-            Identifier status cannot be changed after a field is created, and identifier values cannot be updated once a
-            document has been indexed.
+            Unique fields act as a primary key — documents with the same values for all unique fields are considered the
+            same document, which prevents duplicates. Use a naturally unique value such as an article URL or ID. You can
+            combine multiple unique fields for a composite key (e.g. author + timestamp). Tag, vector and object fields
+            cannot be unique.
           </p>
         </section>
 
@@ -898,12 +877,19 @@ function UploadInfoBox() {
           <div className="rounded-md bg-primary/10 p-3">
             <div className="grid grid-cols-[9rem_1fr] gap-3">
               <b className="text-primary">Create</b>
-              Only adds new documents. Documents already present (matched by identifier) are skipped.
+              Only adds new documents. Fails if any document already exists (matched by the unique fields).
               <b className="text-primary">Create or update (upsert)</b>
-              Adds new documents and updates fields on existing ones based on the identifier. Requires admin role and at
-              least one identifier field.
+              Adds new documents and updates the uploaded fields of existing ones. Requires at least one unique field.
+              <b className="text-primary">Create or replace</b>
+              Adds new documents and completely replaces existing ones. Requires at least one unique field.
+              <b className="text-primary">Update</b>
+              Only updates the uploaded fields of existing documents. Fails if any document does not exist.
             </div>
           </div>
+          <p className="mt-1.5">
+            Uploads are all-or-nothing: if any document in an upload fails (e.g. because of an invalid value or an
+            existing document), none of the documents are saved. Large uploads are sent in batches of 100 documents.
+          </p>
         </section>
 
         <FieldTypesSection />
@@ -913,10 +899,10 @@ function UploadInfoBox() {
 }
 
 function dataHasDuplicates(data: Record<string, jsType>[], columns: Column[]) {
-  let identifiers = columns.filter((c) => c.identifier).map((c) => c.name);
-  if (identifiers.length === 0) identifiers = columns.map((c) => c.name);
+  let uniqueColumns = columns.filter((c) => c.unique).map((c) => c.name);
+  if (uniqueColumns.length === 0) uniqueColumns = columns.map((c) => c.name);
   const ids = data.map((doc) => {
-    const idCols = identifiers.map((id) => doc[id]);
+    const idCols = uniqueColumns.map((id) => doc[id]);
     return JSON.stringify(idCols);
   });
   const uniqueIds = new Set(ids);
@@ -938,7 +924,7 @@ function getColumnsStatus(data: Record<string, jsType>[], columns: Column[]) {
     !duplicateNames &&
     !missingNames &&
     columns.some((c) => c.status === "Ready" || c.status === "Type warning");
-  const hasIdentifiers = columns.some((c) => c.identifier);
+  const hasUnique = columns.some((c) => c.unique);
 
-  return { duplicates, hasInvalid, ready, hasIdentifiers, duplicateNames, missingNames };
+  return { duplicates, hasInvalid, ready, hasUnique, duplicateNames, missingNames };
 }

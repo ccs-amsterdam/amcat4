@@ -22,7 +22,22 @@ export const informationLinksSchema = z.array(
   }),
 );
 
-export const taskSchema = z.any();
+export const amcatJobSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  status: z.enum(["pending", "running", "done", "failed", "cancelled"]),
+  project: z.string().nullish(),
+  created_by: z.string().nullish(),
+  params: z.record(z.any()).nullish(),
+  progress: z
+    .object({ total: z.number().optional(), copied: z.number().optional() })
+    .passthrough()
+    .nullish(),
+  result: z.object({ copied: z.number().optional() }).passthrough().nullish(),
+  error: z.string().nullish(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
 
 export const contactInfoSchema = z.array(
   z.object({
@@ -82,7 +97,7 @@ export const amcatFieldTypeSchema = z.enum([
   "number",
   "object",
   "vector",
-  "geo",
+  "geo_point",
   "integer",
   "tag",
   "image",
@@ -91,41 +106,21 @@ export const amcatFieldTypeSchema = z.enum([
   "preprocess",
   "url",
 ]);
-export const amcatElasticFieldTypeSchema = z.enum([
-  "text",
-  "annotated_text",
-  "binary",
-  "match_only_text",
-  "date",
-  "boolean",
-  "keyword",
-  "constant_keyword",
-  "wildcard",
-  "integer",
-  "byte",
-  "short",
-  "long",
-  "unsigned_long",
-  "float",
-  "half_float",
-  "double",
-  "scaled_float",
-  "object",
-  "flattened",
-  "nested",
-  "dense_vector",
-  "geo_point",
-]);
 export const amcatSnippetSchema = z.object({
-  nomatch_chars: z.number().default(150),
+  nomatch_words: z.number().default(20),
   max_matches: z.number().default(0),
-  match_chars: z.number().default(50),
+  words_per_match: z.number().default(10),
 });
 export const amcatMetareaderAccessSchema = z.object({
   access: z.enum(["none", "read", "snippet"]),
   max_snippet: amcatSnippetSchema
     .nullish()
-    .transform((o) => o || { nomatch_chars: 150, max_matches: 0, match_chars: 50 }),
+    .transform((o) => o || { nomatch_words: 20, max_matches: 0, words_per_match: 10 }),
+  queryable: z.boolean().nullish(),
+});
+export const amcatReaderAccessSchema = z.object({
+  visible: z.boolean().default(true),
+  queryable: z.boolean().nullish(),
 });
 export const amcatClientSettingsSchema = z.object({
   isHeading: z.boolean().nullish(),
@@ -135,36 +130,23 @@ export const amcatClientSettingsSchema = z.object({
 });
 export const amcatFieldSchema = z.object({
   name: z.string(),
-  identifier: z.boolean(),
+  unique: z.boolean(),
   type: amcatFieldTypeSchema,
-  elastic_type: amcatElasticFieldTypeSchema,
   metareader: amcatMetareaderAccessSchema,
+  reader: amcatReaderAccessSchema.default({ visible: true }),
   client_settings: amcatClientSettingsSchema,
+  sort_slot: z.enum(["date", "number", "keyword"]).nullish(),
 });
 
 export const amcatFieldValuesSchema = z.array(z.string());
 
-export const amcatFieldStatsSchema = z
-  .object({
-    count: z.number(),
-    min: z.number().nullable(),
-    max: z.number().nullable(),
-    avg: z.number().nullable(),
-    sum: z.number(),
-    min_as_string: z.string().nullish(),
-    max_as_string: z.string().nullish(),
-    sum_as_string: z.string().nullish(),
-    avg_as_string: z.string().nullish(),
-  })
-  .transform((o) => {
-    return {
-      ...o,
-      min_as_string: o.min_as_string ?? String(o.min),
-      max_as_string: o.max_as_string ?? String(o.max),
-      sum_as_string: o.sum_as_string ?? String(o.sum),
-      avg_as_string: o.avg_as_string ?? String(o.avg),
-    };
-  });
+export const amcatFieldStatsSchema = z.object({
+  count: z.number(),
+  // numbers for number fields, ISO date strings for date fields
+  min: z.union([z.number(), z.string()]).nullable(),
+  max: z.union([z.number(), z.string()]).nullable(),
+  avg: z.union([z.number(), z.string()]).nullable(),
+});
 
 export const amcatArticleSchema = z.record(z.any()).and(
   z.object({
@@ -174,9 +156,10 @@ export const amcatArticleSchema = z.record(z.any()).and(
 
 const amcatQueryResultMetaSchema = z.object({
   total_count: z.number(),
-  per_page: z.number(),
-  page: z.number(),
-  page_count: z.number().nullable(),
+  per_page: z.number().nullish(),
+  page: z.number().nullish(),
+  page_count: z.number().nullish(),
+  next: z.string().nullish(),
 });
 
 export const amcatQueryResultSchema = z.object({
@@ -218,10 +201,7 @@ export const amcatAggregateDataSchema = z.object({
   meta: z.object({
     axes: z.array(amcatAggregationAxisSchema),
     aggregations: z.array(amcatAggregationMetricSchema),
-    after: z
-      .record(z.any())
-      .nullish()
-      .transform((x) => x ?? undefined),
+    truncated: z.boolean().optional(),
   }),
 });
 

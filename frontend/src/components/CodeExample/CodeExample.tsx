@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Code, Check, Clipboard } from "lucide-react";
 import { toast } from "sonner";
-import { AddUserParams, AuthInfo, CodeAction, CreateFieldParams, CreateProjectParams, DeleteParams, FieldsParams, ReindexParams, UpdateFieldParams, UpdateTagsParams, UploadColumn, UploadParams, UsersParams, generatePython, generateR } from "./codeGenerators";
-import { FieldReindexOptions } from "@/api/query";
+import { AddUserParams, AuthInfo, CodeAction, CreateFieldParams, CreateProjectParams, DeleteParams, FieldsParams, CopyParams, UpdateFieldParams, UpdateTagsParams, UploadColumn, UploadParams, UsersParams, generatePython, generateR } from "./codeGenerators";
+import { FieldCopyOptions } from "@/api/query";
 import { useAmcatConfig } from "@/api/config";
 import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -21,7 +21,7 @@ type CodeExampleProps =
   | { action: "search"; projectId: AmcatProjectId; query: AmcatQuery }
   | { action: "aggregate"; projectId: AmcatProjectId; query: AmcatQuery; options: AggregationOptions }
   | { action: "fields"; projectId: AmcatProjectId }
-  | { action: "create_field"; projectId: AmcatProjectId; fieldName: string; fieldType: string; identifier: boolean }
+  | { action: "create_field"; projectId: AmcatProjectId; fieldName: string; fieldType: string; unique: boolean }
   | { action: "users"; projectId?: AmcatProjectId }
   | { action: "add_user"; projectId?: AmcatProjectId; emails: string[]; role: string }
   | { action: "create_project"; projectId: string; name: string; description: string }
@@ -30,13 +30,13 @@ type CodeExampleProps =
   | { action: "update_field"; projectId: AmcatProjectId; query: AmcatQuery; field: string; value: string | number | boolean | null }
   | { action: "update_tags"; projectId: AmcatProjectId; query: AmcatQuery; field: string; tag: string; tagAction: "add" | "remove" }
   | {
-      action: "reindex";
+      action: "copy";
       projectId: AmcatProjectId;
       destProjectId: string;
       destProjectName?: string;
       destMode: "existing" | "new";
       query: AmcatQuery;
-      fieldOptions: Record<string, FieldReindexOptions>;
+      fieldOptions: Record<string, FieldCopyOptions>;
     };
 
 type Language = "python" | "r";
@@ -97,7 +97,7 @@ export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "d
       return { action: "fields", params: { serverUrl, projectId: props.projectId, auth } satisfies FieldsParams };
     }
     if (props.action === "create_field") {
-      return { action: "create_field", params: { serverUrl, projectId: props.projectId, fieldName: props.fieldName, fieldType: props.fieldType, identifier: props.identifier, auth } satisfies CreateFieldParams };
+      return { action: "create_field", params: { serverUrl, projectId: props.projectId, fieldName: props.fieldName, fieldType: props.fieldType, unique: props.unique, auth } satisfies CreateFieldParams };
     }
     if (props.action === "users") {
       return { action: "users", params: { serverUrl, projectId: props.projectId, auth } satisfies UsersParams };
@@ -120,9 +120,9 @@ export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "d
     if (props.action === "update_tags") {
       return { action: "update_tags", params: { serverUrl, projectId: props.projectId, query: props.query, field: props.field, tag: props.tag, action: props.tagAction, auth } satisfies UpdateTagsParams };
     }
-    if (props.action === "reindex") {
+    if (props.action === "copy") {
       return {
-        action: "reindex",
+        action: "copy",
         params: {
           serverUrl,
           sourceProjectId: props.projectId,
@@ -132,7 +132,7 @@ export default function CodeExample(props: CodeExampleProps & { size?: "sm" | "d
           query: props.query,
           fieldOptions: props.fieldOptions,
           auth,
-        } satisfies ReindexParams,
+        } satisfies CopyParams,
       };
     }
     throw new Error("Unknown action");

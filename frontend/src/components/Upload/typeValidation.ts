@@ -1,6 +1,7 @@
-import { AmcatElasticFieldType, AmcatField, MultimediaListItem, UpdateAmcatField, UploadOperation } from "@/interfaces";
+import { AmcatField, MultimediaListItem, UpdateAmcatField, UploadOperation } from "@/interfaces";
 import { Column, jsType } from "./Upload";
 import { extensionMapping } from "../Multimedia/MultimediaUpload";
+import { NOT_UNIQUE_TYPES } from "../Fields/TypeEditForm";
 
 export function prepareUploadData(
   data: Record<string, jsType>[],
@@ -32,7 +33,7 @@ export function prepareUploadData(
     if (c.field && !c.exists && c.type) {
       fields[c.field] = {
         type: c.type,
-        identifier: !!c.identifier,
+        unique: !!c.unique && !NOT_UNIQUE_TYPES.includes(c.type),
       };
     }
   });
@@ -42,31 +43,31 @@ export function prepareUploadData(
 export function autoTypeColumn(data: Record<string, jsType>[], name: string): Column {
   const field = autoNameColumn(name);
 
-  const column: Column = { name, field, type: null, elastic_type: null, status: "Validating", exists: false };
+  const column: Column = { name, field, type: null, status: "Validating", exists: false };
 
   const isDate = listInvalid(data, name, coerceDate).length / data.length < 0.2;
-  if (isDate) return { ...column, type: "date", elastic_type: "date" };
+  if (isDate) return { ...column, type: "date" };
 
   const isNumber = listInvalid(data, name, coerceNumeric).length / data.length < 0.2;
   if (isNumber) {
     const isInt = listInvalid(data, name, coerceInteger).length === 0;
-    if (isInt) return { ...column, type: "integer", elastic_type: "integer" };
-    return { ...column, type: "number", elastic_type: "double" };
+    if (isInt) return { ...column, type: "integer" };
+    return { ...column, type: "number" };
   }
 
   const isUrl = data.every((d) => /^https?:\/\/\S+$/.test(String(d[name])));
-  if (isUrl) return { ...column, type: "url", elastic_type: "keyword" };
+  if (isUrl) return { ...column, type: "url" };
 
   const isBoolean = listInvalid(data, name, coerceBoolean).length === 0;
-  if (isBoolean) return { ...column, type: "boolean", elastic_type: "boolean" };
+  if (isBoolean) return { ...column, type: "boolean" };
 
   const pctUnique = percentUnique(data, name);
   if (pctUnique < 0.5 && !hasValueLongerThan(data, name, 100))
-    return { ...column, type: "keyword", elastic_type: "keyword" };
+    return { ...column, type: "keyword" };
 
-  if (!hasSpaces(data, name)) return { ...column, type: "keyword", elastic_type: "keyword" };
+  if (!hasSpaces(data, name)) return { ...column, type: "keyword" };
 
-  return { ...column, type: "text", elastic_type: "text" };
+  return { ...column, type: "text" };
 }
 
 export function autoNameColumn(name: string): string {
@@ -149,36 +150,14 @@ export async function validateColumns(
     }
 
     if (column.type === "number") {
-      if (signedIntegerType(column.elastic_type)) {
-        const invalidIntegers = listInvalid(data, column.name, coerceInteger);
-        if (invalidIntegers.length > 0) {
-          return {
-            ...column,
-            status: "Type invalid",
-            typeWarning: `${invalidIntegers.length} invalid integers`,
-            invalidExamples: invalidIntegers.slice(0, 100),
-          };
-        }
-      } else if (unsignedIntegerType(column.elastic_type)) {
-        const invalidIntegers = listInvalid(data, column.name, coerceUnsignedInteger);
-        if (invalidIntegers.length > 0) {
-          return {
-            ...column,
-            status: "Type invalid",
-            typeWarning: `${invalidIntegers.length} invalid unsigned integers`,
-            invalidExamples: invalidIntegers.slice(0, 100),
-          };
-        }
-      } else {
-        const invalidDoubles = listInvalid(data, column.name, coerceNumeric);
-        if (invalidDoubles.length > 0) {
-          return {
-            ...column,
-            status: "Type invalid",
-            typeWarning: `${invalidDoubles.length} invalid numbers`,
-            invalidExamples: invalidDoubles.slice(0, 100),
-          };
-        }
+      const invalidDoubles = listInvalid(data, column.name, coerceNumeric);
+      if (invalidDoubles.length > 0) {
+        return {
+          ...column,
+          status: "Type invalid",
+          typeWarning: `${invalidDoubles.length} invalid numbers`,
+          invalidExamples: invalidDoubles.slice(0, 100),
+        };
       }
     }
 
@@ -241,13 +220,6 @@ function coerceInteger(value: jsType) {
   return null;
 }
 
-function coerceUnsignedInteger(value: jsType) {
-  const num = coerceInteger(value);
-  if (num === null) return null;
-  if (num < 0) return null;
-  return num;
-}
-
 function coerceDate(value: jsType) {
   if (typeof value !== "string" || !value.includes("-")) return null;
 
@@ -270,13 +242,6 @@ function coerceBoolean(value: jsType) {
     if (value === 1) return true;
   }
   return null;
-}
-
-function signedIntegerType(elastic_type: AmcatElasticFieldType | null) {
-  return elastic_type && ["long", "integer", "short", "byte"].includes(elastic_type);
-}
-function unsignedIntegerType(elastic_type: AmcatElasticFieldType | null) {
-  return elastic_type && ["unsigned_long"].includes(elastic_type);
 }
 
 function listInvalid(data: Record<string, jsType>[], column: string, validator: (value: jsType) => jsType | null) {

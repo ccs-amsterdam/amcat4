@@ -73,7 +73,7 @@ export function useMutateFields(user?: AmcatSessionUser, projectId?: AmcatProjec
       queryClient.invalidateQueries({ queryKey: ["articles", user, projectId] });
       queryClient.invalidateQueries({ queryKey: ["article", user, projectId] });
 
-      const fieldnames = variables.fields.map((f) => f.name).join(", ");
+      const fieldnames = variables.fields.map((f) => (f.rename ? `${f.name} → ${f.rename}` : f.name)).join(", ");
       if (variables.action === "create") toast.success(`Created fields: ${fieldnames}`);
       if (variables.action === "update") toast.success(`Updated fields: ${fieldnames}`);
       if (variables.action === "delete") toast.success(`Deleted fields: ${fieldnames}`);
@@ -94,16 +94,15 @@ async function mutateFields(
     if (!f.name) return;
     fieldsObject[f.name] = {};
     if (f.type) fieldsObject[f.name].type = f.type;
-    if (f.elastic_type) {
-      if (action !== "create") throw new Error("Cannot change elastic_type of existing field");
-      fieldsObject[f.name].type = f.elastic_type;
+    if (f.unique != null) fieldsObject[f.name].unique = f.unique;
+    if (f.rename) {
+      if (action !== "update") throw new Error("Can only rename existing fields");
+      fieldsObject[f.name].name = f.rename;
     }
-    if (f.identifier) {
-      if (action !== "create") throw new Error("Cannot change identifier of existing field");
-      fieldsObject[f.name].identifier = f.identifier;
-    }
+    if (f.fast_sort != null) fieldsObject[f.name].fast_sort = f.fast_sort;
 
     if (f.metareader) fieldsObject[f.name].metareader = f.metareader;
+    if (f.reader) fieldsObject[f.name].reader = f.reader;
     if (f.client_settings) fieldsObject[f.name].client_settings = f.client_settings;
   });
 

@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/api/util";
 import { AmcatArticle, AmcatField, AmcatProjectId, AmcatQuery, AmcatUserRole } from "@/interfaces";
 import { AlertTriangle, Link as LinkIcon, SkipBack, SkipForward } from "lucide-react";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
@@ -21,9 +22,9 @@ interface Props {
 }
 
 const defaultSnippets = {
-  nomatch_chars: 200,
+  nomatch_words: 35,
   max_matches: 5,
-  match_chars: 50,
+  words_per_match: 8,
 };
 
 export default function ArticleSnippets({ user, projectId, projectRole, query, fields, onClick, headerRight }: Props) {
@@ -40,7 +41,7 @@ export default function ArticleSnippets({ user, projectId, projectRole, query, f
     });
 
   if (isError) {
-    const message = (error as any)?.response?.data?.detail ?? "Search failed";
+    const message = apiErrorMessage(error, "Search failed");
     return (
       <div className="flex items-center gap-2 text-sm text-destructive">
         <AlertTriangle className="h-4 w-4 shrink-0" />

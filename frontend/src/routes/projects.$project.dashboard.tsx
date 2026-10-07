@@ -10,7 +10,7 @@ import Summary from "@/components/Summary/Summary";
 import { ErrorMsg } from "@/components/ui/error-message";
 import { InfoBox } from "@/components/ui/info-box";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import Reindex from "@/components/Update/Reindex";
+import Copy from "@/components/Update/Copy";
 import Update from "@/components/Update/Update";
 import { deserializeQuery, serializeQuery } from "@/lib/serialieQuery";
 import { parseAsStringEnum, useQueryState } from "nuqs";
@@ -138,7 +138,7 @@ function DashboardPage() {
             <Update user={user} projectId={projectId} query={query} />
           </TabsContent>
           <TabsContent value={Tab.Copy}>
-            <Reindex user={user} projectId={projectId} query={query} />
+            <Copy user={user} projectId={projectId} query={query} />
           </TabsContent>
         </div>
       </Tabs>

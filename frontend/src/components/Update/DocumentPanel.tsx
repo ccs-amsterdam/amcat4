@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import ArticleTable from "../Articles/ArticleTable";
 import { useCount } from "@/api/aggregate";
 
-const COMPLEX_TYPES = new Set(["object", "vector", "geo", "image", "video", "audio", "preprocess"]);
+const COMPLEX_TYPES = new Set(["object", "vector", "geo_point", "image", "video", "audio", "preprocess"]);
 
 interface Props {
   user: AmcatSessionUser;
@@ -56,7 +56,7 @@ export default function DocumentPanel({
   }, [displayFields, onFieldsChange]);
 
   const availableFields = useMemo(
-    () => allFields?.filter((f) => !f.identifier && !COMPLEX_TYPES.has(f.type)) ?? [],
+    () => allFields?.filter((f) => !f.unique && !COMPLEX_TYPES.has(f.type)) ?? [],
     [allFields],
   );
 

@@ -37,7 +37,7 @@ export function DynamicIcon({ type, className = "" }: { type: string | null; cla
   if (type === "date") return <CalendarDays className={className} />;
   if (type === "text") return <FileText className={className} />;
   if (type === "url") return <Link className={className} />;
-  if (type === "geo") return <Globe className={className} />;
+  if (type === "geo_point") return <Globe className={className} />;
   if (type === "id") return <Fingerprint className={className} />;
   if (type === "boolean") return <ToggleLeft className={className} />;
   if (type === "integer") return <Tally5 className={className} />;

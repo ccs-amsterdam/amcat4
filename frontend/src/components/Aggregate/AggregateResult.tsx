@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 // import Articles from "../Articles/Articles";
 import { useAggregate } from "@/api/aggregate";
 import { Loading } from "@/components/ui/loading";
@@ -15,7 +15,6 @@ import {
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { toast } from "sonner";
 import Articles from "../Articles/Articles";
-import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTrigger } from "../ui/dialog";
 import { ErrorMsg } from "../ui/error-message";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
@@ -64,25 +63,10 @@ export default function AggregateResult({
   defaultPageSize,
   defaultNColumns,
 }: AggregateResultProps) {
-  const {
-    data: infiniteData,
-    isLoading,
-    error,
-    hasNextPage,
-    fetchNextPage,
-  } = useAggregate(user, projectId, query, options);
+  const { data: aggData, isLoading, error } = useAggregate(user, projectId, query, options);
   const [zoom, setZoom] = useState<Zoom>();
 
-  const data: AggregateData | null = useMemo(() => {
-    // combine results form infiniteQuery pages.
-    // We can just use the first meta, because we only use the parts
-    // that are the same across all pages.
-    const meta = infiniteData?.pages[0].meta;
-    if (!meta) return null;
-
-    const data = infiniteData?.pages.flatMap((page) => page.data);
-    return { meta, data };
-  }, [infiniteData]);
+  const data: AggregateData | null = aggData ?? null;
   const chartData = useCreateChartData(data, true);
   const { paginatedData, pagination } = useAggregatePagination(chartData, defaultPageSize, defaultNColumns);
 
@@ -147,32 +131,23 @@ export default function AggregateResult({
       ) : null}
       <div className="flex items-center justify-end gap-4 px-1">
         <AggregatePagination data={paginatedData} pagination={pagination} />
-        <DownloadData
-          data={paginatedData.rows}
-          axes={paginatedData.axes}
-          projectId={projectId}
-          disabled={hasNextPage}
-        />
+        <DownloadData data={paginatedData.rows} axes={paginatedData.axes} projectId={projectId} disabled={false} />
       </div>
       <div>
         <div className={`pointer-events-none text-right`}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="destructive"
-                className={`pointer-events-auto  shadow-md shadow-foreground/30 hover:bg-destructive ${
-                  hasNextPage ? "block" : "hidden"
-                }`}
-                onClick={() => fetchNextPage()}
+              <span
+                className={`pointer-events-auto text-sm text-destructive ${data?.meta.truncated ? "inline" : "hidden"}`}
               >
-                Load more
-              </Button>
+                Data is incomplete
+              </span>
             </TooltipTrigger>
             <TooltipContent side="left" className="w-80 max-w-[50vw] bg-background">
-              <h4 className="text-md mb-1 font-bold">Data is currently incomplete!</h4>
+              <h4 className="text-md mb-1 font-bold">Data is incomplete!</h4>
               <p>
-                This aggregation has too many datapoints. The current data shown is only a sample, and can be
-                misleading. You can click the button to request more data, one batch at a time.
+                This aggregation has too many datapoints, so only the first {data?.data.length} rows are shown. The
+                data can be misleading. Use filters or a coarser interval to reduce the number of datapoints.
               </p>
             </TooltipContent>
           </Tooltip>

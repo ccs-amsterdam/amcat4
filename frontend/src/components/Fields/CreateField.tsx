@@ -16,6 +16,7 @@ import { DynamicIcon } from "../ui/dynamic-icon";
 import { Input } from "../ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import CodeExample from "@/components/CodeExample/CodeExample";
+import { NOT_UNIQUE_TYPES } from "./TypeEditForm";
 
 interface Props {
   projectId: AmcatProjectId;
@@ -52,14 +53,15 @@ interface CreateFieldProps {
 function CreateFieldForm({ projectId, fields, createField }: CreateFieldProps) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
-  const [identifier, setIdentifier] = useState(false);
+  const [unique, setUnique] = useState(false);
   const [type, setType] = useState<AmcatFieldType | null>(null);
 
+  const canBeUnique = type == null || !NOT_UNIQUE_TYPES.includes(type);
   const disabled = !name || error !== "" || !type;
 
   async function onSubmit() {
     if (disabled) return;
-    createField({ name, type, identifier });
+    createField({ name, type, unique: unique && canBeUnique });
   }
 
   return (
@@ -71,14 +73,14 @@ function CreateFieldForm({ projectId, fields, createField }: CreateFieldProps) {
         <CreateFieldSelectType type={type} setType={setType} />
       </div>
       <div
-        className=" flex w-max select-none items-center gap-3"
+        className={`flex w-max select-none items-center gap-3 ${canBeUnique ? "" : "pointer-events-none opacity-50"}`}
         onClick={() => {
-          setIdentifier(!identifier);
+          setUnique(!unique);
         }}
       >
         <Key className="h-6 w-6" />
-        <label className="">Use as identifier</label>
-        <Checkbox className="ml-[2px] h-5 w-5" checked={identifier}>
+        <label className="">Unique field</label>
+        <Checkbox className="ml-[2px] h-5 w-5" checked={unique && canBeUnique}>
           Field exists
         </Checkbox>
       </div>
@@ -86,7 +88,7 @@ function CreateFieldForm({ projectId, fields, createField }: CreateFieldProps) {
         <FieldsHelpDialog />
         <span className="text-destructive">{error}</span>
         <div className="flex items-center gap-2">
-          <CodeExample action="create_field" projectId={projectId} fieldName={name} fieldType={type ?? ""} identifier={identifier} />
+          <CodeExample action="create_field" projectId={projectId} fieldName={name} fieldType={type ?? ""} unique={unique && canBeUnique} />
           <Button onClick={onSubmit} disabled={disabled}>
             Create
           </Button>
@@ -108,7 +110,7 @@ const types = new Map<AmcatFieldType, string>([
   ["audio", "Links to audio files. (You can upload audio to AmCAT on the multimedia page)"],
   ["object", "General objects that will not be parsed"],
   ["vector", "Dense vectors, i.e. document embeddings"],
-  ["geo", "Geolocations, i.e. longitude and lattitude"],
+  ["geo_point", "Geolocations, i.e. longitude and lattitude"],
   ["tag", "Tag fields can contain multiple tags for each document"],
   ["url", "URL fields store links to web pages or external resources"],
 ]);

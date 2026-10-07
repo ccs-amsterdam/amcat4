@@ -9,13 +9,14 @@ import {
   amcatBrandingSchema,
   amcatClientSettingsSchema,
   amcatConfigSchema,
-  amcatElasticFieldTypeSchema,
   amcatFieldSchema,
   amcatFieldStatsSchema,
   amcatFieldTypeSchema,
   amcatFieldValuesSchema,
+  amcatJobSchema,
   amcatProjectSchema,
   amcatMetareaderAccessSchema,
+  amcatReaderAccessSchema,
   amcatMetricFunctionSchema,
   amcatMultimediaListItem,
   amcatMultimediaPresignedPost,
@@ -39,15 +40,20 @@ export type AmcatUserRole = z.infer<typeof amcatUserRoleSchema>;
 export type AmcatProject = z.infer<typeof amcatProjectSchema>;
 export type AmcatUserDetails = z.infer<typeof amcatUserDetailsSchema>;
 export type AmcatFieldType = z.infer<typeof amcatFieldTypeSchema>;
-export type AmcatElasticFieldType = z.infer<typeof amcatElasticFieldTypeSchema>;
 export type AmcatField = z.infer<typeof amcatFieldSchema>;
-export type UpdateAmcatField = Partial<AmcatField>;
+export type UpdateAmcatField = Partial<AmcatField> & {
+  /* new name (to rename a field in an update) */
+  rename?: string;
+  fast_sort?: boolean;
+};
 export type AmcatArticle = z.infer<typeof amcatArticleSchema>;
 export type AmcatQueryResult = z.infer<typeof amcatQueryResultSchema>;
 export type AmcatFieldValues = z.infer<typeof amcatFieldValuesSchema>;
 export type AmcatFieldStats = z.infer<typeof amcatFieldStatsSchema>;
 export type AmcatSnippet = z.infer<typeof amcatSnippetSchema>;
 export type AmcatMetareaderAccess = z.infer<typeof amcatMetareaderAccessSchema>;
+export type AmcatReaderAccess = z.infer<typeof amcatReaderAccessSchema>;
+export type AmcatJob = z.infer<typeof amcatJobSchema>;
 export type AmcatClientSettings = z.infer<typeof amcatClientSettingsSchema>;
 export type AggregationInterval = z.infer<typeof amcatAggregationIntervalSchema>;
 export type MetricFunction = z.infer<typeof amcatMetricFunctionSchema>;
@@ -80,8 +86,8 @@ export interface AggregationOptions {
   limit?: number;
   /* Show a title */
   title?: string;
-  /* Pagination */
-  after?: Record<string, any>;
+  /* Sort rows by axis values (default) or by count */
+  order?: "axes" | "count";
 }
 
 export interface ChartData {
@@ -132,6 +138,9 @@ export interface AmcatQueryFieldSpec {
 
 export interface AmcatQueryParams {
   page?: number;
+  per_page?: number;
+  /* cursor for the next batch of results (meta.next of the previous result) */
+  after?: string;
   fields?: (string | AmcatQueryFieldSpec)[];
   highlight?: boolean;
   sort?: SortSpec;
@@ -164,7 +173,7 @@ export interface MenuRoute {
   reqRole?: AmcatUserRole;
 }
 
-export type UploadOperation = "create" | "upsert" | "index";
+export type UploadOperation = "create" | "update" | "upsert" | "replace";
 
 export type MultimediaType = "image" | "video" | "audio";
 

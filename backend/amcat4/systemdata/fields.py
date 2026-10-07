@@ -27,7 +27,7 @@ from amcat4.models import (
     User,
 )
 from amcat4.postgres.connection import connection, fetch_all, fetch_one
-from amcat4.postgres.documents import convert_field, update_dedup_hashes
+from amcat4.postgres.documents import convert_field, delete_field_values, update_dedup_hashes
 from amcat4.postgres.fields import FieldInfo, FieldSet, field_info_from_row, sort_slot_for_type, storage_column
 from amcat4.postgres.projects import project_pk, project_pks
 from amcat4.systemdata.roles import get_user_project_role, role_is_at_least
@@ -50,6 +50,21 @@ async def delete_all_project_fields(index: str):
     """Delete all field definitions for the given project"""
     async with connection() as conn:
         await conn.execute("DELETE FROM fields WHERE project_pk = (SELECT pk FROM projects WHERE id = %s)", [index])
+
+
+async def delete_fields(index: str, names: list[str]) -> None:
+    """Delete fields and their values from all documents of the project"""
+    pk = await project_pk(index)
+    infos = await field_infos(index)
+    missing = [n for n in names if n not in infos]
+    if missing:
+        raise NotFoundError(f"Fields do not exist: {', '.join(missing)}")
+    async with connection() as conn, conn.transaction():
+        for name in names:
+            await delete_field_values(conn, pk, infos[name])
+            await conn.execute("DELETE FROM fields WHERE pk = %s", [infos[name].pk])
+        if any(infos[n].unique for n in names):
+            await update_dedup_hashes(conn, pk, {n: f for n, f in infos.items() if n not in names})
 
 
 async def _field_rows(index: str) -> list[dict]:

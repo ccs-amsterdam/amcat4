@@ -1,5 +1,7 @@
 import { AmcatArticle, AmcatField, AmcatProjectId } from "@/interfaces";
 import { formatField } from "@/lib/formatField";
+import { AmcatCopiedFrom } from "@/api/article";
+import { Link } from "@tanstack/react-router";
 
 interface MetaProps {
   article: AmcatArticle;
@@ -7,9 +9,11 @@ interface MetaProps {
   projectId: AmcatProjectId;
   setArticle?: (id: string) => void;
   metareader?: boolean;
+  /** If the document was copied from another project: the source project and document id */
+  copiedFrom?: AmcatCopiedFrom | null;
 }
 
-export default function Meta({ article, fields, projectId, metareader }: MetaProps) {
+export default function Meta({ article, fields, projectId, metareader, copiedFrom }: MetaProps) {
   const metaFields = fields.filter((f) => f.type !== "text" && f.client_settings.inDocument);
   if (metaFields.length === 0 && !article._id) return null;
 
@@ -27,6 +31,19 @@ export default function Meta({ article, fields, projectId, metareader }: MetaPro
           >
             {article._id}
           </a>
+          <div className="mt-2 border-b border-foreground/10" />
+        </div>
+      )}
+      {copiedFrom && (
+        <div className="flex flex-col">
+          <span className="line-clamp-1 overflow-hidden text-ellipsis font-semibold text-primary/80">COPIED FROM</span>
+          <Link
+            to="/projects/$project/articles/$articleId"
+            params={{ project: copiedFrom.project, articleId: copiedFrom.doc_id }}
+            className="line-clamp-3 overflow-hidden text-ellipsis text-[0.8rem] leading-5 hover:underline"
+          >
+            {copiedFrom.project} / {copiedFrom.doc_id}
+          </Link>
           <div className="mt-2 border-b border-foreground/10" />
         </div>
       )}
@@ -52,9 +69,7 @@ export default function Meta({ article, fields, projectId, metareader }: MetaPro
                   <b>FIELD</b>
                   <span>{field.name}</span>
                   <b>TYPE</b>
-                  <span className="">
-                    {field.type === field.elastic_type ? field.type : `${field.type} (${field.elastic_type})`}
-                  </span>
+                  <span className="">{field.type}</span>
 
                   <b>VALUE</b>
                   <span className="">{noAccessMessage || formatField(article, field)}</span>

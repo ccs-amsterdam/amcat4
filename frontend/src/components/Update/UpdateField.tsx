@@ -81,7 +81,7 @@ export default function UpdateField({ user, projectId, query }: Props) {
   if (isLoading) return <Loading />;
   if (!fields) return null;
 
-  const updatableFields = fields.filter((f) => !f.identifier && UPDATABLE_TYPES.has(f.type));
+  const updatableFields = fields.filter((f) => !f.unique && UPDATABLE_TYPES.has(f.type));
   const selected = fields.find((f) => f.name === selectedField);
 
   return (

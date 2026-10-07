@@ -1,52 +1,53 @@
-import { AmcatField } from "@/interfaces";
+import { AmcatField, AmcatFieldType } from "@/interfaces";
 import { Check, ChevronDown } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { DynamicIcon } from "../ui/dynamic-icon";
 
-// Mirrors backend/amcat4/systemdata/typemap.py _TYPEMAP_AMCAT_TO_ES
-export const TYPEMAP_AMCAT_TO_ES: Record<string, string[]> = {
-  text: ["text", "annotated_text", "binary", "match_only_text"],
-  date: ["date"],
-  boolean: ["boolean"],
-  keyword: ["keyword", "constant_keyword", "wildcard"],
-  number: ["double", "float", "half_float", "scaled_float"],
-  integer: ["long", "integer", "byte", "short", "unsigned_long"],
-  object: ["flattened"],
-  vector: ["dense_vector"],
-  geo_point: ["geo_point"],
-  tag: ["keyword", "wildcard"],
-  url: ["keyword", "wildcard", "constant_keyword"],
-  image: ["keyword"],
-  video: ["keyword"],
-  audio: ["keyword"],
-};
+// Field types that can be set on a field. Any type can be converted to another type;
+// the server converts the existing values (and refuses if a value cannot be converted)
+export const FIELD_TYPES: AmcatFieldType[] = [
+  "text",
+  "keyword",
+  "tag",
+  "date",
+  "number",
+  "integer",
+  "boolean",
+  "url",
+  "image",
+  "video",
+  "audio",
+  "object",
+  "vector",
+  "geo_point",
+];
 
-export function getCompatibleAmcatTypes(elasticType: string): string[] {
-  return Object.entries(TYPEMAP_AMCAT_TO_ES)
-    .filter(([, esTypes]) => esTypes.includes(elasticType))
-    .map(([amcatType]) => amcatType);
-}
+// These field types cannot be unique
+export const NOT_UNIQUE_TYPES: AmcatFieldType[] = ["tag", "vector", "object"];
 
 interface Props {
   field: AmcatField;
-  onChange?: (type: string) => void;
+  onChange?: (type: AmcatFieldType) => void;
 }
 
 export default function TypeEditForm({ field, onChange }: Props) {
-  let compatibleTypes = getCompatibleAmcatTypes(field.elastic_type);
-  if (field.identifier) compatibleTypes = compatibleTypes.filter((t) => t !== "tag");
+  let compatibleTypes = FIELD_TYPES;
+  if (field.unique) compatibleTypes = compatibleTypes.filter((t) => !NOT_UNIQUE_TYPES.includes(t));
 
-  const canEdit = onChange != null && compatibleTypes.length > 1;
+  const canEdit = onChange != null;
 
   const typeDisplay = (
     <div className="flex items-center gap-2">
       <DynamicIcon type={field.type} />
-      <div>
-        <div className="flex items-center gap-1">
-          {field.type}
-          {canEdit && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
-        </div>
-        <div className="text-xs leading-3 text-primary">{field.elastic_type}</div>
+      <div className="flex items-center gap-1">
+        {field.type}
+        {canEdit && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
       </div>
     </div>
   );
@@ -56,7 +57,10 @@ export default function TypeEditForm({ field, onChange }: Props) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="outline-none">{typeDisplay}</DropdownMenuTrigger>
-      <DropdownMenuContent>
+      <DropdownMenuContent className="max-h-80 overflow-auto">
+        <DropdownMenuLabel className="max-w-56 text-xs font-normal text-muted-foreground">
+          Existing values are converted to the new type. This fails if any value cannot be converted.
+        </DropdownMenuLabel>
         {compatibleTypes.map((type) => (
           <DropdownMenuItem
             key={type}

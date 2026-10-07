@@ -1,5 +1,5 @@
 import { AggregationOptions, AmcatFilter, AmcatFilters, AmcatProjectId, AmcatQuery, AmcatQueryTerm } from "@/interfaces";
-import { FieldReindexOptions } from "@/api/query";
+import { FieldCopyOptions } from "@/api/query";
 
 export interface AuthInfo {
   needsAuth: true;
@@ -41,7 +41,7 @@ export interface CreateFieldParams {
   projectId: AmcatProjectId;
   fieldName: string;
   fieldType: string;
-  identifier: boolean;
+  unique: boolean;
   auth?: AuthInfo;
 }
 
@@ -63,7 +63,7 @@ export interface UploadColumn {
   csvName: string;
   fieldName: string;
   fieldType: string;
-  identifier: boolean;
+  unique: boolean;
   isNew: boolean;
 }
 
@@ -102,14 +102,14 @@ export interface UpdateTagsParams {
   auth?: AuthInfo;
 }
 
-export interface ReindexParams {
+export interface CopyParams {
   serverUrl: string;
   sourceProjectId: AmcatProjectId;
   destProjectId: string;
   destProjectName?: string;
   destMode: "existing" | "new";
   query: AmcatQuery;
-  fieldOptions: Record<string, FieldReindexOptions>;
+  fieldOptions: Record<string, FieldCopyOptions>;
   auth?: AuthInfo;
 }
 
@@ -125,7 +125,7 @@ export type CodeAction =
   | { action: "delete"; params: DeleteParams }
   | { action: "update_field"; params: UpdateFieldParams }
   | { action: "update_tags"; params: UpdateTagsParams }
-  | { action: "reindex"; params: ReindexParams };
+  | { action: "copy"; params: CopyParams };
 
 // --- Python code generation ---
 
@@ -375,7 +375,7 @@ function generateRFields(params: FieldsParams, includeInstall: boolean, includeC
 // --- Create field code generation ---
 
 function generatePythonCreateField(params: CreateFieldParams, includeInstall: boolean, includeConnect: boolean): string {
-  const { serverUrl, projectId, fieldName, fieldType, identifier, auth } = params;
+  const { serverUrl, projectId, fieldName, fieldType, unique, auth } = params;
   const lines: string[] = [];
 
   if (includeConnect) lines.push(...pyConnect(serverUrl, auth, includeInstall));
@@ -385,13 +385,13 @@ function generatePythonCreateField(params: CreateFieldParams, includeInstall: bo
   const placeholders = [!fieldName && "FIELD_NAME", !fieldType && "FIELD_TYPE"].filter(Boolean).join(" and ");
   if (placeholders) lines.push(`# Replace ${placeholders} with the desired values`);
   const fieldSpec: string[] = [`"type": ${type}`];
-  if (identifier) fieldSpec.push(`"identifier": True`);
+  if (unique) fieldSpec.push(`"unique": True`);
   lines.push(`conn.set_fields(\n    index=${pyString(projectId)},\n    body={${name}: {${fieldSpec.join(", ")}}}\n)`);
   return lines.join("\n");
 }
 
 function generateRCreateField(params: CreateFieldParams, includeInstall: boolean, includeConnect: boolean): string {
-  const { serverUrl, projectId, fieldName, fieldType, identifier, auth } = params;
+  const { serverUrl, projectId, fieldName, fieldType, unique, auth } = params;
   const lines: string[] = [];
 
   if (includeConnect) lines.push(...rConnect(serverUrl, auth, includeInstall));
@@ -401,7 +401,7 @@ function generateRCreateField(params: CreateFieldParams, includeInstall: boolean
   const placeholders = [!fieldName && "FIELD_NAME", !fieldType && "FIELD_TYPE"].filter(Boolean).join(" and ");
   if (placeholders) lines.push(`# Replace ${placeholders} with the desired values`);
   const fieldSpec: string[] = [`type = ${type}`];
-  if (identifier) fieldSpec.push(`identifier = TRUE`);
+  if (unique) fieldSpec.push(`unique = TRUE`);
   lines.push(`set_fields(\n  ${rString(projectId)},\n  list(${name} = list(${fieldSpec.join(", ")}))\n)`);
   return lines.join("\n");
 }
@@ -527,7 +527,7 @@ function generatePythonUpload(params: UploadParams, includeInstall: boolean, inc
     lines.push(`    body={`);
     for (const col of newFields) {
       const spec: string[] = [`"type": ${pyString(col.fieldType)}`];
-      if (col.identifier) spec.push(`"identifier": True`);
+      if (col.unique) spec.push(`"unique": True`);
       lines.push(`        ${pyString(col.fieldName)}: {${spec.join(", ")}},`);
     }
     lines.push(`    }`);
@@ -601,7 +601,7 @@ function generateRUpload(params: UploadParams, includeInstall: boolean, includeC
     lines.push(`set_fields(${rString(projectId)}, list(`);
     for (const col of newFields) {
       const spec: string[] = [`type = ${rString(col.fieldType)}`];
-      if (col.identifier) spec.push(`identifier = TRUE`);
+      if (col.unique) spec.push(`unique = TRUE`);
       lines.push(`  ${col.fieldName} = list(${spec.join(", ")}),`);
     }
     lines.push(`))`);
@@ -796,9 +796,9 @@ function generateRCreateProject(params: CreateProjectParams, includeInstall: boo
   return lines.join("\n");
 }
 
-// --- Reindex code generation ---
+// --- Copy documents code generation ---
 
-function pyFieldOptionsEntry(opts: FieldReindexOptions): string {
+function pyFieldOptionsEntry(opts: FieldCopyOptions): string {
   const parts: string[] = [];
   if (opts.rename !== undefined) parts.push(`"rename": ${pyString(opts.rename)}`);
   if (opts.exclude) parts.push(`"exclude": True`);
@@ -806,14 +806,14 @@ function pyFieldOptionsEntry(opts: FieldReindexOptions): string {
   return `{${parts.join(", ")}}`;
 }
 
-function pyFieldOptions(fieldOptions: Record<string, FieldReindexOptions>): string {
+function pyFieldOptions(fieldOptions: Record<string, FieldCopyOptions>): string {
   const entries = Object.entries(fieldOptions).map(
     ([k, v]) => `        ${pyString(k)}: ${pyFieldOptionsEntry(v)}`,
   );
   return `{\n${entries.join(",\n")}\n    }`;
 }
 
-function rFieldOptionsEntry(opts: FieldReindexOptions): string {
+function rFieldOptionsEntry(opts: FieldCopyOptions): string {
   const parts: string[] = [];
   if (opts.rename !== undefined) parts.push(`rename = ${rString(opts.rename)}`);
   if (opts.exclude) parts.push(`exclude = TRUE`);
@@ -821,12 +821,12 @@ function rFieldOptionsEntry(opts: FieldReindexOptions): string {
   return `list(${parts.join(", ")})`;
 }
 
-function rFieldOptions(fieldOptions: Record<string, FieldReindexOptions>): string {
+function rFieldOptions(fieldOptions: Record<string, FieldCopyOptions>): string {
   const entries = Object.entries(fieldOptions).map(([k, v]) => `    ${k} = ${rFieldOptionsEntry(v)}`);
   return `list(\n${entries.join(",\n")}\n  )`;
 }
 
-function generatePythonReindex(params: ReindexParams, includeInstall: boolean, includeConnect: boolean): string {
+function generatePythonCopy(params: CopyParams, includeInstall: boolean, includeConnect: boolean): string {
   const { serverUrl, sourceProjectId, destProjectId, destProjectName, destMode, query, fieldOptions, auth } = params;
   const lines: string[] = [];
 
@@ -845,15 +845,15 @@ function generatePythonReindex(params: ReindexParams, includeInstall: boolean, i
     `    destination=${dest}`,
   ];
   if (hasName) args.push(`    name=${pyString(destProjectName!)}`);
-  if (hasFields) args.push(`    fields=${pyFieldOptions(fieldOptions)}`);
+  if (hasFields) args.push(`    field_options=${pyFieldOptions(fieldOptions)}`);
   if (hasQueries) args.push(`    queries=${pyQueries(query.queries!)}`);
   if (hasFilters) args.push(`    filters=${pyFilters(query.filters!).replace(/\n/g, "\n    ")}`);
 
-  lines.push(`conn.reindex(\n${args.join(",\n")}\n)`);
+  lines.push(`conn.copy_documents(\n${args.join(",\n")}\n)`);
   return lines.join("\n");
 }
 
-function generateRReindex(params: ReindexParams, includeInstall: boolean, includeConnect: boolean): string {
+function generateRCopy(params: CopyParams, includeInstall: boolean, includeConnect: boolean): string {
   const { serverUrl, sourceProjectId, destProjectId, destProjectName, destMode, query, fieldOptions, auth } = params;
   const lines: string[] = [];
 
@@ -872,14 +872,14 @@ function generateRReindex(params: ReindexParams, includeInstall: boolean, includ
     `  destination = ${dest}`,
   ];
   if (hasName) args.push(`  name = ${rString(destProjectName!)}`);
-  if (hasFields) args.push(`  fields = ${rFieldOptions(fieldOptions)}`);
+  if (hasFields) args.push(`  field_options = ${rFieldOptions(fieldOptions)}`);
   if (hasQueries) {
     const queryStr = query.queries!.map((q) => q.query).join(" OR ");
     args.push(`  queries = ${rString(queryStr)}`);
   }
   if (hasFilters) args.push(`  filters = ${rFilters(query.filters!).replace(/\n/g, "\n  ")}`);
 
-  lines.push(`reindex(\n${args.join(",\n")}\n)`);
+  lines.push(`copy_documents(\n${args.join(",\n")}\n)`);
   return lines.join("\n");
 }
 
@@ -911,7 +911,7 @@ export function generatePython(action: CodeAction, includeInstall: boolean, incl
   if (action.action === "delete") return generatePythonDelete(action.params, includeInstall, includeConnect);
   if (action.action === "update_field") return generatePythonUpdateField(action.params, includeInstall, includeConnect);
   if (action.action === "update_tags") return generatePythonUpdateTags(action.params, includeInstall, includeConnect);
-  if (action.action === "reindex") return generatePythonReindex(action.params, includeInstall, includeConnect);
+  if (action.action === "copy") return generatePythonCopy(action.params, includeInstall, includeConnect);
   return "# Unsupported action";
 }
 
@@ -927,6 +927,6 @@ export function generateR(action: CodeAction, includeInstall: boolean, includeCo
   if (action.action === "delete") return generateRDelete(action.params, includeInstall, includeConnect);
   if (action.action === "update_field") return generateRUpdateField(action.params, includeInstall, includeConnect);
   if (action.action === "update_tags") return generateRUpdateTags(action.params, includeInstall, includeConnect);
-  if (action.action === "reindex") return generateRReindex(action.params, includeInstall, includeConnect);
+  if (action.action === "copy") return generateRCopy(action.params, includeInstall, includeConnect);
   return "# Unsupported action";
 }

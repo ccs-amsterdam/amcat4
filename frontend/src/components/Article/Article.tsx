@@ -1,6 +1,7 @@
 import React, { ReactElement, useMemo, useState } from "react";
 
-import { useArticle } from "@/api/article";
+import { useArticle, useCopiedFrom } from "@/api/article";
+import { roleAtLeast } from "@/api/util";
 import { useFields } from "@/api/fields";
 import { useMyProjectRole } from "@/api/project";
 
@@ -39,6 +40,7 @@ function Article({ user, projectId, id, query, changeArticle, link }: ArticlePro
     { highlight: true },
     projectRole,
   );
+  const { data: copiedFrom } = useCopiedFrom(user, projectId, id, !!projectRole && roleAtLeast(projectRole, "READER"));
 
   if (fieldsLoading || articleLoading) return <Loading />;
   if (!article || !documentFields) return null;
@@ -63,6 +65,7 @@ function Article({ user, projectId, id, query, changeArticle, link }: ArticlePro
             projectId={projectId}
             setArticle={changeArticle}
             metareader={projectRole === "METAREADER"}
+            copiedFrom={copiedFrom}
           />
         </div>
         <div className={` mt-10 overflow-hidden ${hasMultimedia ? "" : "hidden"}`}>

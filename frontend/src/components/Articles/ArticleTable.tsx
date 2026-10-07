@@ -24,16 +24,16 @@ interface Props {
 export default function ArticleTable({ user, projectId, query, fields, pageSize = 10, children, selectedIds, onToggleId, onSetPageIds }: Props) {
   const { role: projectRole } = useMyProjectRole(user, projectId);
 
-  const identifierKey = useMemo(
-    () => fields.filter((f) => f.identifier).map((f) => f.name).join(","),
+  const uniqueKey = useMemo(
+    () => fields.filter((f) => f.unique).map((f) => f.name).join(","),
     [fields],
   );
   const defaultSort: SortingState = useMemo(() => {
-    const idFields = fields.filter((f) => f.identifier);
+    const idFields = fields.filter((f) => f.unique);
     return idFields.map((f) => ({ id: f.name, desc: false }));
   }, [fields]);
   const [sorting, setSorting] = useState<SortingState>(defaultSort);
-  useEffect(() => { setSorting(defaultSort); }, [identifierKey]);
+  useEffect(() => { setSorting(defaultSort); }, [uniqueKey]);
 
   const effectiveSorting = sorting.length > 0 ? sorting : defaultSort;
   const apiSort = useMemo(
@@ -60,7 +60,7 @@ export default function ArticleTable({ user, projectId, query, fields, pageSize 
       header: () => (
         <div>
           <div>ID</div>
-          <div className="text-xs text-primary">identifier</div>
+          <div className="text-xs text-primary">document id</div>
         </div>
       ),
       cell: ({ row }) => {

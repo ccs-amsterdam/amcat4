@@ -1,4 +1,5 @@
 import { AggregationOptions, AmcatFilters, AmcatProjectId, AmcatQuery, AmcatQueryParams } from "@/interfaces";
+import { amcatJobSchema } from "@/schemas";
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 
 interface PostAmcatQuery {
@@ -32,7 +33,7 @@ export function postAggregateQuery(
     postOptions.aggregations = options.metrics.map((m) => {
       return { field: m.field, function: m.function, name: m.name || m.field };
     });
-  if (options.after) postOptions.after = options.after;
+  if (options.order) postOptions.order = options.order;
 
   return user.api.post(`index/${projectId}/aggregate`, {
     ...postAmcatQuery,
@@ -58,23 +59,25 @@ export function asPostAmcatQuery(query: AmcatQuery) {
   return postAmcatQuery;
 }
 
-export interface FieldReindexOptions {
+export interface FieldCopyOptions {
   rename?: string;
   exclude?: boolean;
   type?: string;
 }
 
-export function postReindex(
+export async function postCopy(
   user: AmcatSessionUser,
   source: AmcatProjectId,
   destination: AmcatProjectId,
   query: AmcatQuery,
-  field_options?: Record<string, FieldReindexOptions>,
+  field_options?: Record<string, FieldCopyOptions>,
 ) {
   const query_body = asPostAmcatQuery(query);
-  return user.api.post(`index/${source}/reindex`, {
+  const res = await user.api.post(`index/${source}/copy`, {
     destination: destination,
     ...query_body,
     ...(field_options && Object.keys(field_options).length > 0 ? { field_options } : {}),
   });
+  // copying runs as a background job
+  return amcatJobSchema.parse(res.data);
 }
