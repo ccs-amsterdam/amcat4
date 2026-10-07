@@ -1,12 +1,19 @@
 """
-Snippets for the postgres backend.
+Snippets and highlighting.
 
-Snippets are a security boundary (metareaders may only see snippets of some fields), so we build them
-ourselves from the stored text, and enforce the limits here. pg_search is only used to tell us *where*
-the query matched (paradedb.snippet_positions), so matching is consistent with the search itself.
+Snippets are a security boundary (metareaders may only see snippets of some fields), so we build them ourselves
+from the stored text and enforce the limits here. Snippets are defined in words:
+
+- If there are query matches (and max_matches > 0): at most max_matches fragments of words_per_match words around
+  the matches, joined by " ... "
+- Otherwise: the first nomatch_words words of the text
 """
 
+import re
+
 from amcat4.models import SnippetParams
+
+_WORD = re.compile(r"\S+")
 
 
 def make_snippet(
@@ -18,72 +25,61 @@ def make_snippet(
 ) -> str:
     """
     Create a snippet from text, given the (start, end) character offsets of query matches.
-
-    - If there are no matches (or max_matches is 0), return the first nomatch_chars characters.
-    - Otherwise return at most max_matches fragments of about match_chars characters around the matches,
-      joined by " ... ". Overlapping fragments are merged. Fragments are cut at word boundaries if possible.
-
-    The returned text (excluding tags) is never longer than max(nomatch_chars, max_matches * match_chars) plus
-    separators.
+    The snippet never contains more than max(nomatch_words, max_matches * words_per_match) words.
     """
     if not text:
         return ""
+    words = [(m.start(), m.end()) for m in _WORD.finditer(text)]
+    if not words:
+        return ""
     if not positions or params.max_matches == 0:
-        return _cut(text, 0, params.nomatch_chars)
+        n = params.nomatch_words
+        return text[words[0][0] : words[min(n, len(words)) - 1][1]] if n > 0 else ""
 
-    fragments: list[tuple[int, int, list[tuple[int, int]]]] = []
+    # the word index of each match (a match can span multiple words)
+    def word_index(offset: int) -> int:
+        for i, (start, end) in enumerate(words):
+            if offset < end:
+                return i
+        return len(words) - 1
+
+    fragments: list[tuple[int, int]] = []  # word ranges [first, last]
     for start, end in sorted((p[0], p[1]) for p in positions):
-        if fragments and start < fragments[-1][1]:
-            # match falls within the previous fragment
-            fragments[-1][2].append((start, end))
-            continue
+        first, last = word_index(start), word_index(max(start, end - 1))
+        if fragments and first <= fragments[-1][1]:
+            continue  # match falls within the previous fragment
         if len(fragments) >= params.max_matches:
             break
-        match_len = end - start
-        context = max(0, params.match_chars - match_len) // 2
-        fstart = max(0, start - context)
-        fend = min(len(text), fstart + max(params.match_chars, match_len))
-        if match_len > params.match_chars:
-            fend = start + params.match_chars
-        fragments.append((fstart, fend, [(start, end)]))
+        size = params.words_per_match
+        match_words = last - first + 1
+        if match_words >= size:
+            fragments.append((first, first + size - 1))
+            continue
+        before = (size - match_words) // 2
+        fstart = max(0, first - before)
+        fend = min(len(words) - 1, fstart + size - 1)
+        fstart = max(0, fend - size + 1)
+        if fragments and fstart <= fragments[-1][1]:
+            fstart = fragments[-1][1] + 1
+        fragments.append((fstart, fend))
 
     parts = []
-    for fstart, fend, matches in fragments:
-        fstart, fend = _word_boundaries(text, fstart, fend)
-        part, cursor = [], fstart
-        for mstart, mend in matches:
-            mstart, mend = max(mstart, fstart), min(mend, fend)
-            if mstart >= mend:
-                continue
-            part.append(text[cursor:mstart])
-            part.append(pre_tag + text[mstart:mend] + post_tag)
-            cursor = mend
-        part.append(text[cursor:fend])
-        parts.append("".join(part).strip())
+    for first, last in fragments:
+        start, end = words[first][0], words[last][1]
+        matches = [(max(s, start), min(e, end)) for s, e in sorted((p[0], p[1]) for p in positions) if s < end and e > start]
+        parts.append(_tag(text, start, end, matches, pre_tag, post_tag))
     return " ... ".join(parts)
 
 
-def _word_boundaries(text: str, start: int, end: int) -> tuple[int, int]:
-    """Shrink a fragment so it does not start or end in the middle of a word (if that leaves something)"""
-    if start > 0 and not text[start - 1].isspace():
-        s = text.find(" ", start, end)
-        if s != -1:
-            start = s + 1
-    if end < len(text) and not text[end].isspace():
-        e = text.rfind(" ", start, end)
-        if e > start:
-            end = e
-    return start, end
-
-
-def _cut(text: str, start: int, n: int) -> str:
-    """Cut the text after n characters, but do not end in the middle of a word (like elastic does)"""
-    if len(text) <= start + n:
-        return text[start:]
-    end = start + n
-    while end < len(text) and end < start + n + 30 and not text[end].isspace():
-        end += 1
-    return text[start:end].strip()
+def _tag(text: str, start: int, end: int, matches: list[tuple[int, int]], pre_tag: str, post_tag: str) -> str:
+    out, cursor = [], start
+    for mstart, mend in matches:
+        if mstart < cursor:
+            continue
+        out += [text[cursor:mstart], pre_tag, text[mstart:mend], post_tag]
+        cursor = mend
+    out.append(text[cursor:end])
+    return "".join(out)
 
 
 def highlight(
@@ -92,14 +88,7 @@ def highlight(
     """Return the full text with query matches wrapped in tags"""
     if not text or not positions:
         return text
-    parts, cursor = [], 0
-    for start, end in sorted((p[0], p[1]) for p in positions):
-        if start < cursor:
-            continue
-        parts += [text[cursor:start], pre_tag, text[start:end], post_tag]
-        cursor = end
-    parts.append(text[cursor:])
-    return "".join(parts)
+    return _tag(text, 0, len(text), sorted((p[0], p[1]) for p in positions), pre_tag, post_tag)
 
 
 def byte_to_char_positions(text: str | None, positions: list[list[int]] | None) -> list[list[int]] | None:

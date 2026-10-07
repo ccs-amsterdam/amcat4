@@ -2,12 +2,11 @@ from datetime import UTC, datetime
 from enum import IntEnum
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 from typing_extensions import Self
 
 _IX = r"[a-z0-9][a-z0-9_-]*"
 IndexId = Annotated[str, Field(pattern=rf"^{_IX}$", title="Index ID")]
-IndexIds = Annotated[str, Field(pattern=rf"^{_IX}(,{_IX})*$", title="Index ID or comma-separated IDs")]
 
 
 ######################## ROLE SPECIFICATIONS #########################
@@ -102,50 +101,51 @@ FieldType = Literal[
     "tag",
     "url",
 ]
-ElasticType = Literal[
-    "text",
-    "annotated_text",
-    "binary",
-    "match_only_text",
-    "date",
-    "boolean",
-    "keyword",
-    "constant_keyword",
-    "wildcard",
-    "integer",
-    "byte",
-    "short",
-    "long",
-    "unsigned_long",
-    "float",
-    "half_float",
-    "double",
-    "scaled_float",
-    "object",
-    "flattened",
-    "nested",
-    "dense_vector",
-    "geo_point",
-]
 
 
 class SnippetParams(BaseModel):
     """
-    Snippet parameters for a specific field.
-    nomatch_chars is the number of characters to show if there is no query match. This is always
-    the first [nomatch_chars] of the field.
+    Snippet parameters for a specific field (in words).
+    - If there are query matches, return at most max_matches fragments of words_per_match words around the matches.
+    - If there are no matches (or max_matches is 0), return the first nomatch_words words of the field.
     """
 
-    nomatch_chars: Annotated[int, Field(ge=1)] = 100
+    model_config = ConfigDict(extra="forbid")  # catch old (character based) parameters
+
+    nomatch_words: Annotated[int, Field(ge=0)] = 20
     max_matches: Annotated[int, Field(ge=0)] = 0
-    match_chars: Annotated[int, Field(ge=1)] = 50
+    words_per_match: Annotated[int, Field(ge=1)] = 10
 
 
 class DocumentFieldMetareaderAccess(BaseModel):
-    """Metareader access for a specific field."""
+    """
+    What users with the METAREADER role can do with a field.
+    - access: whether they can see the field: not at all (none), only as a snippet, or completely (read)
+    - queryable: whether they can use the field in queries and filters. By default (None) this is the same as whether
+      they can see the field. A field can be queryable but not visible (e.g. for non-consumptive research: you can
+      count how often a word occurs, but not read the text), or visible but not queryable.
+    """
 
     access: Literal["none", "read", "snippet"] = "none"
     max_snippet: SnippetParams | None = None
+    queryable: bool | None = None
+
+    @property
+    def can_query(self) -> bool:
+        return self.queryable if self.queryable is not None else self.access != "none"
+
+
+class DocumentFieldReaderAccess(BaseModel):
+    """
+    What users with the READER role can do with a field (WRITER and ADMIN can always see and query all fields).
+    """
+
+    visible: bool = True
+    queryable: bool | None = None  # by default, the same as visible
+
+    @property
+    def can_query(self) -> bool:
+        return self.queryable if self.queryable is not None else self.visible
 
 
 class DocumentField(BaseModel):
@@ -153,44 +153,50 @@ class DocumentField(BaseModel):
     server side. Others, such as client_settings, are free-form and can be used by the client to store settings."""
 
     type: FieldType
-    # The storage type of the field. It is fixed when the field is created, and determines which field types
-    # the field can be changed to. (The name dates from when AmCAT used elasticsearch)
-    elastic_type: ElasticType
-    identifier: bool = False
+    # Unique fields: documents with the same values for all unique fields are considered the same document
+    unique: bool = False
     metareader: DocumentFieldMetareaderAccess = DocumentFieldMetareaderAccess()
+    reader: DocumentFieldReaderAccess = DocumentFieldReaderAccess()
     client_settings: dict[str, Any] = {}
     # If set, the field is in a "sort slot" (date, number or keyword), which makes sorting on it fast
     sort_slot: Literal["date", "number", "keyword"] | None = None
 
     @model_validator(mode="after")
-    def validate_type(self) -> Self:
-        if self.identifier:
-            # Identifiers have to be immutable. Instead of checking this in every endpoint that performs updates,
-            # we can disable it for certain types that are known to be mutable.
-            for forbidden_type in ["tag"]:
-                if self.type == forbidden_type:
-                    raise ValueError(f"Field type {forbidden_type} cannot be used as an identifier")
+    def validate_access(self) -> Self:
+        if self.unique and self.type in ("tag", "vector", "object"):
+            raise ValueError(f"A {self.type} field cannot be unique")
+        if not self.reader.visible and self.metareader.access != "none":
+            raise ValueError("A field that is not visible for readers cannot be visible for metareaders")
+        if not self.reader.can_query and self.metareader.can_query:
+            raise ValueError("A field that is not queryable for readers cannot be queryable for metareaders")
+        if self.metareader.access == "snippet" and self.type != "text":
+            raise ValueError("Snippets are only possible for text fields")
         return self
 
 
 class DocumentFieldDefinition(BaseModel):
     type: FieldType
-    elastic_type: ElasticType | None = None
-    identifier: bool | None = None
+    unique: bool | None = None
 
 
 class CreateDocumentField(DocumentFieldDefinition):
     """Model for creating a field"""
 
     metareader: DocumentFieldMetareaderAccess | None = None
+    reader: DocumentFieldReaderAccess | None = None
     client_settings: dict[str, Any] | None = None
 
 
 class UpdateDocumentField(BaseModel):
     """Model for updating a field"""
 
-    type: FieldType | None = None
+    name: str | None = Field(default=None, description="Rename the field")
+    type: FieldType | None = Field(
+        default=None, description="Change the type of the field. Existing values are converted (or an error is raised)"
+    )
+    unique: bool | None = None
     metareader: DocumentFieldMetareaderAccess | None = None
+    reader: DocumentFieldReaderAccess | None = None
     client_settings: dict[str, Any] | None = None
     fast_sort: bool | None = Field(
         default=None,

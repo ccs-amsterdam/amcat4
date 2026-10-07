@@ -13,7 +13,7 @@ from amcat4.models import (
     Roles,
     User,
 )
-from amcat4.postgres.connection import connection, execute
+from amcat4.postgres.connection import execute, fetch_all, fetch_one
 
 
 def role_is_at_least(user: User, user_role: RoleRule | None, required_role: Roles, ignore_restrictions: bool = False) -> bool:
@@ -205,6 +205,19 @@ async def get_project_guest_role(index_id: IndexId) -> GuestRole:
     return role
 
 
+async def _project_pk(role_context: RoleContext) -> int | None:
+    """Server roles have no project (NULL)"""
+    if role_context == "_server":
+        return None
+    row = await fetch_one("SELECT pk FROM projects WHERE id = %s", [role_context])
+    if row is None:
+        raise NotFoundError(f"Project {role_context} does not exist")
+    return row["pk"]
+
+
+_SAME_ROLE = "coalesce(project_pk, 0) = coalesce(%s, 0) AND email = %s"
+
+
 async def _create_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles):
     """
     Creates a role for a given email pattern and role context.
@@ -214,11 +227,9 @@ async def _create_role(email: RoleEmailPattern, role_context: RoleContext, role:
         raise HTTPException(422, "Cannot create a role with Role.NONE.")
 
     user_role = RoleRule(email=email, role_context=role_context, role=role.name)
+    pk = await _project_pk(role_context)
     try:
-        await execute(
-            "INSERT INTO roles (email, role_context, role) VALUES (%s, %s, %s)",
-            [user_role.email, user_role.role_context, user_role.role],
-        )
+        await execute("INSERT INTO roles (email, project_pk, role) VALUES (%s, %s, %s)", [user_role.email, pk, user_role.role])
     except UniqueViolation:
         raise ConflictError(f"Role for {email} on {role_context} already exists")
 
@@ -233,23 +244,22 @@ async def _update_role(email: RoleEmailPattern, role_context: RoleContext, role:
         return
 
     user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-    if ignore_missing:
-        await execute(
-            """INSERT INTO roles (email, role_context, role) VALUES (%s, %s, %s)
-               ON CONFLICT (role_context, email) DO UPDATE SET role = EXCLUDED.role""",
-            [user_role.email, user_role.role_context, user_role.role],
-        )
-    else:
-        n = await execute(
-            "UPDATE roles SET role = %s WHERE email = %s AND role_context = %s",
-            [user_role.role, user_role.email, user_role.role_context],
-        )
-        if n == 0:
+    pk = await _project_pk(role_context)
+    n = await execute(f"UPDATE roles SET role = %s WHERE {_SAME_ROLE}", [user_role.role, pk, user_role.email])  # type: ignore[arg-type]
+    if n == 0:
+        if not ignore_missing:
             raise NotFoundError(f"Role for {email} on {role_context} does not exist")
+        await _create_role(email, role_context, role)
 
 
 async def _delete_role(email: RoleEmailPattern, role_context: RoleContext, ignore_missing: bool = False):
-    n = await execute("DELETE FROM roles WHERE email = %s AND role_context = %s", [email, role_context])
+    try:
+        pk = await _project_pk(role_context)
+    except NotFoundError:
+        if ignore_missing:
+            return
+        raise
+    n = await execute(f"DELETE FROM roles WHERE {_SAME_ROLE}", [pk, email])  # type: ignore[arg-type]
     if n == 0 and not ignore_missing:
         raise NotFoundError(f"Role for {email} on {role_context} does not exist")
 
@@ -264,25 +274,27 @@ async def _list_roles(
     List roles, optionally filtered by email patterns, role contexts, and minimum role.
 
     :param emails: List of email patterns to filter on (or None for all users)
-    :param role_contexts: List of role contexts to filter on (or None for all contexts)
+    :param role_contexts: List of role contexts (project ids or "_server") to filter on (or None for all contexts)
     :param min_role: The minimum role (or None for all roles)
     """
     conditions, params = ["TRUE"], []
     if emails is not None:
-        conditions.append("email = ANY(%s)")
+        conditions.append("r.email = ANY(%s)")
         params.append(list(emails))
     if role_contexts is not None:
-        conditions.append("role_context = ANY(%s)")
+        conditions.append("coalesce(p.id, '_server') = ANY(%s)")
         params.append(list(role_contexts))
     if min_role is not None:
-        conditions.append("role = ANY(%s)")
+        conditions.append("r.role = ANY(%s)")
         params.append([role.name for role in Roles if role >= min_role])
     if only_projects:
-        conditions.append("role_context <> '_server'")
+        conditions.append("r.project_pk IS NOT NULL")
 
-    async with connection() as conn:
-        cur = await conn.execute(f"SELECT email, role_context, role FROM roles WHERE {' AND '.join(conditions)}", params)  # type: ignore[arg-type]
-        rows = await cur.fetchall()
+    rows = await fetch_all(
+        f"""SELECT r.email, coalesce(p.id, '_server') AS role_context, r.role
+            FROM roles r LEFT JOIN projects p ON p.pk = r.project_pk WHERE {" AND ".join(conditions)}""",  # type: ignore[arg-type]
+        params,
+    )
     for row in rows:
         yield RoleRule.model_validate(row)
 

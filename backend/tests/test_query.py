@@ -1,5 +1,4 @@
 import functools
-from time import sleep
 from typing import Optional, Set
 
 import pytest
@@ -7,8 +6,10 @@ from pytest import raises
 
 from amcat4.api.index_query import _standardize_filters, _standardize_queries
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, ProjectSettings, SnippetParams
-from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
-from amcat4.projects.query import get_task_status, query_documents, reindex
+from amcat4.projects.documents import fetch_document
+from amcat4.projects.index import create_project_index, delete_project_index
+from amcat4.projects.jobs import create_job, get_job, run_pending_jobs
+from amcat4.projects.query import query_documents
 from amcat4.systemdata.fields import list_fields
 from tests.conftest import upload
 
@@ -47,12 +48,14 @@ async def test_query(index_docs):
 
 @pytest.mark.anyio
 async def test_snippet(index_docs):
-    docs = await query_documents(index_docs, fields=[FieldSpec(name="text", snippet=SnippetParams(nomatch_chars=5))])
+    docs = await query_documents(index_docs, fields=[FieldSpec(name="text", snippet=SnippetParams(nomatch_words=2))])
     assert docs is not None
     assert docs.data[0]["text"] == "this is"
 
     docs = await query_documents(
-        index_docs, queries={"1": "a"}, fields=[FieldSpec(name="text", snippet=SnippetParams(max_matches=1, match_chars=1))]
+        index_docs,
+        queries={"1": "a"},
+        fields=[FieldSpec(name="text", snippet=SnippetParams(max_matches=1, words_per_match=1))],
     )
     assert docs is not None
     assert docs.data[0]["text"] == "a"
@@ -91,8 +94,8 @@ async def test_highlight(index):
         index,
         queries={"1": "te*"},
         fields=[
-            FieldSpec(name="title", snippet=SnippetParams(max_matches=3, match_chars=50)),
-            FieldSpec(name="text", snippet=SnippetParams(max_matches=3, match_chars=50)),
+            FieldSpec(name="title", snippet=SnippetParams(max_matches=3, words_per_match=8)),
+            FieldSpec(name="text", snippet=SnippetParams(max_matches=3, words_per_match=8)),
         ],
         highlight=True,
     )
@@ -120,31 +123,36 @@ async def test_query_filter_mapping(index_docs):
     assert await q(filters={"date": FilterSpec(dayofweek="Monday")}) == {0, 3}
 
 
+async def copy(source: str, destination: str, **params) -> dict:
+    job = await create_job("copy", destination, None, dict(source=source, destination=destination, **params))
+    await run_pending_jobs()
+    return await get_job(job["id"])
+
+
 @pytest.mark.anyio
-async def test_reindex(index_docs, index_name):
-    # Re-indexing should error if destination does not exist
+async def test_copy(index_docs, index_name):
+    # Copying should error if destination does not exist
     with raises(Exception):
-        await reindex(source_index=index_docs, destination_index=index_name)
+        await copy(index_docs, index_name)
     project = ProjectSettings(id=index_name)
     await create_project_index(project)
-    task = await reindex(source_index=index_docs, destination_index=index_name)
-    while True:
-        status = await get_task_status(task["task"])
-        if status["completed"]:
-            break
-        sleep(0.1)
-    await refresh_index(index_name)
+    job = await copy(index_docs, index_name)
+    assert job["status"] == "done", job
+    assert job["result"] == {"copied": 4}
     assert await query_ids(index_docs) == await query_ids(index_name)
     assert await list_fields(index_docs) == await list_fields(index_name)
+    # Copied documents remember where they came from
+    assert (await fetch_document(index_name, "1"))["_copied_from"] == {"project": index_docs, "doc_id": "1"}
 
     await delete_project_index(index_name)
     await create_project_index(project)
-    await reindex(
-        source_index=index_docs,
-        destination_index=index_name,
-        filters={"cat": FilterSpec(values=["b"])},
-        wait_for_completion=True,
+    job = await copy(
+        index_docs,
+        index_name,
+        filters={"cat": {"values": ["b"]}},
+        field_options={"title": {"rename": "headline"}, "text": {"exclude": True}},
     )
-
-    await refresh_index(index_name)
+    assert job["status"] == "done", job
     assert await query_ids(index_name) == {3}
+    fields = await list_fields(index_name)
+    assert "headline" in fields and "title" not in fields and "text" not in fields

@@ -8,8 +8,8 @@ from amcat4.config import AuthOptions, get_settings
 from amcat4.connections import amcat_connections
 from amcat4.models import CreateDocumentField, FieldType, ProjectSettings, Roles
 from amcat4.projects.documents import create_or_update_documents
-from amcat4.projects.index import create_project_index, delete_project_index, refresh_index
-from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
+from amcat4.projects.index import create_project_index, delete_project_index
+from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata
 from amcat4.systemdata.requests import clear_requests
 from amcat4.systemdata.roles import (
     delete_server_role,
@@ -63,9 +63,10 @@ async def my_setup():
     get_settings().test_mode = True
 
     async with amcat_connections():
-        systemdata_version = await create_or_update_systemdata()
+        await delete_systemdata()  # start with a clean schema (e.g. if a previous run was aborted)
+        await create_or_update_systemdata()
         yield
-        await delete_systemdata_version(systemdata_version)
+        await delete_systemdata()
 
 
 @pytest.fixture(autouse=True)
@@ -175,10 +176,9 @@ async def clean_requests():
 
 async def upload(index: str, docs: list[dict[str, Any]], fields: dict[str, FieldType | CreateDocumentField] | None = None):
     """
-    Upload these docs to the index, giving them an incremental id, and flush
+    Upload these docs to the index
     """
     await create_or_update_documents(index, docs, fields)
-    await refresh_index(index)
 
 
 TEST_DOCUMENTS = [

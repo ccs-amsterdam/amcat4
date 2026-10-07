@@ -6,6 +6,7 @@ A search is a single SQL query on the documents table. Everything that can be ex
 BM25 index. Remaining conditions are added as plain SQL.
 """
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -41,10 +42,18 @@ def project_clause(project_pks: list[int]) -> dict:
     return terms[0] if len(terms) == 1 else {"boolean": {"should": terms}}
 
 
+def _compile_query_string(label: str, q: str, fieldset: FieldSet) -> dict:
+    try:
+        return query_string_to_json(q, fieldset)
+    except QueryError as e:
+        where = f"query {q!r}" if label == q else f"query {label!r} ({q!r})"
+        raise QueryError(f"Error in {where}: {e}") from e
+
+
 def compile_search(fieldset: FieldSet, query: SearchQuery) -> CompiledSearch:
     must: list[dict] = [project_clause(fieldset.project_pks)]
     if query.queries:
-        qs = [query_string_to_json(q, fieldset) for q in query.queries.values()]
+        qs = [_compile_query_string(label, q, fieldset) for label, q in query.queries.items()]
         must.append(qs[0] if len(qs) == 1 else {"boolean": {"should": qs}})
     sql_clauses: list[sql.Composable] = []
     if query.filters:
@@ -119,6 +128,8 @@ async def search(
     with_total: bool = True,
     keyset: bool = False,
     after_id: int | None = None,
+    offset: int | None = None,
+    similar: tuple[str, list[float]] | None = None,
 ) -> SearchResult:
     """
     Search documents, returning the given fields (and snippets for the fields in snippets).
@@ -126,6 +137,8 @@ async def search(
 
     If keyset is True, results are ordered by internal id and only results after after_id are returned
     (efficient pagination through large result sets; sort and page are ignored).
+    offset overrides page * per_page.
+    similar: (vector field, vector): order by cosine distance to the vector (documents without vector are skipped)
     """
     from amcat4.postgres.documents import field_select
 
@@ -151,17 +164,32 @@ async def search(
     columns.append(sql.SQL("documents.id AS _internal_id"))
 
     where, params = c.where, list(c.params)
+    join: sql.Composable = sql.SQL("")
+    if similar:
+        vfield, vector = similar
+        vfs = fieldset.by_name.get(vfield)
+        if not vfs or vfs[0].type != "vector":
+            raise QueryError(f"{vfield} is not a vector field")
+        join = sql.SQL("JOIN document_vectors sim ON sim.document_id = documents.id AND sim.field_pk = ANY({})").format(
+            sql.Literal([f.pk for f in vfs])
+        )
+        columns.append(
+            sql.SQL("1 - (sim.embedding <=> {}::public.vector) AS _similarity").format(sql.Literal(json.dumps(vector)))
+        )
     if keyset:
         if after_id is not None:
             where = sql.SQL("{} AND documents.id > %s").format(where)
             params.append(after_id)
         ordering: sql.Composable = sql.SQL("documents.id")
         offset = 0
+    elif similar:
+        ordering = sql.SQL("_similarity DESC, documents.id")
+        offset = page * per_page if offset is None else offset
     else:
         ordering = order_by(fieldset, sort, scored)
-        offset = page * per_page
-    stmt = sql.SQL("SELECT {} FROM documents WHERE {} ORDER BY {} LIMIT %s OFFSET %s").format(
-        sql.SQL(", ").join(columns), where, ordering
+        offset = page * per_page if offset is None else offset
+    stmt = sql.SQL("SELECT {} FROM documents {} WHERE {} ORDER BY {} LIMIT %s OFFSET %s").format(
+        sql.SQL(", ").join(columns), join, where, ordering
     )
     cur = await conn.execute(stmt, [*params, per_page, offset])
     rows = await cur.fetchall()
@@ -194,6 +222,8 @@ async def search(
                 value = highlight_text(value, positions)
             if value is not None:
                 doc[name] = value
+        if similar:
+            doc["_similarity"] = row["_similarity"]  # type: ignore[index, call-overload]
         results.append(doc)
 
     total = await count(conn, fieldset, query) if with_total else len(results)

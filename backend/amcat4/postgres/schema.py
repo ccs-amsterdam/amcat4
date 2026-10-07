@@ -60,11 +60,11 @@ TABLES = [
     """
     CREATE TABLE IF NOT EXISTS roles (
         email text NOT NULL,
-        role_context text NOT NULL,
-        role text NOT NULL,
-        PRIMARY KEY (role_context, email)
+        project_pk integer REFERENCES projects(pk) ON DELETE CASCADE,  -- NULL for server roles
+        role text NOT NULL
     )
     """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS roles_unique ON roles (coalesce(project_pk, 0), email)",
     "CREATE INDEX IF NOT EXISTS roles_email ON roles (email)",
     """
     CREATE TABLE IF NOT EXISTS api_keys (
@@ -80,18 +80,23 @@ TABLES = [
     "CREATE INDEX IF NOT EXISTS api_keys_email ON api_keys (email)",
     """
     CREATE TABLE IF NOT EXISTS requests (
+        id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         type text NOT NULL,
         email text NOT NULL,
-        project_id text NOT NULL DEFAULT '',
+        project_pk integer REFERENCES projects(pk) ON DELETE CASCADE,  -- for project role requests
+        new_project_id text,  -- for create project requests
         status text NOT NULL,
         timestamp timestamptz NOT NULL,
-        request jsonb NOT NULL,
-        PRIMARY KEY (type, email, project_id)
+        request jsonb NOT NULL
     )
     """,
     """
+    CREATE UNIQUE INDEX IF NOT EXISTS requests_unique
+        ON requests (type, email, coalesce(project_pk, 0), coalesce(new_project_id, ''))
+    """,
+    """
     CREATE TABLE IF NOT EXISTS object_storage (
-        project_id text NOT NULL,
+        project_pk integer NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
         field text NOT NULL,
         filepath text NOT NULL,
         path text NOT NULL,
@@ -99,7 +104,7 @@ TABLES = [
         content_type text,
         registered timestamptz,
         last_synced timestamptz,
-        PRIMARY KEY (project_id, field, filepath)
+        PRIMARY KEY (project_pk, field, filepath)
     )
     """,
     """
@@ -108,9 +113,9 @@ TABLES = [
         project_pk integer NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
         name text NOT NULL,
         type text NOT NULL,
-        elastic_type text NOT NULL,
-        identifier boolean NOT NULL DEFAULT false,
-        metareader jsonb NOT NULL DEFAULT '{"access": "none"}',
+        unique_field boolean NOT NULL DEFAULT false,
+        metareader jsonb NOT NULL DEFAULT '{}',
+        reader jsonb NOT NULL DEFAULT '{}',
         client_settings jsonb NOT NULL DEFAULT '{}',
         sort_slot text,
         UNIQUE (project_pk, name),
@@ -122,6 +127,7 @@ TABLES = [
         id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         project_pk integer NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
         doc_id text NOT NULL,
+        dedup_hash text,  -- hash of the values of the unique fields of the project
         text_data jsonb NOT NULL DEFAULT '{}',
         meta_data jsonb NOT NULL DEFAULT '{}',
         extra_data jsonb,
@@ -135,6 +141,9 @@ TABLES = [
     )
     """,
     """
+    CREATE UNIQUE INDEX IF NOT EXISTS documents_dedup ON documents (project_pk, dedup_hash) WHERE dedup_hash IS NOT NULL
+    """,
+    """
     CREATE INDEX IF NOT EXISTS documents_bm25 ON documents USING bm25 (
         id,
         project_pk,
@@ -146,14 +155,21 @@ TABLES = [
     ) WITH (mutable_segment_rows = 0)
     """,
     """
-    CREATE UNLOGGED TABLE IF NOT EXISTS scrolls (
+    CREATE TABLE IF NOT EXISTS jobs (
         id text PRIMARY KEY,
-        params jsonb NOT NULL,
-        position bigint,
-        page integer NOT NULL DEFAULT 0,
-        expires_at timestamptz NOT NULL
+        type text NOT NULL,
+        status text NOT NULL,  -- pending, running, done, failed, cancelled
+        project_pk integer REFERENCES projects(pk) ON DELETE CASCADE,
+        created_by text,
+        params jsonb NOT NULL DEFAULT '{}',
+        progress jsonb NOT NULL DEFAULT '{}',
+        result jsonb,
+        error text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
     )
     """,
+    "CREATE INDEX IF NOT EXISTS jobs_status ON jobs (status)",
     """
     CREATE TABLE IF NOT EXISTS document_vectors (
         document_id bigint NOT NULL REFERENCES documents(id) ON DELETE CASCADE,

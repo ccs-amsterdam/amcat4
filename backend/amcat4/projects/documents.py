@@ -3,7 +3,8 @@ from typing import Any, Literal, Mapping
 from amcat4.errors import NotFoundError
 from amcat4.models import CreateDocumentField, DocumentFieldDefinition, FieldType
 from amcat4.postgres import documents as storage
-from amcat4.postgres.connection import connection
+from amcat4.postgres.connection import connection, fetch_one
+from amcat4.postgres.documents import OpType
 from amcat4.postgres.projects import project_pk
 from amcat4.systemdata.fields import create_fields, field_infos
 
@@ -12,21 +13,18 @@ async def create_or_update_documents(
     index: str,
     documents: list[dict[str, Any]],
     fields: Mapping[str, FieldType | DocumentFieldDefinition] | None = None,
-    op_type: Literal["index", "create", "update", "upsert"] = "index",
-    raise_on_error=False,
-    refresh=False,
-):
+    op_type: OpType = "replace",
+) -> dict[str, int]:
     """
-    Upload documents to this index
+    Upload documents to this index. This is a single transaction: if any document cannot be saved, nothing is saved
+    and an UploadError (a ValueError) is raised.
 
     :param index: The name of the index
     :param documents: A sequence of document dictionaries
     :param fields: A mapping of fieldname:type (or definition), fields will be created if they do not exist
-    :param op_type: Whether to 'index' new documents (create or overwrite), 'create' (only create),
-        'update' (partial update, error if not exists), or 'upsert' (partial update, create if not exists)
-    :param raise_on_error: If true, raise an error if some documents could not be created/updated
-    :param refresh: Not used (documents are always immediately searchable), kept for compatibility
-    :return: dict(successes=<number>, failures=[...])
+    :param op_type: create (only new documents), update (existing documents, keeping fields that are not given),
+                    upsert (update or create), replace (replace the whole document, or create)
+    :return: dict(created=<number>, updated=<number>)
     """
     if fields:
         create_fields_dict: dict[str, CreateDocumentField] = dict()
@@ -40,10 +38,7 @@ async def create_or_update_documents(
     pk = await project_pk(index)
     infos = await field_infos(index)
     async with connection() as conn:
-        successes, failures = await storage.upload_documents(conn, pk, documents, infos, op_type)
-    if failures and raise_on_error:
-        raise ValueError(f"{len(failures)} document(s) could not be saved. First error: {failures[0]}")
-    return dict(successes=successes, failures=failures)
+        return await storage.upload_documents(conn, pk, documents, infos, op_type)
 
 
 async def fetch_document(index: str, doc_id: str, _source: str | list[str] | None = None) -> dict:
@@ -53,7 +48,8 @@ async def fetch_document(index: str, doc_id: str, _source: str | list[str] | Non
     :param index: The name of the index
     :param doc_id: The document id
     :param _source: Optional list (or comma separated string) of fields to retrieve
-    :return: the document as a {field: value} dict (without _id)
+    :return: the document as a {field: value} dict (without _id). If the document was copied from another project,
+             _copied_from contains the source project and document id.
     """
     pk = await project_pk(index)
     infos = await field_infos(index)
@@ -63,6 +59,13 @@ async def fetch_document(index: str, doc_id: str, _source: str | list[str] | Non
     if doc is None:
         raise NotFoundError(f"Document {index}/{doc_id} does not exist")
     doc.pop("_id")
+    row = await fetch_one(
+        """SELECT p.id AS project, d.source->>'doc_id' AS doc_id FROM documents d
+           JOIN projects p ON p.pk = (d.source->>'project_pk')::int WHERE d.project_pk = %s AND d.doc_id = %s""",
+        [pk, doc_id],
+    )
+    if row:
+        doc["_copied_from"] = row
     return doc
 
 
@@ -79,9 +82,12 @@ async def update_document(index: str, doc_id: str, fields: dict, ignore_missing:
     infos = await field_infos(index)
     op_type: Literal["update", "upsert"] = "upsert" if ignore_missing else "update"
     async with connection() as conn:
-        n, failures = await storage.upload_documents(conn, pk, [{**fields, "_id": doc_id}], infos, op_type, explicit_id=True)
-    if failures:
-        raise NotFoundError(f"Document {index}/{doc_id} does not exist")
+        try:
+            await storage.upload_documents(conn, pk, [{**fields, "_id": doc_id}], infos, op_type)
+        except storage.UploadError as e:
+            if op_type == "update" and "do not exist" in str(e):
+                raise NotFoundError(f"Document {index}/{doc_id} does not exist")
+            raise
 
 
 async def delete_document(index: str, doc_id: str, ignore_missing: bool = False):

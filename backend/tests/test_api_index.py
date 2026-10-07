@@ -116,7 +116,6 @@ async def test_fields_upload(client: AsyncClient, user: str, index: str):
 
     await update_project_role(user, index, Roles.WRITER)
     await post_json(client, f"/index/{index}/documents", user=user, json=body)
-    await get_json(client, f"/index/{index}/refresh", expected=204)
     doc = await get_json(client, f"/index/{index}/documents/0", user=user) or {}
     assert set(doc.keys()) == {"date", "text", "title", "x"}
     assert doc["title"] == "doc 0"

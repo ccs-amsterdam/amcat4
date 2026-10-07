@@ -6,7 +6,10 @@ from amcat4.objectstorage.s3bucket import PRESIGNED_POST_HOURS_VALID, scan_s3_ob
 from amcat4.postgres.connection import connection, execute, fetch_all, fetch_one
 from amcat4.systemdata.fields import list_fields
 
-_COLUMNS = "project_id AS index, field, filepath, path, size, content_type, registered, last_synced"
+_COLUMNS = (
+    "(SELECT id FROM projects WHERE pk = object_storage.project_pk) AS index, "
+    "field, filepath, path, size, content_type, registered, last_synced"
+)
 
 INFER_MIME_TYPE: dict[str, AllowedContentType] = {
     # Images (Inert/Pixel-based)
@@ -58,9 +61,9 @@ async def register_objects(
         async with connection() as conn:
             async with conn.cursor() as cur:
                 await cur.executemany(
-                    """INSERT INTO object_storage (project_id, field, filepath, path, size, content_type, registered)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s)
-                       ON CONFLICT (project_id, field, filepath) DO UPDATE SET size = EXCLUDED.size,
+                    """INSERT INTO object_storage (project_pk, field, filepath, path, size, content_type, registered)
+                       VALUES ((SELECT pk FROM projects WHERE id = %s), %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (project_pk, field, filepath) DO UPDATE SET size = EXCLUDED.size,
                        content_type = EXCLUDED.content_type, registered = EXCLUDED.registered, last_synced = NULL""",
                     [
                         (o.index, o.field, o.filepath, o.path, o.size, o.content_type, o.registered)
@@ -73,7 +76,8 @@ async def register_objects(
 
 async def get_object(index: IndexId, field: str, filepath: str) -> ObjectStorage | None:
     row = await fetch_one(
-        f"SELECT {_COLUMNS} FROM object_storage WHERE project_id = %s AND field = %s AND filepath = %s",  # type: ignore[arg-type]
+        f"SELECT {_COLUMNS} FROM object_storage "  # type: ignore[arg-type]
+        "WHERE project_pk = (SELECT pk FROM projects WHERE id = %s) AND field = %s AND filepath = %s",
         [index, field, filepath],
     )
     return ObjectStorage.model_validate(row) if row else None
@@ -91,7 +95,7 @@ async def list_objects(
     List registered objects. Returns a scroll_id (pagination cursor, which also remembers the page size) and the
     objects. The scroll_id is None if there are no (more) objects.
     """
-    conditions: list[str] = ["project_id = %s"]
+    conditions: list[str] = ["project_pk = (SELECT pk FROM projects WHERE id = %s)"]
     params: list[Any] = [index]
     if directory:
         if recursive:
@@ -138,9 +142,9 @@ async def refresh_objectstorage(
         async with connection() as conn:
             async with conn.cursor() as cur:
                 await cur.executemany(
-                    """INSERT INTO object_storage (project_id, field, filepath, path, size, last_synced)
-                       VALUES (%s, %s, %s, %s, %s, %s)
-                       ON CONFLICT (project_id, field, filepath) DO UPDATE
+                    """INSERT INTO object_storage (project_pk, field, filepath, path, size, last_synced)
+                       VALUES ((SELECT pk FROM projects WHERE id = %s), %s, %s, %s, %s, %s)
+                       ON CONFLICT (project_pk, field, filepath) DO UPDATE
                        SET size = EXCLUDED.size, last_synced = EXCLUDED.last_synced""",
                     batch,
                 )
@@ -163,15 +167,20 @@ async def delete_register(index: IndexId, field: str | None = None):
     Delete all register entries for the given index and optional field.
     """
     if field:
-        n = await execute("DELETE FROM object_storage WHERE project_id = %s AND field = %s", [index, field])
+        n = await execute(
+            "DELETE FROM object_storage WHERE project_pk = (SELECT pk FROM projects WHERE id = %s) AND field = %s",
+            [index, field],
+        )
     else:
-        n = await execute("DELETE FROM object_storage WHERE project_id = %s", [index])
+        n = await execute("DELETE FROM object_storage WHERE project_pk = (SELECT pk FROM projects WHERE id = %s)", [index])
     return dict(updated=n, total=n)
 
 
 async def delete_objects(index: IndexId, field: str, filepaths: list[str]):
     n = await execute(
-        "DELETE FROM object_storage WHERE project_id = %s AND field = %s AND filepath = ANY(%s)", [index, field, filepaths]
+        "DELETE FROM object_storage WHERE project_pk = (SELECT pk FROM projects WHERE id = %s) "
+        "AND field = %s AND filepath = ANY(%s)",
+        [index, field, filepaths],
     )
     return dict(updated=n, total=n)
 
@@ -184,7 +193,7 @@ async def _clean_register(
 
     If keep_pending is True, we do not delete entries for which the presigned post is still valid
     """
-    conditions: list[str] = ["project_id = %s"]
+    conditions: list[str] = ["project_pk = (SELECT pk FROM projects WHERE id = %s)"]
     params: list[Any] = [index]
     if min_sync:
         conditions.append("(last_synced IS NULL OR last_synced < %s)")
@@ -207,14 +216,19 @@ async def _get_current(index: IndexId, field: str, objects: list[RegisterObject]
     Get the sizes of the objects that are already registered, as a {filepath: size} dictionary
     """
     rows = await fetch_all(
-        "SELECT filepath, size FROM object_storage WHERE project_id = %s AND field = %s AND filepath = ANY(%s)",
+        "SELECT filepath, size FROM object_storage WHERE project_pk = (SELECT pk FROM projects WHERE id = %s) "
+        "AND field = %s AND filepath = ANY(%s)",
         [index, field, [obj.filepath for obj in objects]],
     )
     return {row["filepath"]: row["size"] for row in rows}
 
 
 async def _get_total_size(index: IndexId) -> int:
-    row = await fetch_one("SELECT coalesce(sum(size), 0) AS total FROM object_storage WHERE project_id = %s", [index])
+    row = await fetch_one(
+        "SELECT coalesce(sum(size), 0) AS total FROM object_storage "
+        "WHERE project_pk = (SELECT pk FROM projects WHERE id = %s)",
+        [index],
+    )
     return int(row["total"]) if row else 0
 
 

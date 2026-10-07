@@ -39,10 +39,11 @@ from amcat4.projects.index import (
     delete_project_index,
     index_size_in_bytes,
     list_user_project_indices,
-    refresh_index,
     update_project_index,
 )
-from amcat4.projects.query import query_documents, reindex
+from amcat4.projects.jobs import create_job
+from amcat4.projects.legacy import convert_field_definition
+from amcat4.projects.query import query_documents
 from amcat4.systemdata.fields import create_fields, list_fields
 from amcat4.systemdata.roles import (
     HTTPException_if_not_project_index_role,
@@ -82,21 +83,23 @@ class CreateIndexBody(UpdateIndexBody):
     id: IndexId = Field(description="ID of the new index")
 
 
-class FieldReindexOptions(BaseModel):
-    """Per-field options for reindexing."""
+class FieldCopyOptions(BaseModel):
+    """Per-field options for copying documents."""
 
     rename: str | None = None
     exclude: bool = False
     type: FieldType | None = None
 
 
-class ReindexBody(BaseModel):
-    """Body for reindexing documents."""
+class CopyBody(BaseModel):
+    """Body for copying documents to another project."""
 
-    destination: str = Field(description="The destination index id")
-    queries: QueriesType
-    filters: FiltersType
-    field_options: dict[str, FieldReindexOptions] = {}
+    destination: IndexId = Field(description="The destination project id")
+    queries: QueriesType = None
+    filters: FiltersType = None
+    field_options: dict[str, FieldCopyOptions] = Field(
+        default={}, description="Per source field: rename it, exclude it, or give it a different type"
+    )
 
 
 # RESPONSE MODELS
@@ -290,30 +293,29 @@ async def clear_index(ix: IndexId, user: User = Depends(authenticated_user)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Index {ix} does not exist")
 
 
-@app_index.get("/index/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT)
-async def refresh(ix: str):
-    """Deprecated: documents are always searchable immediately. Kept for compatibility."""
-    await refresh_index(ix)
-
-
-@app_index.post("/index/{ix}/reindex")
-async def start_reindex(
+@app_index.post("/index/{ix}/copy", status_code=status.HTTP_202_ACCEPTED)
+async def copy_documents(
     ix: IndexId,
-    body: Annotated[ReindexBody, Body(...)],
+    body: Annotated[CopyBody, Body(...)],
     user: User = Depends(authenticated_user),
 ):
+    """
+    Copy documents (optionally selected by queries/filters) to another project. Requires READER role on the source
+    and WRITER role on the destination. The copy runs as a background job; returns the job (see GET /jobs/{id}).
+    """
     await HTTPException_if_not_project_index_role(user, ix, Roles.READER)
     await HTTPException_if_not_project_index_role(user, body.destination, Roles.WRITER)
+    if ix == body.destination:
+        raise HTTPException(status_code=422, detail="Source and destination must be different projects")
     filters = _standardize_filters(body.filters)
-
-    queries = _standardize_queries(body.queries)
-    return await reindex(
-        source_index=ix,
-        destination_index=body.destination,
-        queries=queries,
-        filters=filters,
-        field_options={k: v.model_dump() for k, v in body.field_options.items()},
+    params = dict(
+        source=ix,
+        destination=body.destination,
+        queries=_standardize_queries(body.queries),
+        filters={k: v.model_dump(exclude_none=True) for k, v in filters.items()} if filters else None,
+        field_options={k: v.model_dump(exclude_none=True) for k, v in body.field_options.items()},
     )
+    return await create_job("copy", body.destination, user.email, params)
 
 
 @app_index.get("/index/{ix}/image/{id}")
@@ -424,13 +426,16 @@ async def download_index(
                 if role.role != "NONE":
                     yield json.dumps({"_type": "user_role", "email": role.email, "role": role.role}) + "\n"
 
-            # 4. Documents via scroll
+            # 4. Documents, using cursor pagination
             field_specs = [FieldSpec(name=name) for name in fields]
-            result = await query_documents(ix, fields=field_specs, scroll=True, per_page=500)
-            while result is not None:
+            after = None
+            while True:
+                result = await query_documents(ix, fields=field_specs, per_page=1000, after=after)
                 for doc in result.data:
-                    yield json.dumps({"_type": "document", **doc}) + "\n"
-                result = await query_documents(ix, scroll_id=result.scroll_id)
+                    yield json.dumps({"_type": "document", **doc}, default=str) + "\n"
+                if not result.next:
+                    break
+                after = result.next
 
         async for line in ndjson_lines():
             chunk = compressor.compress(line.encode())
@@ -452,7 +457,8 @@ async def import_index(
     user: User = Depends(authenticated_user),
 ):
     """
-    Import a project from a .ndjson or .ndjson.gz file produced by the download endpoint.
+    Import a project from a .ndjson or .ndjson.gz file produced by the download endpoint (of this or an older,
+    elasticsearch based, AmCAT server; see amcat4.projects.legacy).
     Restores project settings, fields, user roles, and documents.
     Requires WRITER or ADMIN server role.
     """
@@ -469,12 +475,11 @@ async def import_index(
     roles: list[dict] = []
     project_settings: ProjectSettings | None = None
     created_project_id: str | None = None
-    has_identifiers = False
     n_docs = 0
     batch: list[dict] = []
 
     async def setup_project() -> ProjectSettings:
-        nonlocal has_identifiers, created_project_id
+        nonlocal created_project_id
         if settings_data is None:
             raise HTTPException(status_code=422, detail="No settings record found in file")
         sd = {**settings_data, "id": override_id} if override_id else settings_data
@@ -484,7 +489,6 @@ async def import_index(
         if fields:
             field_defs = {name: CreateDocumentField.model_validate(f) for name, f in fields.items()}
             await create_fields(ps.id, field_defs)
-        has_identifiers = any(f.get("identifier") for f in fields.values())
         for role in roles:
             if Roles[role["role"]] == Roles.NONE:
                 continue
@@ -505,14 +509,13 @@ async def import_index(
                 settings_data = obj
             elif record_type == "field":
                 name = obj.pop("name")
-                fields[name] = obj
+                fields[name] = convert_field_definition(obj)
             elif record_type == "user_role":
                 roles.append(obj)
             elif record_type == "document":
                 if project_settings is None:
                     project_settings = await setup_project()
-                doc = {k: v for k, v in obj.items() if k != "_id"} if has_identifiers else obj
-                batch.append(doc)
+                batch.append(obj)
                 n_docs += 1
                 if len(batch) >= 500:
                     await create_or_update_documents(project_settings.id, batch)
@@ -558,7 +561,9 @@ async def import_index_metadata(
         await create_project_index(ps, admin_email=user.email)
         created_project_id = ps.id
         if body.fields:
-            field_defs = {name: CreateDocumentField.model_validate(f) for name, f in body.fields.items()}
+            field_defs = {
+                name: CreateDocumentField.model_validate(convert_field_definition(f)) for name, f in body.fields.items()
+            }
             await create_fields(ps.id, field_defs)
         for role in body.roles:
             if Roles[role["role"]] == Roles.NONE:
@@ -592,8 +597,5 @@ async def import_index_documents(
     Requires WRITER or ADMIN role on the index.
     """
     await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    field_settings = await list_fields(ix)
-    has_identifiers = any(f.identifier for f in field_settings.values())
-    docs = [{k: v for k, v in doc.items() if k != "_id"} if has_identifiers else doc for doc in body.documents]
-    await create_or_update_documents(ix, docs)
-    return {"n_documents": len(docs)}
+    await create_or_update_documents(ix, body.documents)
+    return {"n_documents": len(body.documents)}

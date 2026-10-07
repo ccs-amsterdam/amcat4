@@ -2,17 +2,17 @@
 
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth_helpers import authenticated_user
-from amcat4.models import FieldSpec, FilterSpec, FilterValue, IndexIds, Roles, SortSpec, User
-from amcat4.projects.aggregate import Aggregation, Axis, TopHitsAggregation, query_aggregate
+from amcat4.models import FieldSpec, FilterSpec, FilterValue, IndexId, Roles, SortSpec, User
+from amcat4.projects.aggregate import MAX_LIMIT, Aggregation, Axis, TopHitsAggregation, query_aggregate
 from amcat4.projects.query import delete_query, query_documents, update_query, update_tag_query
-from amcat4.systemdata.fields import HTTPException_if_invalid_field_access, allowed_fieldspecs
+from amcat4.systemdata.fields import HTTPException_if_invalid_field_access, field_access
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
-app_index_query = APIRouter(prefix="/index", tags=["query"])
+app_index_query = APIRouter(prefix="", tags=["query"])
 
 
 # TYPES
@@ -83,6 +83,11 @@ QueriesType = Annotated[
 
 
 # REQUEST MODELS
+class SimilarSpec(BaseModel):
+    field: str = Field(description="The vector field")
+    vector: list[float] = Field(description="The vector to compare to")
+
+
 class QueryDocumentsBody(BaseModel):
     """Body for querying documents."""
 
@@ -90,20 +95,19 @@ class QueryDocumentsBody(BaseModel):
     fields: FieldsType
     filters: FiltersType
     sort: SortType
-    per_page: int = Field(default=10, le=200, description="Number of documents per page.")
+    per_page: int = Field(default=10, le=1000, description="Number of documents per page.")
     page: int = Field(default=0, description="Which page to retrieve.")
-    scroll: str | None = Field(
-        None,
+    after: str | None = Field(
+        default=None,
         description=(
-            "Scroll is the most efficient way to retrieve large result sets. Specify "
-            "how long the scroll context should be kept alive, e.g., '5m' for one minute. "
-            "results will then contain a scroll_id that can be used to retrieve the next batch."
+            "Cursor to get the next batch of results: the 'next' value from the meta of the previous result (send the "
+            "same query again). This is the efficient way to retrieve large result sets (especially without sort)."
         ),
     )
-    scroll_id: str | None = Field(
-        default=None, description="Scroll ID as returned by a previous query for getting the next batch."
-    )
     highlight: bool = Field(default=False, description="If true, highlight fields.")
+    similar: SimilarSpec | None = Field(
+        default=None, description="Order results by similarity to this vector (cosine similarity on a vector field)"
+    )
 
 
 class AggregationSpec(BaseModel):
@@ -144,7 +148,10 @@ class QueryAggregateBody(BaseModel):
     aggregations: Optional[List[AggregationSpec | TopHitsAggregationSpec]] = Field(None, description="Aggregate functions.")
     queries: QueriesType
     filters: FiltersType
-    after: Optional[dict[str, Any]] = Field(None, description="After cursor for pagination.")
+    order: Literal["axes", "count"] = Field(
+        "axes", description="Sort the results by the axis values, or by the number of documents (descending)"
+    )
+    limit: int = Field(1000, ge=1, le=MAX_LIMIT, description="Maximum number of rows to return")
 
 
 class UpdateTagsBody(BaseModel):
@@ -184,7 +191,7 @@ class QueryMeta(BaseModel):
     per_page: Optional[int] = None
     page_count: Optional[int] = None
     page: Optional[int] = None
-    scroll_id: Optional[str] = None
+    next: Optional[str] = Field(None, description="Cursor for the next batch of results (use as 'after')")
 
 
 class QueryResultDict(BaseModel):
@@ -208,30 +215,26 @@ class QueryUpdateResponse(BaseModel):
     total: int
 
 
-class TaskResponse(BaseModel):
-    """Response for a background task."""
-
-    task_id: str = Field(..., description="The ID of the background task.")
+class MultiProjectQueryBody(QueryDocumentsBody):
+    projects: list[IndexId] = Field(description="The projects to query")
 
 
-@app_index_query.post("/{index}/query")
-async def query_documents_post(
-    index: IndexIds,
-    body: Annotated[QueryDocumentsBody, Body(...)],
-    user: User = Depends(authenticated_user),
-) -> QueryResultDict:
-    """
-    Query documents in one or more indices. Requires READER or METAREADER role on the index/indices.
-    """
-    # TODO: break up the query and scroll logic. So when scroll_id is given, we don't need to check fields/roles again.
-    # that DOES require a strict max time window for scrolls though (which we need anyway).
-    indices = index.split(",")
+class MultiProjectAggregateBody(QueryAggregateBody):
+    projects: list[IndexId] = Field(description="The projects to query")
 
+
+async def _query(indices: list[str], body: QueryDocumentsBody, user: User) -> QueryResultDict:
     fieldspecs = _standardize_fieldspecs(body.fields)
+    access = await field_access(user, indices)
     if fieldspecs:
         await HTTPException_if_invalid_field_access(indices, user, fieldspecs)
     else:
-        fieldspecs = await allowed_fieldspecs(user, indices)
+        fieldspecs = list(access.visible.values())
+    similar = None
+    if body.similar:
+        if body.similar.field not in access.queryable:
+            raise HTTPException(403, f"Cannot query field {body.similar.field}")
+        similar = (body.similar.field, body.similar.vector)
 
     r = await query_documents(
         indices,
@@ -241,39 +244,50 @@ async def query_documents_post(
         sort=_standardize_sort(body.sort),
         per_page=body.per_page,
         page=body.page,
-        scroll_id=body.scroll_id,
-        scroll=body.scroll,
+        after=body.after,
         highlight=body.highlight,
+        similar=similar,
+        queryable=None if user.auth_disabled else access.queryable,
     )
-    if r is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No results")
     return QueryResultDict(**r.as_dict())
 
 
-@app_index_query.post("/{index}/aggregate", response_model=AggregateResult)
-async def query_aggregate_post(
-    index: IndexIds,
-    body: Annotated[QueryAggregateBody, Body(...)],
+@app_index_query.post("/index/{index}/query")
+async def query_documents_post(
+    index: IndexId,
+    body: Annotated[QueryDocumentsBody, Body(...)],
     user: User = Depends(authenticated_user),
-):
+) -> QueryResultDict:
     """
-    Perform an aggregation query on one or more indices. Requires READER or METAREADER role.
+    Query documents in a project. Requires READER or METAREADER role.
     """
-    indices = index.split(",")
-    fields_to_check = []
+    return await _query([index], body, user)
 
+
+@app_index_query.post("/query")
+async def query_projects_post(
+    body: Annotated[MultiProjectQueryBody, Body(...)],
+    user: User = Depends(authenticated_user),
+) -> QueryResultDict:
+    """
+    Query documents in one or more projects. Requires READER or METAREADER role on all projects.
+    """
+    return await _query(body.projects, body, user)
+
+
+async def _aggregate(indices: list[str], body: QueryAggregateBody, user: User):
+    fields_to_check = []
     if body.axes:
         for axis in body.axes:
             if axis.field != "_query":
                 fields_to_check.append(FieldSpec(name=axis.field))
-
     if body.aggregations:
         for agg in body.aggregations:
             if isinstance(agg, AggregationSpec):
                 fields_to_check.append(FieldSpec(name=agg.field))
             else:
                 fields_to_check += [FieldSpec(name=f) for f in agg.fields]
-
+    access = await field_access(user, indices)
     if fields_to_check:
         await HTTPException_if_invalid_field_access(indices, user, fields_to_check)
 
@@ -285,73 +299,91 @@ async def query_aggregate_post(
         _aggregations,
         queries=_standardize_queries(body.queries),
         filters=_standardize_filters(body.filters),
-        after=body.after,
+        order=body.order,
+        limit=body.limit,
+        queryable=None if user.auth_disabled else access.queryable,
     )
-
     return {
         "meta": {
             "axes": [axis.asdict() for axis in results.axes],
             "aggregations": [a.asdict() for a in results.aggregations],
-            "after": results.after,
+            "truncated": results.truncated,
         },
         "data": list(results.as_dicts()),
     }
 
 
-@app_index_query.post("/{index}/tags_update")
+@app_index_query.post("/index/{index}/aggregate", response_model=AggregateResult)
+async def query_aggregate_post(
+    index: IndexId,
+    body: Annotated[QueryAggregateBody, Body(...)],
+    user: User = Depends(authenticated_user),
+):
+    """
+    Perform an aggregation query on a project. Requires READER or METAREADER role.
+    """
+    return await _aggregate([index], body, user)
+
+
+@app_index_query.post("/aggregate", response_model=AggregateResult)
+async def aggregate_projects_post(
+    body: Annotated[MultiProjectAggregateBody, Body(...)],
+    user: User = Depends(authenticated_user),
+):
+    """
+    Perform an aggregation query on one or more projects. Requires READER or METAREADER role on all projects.
+    """
+    return await _aggregate(body.projects, body, user)
+
+
+@app_index_query.post("/index/{index}/tags_update")
 async def query_update_tags(
-    index: IndexIds,
+    index: IndexId,
     body: Annotated[UpdateTagsBody, Body(...)],
     user: User = Depends(authenticated_user),
 ) -> QueryUpdateResponse:
     """
-    Add or remove tags from documents by query or by id. Requires WRITER role on the index/indices.
+    Add or remove tags from documents by query or by id. Requires WRITER role on the project.
     """
-    indices = index.split(",")
-    for i in indices:
-        await HTTPException_if_not_project_index_role(user, i, Roles.WRITER)
+    await HTTPException_if_not_project_index_role(user, index, Roles.WRITER)
 
     ids = body.ids
     if isinstance(ids, (str, int)):
         ids = [ids]
     response = await update_tag_query(
-        indices, body.action, body.field, body.tag, _standardize_queries(body.queries), _standardize_filters(body.filters), ids
+        index, body.action, body.field, body.tag, _standardize_queries(body.queries), _standardize_filters(body.filters), ids
     )
     return QueryUpdateResponse(**response)
 
 
-@app_index_query.post("/{index}/update_by_query")
+@app_index_query.post("/index/{index}/update_by_query")
 async def update_by_query(
-    index: IndexIds,
+    index: IndexId,
     body: Annotated[UpdateByQueryBody, Body(...)],
     user: User = Depends(authenticated_user),
 ) -> QueryUpdateResponse:
     """
-    Update documents by query. Requires WRITER role on the index/indices.
+    Update documents by query. Requires WRITER role on the project.
     """
-    indices = index.split(",")
-    for ix in indices:
-        await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
+    await HTTPException_if_not_project_index_role(user, index, Roles.WRITER)
 
     response = await update_query(
-        indices, body.field, body.value, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids
+        index, body.field, body.value, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids
     )
     return QueryUpdateResponse(**response)
 
 
-@app_index_query.post("/{index}/delete_by_query")
+@app_index_query.post("/index/{index}/delete_by_query")
 async def delete_by_query(
-    index: IndexIds,
+    index: IndexId,
     body: Annotated[DeleteByQueryBody, Body(...)],
     user: User = Depends(authenticated_user),
 ) -> QueryUpdateResponse:
     """
-    Delete documents by query. Requires WRITER role on the index/indices.
+    Delete documents by query. Requires WRITER role on the project.
     """
-    indices = index.split(",")
-    for ix in indices:
-        await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
-    response = await delete_query(indices, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids)
+    await HTTPException_if_not_project_index_role(user, index, Roles.WRITER)
+    response = await delete_query(index, _standardize_queries(body.queries), _standardize_filters(body.filters), body.ids)
     return QueryUpdateResponse.model_validate(response)
 
 

@@ -1,7 +1,6 @@
 import pytest
 
 from amcat4.models import CreateDocumentField, FieldSpec, Roles
-from amcat4.projects.index import refresh_index
 from amcat4.projects.query import query_documents
 from amcat4.systemdata.roles import create_project_role, update_project_role
 from tests.conftest import upload
@@ -142,22 +141,22 @@ async def test_multiple_index(client, index_docs, index, user):
             "i": CreateDocumentField(type="integer"),
         },
     )
-    indices = f"{index},{index_docs}"
+    projects = [index, index_docs]
 
     r = await post_json(
         client,
-        f"/index/{indices}/query",
+        "/query",
         user=user,
         expected=200,
-        json=dict(fields=["_id", "cat", "i"]),
+        json=dict(projects=projects, fields=["_id", "cat", "i"]),
     )
     assert len(r["results"]) == 5
 
     r = await post_json(
         client,
-        f"/index/{indices}/aggregate",
+        "/aggregate",
         user=user,
-        json={"axes": [{"field": "cat"}], "fields": ["_id"]},
+        json={"projects": projects, "axes": [{"field": "cat"}]},
         expected=200,
     )
     assert dictset(r["data"]) == dictset([{"cat": "a", "n": 3}, {"n": 1, "cat": "b"}, {"n": 1, "cat": "c"}])
@@ -214,7 +213,6 @@ async def test_query_tags(client, index_docs, user):
     res = await post_json(client, f"/index/{index_docs}/tags_update", user=user, expected=200, json=add_tags)
     assert res["updated"] == 3
     # should refresh before returning
-    # await refresh_index(index_docs)
     assert await tags() == {"0": ["x"], "1": ["x"], "2": ["x"]}
     res = await post_json(
         client,
@@ -265,7 +263,6 @@ async def test_api_update_by_query(client, index_docs, user):
 @pytest.mark.anyio
 async def test_api_delete_by_query(client, index_docs, user):
     async def ids():
-        await refresh_index(index_docs)
         res = await query_documents(index_docs)
         return {doc["_id"] for doc in (res.data if res else [])}
 

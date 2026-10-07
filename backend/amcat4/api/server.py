@@ -13,7 +13,6 @@ from amcat4.connections import s3_enabled
 from amcat4.models import ContactInfo, Links, LinksGroup, Roles, ServerSettings, User
 from amcat4.objectstorage.image_processing import create_image_from_url
 from amcat4.postgres.connection import fetch_one
-from amcat4.projects.query import get_task_status
 from amcat4.systemdata.roles import HTTPException_if_not_server_role
 from amcat4.systemdata.settings import get_server_settings, upsert_server_settings
 
@@ -98,15 +97,7 @@ async def read_branding() -> BrandingBody:
 @app_info.put("/config/branding", status_code=status.HTTP_204_NO_CONTENT)
 async def change_branding(data: BrandingBody, user: User = Depends(authenticated_user)):
     """Update the server branding settings. Requires ADMIN server role."""
-    print("put branding")
-    print(data)
     await HTTPException_if_not_server_role(user, Roles.ADMIN)
     d = data.model_dump(exclude_unset=True, exclude={"icon_url"})
     d["icon"] = await create_image_from_url(data.icon_url) if data.icon_url else None
     await upsert_server_settings(ServerSettings(**d))
-
-
-@app_info.get("/task/{taskId}")
-async def task_status(taskId: str, _user: User = Depends(authenticated_user)):
-    """Get the status of a background task."""
-    return await get_task_status(taskId)

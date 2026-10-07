@@ -11,7 +11,7 @@ from amcat4.models import (
     Roles,
     User,
 )
-from amcat4.postgres.connection import execute, fetch_all
+from amcat4.postgres.connection import execute, fetch_all, fetch_one
 from amcat4.projects.index import create_project_index
 from amcat4.systemdata.roles import (
     get_user_server_role,
@@ -22,16 +22,31 @@ from amcat4.systemdata.roles import (
 )
 
 
+async def _keys(request: AdminPermissionRequest) -> tuple[int | None, str | None]:
+    """The project pk (for project role requests) and new project id (for create project requests)"""
+    if isinstance(request.request, ProjectRoleRequest):
+        row = await fetch_one("SELECT pk FROM projects WHERE id = %s", [request.request.project_id])
+        if row is None:
+            raise NotFoundError(f"Project {request.request.project_id} does not exist")
+        return row["pk"], None
+    if isinstance(request.request, CreateProjectRequest):
+        return None, request.request.project_id
+    return None, None
+
+
 async def update_request(request: AdminPermissionRequest):
     """Create or update a request. Requests are identified by type, email and project"""
+    project_pk, new_project_id = await _keys(request)
     await execute(
-        """INSERT INTO requests (type, email, project_id, status, timestamp, request) VALUES (%s, %s, %s, %s, %s, %s)
-           ON CONFLICT (type, email, project_id) DO UPDATE
+        """INSERT INTO requests (type, email, project_pk, new_project_id, status, timestamp, request)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)
+           ON CONFLICT (type, email, coalesce(project_pk, 0), coalesce(new_project_id, '')) DO UPDATE
            SET status = EXCLUDED.status, timestamp = EXCLUDED.timestamp, request = EXCLUDED.request""",
         [
             request.request.type,
             request.email,
-            _project_id(request),
+            project_pk,
+            new_project_id,
             request.status,
             request.timestamp,
             Jsonb(request.request.model_dump(mode="json")),
@@ -40,9 +55,11 @@ async def update_request(request: AdminPermissionRequest):
 
 
 async def delete_request(request: AdminPermissionRequest):
+    project_pk, new_project_id = await _keys(request)
     n = await execute(
-        "DELETE FROM requests WHERE type = %s AND email = %s AND project_id = %s",
-        [request.request.type, request.email, _project_id(request)],
+        """DELETE FROM requests WHERE type = %s AND email = %s AND coalesce(project_pk, 0) = coalesce(%s, 0)
+           AND coalesce(new_project_id, '') = coalesce(%s, '')""",
+        [request.request.type, request.email, project_pk, new_project_id],
     )
     if n == 0:
         raise NotFoundError("Request does not exist")
@@ -91,7 +108,8 @@ async def list_admin_requests(user: User) -> AsyncIterable[AdminPermissionReques
     if roles:
         projects = [r.role_context for r in roles]
         for request in await _list_requests(
-            "type = 'project_role' AND status = 'pending' AND project_id = ANY(%s)", [projects]
+            "type = 'project_role' AND status = 'pending' AND project_pk IN (SELECT pk FROM projects WHERE id = ANY(%s))",
+            [projects],
         ):
             yield request
 
@@ -125,10 +143,6 @@ async def _approve_request(ar: AdminPermissionRequest):
                 folder=ar.request.folder,
             )
             await create_project_index(new_index, admin_email=ar.email)
-
-
-def _project_id(request: AdminPermissionRequest) -> str:
-    return getattr(request.request, "project_id", None) or ""
 
 
 # ================================ USED IN TESTS ONLY =========================================

@@ -60,7 +60,7 @@ class FieldInfo:
     pk: int
     name: str
     type: str
-    identifier: bool = False
+    unique: bool = False
     sort_slot: str | None = None
     subkey: str | None = None  # for sub-fields, e.g. the lat/lon of a geo_point
 
@@ -196,13 +196,11 @@ def normalize_geo(value: Any) -> dict[str, float]:
     return {"lat": lat, "lon": lon}
 
 
-FIELD_COLUMNS = "pk, name, type, identifier, sort_slot"
+FIELD_COLUMNS = "pk, name, type, unique_field, sort_slot"
 
 
 def field_info_from_row(row: dict) -> FieldInfo:
-    return FieldInfo(
-        pk=row["pk"], name=row["name"], type=row["type"], identifier=row["identifier"], sort_slot=row["sort_slot"]
-    )
+    return FieldInfo(pk=row["pk"], name=row["name"], type=row["type"], unique=row["unique_field"], sort_slot=row["sort_slot"])
 
 
 async def list_field_infos(conn: AsyncConnection, project_pk: int) -> dict[str, FieldInfo]:
@@ -248,7 +246,7 @@ class FieldSet:
             return self._resolve_subfield(name)
         fs = self.by_name.get(name)
         if not fs or (self.queryable is not None and name not in self.queryable):
-            raise QueryError(f"Unknown field: {name}")
+            raise QueryError(f"Unknown field: {name} (field does not exist, or you cannot search it)")
         if not fs[0].indexed:
             raise QueryError(f"Field {name} is not searchable")
         return fs
@@ -258,7 +256,7 @@ class FieldSet:
         base, sub = name.rsplit(".", 1)
         fs = self.resolve(base)
         if fs[0].type != "geo_point" or sub not in ("lat", "lon"):
-            raise QueryError(f"Unknown field: {name}")
+            raise QueryError(f"Unknown field: {name} (field does not exist, or you cannot search it)")
         return [FieldInfo(pk=f.pk, name=name, type="number", subkey=sub) for f in fs]
 
     def default_fields(self) -> list[FieldInfo]:

@@ -357,7 +357,7 @@ def _compile_text(node: Term | Phrase | Range, f: FieldInfo) -> dict:
     if isinstance(node, Term):
         text = node.text
         if "?" in text or "*" in text.rstrip("*"):
-            raise QueryError(f"Only trailing wildcards are supported: {text}")
+            raise QueryError(f"Wildcards are only supported at the end of a word (e.g. econom*), not in {text!r}")
         if node.prefix:
             words = _words(text.rstrip("*"))
             if len(words) != 1:

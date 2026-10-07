@@ -26,7 +26,7 @@ from amcat4.models import FieldType, ProjectSettings, Roles
 from amcat4.objectstorage.image_processing import create_image_from_url
 from amcat4.projects.documents import create_or_update_documents
 from amcat4.projects.index import create_project_index, delete_project_index
-from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version
+from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata
 from amcat4.systemdata.roles import list_server_roles, update_server_role
 
 SOTU_INDEX = "state_of_the_union"
@@ -116,12 +116,12 @@ def val(val_or_list):
 
 
 async def migrate_systemdata(args) -> None:
-    await do_migrate_systemdata(rm_pending_migrations=args.rm_pending)
+    await do_migrate_systemdata()
 
 
-async def do_migrate_systemdata(rm_pending_migrations=True) -> None:
+async def do_migrate_systemdata() -> None:
     async with amcat_connections():
-        await create_or_update_systemdata(rm_pending_migrations=rm_pending_migrations)
+        await create_or_update_systemdata()
 
 
 async def dangerously_destroy_systemdata(args) -> None:
@@ -130,7 +130,7 @@ async def dangerously_destroy_systemdata(args) -> None:
         if answer.strip().lower() != "yes":
             logging.info("Aborted")
             sys.exit(1)
-        await delete_systemdata_version()
+        await delete_systemdata()
 
 
 def base_env():
@@ -273,7 +273,6 @@ def main():
     p.set_defaults(func=create_test_index)
 
     p = subparsers.add_parser("migrate", help="Create or migrate the database schema to the current version")
-    p.set_defaults(rm_pending=True)
     p.set_defaults(func=migrate_systemdata)
 
     p = subparsers.add_parser(

@@ -5,18 +5,21 @@ TEXT = "The quick brown fox jumps over the lazy dog. Later that day, the fox wen
 
 
 def test_nomatch():
-    # like elastic, the snippet does not end in the middle of a word
-    assert make_snippet(TEXT, None, SnippetParams(nomatch_chars=6, max_matches=3, match_chars=20)) == "The quick"
-    assert make_snippet(TEXT, [[16, 19]], SnippetParams(nomatch_chars=9, max_matches=0, match_chars=20)) == "The quick"
+    # without matches (or with max_matches=0), the snippet is the first nomatch_words words
+    assert make_snippet(TEXT, None, SnippetParams(nomatch_words=2, max_matches=3, words_per_match=5)) == "The quick"
+    assert make_snippet(TEXT, [[16, 19]], SnippetParams(nomatch_words=2, max_matches=0)) == "The quick"
+    assert make_snippet(TEXT, None, SnippetParams(nomatch_words=0)) == ""
 
 
 def test_matches_are_limited():
     positions = [[16, 19], [65, 68]]
-    s = make_snippet(TEXT, positions, SnippetParams(nomatch_chars=10, max_matches=1, match_chars=20))
-    assert "fox" in s and "..." not in s and len(s) <= 20
-    s = make_snippet(TEXT, positions, SnippetParams(nomatch_chars=10, max_matches=2, match_chars=20), "<em>", "</em>")
-    assert s.count("<em>fox</em>") == 2 and " ... " in s
-    assert len(s.replace("<em>", "").replace("</em>", "")) <= 2 * 20 + len(" ... ")
+    s = make_snippet(TEXT, positions, SnippetParams(max_matches=1, words_per_match=3))
+    assert s == "brown fox jumps"
+    s = make_snippet(TEXT, positions, SnippetParams(max_matches=2, words_per_match=3), "<em>", "</em>")
+    assert s == "brown <em>fox</em> jumps ... the <em>fox</em> went"
+    # overlapping fragments are merged
+    s = make_snippet(TEXT, [[16, 19], [20, 25]], SnippetParams(max_matches=2, words_per_match=3), "<em>", "</em>")
+    assert s == "brown <em>fox</em> <em>jumps</em>"
 
 
 def test_highlight():

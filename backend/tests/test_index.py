@@ -130,7 +130,7 @@ async def test_clear_project_index(index_docs):
 
     # Verify preconditions: documents and fields exist
     assert await count_documents(index) > 0
-    fields = await list_fields(index, auto_repair=False)
+    fields = await list_fields(index)
     assert len(fields) > 0
     settings = await get_project_settings(index)
     assert settings.id == index
@@ -142,7 +142,7 @@ async def test_clear_project_index(index_docs):
     assert await count_documents(index) == 0
 
     # Field definitions are gone
-    fields = await list_fields(index, auto_repair=False)
+    fields = await list_fields(index)
     assert len(fields) == 0
 
     # Settings and roles are preserved

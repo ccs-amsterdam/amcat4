@@ -30,44 +30,24 @@ async def test_pagination(client, index, user):
 
 
 @pytest.mark.anyio
-async def test_scroll(client, index, user):
+async def test_cursor(client, index, user):
     await create_project_role(user, index, Roles.READER)
     await upload(index, docs=[{"i": i} for i in range(66)], fields={"i": CreateDocumentField(type="integer")})
     url = f"/index/{index}/query"
-    r = await post_json(
-        client,
-        url,
-        user=user,
-        json={"scroll": "5m", "sort": [{"i": {"order": "desc"}}], "per_page": 30, "fields": ["i"]},
-        expected=200,
-    )
-
-    scroll_id = r["meta"]["scroll_id"]
-    assert scroll_id is not None
+    body = {"sort": [{"i": {"order": "desc"}}], "per_page": 30, "fields": ["i"]}
+    r = await post_json(client, url, user=user, json=body, expected=200)
     assert {h["i"] for h in r["results"]} == set(range(36, 66))
-
-    r = await post_json(client, url, user=user, json={"scroll_id": scroll_id}, expected=200)
+    r = await post_json(client, url, user=user, json={**body, "after": r["meta"]["next"]}, expected=200)
     assert {h["i"] for h in r["results"]} == set(range(6, 36))
-    assert r["meta"]["scroll_id"] == scroll_id
-    r = await post_json(client, url, user=user, json={"scroll_id": scroll_id}, expected=200)
+    r = await post_json(client, url, user=user, json={**body, "after": r["meta"]["next"]}, expected=200)
     assert {h["i"] for h in r["results"]} == set(range(6))
+    assert r["meta"]["next"] is None
 
-    # Scrolling past the edge should return 404
-    await post_json(client, url, user=user, json={"scroll_id": scroll_id}, expected=404)
-
-    # Test POST to query endpoint
-    r = await post_json(
-        client,
-        f"/index/{index}/query",
-        user=user,
-        expected=200,
-        json={
-            "sort": [{"i": {"order": "desc"}}],
-            "per_page": 30,
-            "scroll": "5m",
-            "fields": ["i"],
-        },
-    )
-    scroll_id = r["meta"]["scroll_id"]
-    assert scroll_id is not None
-    assert {h["i"] for h in r["results"]} == set(range(36, 66))
+    # Without sort, the cursor uses the internal id
+    body = {"per_page": 30, "fields": ["i"]}
+    r = await post_json(client, url, user=user, json=body, expected=200)
+    seen = [h["i"] for h in r["results"]]
+    while r["meta"]["next"]:
+        r = await post_json(client, url, user=user, json={**body, "after": r["meta"]["next"]}, expected=200)
+        seen += [h["i"] for h in r["results"]]
+    assert sorted(seen) == list(range(66))

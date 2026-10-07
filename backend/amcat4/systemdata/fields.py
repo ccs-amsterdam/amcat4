@@ -1,12 +1,13 @@
 """
 Document fields.
 
-A field has a name (a project-level label), an AmCAT type, and settings such as metareader access.
+A field has a name (a project-level label), an AmCAT type, and settings such as who can see and query it.
 The values of a field are stored in the documents table under a stable field key (see amcat4.postgres.fields).
 """
 
-import datetime
-from typing import Any, Iterable, Mapping, get_args
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any, Mapping, get_args
 
 from fastapi import HTTPException
 from psycopg import sql
@@ -16,27 +17,33 @@ from amcat4.errors import NotFoundError
 from amcat4.models import (
     CreateDocumentField,
     DocumentField,
-    DocumentFieldMetareaderAccess,
-    ElasticType,
     FieldSpec,
     FieldType,
     IndexId,
     RoleRule,
     Roles,
+    SnippetParams,
     UpdateDocumentField,
     User,
 )
 from amcat4.postgres.connection import connection, fetch_all, fetch_one
-from amcat4.postgres.fields import FieldInfo, FieldSet, field_info_from_row, sort_slot_for_type
+from amcat4.postgres.documents import convert_field, update_dedup_hashes
+from amcat4.postgres.fields import FieldInfo, FieldSet, field_info_from_row, sort_slot_for_type, storage_column
 from amcat4.postgres.projects import project_pk, project_pks
-from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, list_user_project_roles, role_is_at_least
-from amcat4.systemdata.typemap import list_allowed_elastic_types
+from amcat4.systemdata.roles import get_user_project_role, role_is_at_least
 
-_COLUMNS = "pk, name, type, elastic_type, identifier, metareader, client_settings, sort_slot"
+_COLUMNS = "pk, name, type, unique_field, metareader, reader, client_settings, sort_slot"
 
 
 def _document_field(row: dict) -> DocumentField:
-    return DocumentField.model_validate({k: row[k] for k in row if k not in ("pk", "name")})
+    return DocumentField(
+        type=row["type"],
+        unique=row["unique_field"],
+        metareader=row["metareader"],
+        reader=row["reader"],
+        client_settings=row["client_settings"],
+        sort_slot=row["sort_slot"],
+    )
 
 
 async def delete_all_project_fields(index: str):
@@ -50,10 +57,8 @@ async def _field_rows(index: str) -> list[dict]:
     return await fetch_all(f"SELECT {_COLUMNS} FROM fields WHERE project_pk = %s ORDER BY pk", [pk])  # type: ignore[arg-type]
 
 
-async def list_fields(index: str, auto_repair: bool = True) -> dict[str, DocumentField]:
-    """
-    Retrieve the fields settings for this index. (auto_repair is not used anymore, kept for compatibility)
-    """
+async def list_fields(index: str) -> dict[str, DocumentField]:
+    """Retrieve the field settings for this index"""
     return {row["name"]: _document_field(row) for row in await _field_rows(index)}
 
 
@@ -70,7 +75,7 @@ async def get_fieldset(indices: str | list[str], queryable: set[str] | None = No
     indices = [indices] if isinstance(indices, str) else indices
     pks = await project_pks(indices)
     rows = await fetch_all(
-        "SELECT project_pk, pk, name, type, identifier, sort_slot FROM fields WHERE project_pk = ANY(%s) ORDER BY pk",
+        "SELECT project_pk, pk, name, type, unique_field, sort_slot FROM fields WHERE project_pk = ANY(%s) ORDER BY pk",
         [list(pks.values())],
     )
     project_fields: dict[int, dict[str, FieldInfo]] = {pk: {} for pk in pks.values()}
@@ -79,59 +84,45 @@ async def get_fieldset(indices: str | list[str], queryable: set[str] | None = No
     return FieldSet(project_fields, queryable=queryable)
 
 
+def _standardize_createfields(fields: Mapping[str, FieldType | CreateDocumentField]) -> dict[str, CreateDocumentField]:
+    sfields: dict[str, CreateDocumentField] = {}
+    for k, v in fields.items():
+        if isinstance(v, str):
+            if v not in get_args(FieldType):
+                raise ValueError(f"Unknown field type {v}")
+            sfields[k] = CreateDocumentField(type=v)
+        else:
+            sfields[k] = v
+    return sfields
+
+
 async def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocumentField]):
     """
-    Create fields that do not exist yet. Existing fields must have the same storage (elastic) type and identifier
-    setting; their other settings are not changed. (For example, a scraper might include the field types in every
-    upload request.)
+    Create fields that do not exist yet. Existing fields must have the same type; their other settings are not changed.
+    (For example, a scraper might include the field types in every upload request.)
+    Use update_fields to change existing fields.
     """
     pk = await project_pk(index)
     current = await list_fields(index)
-    sfields = _standardize_createfields(fields)
-    old_identifiers = any(f.identifier for f in current.values())
     new_fields: dict[str, DocumentField] = {}
 
-    for field, settings in sfields.items():
-        if settings.elastic_type is not None:
-            allowed_types = list_allowed_elastic_types(settings.type)
-            if settings.elastic_type not in allowed_types:
-                raise ValueError(
-                    f"Field type {settings.type} does not support elastic type {settings.elastic_type}. "
-                    f"Allowed types are: {allowed_types}"
-                )
-        else:
-            settings.elastic_type = _get_default_field(settings.type).elastic_type
-
-        existing = current.get(field)
+    for name, settings in _standardize_createfields(fields).items():
+        existing = current.get(name)
         if existing is not None:
-            if existing.elastic_type != settings.elastic_type:
-                raise ValueError(f"Field '{field}' already exists with elastic type '{existing.elastic_type}'. ")
-            if existing.identifier != bool(settings.identifier):
-                raise ValueError(f"Field '{field}' already exists with identifier '{existing.identifier}'. ")
+            if existing.type != settings.type:
+                raise ValueError(f"Field '{name}' already exists with type '{existing.type}'")
             continue
-
-        new_field = DocumentField(
-            type=settings.type,
-            elastic_type=settings.elastic_type,
-            identifier=settings.identifier or False,
-            metareader=settings.metareader or _get_default_metareader(settings.type),
-            client_settings=settings.client_settings or {},
-        )
-        _check_forbidden_type(new_field, settings.type)
-        new_fields[field] = new_field
+        args: dict[str, Any] = dict(type=settings.type, unique=bool(settings.unique))
+        for key in ["metareader", "reader", "client_settings"]:
+            if getattr(settings, key) is not None:
+                args[key] = getattr(settings, key)
+        new_fields[name] = DocumentField(**args)
 
     if not new_fields:
         return
 
     async with connection() as conn:
         async with conn.transaction():
-            if any(f.identifier for f in new_fields.values()):
-                # new identifiers are only allowed if the index had identifiers, or if it has no documents yet
-                cur = await conn.execute("SELECT EXISTS (SELECT 1 FROM documents WHERE project_pk = %s) AS e", [pk])
-                has_docs = (await cur.fetchone())["e"]  # type: ignore[index, call-overload]
-                if has_docs and not old_identifiers:
-                    raise ValueError("Cannot add identifiers. Index already has documents with no identifiers.")
-
             cur = await conn.execute("SELECT sort_slot FROM fields WHERE project_pk = %s AND sort_slot IS NOT NULL", [pk])
             used_slots = {row["sort_slot"] for row in await cur.fetchall()}  # type: ignore[index, call-overload]
             for name, f in new_fields.items():
@@ -140,65 +131,89 @@ async def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocum
                 if slot:
                     used_slots.add(slot)
                 await conn.execute(
-                    """INSERT INTO fields (project_pk, name, type, elastic_type, identifier, metareader, client_settings,
+                    """INSERT INTO fields (project_pk, name, type, unique_field, metareader, reader, client_settings,
                                            sort_slot)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     [
                         pk,
                         name,
                         f.type,
-                        f.elastic_type,
-                        f.identifier,
+                        f.unique,
                         Jsonb(f.metareader.model_dump(exclude_none=True)),
+                        Jsonb(f.reader.model_dump(exclude_none=True)),
                         Jsonb(f.client_settings),
                         slot,
                     ],
                 )
+            if any(f.unique for f in new_fields.values()):
+                # existing documents get a hash for the new unique fields (error if there are duplicates)
+                cur = await conn.execute(f"SELECT {_COLUMNS} FROM fields WHERE project_pk = %s", [pk])  # type: ignore[arg-type]
+                infos = {r["name"]: field_info_from_row(r) for r in await cur.fetchall()}  # type: ignore[index, call-overload]
+                await update_dedup_hashes(conn, pk, infos)
 
 
 async def update_fields(index: str, fields: dict[str, UpdateDocumentField]):
+    """
+    Update field settings. Changing the type converts the existing values (or raises an error, changing nothing).
+    """
     pk = await project_pk(index)
     rows = {row["name"]: row for row in await _field_rows(index)}
-    current = {name: _document_field(row) for name, row in rows.items()}
 
     async with connection() as conn:
         async with conn.transaction():
-            for field, new_settings in fields.items():
-                existing = current.get(field)
-                if existing is None:
-                    raise ValueError(f"Field {field} does not exist")
+            recompute_unique = False
+            for name, update in fields.items():
+                row = rows.get(name)
+                if row is None:
+                    raise ValueError(f"Field {name} does not exist")
+                current = _document_field(row)
+                info = field_info_from_row(row)
+                settings = current.model_dump()
 
-                if new_settings.type is not None:
-                    _check_forbidden_type(existing, new_settings.type)
-                    valid_es_types = list_allowed_elastic_types(new_settings.type)
-                    if existing.elastic_type not in valid_es_types:
-                        raise ValueError(
-                            f"Field {field} has the elastic type {existing.elastic_type}. A {new_settings.type} "
-                            f"field can only have the following elastic types: {valid_es_types}."
-                        )
-                    existing.type = new_settings.type
-
-                if new_settings.metareader is not None:
-                    if existing.type != "text" and new_settings.metareader.access == "snippet":
-                        raise ValueError(f"Field {field} is not of type text, cannot set metareader access to snippet")
-                    existing.metareader = new_settings.metareader
-
-                if new_settings.client_settings is not None:
-                    existing.client_settings = new_settings.client_settings
+                if update.type is not None and update.type != current.type:
+                    storage_column(update.type)  # validates the type
+                    new_info = FieldInfo(pk=info.pk, name=info.name, type=update.type, unique=info.unique)
+                    await convert_field(conn, pk, info, new_info)
+                    settings["type"] = update.type
+                    if info.sort_slot and sort_slot_for_type(update.type) != info.sort_slot:
+                        await _set_sort_slot(conn, pk, info, False)
+                        settings["sort_slot"] = None
+                    info = FieldInfo(
+                        pk=info.pk, name=info.name, type=update.type, unique=info.unique, sort_slot=settings["sort_slot"]
+                    )
+                    recompute_unique = recompute_unique or info.unique
+                if update.unique is not None and update.unique != current.unique:
+                    settings["unique"] = update.unique
+                    recompute_unique = True
+                for key in ["metareader", "reader", "client_settings"]:
+                    if getattr(update, key) is not None:
+                        value = getattr(update, key)
+                        settings[key] = value.model_dump() if hasattr(value, "model_dump") else value
+                new = DocumentField.model_validate(settings)  # validates the combination of settings
 
                 await conn.execute(
-                    "UPDATE fields SET type = %s, metareader = %s, client_settings = %s WHERE pk = %s",
+                    """UPDATE fields SET type = %s, unique_field = %s, metareader = %s, reader = %s, client_settings = %s
+                       WHERE pk = %s""",
                     [
-                        existing.type,
-                        Jsonb(existing.metareader.model_dump(exclude_none=True)),
-                        Jsonb(existing.client_settings),
-                        rows[field]["pk"],
+                        new.type,
+                        new.unique,
+                        Jsonb(new.metareader.model_dump(exclude_none=True)),
+                        Jsonb(new.reader.model_dump(exclude_none=True)),
+                        Jsonb(new.client_settings),
+                        info.pk,
                     ],
                 )
+                if update.fast_sort is not None:
+                    await _set_sort_slot(
+                        conn, pk, FieldInfo(pk=info.pk, name=name, type=new.type, sort_slot=info.sort_slot), update.fast_sort
+                    )
+                if update.name is not None and update.name != name:
+                    await _rename_field(conn, pk, name, update.name)
 
-                if new_settings.fast_sort is not None:
-                    info = field_info_from_row({**rows[field], "type": existing.type})
-                    await _set_sort_slot(conn, pk, info, new_settings.fast_sort)
+            if recompute_unique:
+                cur = await conn.execute(f"SELECT {_COLUMNS} FROM fields WHERE project_pk = %s", [pk])  # type: ignore[arg-type]
+                infos = {r["name"]: field_info_from_row(r) for r in await cur.fetchall()}  # type: ignore[index, call-overload]
+                await update_dedup_hashes(conn, pk, infos)
 
 
 async def rename_field(index: str, old: str, new: str) -> None:
@@ -207,12 +222,16 @@ async def rename_field(index: str, old: str, new: str) -> None:
     """
     pk = await project_pk(index)
     async with connection() as conn:
-        cur = await conn.execute("SELECT 1 FROM fields WHERE project_pk = %s AND name = %s", [pk, new])
-        if await cur.fetchone():
-            raise ValueError(f"Field {new} already exists")
-        cur = await conn.execute("UPDATE fields SET name = %s WHERE project_pk = %s AND name = %s", [new, pk, old])
-        if cur.rowcount == 0:
-            raise NotFoundError(f"Field {old} does not exist")
+        await _rename_field(conn, pk, old, new)
+
+
+async def _rename_field(conn, pk: int, old: str, new: str) -> None:
+    cur = await conn.execute("SELECT 1 FROM fields WHERE project_pk = %s AND name = %s", [pk, new])
+    if await cur.fetchone():
+        raise ValueError(f"Field {new} already exists")
+    cur = await conn.execute("UPDATE fields SET name = %s WHERE project_pk = %s AND name = %s", [new, pk, old])
+    if cur.rowcount == 0:
+        raise NotFoundError(f"Field {old} does not exist")
 
 
 async def _set_sort_slot(conn, project: int, f: FieldInfo, fast_sort: bool) -> None:
@@ -241,79 +260,117 @@ async def _set_sort_slot(conn, project: int, f: FieldInfo, fast_sort: bool) -> N
     )
 
 
-async def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSpec]:
-    """
-    Returns the intersection of allowed fieldspecs across multiple indices for the given user.
-    """
-
-    fields_across_indices: dict[str, list[FieldSpec | None]] = {}
-
-    roles = await list_user_project_roles(user, project_ids=indices)
-    role_dict: dict[str, RoleRule] = {role.role_context: role for role in roles}
-
-    for index in indices:
-        for field_name, field in (await list_fields(index)).items():
-            if field_name not in fields_across_indices:
-                fields_across_indices[field_name] = []
-            role = role_dict.get(index)
-            fieldspec = get_fieldspec_for_role(user, role, field_name, field)
-            fields_across_indices[field_name].append(fieldspec)
-
-    fieldspecs: list[FieldSpec] = []
-    for name, specs in fields_across_indices.items():
-        spec = intersect_fieldspecs(specs)
-        if spec is not None:
-            fieldspecs.append(spec)
-
-    return fieldspecs
+###################### FIELD ACCESS ######################
 
 
-def get_fieldspec_for_role(user: User, role: RoleRule | None, field_name: str, field: DocumentField) -> FieldSpec | None:
-    if not role_is_at_least(user, role, Roles.METAREADER):
-        return None
+@dataclass
+class FieldAccess:
+    """What a user can do with the fields of one or more projects"""
 
+    # field name -> FieldSpec (with snippet parameters if the user can only see snippets)
+    visible: dict[str, FieldSpec] = field(default_factory=dict)
+    queryable: set[str] = field(default_factory=set)
+
+
+def _field_access_for_role(user: User, role: RoleRule | None, name: str, f: DocumentField) -> tuple[FieldSpec | None, bool]:
+    """Returns (FieldSpec if the field is visible, whether it is queryable) for a user with this role"""
+    if role_is_at_least(user, role, Roles.WRITER):
+        return FieldSpec(name=name), True
     if role_is_at_least(user, role, Roles.READER):
-        return FieldSpec(name=field_name)
+        return (FieldSpec(name=name) if f.reader.visible else None), f.reader.can_query
+    if role_is_at_least(user, role, Roles.METAREADER):
+        match f.metareader.access:
+            case "read":
+                spec = FieldSpec(name=name)
+            case "snippet":
+                spec = FieldSpec(name=name, snippet=f.metareader.max_snippet or SnippetParams())
+            case _:
+                spec = None
+        return spec, f.metareader.can_query
+    return None, False
 
-    metareader = field.metareader
-    if metareader.access == "read":
-        return FieldSpec(name=field_name)
-    elif metareader.access == "snippet":
-        return FieldSpec(name=field_name, snippet=metareader.max_snippet)
-    elif metareader.access == "none":
-        return None
-    else:
-        raise ValueError(f"Unknown metareader access type: {metareader.access}")
+
+async def field_access(user: User, indices: list[IndexId]) -> FieldAccess:
+    """
+    Which fields the user can see and query on all given indices. If a field exists in multiple indices, the most
+    restrictive settings are used.
+    """
+    specs: dict[str, list[FieldSpec | None]] = {}
+    queryable: dict[str, bool] = {}
+    for index in indices:
+        role = await get_user_project_role(user, index)
+        if not role_is_at_least(user, role, Roles.METAREADER):
+            raise HTTPException(403, f"User {user.email or 'GUEST'} does not have permission to access index {index}")
+        for name, f in (await list_fields(index)).items():
+            spec, can_query = _field_access_for_role(user, role, name, f)
+            specs.setdefault(name, []).append(spec)
+            queryable[name] = queryable.get(name, True) and can_query
+    access = FieldAccess()
+    for name, s in specs.items():
+        spec = intersect_fieldspecs(s)
+        if spec is not None:
+            access.visible[name] = spec
+    access.queryable = {name for name, q in queryable.items() if q}
+    return access
+
+
+async def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSpec]:
+    """The fields (and snippets) the user can see on all given indices"""
+    return list((await field_access(user, indices)).visible.values())
 
 
 def intersect_fieldspecs(specs: list[FieldSpec | None]) -> FieldSpec | None:
     min_spec = specs[0]
     if min_spec is None:
         return None
+    min_spec = min_spec.model_copy(deep=True)
     for spec in specs[1:]:
         if spec is None:
             return None
-        if min_spec.name != spec.name:
-            raise ValueError(f"Cannot intersect fieldspecs with different names: {min_spec.name} and {spec.name}")
-
         if spec.snippet is not None:
             if min_spec.snippet is None:
                 min_spec.snippet = spec.snippet
             else:
-                min_spec.snippet.nomatch_chars = min(min_spec.snippet.nomatch_chars, spec.snippet.nomatch_chars)
+                min_spec.snippet.nomatch_words = min(min_spec.snippet.nomatch_words, spec.snippet.nomatch_words)
                 min_spec.snippet.max_matches = min(min_spec.snippet.max_matches, spec.snippet.max_matches)
-                min_spec.snippet.match_chars = min(min_spec.snippet.match_chars, spec.snippet.match_chars)
-
+                min_spec.snippet.words_per_match = min(min_spec.snippet.words_per_match, spec.snippet.words_per_match)
     return min_spec
+
+
+async def HTTPException_if_invalid_field_access(indices: list[str], user: User, fields: list[FieldSpec]) -> None:
+    """
+    Check whether the user can see the requested fields (or snippets) on all given indices.
+    """
+    if not fields or user.auth_disabled:
+        return
+    access = await field_access(user, indices)
+    for f in fields:
+        allowed = access.visible.get(f.name)
+        if allowed is None:
+            if any([f.name in await list_fields(ix) for ix in indices]):
+                raise HTTPException(403, f"{user.email or 'GUEST'} cannot see field {f.name} on {', '.join(indices)}")
+            continue  # field does not exist (in any index), nothing to see
+        if allowed.snippet is None:
+            continue
+        max_snippet = allowed.snippet
+        msg = (
+            f"You can only see snippets of {f.name}, with at most nomatch_words={max_snippet.nomatch_words}, "
+            f"max_matches={max_snippet.max_matches}, words_per_match={max_snippet.words_per_match}"
+        )
+        if f.snippet is None:
+            raise HTTPException(403, msg)
+        if (
+            f.snippet.nomatch_words > max_snippet.nomatch_words
+            or f.snippet.max_matches > max_snippet.max_matches
+            or f.snippet.words_per_match > max_snippet.words_per_match
+        ):
+            raise HTTPException(403, msg)
 
 
 async def HTTPException_if_invalid_or_unauthorized_multimedia_field(index: str, field: str, user: User) -> None:
     docfield = (await list_fields(index)).get(field)
     if docfield is None:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Field '{field}' does not exist in index '{index}'",
-        )
+        raise HTTPException(status_code=400, detail=f"Field '{field}' does not exist in index '{index}'")
     valid_types = ["image", "video", "audio"]
     if docfield.type not in valid_types:
         raise HTTPException(
@@ -321,98 +378,13 @@ async def HTTPException_if_invalid_or_unauthorized_multimedia_field(index: str, 
             detail=f"Field '{field}' in index '{index}' is of type '{docfield.type}', "
             f"but one of {valid_types} is required for multimedia operations.",
         )
-
-    min_role = Roles.METAREADER if docfield.metareader.access == "read" else Roles.READER
-    await HTTPException_if_not_project_index_role(user, index, min_role)
-
-
-async def HTTPException_if_invalid_field_access(indices: list[str], user: User, fields: list[FieldSpec]) -> None:
-    """
-    Check for the given field specifications whether the user has required access on all given indices.
-    """
-    if len(fields) == 0:
-        return None
-    if user.auth_disabled:
-        return None
-    roles = await list_user_project_roles(user, project_ids=indices)
-    role_dict = {role.role_context: role for role in roles}
-
-    for index in indices:
-        role = role_dict.get(index)
-        if not role_is_at_least(user, role, Roles.METAREADER):
-            raise HTTPException(
-                status_code=403,
-                detail=f"User '{user.email}' does not have permission to access index {index}",
-            )
-        if role_is_at_least(user, role, Roles.READER):
-            continue
-
-        index_fields = await list_fields(index)
-        for field in fields:
-            if field.name not in index_fields:
-                continue
-            metareader = index_fields[field.name].metareader
-
-            if metareader.access == "read":
-                continue
-            elif metareader.access == "snippet" and metareader.max_snippet is not None:
-                if metareader.max_snippet is None:
-                    max_params_msg = ""
-                else:
-                    max_params_msg = (
-                        "Can only read snippet with max parameters:"
-                        f" nomatch_chars={metareader.max_snippet.nomatch_chars}"
-                        f", max_matches={metareader.max_snippet.max_matches}"
-                        f", match_chars={metareader.max_snippet.match_chars}"
-                    )
-                if field.snippet is None:
-                    # if snippet is not specified, the whole field is requested
-                    raise HTTPException(
-                        status_code=403, detail=f"METAREADER cannot read {field} on index {index}. {max_params_msg}"
-                    )
-
-                valid_nomatch_chars = field.snippet.nomatch_chars <= metareader.max_snippet.nomatch_chars
-                valid_max_matches = field.snippet.max_matches <= metareader.max_snippet.max_matches
-                valid_match_chars = field.snippet.match_chars <= metareader.max_snippet.match_chars
-                valid = valid_nomatch_chars and valid_max_matches and valid_match_chars
-                if not valid:
-                    raise HTTPException(
-                        status_code=403,
-                        detail=f"The requested snippet of {field.name} on index {index} is too long. {max_params_msg}",
-                    )
-            else:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"METAREADER cannot read {field.name} on index {index}",
-                )
+    access = await field_access(user, [index])
+    spec = access.visible.get(field)
+    if spec is None or spec.snippet is not None:
+        raise HTTPException(403, f"{user.email or 'GUEST'} cannot access field {field} on index {index}")
 
 
-def coerce_type(value: Any, type: FieldType):
-    """
-    Coerces values into the respective type
-    """
-    if type == "date":
-        if isinstance(value, datetime.date):
-            return value.isoformat()
-        str_value = str(value)
-        try:
-            datetime.datetime.fromisoformat(str_value)
-        except ValueError:
-            raise ValueError(f"Invalid date value: {value!r}. Dates must be valid ISO 8601 with year between 1 and 9999.")
-        return str_value
-    if type == "tag" and isinstance(value, Iterable) and not isinstance(value, str):
-        return [str(val) for val in value]
-    if type in ["text", "tag"]:
-        return str(value)
-    if type in ["boolean"]:
-        return bool(value)
-    if type in ["number"]:
-        return float(value)
-    if type in ["integer"]:
-        return int(value)
-    if type in ["image", "video", "audio"]:
-        return str(value)
-    return value
+###################### OTHER ######################
 
 
 async def create_or_verify_tag_field(index: str | list[str], field: str):
@@ -422,14 +394,13 @@ async def create_or_verify_tag_field(index: str | list[str], field: str):
     indices = [index] if isinstance(index, str) else index
     for i in indices:
         current_fields = await list_fields(i)
-        if field in current_fields:
-            if current_fields[field].type != "tag":
-                raise ValueError(f"Field '{field}' already exists in index '{i}' and is not a tag field")
+        if field in current_fields and current_fields[field].type != "tag":
+            raise ValueError(f"Field '{field}' already exists in index '{i}' and is not a tag field")
     for i in indices:
         await create_fields(i, {field: "tag"})
 
 
-async def _field_expression(index: str, field: str) -> tuple[int, FieldInfo]:
+async def _field_info(index: str, field: str) -> tuple[int, FieldInfo]:
     pk = await project_pk(index)
     f = (await field_infos(index)).get(field)
     if f is None:
@@ -439,10 +410,9 @@ async def _field_expression(index: str, field: str) -> tuple[int, FieldInfo]:
 
 async def field_values(index: str, field: str, size: int) -> list[str]:
     """
-    Get the values for a given field (e.g. to populate list of filter values on keyword field)
-    Results are sorted descending by document frequency
+    Get the most frequent values for a given field (e.g. to populate list of filter values on keyword field)
     """
-    pk, f = await _field_expression(index, field)
+    pk, f = await _field_info(index, field)
     if f.column != "meta_data":
         raise ValueError(f"Cannot list values of {f.type} field {field}")
     value = sql.SQL("documents.meta_data->{}").format(sql.Literal(f.key))
@@ -459,63 +429,31 @@ async def field_values(index: str, field: str, size: int) -> list[str]:
 
 async def field_stats(index: str, field: str) -> dict[str, Any]:
     """
-    Get count, min, max, avg and sum of a numeric or date field
+    Get the number of documents with a value, and the minimum, maximum and average value of a numeric or date field.
+    (For dates, min/max/avg are ISO timestamps)
     """
-    pk, f = await _field_expression(index, field)
+    pk, f = await _field_info(index, field)
     if f.type not in ("number", "integer", "date"):
         raise ValueError(f"Cannot compute statistics for {f.type} field {field}")
     raw = sql.SQL("(documents.meta_data->>{})").format(sql.Literal(f.key))
     if f.type == "date":
-        x = sql.SQL("extract(epoch FROM {}::timestamptz) * 1000").format(raw)
+        x = sql.SQL("extract(epoch FROM {}::timestamptz)").format(raw)
     else:
         x = sql.SQL("{}::double precision").format(raw)
     row = await fetch_one(
         sql.SQL(
-            "SELECT count({x}) AS count, min({x}) AS min, max({x}) AS max, avg({x}) AS avg, sum({x}) AS sum "
+            "SELECT count({x}) AS count, min({x}) AS min, max({x}) AS max, avg({x}) AS avg "
             "FROM documents WHERE project_pk = %s"
         ).format(x=x),
         [pk],
     )
     assert row is not None
-    stats = {k: (float(v) if v is not None and k != "count" else v) for k, v in row.items()}
-    if f.type == "date":
-        for k in ("min", "max", "avg"):
-            if stats[k] is not None:
-                stats[f"{k}_as_string"] = datetime.datetime.fromtimestamp(stats[k] / 1000, tz=datetime.UTC).isoformat()
+    stats: dict[str, Any] = {"count": row["count"]}
+    for k in ("min", "max", "avg"):
+        v = row[k]
+        if v is not None and f.type == "date":
+            v = datetime.fromtimestamp(float(v), tz=UTC).isoformat()
+        elif v is not None:
+            v = float(v)
+        stats[k] = v
     return stats
-
-
-def _get_default_metareader(type: FieldType):
-    # Safety first: just make "none" the default for everything
-    return DocumentFieldMetareaderAccess(access="none")
-
-
-def _get_default_field(type: FieldType, elastic_type: ElasticType | None = None):
-    """
-    Generate a field on the spot with default settings.
-    """
-    if elastic_type is None:
-        default_elastic_types = list_allowed_elastic_types(type)
-        if len(default_elastic_types) == 0:
-            raise ValueError(f"The default storage type for field type {type} is not defined")
-        elastic_type = default_elastic_types[0]
-
-    return DocumentField(elastic_type=elastic_type, type=type, metareader=_get_default_metareader(type))
-
-
-def _standardize_createfields(fields: Mapping[str, FieldType | CreateDocumentField]) -> dict[str, CreateDocumentField]:
-    sfields: dict[str, CreateDocumentField] = {}
-    for k, v in fields.items():
-        if isinstance(v, str):
-            assert v in get_args(FieldType), f"Unknown amcat type {v}"
-            sfields[k] = CreateDocumentField(type=v)
-        else:
-            sfields[k] = v
-    return sfields
-
-
-def _check_forbidden_type(field: DocumentField, type: FieldType):
-    if field.identifier:
-        for forbidden_type in ["tag", "vector"]:
-            if type == forbidden_type:
-                raise ValueError(f"Field {field} is an identifier field, which cannot be a {forbidden_type} field")

@@ -1,6 +1,6 @@
 """API Endpoints for document management."""
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
@@ -14,7 +14,9 @@ from amcat4.models import (
     Roles,
     User,
 )
+from amcat4.postgres.documents import OpType, UploadError
 from amcat4.projects.documents import create_or_update_documents, delete_document, fetch_document, update_document
+from amcat4.systemdata.fields import field_access
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role
 
 app_index_documents = APIRouter(prefix="", tags=["documents"])
@@ -30,24 +32,25 @@ class UploadDocumentsBody(BaseModel):
         description="Field type definitions need to be explicitly defined before uploading documents. "
         "By providing them here, they will be created when uploading the documents, and verified if they already exist. ",
     )
-    operation: Literal["index", "upsert", "create", "update"] = Field(
-        "index",
-        description="The operation to perform. Default is 'index', which replaces documents that already exist. "
-        "The 'upsert' operation creates or updates: if an identical document (or document with identical identifiers) "
-        "already exists, the uploaded fields will be created or overwritten; if it does not exist, it will be created. "
-        "Fields in the original document that are not in the uploaded document will NOT be removed. "
-        "The 'update' operation is like 'upsert' but only updates existing documents — it returns failures for "
-        "documents that do not already exist. "
-        "The 'create' operation only uploads new documents, and returns failures for documents with existing ids.",
+    operation: OpType = Field(
+        "replace",
+        description="What to do with documents that already exist (documents are matched by _id, or by the values "
+        "of the unique fields). "
+        "'create' only adds new documents, and fails if any document already exists. "
+        "'update' only updates existing documents (uploaded fields are overwritten, other fields are kept), "
+        "and fails if any document does not exist. "
+        "'upsert' creates new documents and updates existing documents. "
+        "'replace' (default) creates new documents and replaces existing documents completely. "
+        "Uploads are all-or-nothing: if any document fails, nothing is saved.",
     )
 
 
 # RESPONSE MODELS
 class UploadResult(BaseModel):
-    """Result of an upload operation for a single document."""
+    """Result of an upload"""
 
-    successes: int = Field(description="Number of successful uploads")
-    failures: list[dict[str, Any]] = Field(description="List of failures with details")
+    created: int = Field(description="Number of new documents")
+    updated: int = Field(description="Number of existing documents that were updated or replaced")
 
 
 @app_index_documents.post("/index/{ix}/documents", status_code=status.HTTP_201_CREATED)
@@ -55,15 +58,18 @@ async def upload_documents(
     ix: Annotated[IndexId, Path(description="The index id")],
     body: Annotated[UploadDocumentsBody, Body(...)],
     user: User = Depends(authenticated_user),
-    refresh: Annotated[bool, Query(description="If true, wait for ES to refresh before returning")] = False,
 ) -> UploadResult:
     """
     Upload documents to an index. Requires WRITER role on the index.
+    If the upload fails (e.g. invalid values, or existing documents for 'create'), nothing is saved and the
+    error is returned (409 for conflicts with existing documents, 422 for invalid documents).
     """
     await HTTPException_if_not_project_index_role(user, ix, Roles.WRITER)
 
     try:
-        result = await create_or_update_documents(ix, body.documents, body.fields, body.operation, refresh=refresh)
+        result = await create_or_update_documents(ix, body.documents, body.fields, body.operation)
+    except UploadError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e))
     return UploadResult.model_validate(result)
@@ -77,14 +83,14 @@ async def get_document(
     user: User = Depends(authenticated_user),
 ) -> dict[str, Any]:
     """
-    Get a single document by id. Requires READER role on the index.
+    Get a single document by id. Requires READER role on the index, and only returns the fields that are visible
+    to the user.
     """
     await HTTPException_if_not_project_index_role(user, ix, Roles.READER)
-    kargs = {}
-    if fields:
-        kargs["_source"] = fields
+    visible = [name for name, spec in (await field_access(user, [ix])).visible.items() if spec.snippet is None]
+    names = [f for f in fields.split(",") if f in visible] if fields else visible
     try:
-        return await fetch_document(ix, docid, **kargs)
+        return await fetch_document(ix, docid, names)
     except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

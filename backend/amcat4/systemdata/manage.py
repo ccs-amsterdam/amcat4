@@ -9,7 +9,7 @@ from amcat4.postgres.connection import connection
 from amcat4.postgres.schema import SCHEMA_VERSION, create_schema, drop_schema
 
 
-async def create_or_update_systemdata(rm_pending_migrations: bool = True) -> int:
+async def create_or_update_systemdata() -> int:
     """
     Create the database schema if needed. Call this at startup.
     :return: The active schema version.
@@ -19,7 +19,7 @@ async def create_or_update_systemdata(rm_pending_migrations: bool = True) -> int
     return SCHEMA_VERSION
 
 
-async def delete_systemdata_version(version: int | None = None) -> None:
+async def delete_systemdata() -> None:
     """
     DANGER: drop the whole amcat schema, including all projects and documents.
     """

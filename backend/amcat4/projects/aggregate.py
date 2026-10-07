@@ -17,8 +17,8 @@ from amcat4.postgres.filters import field_sql
 from amcat4.postgres.search import SearchQuery, compile_search
 from amcat4.systemdata.fields import get_fieldset
 
-# Maximum number of rows returned at once. If there are more, the result contains an 'after' cursor
-PAGE_SIZE = 1000
+# Maximum number of rows (buckets) that can be requested
+MAX_LIMIT = 10_000
 
 
 class Axis:
@@ -120,13 +120,13 @@ class AggregateResult:
         aggregations: List[Aggregation | TopHitsAggregation],
         data: List[tuple],
         count_column: str = "n",
-        after: dict | None = None,
+        truncated: bool = False,
     ):
         self.axes = axes
         self.data = data
         self.aggregations = aggregations
         self.count_column = count_column
-        self.after = after
+        self.truncated = truncated
 
     def as_dicts(self) -> Iterable[dict]:
         """Return the results as a sequence of {axis1, ..., n} dicts"""
@@ -249,7 +249,9 @@ async def query_aggregate(
     *,
     queries: dict[str, str] | None = None,
     filters: dict[str, FilterSpec] | None = None,
-    after: dict[str, Any] | None = None,
+    order: Literal["axes", "count"] = "axes",
+    limit: int = 1000,
+    queryable: set[str] | None = None,
 ) -> AggregateResult:
     """
     Conduct an aggregate query.
@@ -259,16 +261,19 @@ async def query_aggregate(
     :param aggregations: Aggregation fields
     :param queries: Optional query strings {label: query}
     :param filters: if not None, a dict of filters
-    :param after: pagination cursor as returned in a previous result
-    :return: an AggregateResult, with at most PAGE_SIZE rows
+    :param order: sort the rows by the axis values (axes), or by the number of documents (count, descending)
+    :param limit: return at most this many rows (max MAX_LIMIT). result.truncated says whether there were more rows.
+    :param queryable: the fields that may be used in queries and filters (None = all fields)
     """
+    if not 1 <= limit <= MAX_LIMIT:
+        raise ValueError(f"limit should be between 1 and {MAX_LIMIT}")
     axes = axes or []
     aggregations = aggregations or []
     if sum(x.field == "_query" for x in axes) > 1:
         raise ValueError("Only one aggregation axis may be by query")
 
     indices = index if isinstance(index, list) else [index]
-    fieldset = await get_fieldset(indices)
+    fieldset = await get_fieldset(indices, queryable=queryable)
     for axis in axes:
         axis.ftype = "_query" if axis.field == "_query" else fieldset.resolve(axis.field)[0].type
     for aggregation in aggregations:
@@ -286,7 +291,7 @@ async def query_aggregate(
     else:
         rows = await _aggregate(fieldset, SearchQuery(queries=queries, filters=filters), axes, aggregations)
 
-    offset = int((after or {}).get("offset", 0))
-    page = rows[offset : offset + PAGE_SIZE]
-    next_after = {"offset": offset + PAGE_SIZE} if len(rows) > offset + PAGE_SIZE else None
-    return AggregateResult(axes, aggregations, page, count_column="n", after=next_after)
+    if order == "count":
+        n_index = len(axes)
+        rows = sorted(rows, key=lambda row: -row[n_index])
+    return AggregateResult(axes, aggregations, rows[:limit], count_column="n", truncated=len(rows) > limit)

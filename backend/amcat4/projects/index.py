@@ -102,12 +102,6 @@ async def list_project_indices(ids: list[str] | None = None, skip_archived: bool
         yield _project_from_row(row)
 
 
-async def refresh_index(index: str):
-    """
-    No-op, kept for compatibility: in postgres, documents are searchable as soon as they are committed
-    """
-
-
 async def list_user_project_indices(
     user: User, show_all=False, show_archived=False
 ) -> AsyncIterable[tuple[ProjectSettings, RoleRule | None]]:

@@ -1,5 +1,7 @@
 """AmCAT4 API."""
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -18,6 +20,7 @@ from amcat4.api.index_fields import app_index_fields
 from amcat4.api.index_multimedia import app_multimedia
 from amcat4.api.index_query import app_index_query
 from amcat4.api.index_users import app_index_users
+from amcat4.api.jobs import app_jobs
 from amcat4.api.requests import app_requests
 from amcat4.api.server import app_info
 from amcat4.api.users import app_users
@@ -26,6 +29,7 @@ from amcat4.auth.oauth import MAX_AGE_SESSION
 from amcat4.config import get_settings
 from amcat4.connections import amcat_connections
 from amcat4.errors import ConflictError, NotFoundError
+from amcat4.projects.jobs import job_worker
 from amcat4.systemdata.manage import create_or_update_systemdata
 
 
@@ -34,7 +38,13 @@ async def lifespan(app: FastAPI):
     logging.info("Initializing system data...")
     async with amcat_connections():
         await create_or_update_systemdata()
-        yield
+        worker = asyncio.create_task(job_worker())
+        try:
+            yield
+        finally:
+            worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker
 
 
 app = FastAPI(
@@ -57,6 +67,7 @@ app = FastAPI(
         dict(name="query", description="Endpoints to list or query documents or run aggregate queries"),
         dict(name="middlecat", description="MiddleCat authentication"),
         dict(name="api keys", description="Endpoints for API key management"),
+        dict(name="jobs", description="Endpoints to follow or cancel background jobs"),
     ],
     lifespan=lifespan,
 )
@@ -73,6 +84,7 @@ api_router.include_router(app_index_query)
 api_router.include_router(app_requests)
 api_router.include_router(app_multimedia)
 api_router.include_router(app_api_keys)
+api_router.include_router(app_jobs)
 app.include_router(api_router)
 
 

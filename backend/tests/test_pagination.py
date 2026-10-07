@@ -40,25 +40,13 @@ async def test_sort(index_many):
 
 
 @pytest.mark.anyio
-async def test_scroll(index_many):
-    r = await query_documents(index_many, queries={"odd": "odd"}, scroll="5m", per_page=4, fields=[FieldSpec(name="id")])
-    assert r is not None
-    assert len(r.data) == 4
-    assert r.total_count, 10
-    assert r.page_count == 3
-    allids = list(r.data)
-
-    r = await query_documents(index_many, scroll_id=r.scroll_id, fields=[FieldSpec(name="id")])
-    assert r is not None
-    assert len(r.data) == 4
-    allids += r.data
-
-    r = await query_documents(index_many, scroll_id=r.scroll_id, fields=[FieldSpec(name="id")])
-    assert r is not None
-    assert len(r.data) == 2
-    allids += r.data
-
-    r = await query_documents(index_many, scroll_id=r.scroll_id, fields=[FieldSpec(name="id")])
-    assert r is None
-
-    assert {int(h["id"]) for h in allids} == {0, 2, 4, 6, 8, 10, 12, 14, 16, 18}
+async def test_cursor(index_many):
+    fields = [FieldSpec(name="id")]
+    for queries in [None, {"odd": "odd"}]:
+        r = await query_documents(index_many, queries=queries, per_page=4, fields=fields)
+        allids = list(r.data)
+        while r.next:
+            r = await query_documents(index_many, queries=queries, per_page=4, fields=fields, after=r.next)
+            allids += r.data
+        expected = {0, 2, 4, 6, 8, 10, 12, 14, 16, 18} if queries else set(range(20))
+        assert sorted(int(h["id"]) for h in allids) == sorted(expected)

@@ -29,9 +29,10 @@ from amcat4.postgres.connection import connection, fetch_one  # noqa: E402
 from amcat4.projects.aggregate import Axis, query_aggregate  # noqa: E402
 from amcat4.projects.documents import create_or_update_documents  # noqa: E402
 from amcat4.projects.index import create_project_index  # noqa: E402
-from amcat4.projects.query import query_documents, reindex, update_tag_query  # noqa: E402
+from amcat4.projects.jobs import create_job, get_job, run_pending_jobs  # noqa: E402
+from amcat4.projects.query import query_documents, update_tag_query  # noqa: E402
 from amcat4.systemdata.fields import create_fields, update_fields  # noqa: E402
-from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata_version  # noqa: E402
+from amcat4.systemdata.manage import create_or_update_systemdata, delete_systemdata  # noqa: E402
 
 FIELD_TYPES: dict[str, Any] = {
     "title": "text",
@@ -76,7 +77,7 @@ def make_doc(rng: random.Random) -> dict:
     if r < 0.02:
         words[rng.randrange(len(words))] = MEDIUM
     date = datetime(2000, 1, 1) + timedelta(seconds=rng.randrange(25 * 365 * 24 * 3600))
-    doc = dict(
+    doc: dict[str, Any] = dict(
         title=" ".join(rng.choices(VOCAB, cum_weights=CUM, k=8)).capitalize(),
         text=" ".join(words),
         source=rng.choice(SOURCES),
@@ -196,7 +197,7 @@ async def benchmark() -> None:
     )
 
     print("\n--- snippets")
-    snippet = [FieldSpec(name="title"), FieldSpec(name="text", snippet=SnippetParams(nomatch_chars=100, max_matches=3))]
+    snippet = [FieldSpec(name="title"), FieldSpec(name="text", snippet=SnippetParams(nomatch_words=20, max_matches=3))]
     await timeit(
         "medium query in big, 100 results with snippets",
         lambda: query_documents("big", fields=snippet, queries=q(MEDIUM), per_page=100),
@@ -221,9 +222,11 @@ async def benchmark() -> None:
     print(f"add tag to {res['updated']} documents: {time.perf_counter() - t0:.2f}s")
     await create_project_index(ProjectSettings(id="copy"))
     t0 = time.perf_counter()
-    res = await reindex("big", "copy", queries=q(MEDIUM))
-    results["copy subset of big"] = {"documents": res["total"], "seconds": round(time.perf_counter() - t0, 2)}
-    print(f"copy {res['total']} documents to new project: {time.perf_counter() - t0:.2f}s")
+    job = await create_job("copy", "copy", None, dict(source="big", destination="copy", queries=q(MEDIUM)))
+    await run_pending_jobs()
+    copied = (await get_job(job["id"]))["result"]["copied"]
+    results["copy subset of big"] = {"documents": copied, "seconds": round(time.perf_counter() - t0, 2)}
+    print(f"copy {copied} documents to new project: {time.perf_counter() - t0:.2f}s")
     rng = random.Random(99)
     await timeit(
         "upload 100 docs into small project",
@@ -237,7 +240,7 @@ async def main():
     parser.add_argument("--output", default="benchmark/benchmark_results.json")
     args = parser.parse_args()
     async with amcat_connections():
-        await delete_systemdata_version()
+        await delete_systemdata()
         await create_or_update_systemdata()
         await load(args.scale)
         if not os.environ.get("BENCHMARK_LOAD_ONLY"):

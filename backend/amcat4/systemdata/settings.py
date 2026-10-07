@@ -73,8 +73,7 @@ async def delete_project_settings(index_id: str, ignore_missing: bool = False):
             cur = await conn.execute("DELETE FROM projects WHERE id = %s", [index_id])
             if cur.rowcount == 0 and not ignore_missing:
                 raise NotFoundError(f"Project {index_id} does not exist")
-            await conn.execute("DELETE FROM roles WHERE role_context = %s", [index_id])
-            await conn.execute("DELETE FROM requests WHERE project_id = %s", [index_id])
+            # roles, requests, fields, documents, jobs and the object storage register are deleted by cascade
 
 
 async def get_project_image(index_id: IndexId) -> ImageObject | None:
