@@ -434,3 +434,42 @@ def range_query(f: FieldInfo, lower: Any, upper: Any, include_lower: bool = True
 
 def query_string_to_json(q: str, resolver: FieldResolver, default_operator: Literal["AND", "OR"] = "OR") -> dict:
     return compile_query(parse_query(q, default_operator), resolver)
+
+
+# ------------------------------------------------------------------ Highlighting
+
+
+def highlight_patterns(node: Node, field: str, default_field: bool) -> list[re.Pattern]:
+    """
+    Regular expressions that match the (positive) terms of the query in the given field. Used to find match
+    positions for highlighting and snippets. default_field: whether the field is searched for terms without field.
+    """
+    patterns: list[re.Pattern] = []
+
+    def visit(n: Node, negated: bool):
+        if isinstance(n, Bool):
+            for occur, child in n.clauses:
+                visit(child, negated or occur == "must_not")
+            return
+        if negated or isinstance(n, Range):
+            return
+        if not (n.field == field or (n.field is None and default_field)):
+            return
+        prefix = n.text.rstrip().endswith("*")
+        words = _words(n.text.rstrip("*"))
+        if not words or (isinstance(n, Term) and n.fuzzy is not None):
+            return
+        body = r"\W+".join(re.escape(w) for w in words)
+        suffix = r"\w*" if prefix else ""
+        patterns.append(re.compile(rf"(?<!\w){body}{suffix}(?!\w)", re.IGNORECASE))
+
+    visit(node, False)
+    return patterns
+
+
+def match_positions(text: str, patterns: list[re.Pattern]) -> list[list[int]]:
+    positions = []
+    for pattern in patterns:
+        for m in pattern.finditer(text):
+            positions.append([m.start(), m.end()])
+    return positions

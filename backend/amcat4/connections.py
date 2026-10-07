@@ -1,38 +1,39 @@
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 import httpx
 from aiobotocore.config import AioConfig
 from aiobotocore.session import get_session
-from elasticsearch import AsyncElasticsearch
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
 from types_aiobotocore_s3.client import S3Client
 
 from amcat4.config import get_settings
 
 
 class AmcatConnections:
-    elastic: AsyncElasticsearch | None
+    db: AsyncConnectionPool[Any] | None
     s3_client: S3Client | None
     s3_context_stack: AsyncExitStack | None
     http_client: httpx.AsyncClient | None
 
     def __init__(
         self,
-        elastic: AsyncElasticsearch | None = None,
+        db: AsyncConnectionPool[Any] | None = None,
         s3_client: S3Client | None = None,
         s3_proxy_client: S3Client | None = None,
         s3_context_stack: AsyncExitStack | None = None,
         http_client: httpx.AsyncClient | None = None,
     ):
-        self.elastic = elastic
+        self.db = db
         self.s3_client = s3_client
         self.s3_proxy_client = s3_client
         self.s3_context_stack = s3_context_stack
         self.http_client = http_client
 
 
-CONNECTIONS = AmcatConnections(s3_client=None, s3_proxy_client=None, elastic=None, http_client=None)  # type: ignore
+CONNECTIONS = AmcatConnections(s3_client=None, s3_proxy_client=None, db=None, http_client=None)  # type: ignore
 
 
 @asynccontextmanager
@@ -46,22 +47,28 @@ async def amcat_connections() -> AsyncGenerator[None, None]:
     """
     try:
         await _start_s3()
-        await _start_elastic()
+        await _start_db()
         await _start_http()
         yield
     finally:
         await _close_s3()
-        await _close_elastic()
+        await _close_db()
         await _close_http()
 
 
-def es() -> AsyncElasticsearch:
+def db() -> AsyncConnectionPool[Any]:
     """
-    Access the elasticsearch connection.
+    Access the postgres connection pool. Use amcat4.postgres.connection.connection() to get a connection.
     """
-    if CONNECTIONS.elastic is None:
-        raise ConnectionError("Elasticsearch connection not initialized")
-    return CONNECTIONS.elastic
+    if CONNECTIONS.db is None:
+        raise ConnectionError("Database connection not initialized")
+    return CONNECTIONS.db
+
+
+def db_schema() -> str:
+    """The postgres schema that contains the amcat tables (a separate schema is used for unit tests)"""
+    settings = get_settings()
+    return f"{settings.postgres_schema}_test" if settings.test_mode else settings.postgres_schema
 
 
 def s3() -> S3Client:
@@ -98,38 +105,28 @@ def http() -> httpx.AsyncClient:
     return CONNECTIONS.http_client
 
 
-async def _start_elastic():
-    """
-    Check whether we can connect with elastic
-    """
+async def _start_db():
     settings = get_settings()
-    logging.debug(
-        f"Connecting with elasticsearch at {settings.elastic_host}, password? {'yes' if settings.elastic_password else 'no'} "
+    logging.debug(f"Connecting with postgres, schema {db_schema()}")
+    pool = AsyncConnectionPool(
+        settings.postgres_url,
+        min_size=1,
+        max_size=20,
+        open=False,
+        kwargs={"row_factory": dict_row, "autocommit": True, "options": f"-c search_path={db_schema()},public"},
     )
-
-    if settings.elastic_password:
-        host = settings.elastic_host
-        if settings.elastic_verify_ssl is None:
-            verify_certs = "localhost" in (host or "")
-        else:
-            verify_certs = settings.elastic_verify_ssl
-
-        CONNECTIONS.elastic = AsyncElasticsearch(
-            host,
-            basic_auth=("elastic", settings.elastic_password),
-            verify_certs=verify_certs,
-        )
-    else:
-        CONNECTIONS.elastic = AsyncElasticsearch(settings.elastic_host or None)
-
-    if not await CONNECTIONS.elastic.ping():
-        raise ConnectionError(f"Cannot connect to elasticsearch server {settings.elastic_host}")
+    try:
+        await pool.open(wait=True, timeout=10)
+    except Exception as e:
+        await pool.close()
+        raise ConnectionError(f"Cannot connect to postgres server: {e}") from e
+    CONNECTIONS.db = pool
 
 
-async def _close_elastic() -> None:
-    if CONNECTIONS.elastic is not None:
-        await CONNECTIONS.elastic.close()
-        CONNECTIONS.elastic = None
+async def _close_db() -> None:
+    if CONNECTIONS.db is not None:
+        await CONNECTIONS.db.close()
+        CONNECTIONS.db = None
 
 
 async def _start_s3() -> None:

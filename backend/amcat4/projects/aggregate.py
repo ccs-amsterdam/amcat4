@@ -2,23 +2,23 @@
 Aggregate queries
 """
 
-import copy
-from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
+from datetime import UTC, datetime
+from typing import Any, Iterable, List, Literal, Sequence
 
-from amcat4.connections import es
-from amcat4.models import DocumentField, FilterSpec, SortSpec
-from amcat4.projects.date_mappings import interval_mapping
-from amcat4.projects.query import build_body
-from amcat4.systemdata.fields import list_fields
+from psycopg import sql
 
+from amcat4.models import FilterSpec, SortSpec
+from amcat4.postgres.aggregate import Axis as StorageAxis
+from amcat4.postgres.aggregate import axis_expr, postprocess_value, sort_key
+from amcat4.postgres.connection import connection
+from amcat4.postgres.documents import field_select
+from amcat4.postgres.fields import FieldSet, QueryError
+from amcat4.postgres.filters import field_sql
+from amcat4.postgres.search import SearchQuery, compile_search
+from amcat4.systemdata.fields import get_fieldset
 
-def _combine_mappings(mappings):
-    result = {}
-    for mapping in mappings:
-        if mapping:
-            result.update(mapping)
-    return result
+# Maximum number of rows returned at once. If there are more, the result contains an 'after' cursor
+PAGE_SIZE = 1000
 
 
 class Axis:
@@ -40,40 +40,13 @@ class Axis:
     def __repr__(self):
         return f"<Axis field={self.field} ftype={self.ftype}>"
 
-    def query(self):
-        if not self.ftype:
-            raise ValueError("Please set index before using axis")
-        if self.interval:
-            if self.ftype == "date":
-                if m := interval_mapping(self.interval):
-                    return {self.name: {"terms": {"field": m.fieldname(self.field)}}}
-                return {self.name: {"date_histogram": {"field": self.field, "calendar_interval": self.interval}}}
-            else:
-                return {self.name: {"histogram": {"field": self.field, "interval": self.interval}}}
-        else:
-            return {self.name: {"terms": {"field": self.field, "order": "desc"}}}
-
-    def get_value(self, values):
-        value = values[self.name]
-        if m := interval_mapping(self.interval):
-            value = m.postprocess(value)
-        elif self.ftype == "date":
-            value = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc)
-            if self.interval in {"year", "month", "week", "day"}:
-                value = value.date()
-        return value
-
     def asdict(self):
         return {"name": self.name, "field": self.field, "type": self.ftype, "interval": self.interval}
-
-    def runtime_mappings(self):
-        if m := interval_mapping(self.interval):
-            return m.mapping(self.field)
 
 
 class TopHitsAggregation:
     """
-    Specification of a top hits aggregation
+    Specification of a top hits aggregation: the first n documents in each bucket
     """
 
     def __init__(
@@ -91,25 +64,12 @@ class TopHitsAggregation:
         self.n = n
         self.type = "_tophits"
 
-    def dsl_item(self):
-        dsl = {"top_hits": {"size": self.n, "_source": self.fields}}
-        if self.sort:
-            dsl["top_hits"]["sort"] = []
-            for s in self.sort:
-                for k, v in s.items():
-                    dsl["top_hits"]["sort"].append({k: dict(v)})
-
-        return self.name, dsl
-
-    def get_value(self, bucket: dict):
-        result = [hit["_source"] for hit in bucket[self.name]["hits"]["hits"]]
-        return result
-
     def asdict(self):
         return {"fields": self.fields, "function": "top_hits", "name": self.name}
 
-    def set_ftype(self, all_fields: dict):
-        pass
+    def set_ftype(self, fieldset: FieldSet):
+        for f in self.fields:
+            fieldset.resolve(f)
 
 
 class Aggregation:
@@ -117,37 +77,40 @@ class Aggregation:
     Specification of a single aggregation, that is, field and aggregation function
     """
 
-    def __init__(
-        self,
-        field: str,
-        function: str,
-        name: str | None = None,
-        ftype: str | None = None,
-    ):
+    FUNCTIONS = {"avg", "min", "max", "sum"}
+
+    def __init__(self, field: str, function: str, name: str | None = None, ftype: str | None = None):
+        if function not in self.FUNCTIONS:
+            raise ValueError(f"Unknown aggregation function {function}, use one of {self.FUNCTIONS}")
         self.field = field
         self.function = function
         self.name = name or f"{function}_{field}"
         self.ftype = ftype
 
-    def dsl_item(self):
-        return self.name, {self.function: {"field": self.field}}
-
-    def get_value(self, bucket: dict):
-        result = bucket[self.name]["value"]
-        if result and self.ftype == "date":
-            result = datetime.fromtimestamp(result / 1000.0, tz=timezone.utc)
-        return result
-
     def asdict(self):
         return {"field": self.field, "type": self.ftype, "function": self.function, "name": self.name}
 
-    def set_ftype(self, all_fields: dict):
-        self.ftype = all_fields[self.field].type
+    def set_ftype(self, fieldset: FieldSet):
+        self.ftype = fieldset.resolve(self.field)[0].type
 
+    def sql(self, fieldset: FieldSet) -> sql.Composable:
+        fs = fieldset.resolve(self.field)
+        if fs[0].type not in ("number", "integer", "date"):
+            raise QueryError(f"Cannot compute {self.function} of {fs[0].type} field {self.field}")
+        exprs = [field_sql(f) for f in fs]
+        x = exprs[0] if len(exprs) == 1 else sql.SQL("coalesce({})").format(sql.SQL(", ").join(exprs))
+        if fs[0].type == "date":
+            # aggregate dates as epoch seconds (e.g. avg is not defined for timestamps)
+            x = sql.SQL("extract(epoch FROM {})").format(x)
+        function = {"avg": sql.SQL("avg"), "min": sql.SQL("min"), "max": sql.SQL("max"), "sum": sql.SQL("sum")}
+        return sql.SQL("{}({})").format(function[self.function], x)
 
-def aggregation_dsl(aggregations: Iterable[Aggregation | TopHitsAggregation]) -> dict:
-    """Get the aggregation DSL dict for a list of aggregations"""
-    return dict(a.dsl_item() for a in aggregations)
+    def get_value(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if self.ftype == "date":
+            return datetime.fromtimestamp(float(value), tz=UTC).isoformat()
+        return float(value)
 
 
 class AggregateResult:
@@ -174,149 +137,109 @@ class AggregateResult:
             yield dict(zip(keys, row))
 
 
-async def _bare_aggregate(
-    index: str | list[str], queries, filters, aggregations: Sequence[Aggregation | TopHitsAggregation]
-) -> Tuple[int, dict]:
-    """
-    Aggregate without sources/group_by.
-    Returns a tuple of doc count and aggregegations (doc_count, {metric: value})
-    """
-    body = build_body(queries=queries, filters=filters) if filters or queries else {}
-    index = index if isinstance(index, str) else ",".join(index)
-    client = es()
-    aresult = await client.search(index=index, size=0, aggregations=aggregation_dsl(aggregations), **body)
-    cresult = await client.count(index=index, **body)
-    return cresult["count"], aresult["aggregations"]
-
-
-async def _elastic_aggregate(
-    index: str | list[str],
-    sources,
-    axes,
-    queries,
-    filters,
+async def _aggregate(
+    fieldset: FieldSet,
+    query: SearchQuery,
+    axes: list[Axis],
     aggregations: list[Aggregation | TopHitsAggregation],
-    runtime_mappings: dict[str, Mapping] | None = None,
-    after_key=None,
-) -> Tuple[list, dict | None]:
-    """
-    Recursively get all buckets from a composite query.
-    Yields 'buckets' consisting of {key: {axis: value}, doc_count: <number>}
-    """
-    # [WvA] Not sure if we should get all results ourselves or expose the 'after' pagination.
-    #       This might get us in trouble if someone e.g. aggregates on url or day for a large corpus
-    after = {"after": after_key} if after_key is not None and len(after_key) > 0 else {}
-    aggr: Dict[str, Dict[str, dict]] = {"aggs": {"composite": dict(sources=sources, **after)}}
-    if aggregations:
-        aggr["aggs"]["aggregations"] = aggregation_dsl(aggregations)
-    kargs = {}
+) -> list[tuple]:
+    """Run an aggregation (without _query axis). Returns rows of (axis values..., count, aggregation values...)"""
+    c = compile_search(fieldset, query)
+    selects: list[sql.Composable] = []
+    laterals: list[sql.Composable] = []
+    for i, axis in enumerate(axes):
+        expr, lateral = axis_expr(StorageAxis(axis.field, axis.interval), fieldset.resolve(axis.field), f"tag_{i}")
+        selects.append(sql.SQL("{} AS {}").format(expr, sql.Identifier(f"a{i}")))
+        if lateral is not None:
+            laterals.append(lateral)
+    selects.append(sql.SQL("count(*) AS n"))
+    metrics = [a for a in aggregations if isinstance(a, Aggregation)]
+    for j, metric in enumerate(metrics):
+        selects.append(sql.SQL("{} AS {}").format(metric.sql(fieldset), sql.Identifier(f"m{j}")))
 
-    if filters or queries:
-        q = build_body(queries=queries, filters=filters)
-        kargs["query"] = q["query"]
-    client = es()
-    result = await client.search(
-        index=index if isinstance(index, str) else ",".join(index),
-        size=0,
-        aggregations=aggr,
-        runtime_mappings=runtime_mappings,
-        **kargs,
+    group = sql.SQL("")
+    if axes:
+        group = sql.SQL("GROUP BY {}").format(sql.SQL(", ").join(sql.Literal(i + 1) for i in range(len(axes))))
+    stmt = sql.SQL("SELECT {} FROM documents {} WHERE {} {}").format(
+        sql.SQL(", ").join(selects), sql.SQL(" ").join(laterals), c.where, group
     )
-    if failure := result.get("_shards", {}).get("failures"):
-        raise Exception(f"Error on running aggregate search: {failure}")
+    async with connection() as conn:
+        cur = await conn.execute(stmt, c.params)
+        rows = await cur.fetchall()
 
-    buckets = result["aggregations"]["aggs"]["buckets"]
-    after_key = result["aggregations"]["aggs"].get("after_key")
+    storage_axes = [StorageAxis(ax.field, ax.interval) for ax in axes]
+    results = []
+    for row in rows:
+        key = {sa.name: postprocess_value(row[f"a{i}"], sa, fieldset.type(sa.field)) for i, sa in enumerate(storage_axes)}  # type: ignore[index, call-overload]
+        values = {"n": row["n"]}  # type: ignore[index, call-overload]
+        for j, metric in enumerate(metrics):
+            values[metric.name] = metric.get_value(row[f"m{j}"])  # type: ignore[index, call-overload]
+        results.append((key, values))
+    results.sort(key=lambda r: sort_key(r[0], storage_axes))
 
-    rows = []
-    for bucket in buckets:
-        row = tuple(axis.get_value(bucket["key"]) for axis in axes)
-        row += (bucket["doc_count"],)
-        if aggregations:
-            row += tuple(a.get_value(bucket) for a in aggregations)
-        rows.append(row)
+    tophits = [a for a in aggregations if isinstance(a, TopHitsAggregation)]
+    for th in tophits:
+        hits = await _top_hits(fieldset, query, axes, th)
+        for key, values in results:
+            values[th.name] = hits.get(tuple(_hashable(v) for v in key.values()), [])
 
-    return rows, after_key
+    out = []
+    for key, values in results:
+        row = tuple(key.values()) + (values["n"],)
+        row += tuple(values[a.name] for a in aggregations)
+        out.append(row)
+    return out
 
 
-async def _aggregate_results(
-    index: Union[str, List[str]],
-    axes: List[Axis],
-    queries: dict[str, str] | None,
-    filters: dict[str, FilterSpec] | None,
-    aggregations: List[Aggregation | TopHitsAggregation],
-    after: dict[str, Any] | None = None,
-) -> AsyncGenerator[Tuple[list, dict | None], None]:
-    if not axes or len(axes) == 0:
-        # Path 1
-        # No axes, so return aggregations (or total count) only
-        if aggregations:
-            count, results = await _bare_aggregate(index, queries, filters, aggregations)
-            rows = [(count,) + tuple(a.get_value(results) for a in aggregations)]
-        else:
-            client = es()
-            result = await client.count(
-                index=index if isinstance(index, str) else ",".join(index), **build_body(queries=queries, filters=filters)
-            )
-            rows = [(result["count"],)]
-        yield rows, None
+def _hashable(v):
+    return tuple(v) if isinstance(v, list) else v
 
-    elif any(ax.field == "_query" for ax in axes):
-        # Path 2
-        # We cannot run the aggregation for multiple queries at once, so we loop over queries
-        # and recursively call _aggregate_results with one query at a time (which then uses path 3).
-        if queries is None:
-            raise ValueError("Queries must be specified when aggregating by query")
-        # Strip off _query axis and run separate aggregation for each query
-        i = [ax.field for ax in axes].index("_query")
-        _axes = axes[:i] + axes[(i + 1) :]
 
-        query_items = list(queries.items())
-        for label, query in query_items:
-            last_query = label == query_items[-1][0]
-
-            if after is not None and "_query" in after:
-                # after is a dict with the aggregation values from which to continue
-                # pagination. Since we loop over queries, we add the _query value.
-                # Then after continuing from the right query, we remove this _query
-                # key so that the after dict is as elastic expects it
-                if after.get("_query") != label:
-                    continue
-                after.pop("_query", None)
-
-            async for rows, after_buckets in _aggregate_results(
-                index, _axes, {label: query}, filters, aggregations, after=after
-            ):
-                after_buckets = copy.deepcopy(after_buckets)
-
-                # insert label into the right position on the result tuple
-                rows = [result_tuple[:i] + (label,) + result_tuple[i:] for result_tuple in rows]
-
-                if after_buckets is None:
-                    # if there are no buckets left for this query, we check if this is the last query.
-                    # If not, we need to return the _query value to ensure pagination continues from this query
-                    if not last_query:
-                        after_buckets = {"_query": label}
-                else:
-                    # if there are buckets left, we add the _query value to ensure pagination continues from this query
-                    after_buckets["_query"] = label
-                yield rows, after_buckets
-
-            # after only applies to the first query
-            after = None
-
-    else:
-        # Path 3
-        # Run an aggregation with one or more axes. If after is not None, we continue from there.
-        sources = [axis.query() for axis in axes]
-        runtime_mappings = _combine_mappings(axis.runtime_mappings() for axis in axes)
-
-        rows, after = await _elastic_aggregate(index, sources, axes, queries, filters, aggregations, runtime_mappings, after)
-        yield rows, after
-
-        if after is not None:
-            async for rows, after in _aggregate_results(index, axes, queries, filters, aggregations, after):
-                yield rows, after
+async def _top_hits(fieldset: FieldSet, query: SearchQuery, axes: list[Axis], th: TopHitsAggregation) -> dict[tuple, list]:
+    """Get the top n documents per bucket using a window function"""
+    c = compile_search(fieldset, query)
+    selects, laterals, partition = [], [], []
+    for i, axis in enumerate(axes):
+        expr, lateral = axis_expr(StorageAxis(axis.field, axis.interval), fieldset.resolve(axis.field), f"tag_{i}")
+        selects.append(sql.SQL("{} AS {}").format(expr, sql.Identifier(f"a{i}")))
+        partition.append(expr)
+        if lateral is not None:
+            laterals.append(lateral)
+    for name in th.fields:
+        for f in fieldset.resolve(name):
+            selects.append(sql.SQL("{} AS {}").format(field_select(f), sql.Identifier(f.key)))
+    order: list[sql.Composable] = []
+    for s in th.sort or []:
+        for name, spec in s.items():
+            direction = "DESC" if SortSpec.model_validate(spec).order == "desc" else "ASC"
+            exprs = [field_sql(f) for f in fieldset.resolve(name)]
+            x = exprs[0] if len(exprs) == 1 else sql.SQL("coalesce({})").format(sql.SQL(", ").join(exprs))
+            order.append(sql.SQL("{} {} NULLS LAST").format(x, sql.SQL(direction)))
+    order.append(sql.SQL("documents.id"))
+    window = sql.SQL("row_number() OVER (PARTITION BY {} ORDER BY {}) AS rn").format(
+        sql.SQL(", ").join(partition) if partition else sql.SQL("true"), sql.SQL(", ").join(order)
+    )
+    stmt = sql.SQL("SELECT * FROM (SELECT {}, documents.project_pk, {} FROM documents {} WHERE {}) t WHERE rn <= %s").format(
+        sql.SQL(", ").join(selects), window, sql.SQL(" ").join(laterals), c.where
+    )
+    async with connection() as conn:
+        cur = await conn.execute(stmt, [*c.params, th.n])
+        rows = await cur.fetchall()
+    storage_axes = [StorageAxis(ax.field, ax.interval) for ax in axes]
+    hits: dict[tuple, list] = {}
+    for row in sorted(rows, key=lambda r: r["rn"]):  # type: ignore[index, call-overload]
+        key = tuple(
+            _hashable(postprocess_value(row[f"a{i}"], sa, fieldset.type(sa.field)))  # type: ignore[index, call-overload]
+            for i, sa in enumerate(storage_axes)
+        )
+        project_fields = fieldset.project_fields[row["project_pk"]]  # type: ignore[index, call-overload]
+        doc = {}
+        for name in th.fields:
+            f = project_fields.get(name)
+            if f is not None and row[f.key] is not None:  # type: ignore[index, call-overload]
+                doc[name] = row[f.key]  # type: ignore[index, call-overload]
+        hits.setdefault(key, []).append(doc)
+    return hits
 
 
 async def query_aggregate(
@@ -330,52 +253,40 @@ async def query_aggregate(
 ) -> AggregateResult:
     """
     Conduct an aggregate query.
-    Note that interval queries also yield zero counts for intervening keys without value,
-    but only if that is the last axis. [WvA] Not sure if this is desired
 
-    :param index: The name of the elasticsearch index
-    :param axes: Aggregation axes
+    :param index: The name of the index (or a list of indices)
+    :param axes: Aggregation axes. Use field "_query" to split the results by query label
     :param aggregations: Aggregation fields
-    :param queries: Optional query string
-    :param filters: if not None, a dict of filters: {field: {'value': value}} or
-                    {field: {'range': {'gte/gt/lte/lt': value, 'gte/gt/..': value, ..}}
-    :return: a pair of (Axis, results), where results is a sequence of tuples
+    :param queries: Optional query strings {label: query}
+    :param filters: if not None, a dict of filters
+    :param after: pagination cursor as returned in a previous result
+    :return: an AggregateResult, with at most PAGE_SIZE rows
     """
-    if axes and sum([x.field == "_query" for x in axes[1:]]) > 1:
+    axes = axes or []
+    aggregations = aggregations or []
+    if sum(x.field == "_query" for x in axes) > 1:
         raise ValueError("Only one aggregation axis may be by query")
 
-    all_fields: dict[str, DocumentField] = dict()
     indices = index if isinstance(index, list) else [index]
-    for index in indices:
-        index_fields = await list_fields(index)
-        for field_name, field in index_fields.items():
-            if field_name not in all_fields:
-                all_fields[field_name] = field
-            else:
-                if field.type != all_fields[field_name].type:
-                    raise ValueError(f"Type of {field_name} is not the same in all indices")
-        all_fields.update(await list_fields(index))
-
-    if not axes:
-        axes = []
+    fieldset = await get_fieldset(indices)
     for axis in axes:
-        axis.ftype = "_query" if axis.field == "_query" else all_fields[axis.field].type
-    if not aggregations:
-        aggregations = []
+        axis.ftype = "_query" if axis.field == "_query" else fieldset.resolve(axis.field)[0].type
     for aggregation in aggregations:
-        aggregation.set_ftype(all_fields)
+        aggregation.set_ftype(fieldset)
 
-    # We get the rows in sets of queries * buckets, and if there are queries or buckets left,
-    # the last_after value serves as a pagination cursor. Once we have > [stop_after] rows,
-    # we return the data and the last_after cursor. If the user needs to collect the rest,
-    # they need to paginate
-    stop_after = 1000
-    gen = _aggregate_results(indices, axes, queries, filters, aggregations, after)
-    data = list()
-    last_after = None
-    async for rows, after in gen:
-        data += rows
-        last_after = after
-        if len(data) > stop_after:
-            break
-    return AggregateResult(axes, aggregations, data, count_column="n", after=last_after)
+    if any(ax.field == "_query" for ax in axes):
+        if not queries:
+            raise ValueError("Queries must be specified when aggregating by query")
+        i = [ax.field for ax in axes].index("_query")
+        other_axes = axes[:i] + axes[i + 1 :]
+        rows: list[tuple] = []
+        for label, q in queries.items():
+            for row in await _aggregate(fieldset, SearchQuery(queries={label: q}, filters=filters), other_axes, aggregations):
+                rows.append(row[:i] + (label,) + row[i:])
+    else:
+        rows = await _aggregate(fieldset, SearchQuery(queries=queries, filters=filters), axes, aggregations)
+
+    offset = int((after or {}).get("offset", 0))
+    page = rows[offset : offset + PAGE_SIZE]
+    next_after = {"offset": offset + PAGE_SIZE} if len(rows) > offset + PAGE_SIZE else None
+    return AggregateResult(axes, aggregations, page, count_column="n", after=next_after)

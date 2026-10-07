@@ -1,23 +1,23 @@
 import logging
 from datetime import UTC, datetime
-from typing import AsyncIterable, Mapping
+from typing import AsyncIterable
 
 from botocore.exceptions import BotoCoreError
 
-from amcat4.config import get_settings
-from amcat4.connections import es, s3_enabled
-from amcat4.elastic.util import index_scan
-from amcat4.models import CreateDocumentField, FieldType, IndexId, ProjectSettings, RoleRule, Roles, User
+from amcat4.connections import s3_enabled
+from amcat4.errors import NotFoundError
+from amcat4.models import IndexId, ProjectSettings, RoleRule, Roles, User
 from amcat4.objectstorage.multimedia import delete_project_multimedia
-from amcat4.systemdata.fields import create_fields, delete_all_project_fields, list_fields
+from amcat4.postgres.connection import connection, fetch_all, fetch_one
 from amcat4.systemdata.roles import list_user_project_roles
 from amcat4.systemdata.settings import (
+    _project_from_row,
     create_project_settings,
     delete_project_settings,
     get_project_settings,
+    set_project_archived,
     update_project_settings,
 )
-from amcat4.systemdata.versions import settings_index_id, settings_index_name
 
 
 class IndexDoesNotExist(ValueError):
@@ -30,57 +30,11 @@ class IndexAlreadyExists(ValueError):
 
 async def create_project_index(new_index: ProjectSettings, admin_email: str | None = None):
     """
-    An index needs to exist in two places: as an elasticsearch index, and as a document in the settings index.
-    This function creates the elasticsearch index first, and then creates the settings document.
+    Create a new project, optionally with an admin user
     """
-    index_exists = await es().indices.exists(index=new_index.id)
-    project_exists = await es().exists(index=settings_index_name(), id=settings_index_id(new_index.id))
-    if index_exists and project_exists:
+    if await fetch_one("SELECT 1 FROM projects WHERE id = %s", [new_index.id]):
         raise IndexAlreadyExists(f'Project "{new_index.id}" already exists')
-    if index_exists and not project_exists:
-        # Note that we should not automatically register, because it's not certain the user is the original owner.
-        # Need to create some process for server admins to import/register existing indices.
-        raise IndexAlreadyExists(
-            f'Elasticsearch index "{new_index.id}" already exists, but is not yet registered as a project index',
-        )
-    if not index_exists and project_exists:
-        # We don't yet have a process to recover from this. We could just create the index and update the settings?
-        raise IndexAlreadyExists(
-            f'Project index "{new_index.id}" is already registered, but the elasticsearch index does not exist',
-        )
-
-    await create_es_index(new_index.id)
-    await register_project_index(new_index, admin_email)
-
-
-async def register_project_index(
-    index: ProjectSettings,
-    admin_email: str | None = None,
-    mappings: Mapping[str, FieldType | CreateDocumentField] | None = None,
-):
-    """
-    Register an existing elasticsearch index in the settings index.
-    The index must already exist in elasticsearch, and must not yet be registered.
-
-    Field types are automatically inferred from the existing mappings.
-    You can optionally provide field mappings to specify the field types before they are inferred.
-    NOTE: the mappings argument is not yet used, but we need it if we want to support importing properly
-    """
-    index_exists = await es().indices.exists(index=index.id)
-    if not index_exists:
-        raise IndexDoesNotExist(f'Elasticsearch index "{index.id}" does not exist')
-    project_exists = await es().exists(index=settings_index_name(), id=settings_index_id(index.id))
-    if project_exists:
-        raise IndexAlreadyExists(f'Project "{index.id}" is already registered')
-
-    await create_project_settings(index, admin_email)
-    if mappings:
-        await create_fields(index.id, mappings)
-    await list_fields(index.id)  # This will infer field types from the existing mappings
-
-
-async def deregister_project_index(index_id: str):
-    await delete_project_settings(index_id)
+    await create_project_settings(new_index, admin_email)
 
 
 async def update_project_index(update_index: ProjectSettings):
@@ -91,90 +45,67 @@ async def update_project_index(update_index: ProjectSettings):
 
 
 async def archive_project_index(index_id: str, archived: bool):
-    d = await get_project_settings(index_id)
+    try:
+        d = await get_project_settings(index_id)
+    except NotFoundError:
+        raise IndexDoesNotExist(f"Project {index_id} does not exist")
     if d.archived is not None and archived:
         return
-
-    if archived:
-        archived_at = datetime.now(UTC)
-        await es().update(
-            index=settings_index_name(),
-            id=settings_index_id(index_id),
-            doc={"project_settings": {"archived": archived_at}},
-            refresh=True,
-        )
-    else:
-        await es().update(
-            index=settings_index_name(),
-            id=settings_index_id(index_id),
-            script={"source": "ctx._source.project_settings.remove('archived')", "lang": "painless"},
-            refresh=True,
-        )
+    await set_project_archived(index_id, datetime.now(UTC) if archived else None)
 
 
 async def clear_project_index(index_id: str):
     """
-    Clear all documents and fields from a project index, keeping settings and roles intact.
-    Deletes multimedia, recreates an empty ES index, and removes field definitions.
+    Clear all documents and fields from a project, keeping settings and roles intact.
     """
+    row = await fetch_one("SELECT pk FROM projects WHERE id = %s", [index_id])
+    if row is None:
+        raise IndexDoesNotExist(f"Project {index_id} does not exist")
     if s3_enabled():
         try:
             await delete_project_multimedia(index_id)
         except BotoCoreError as e:
             logging.warning(f"Could not delete multimedia for index {index_id}: {e}")
-
-    await es().indices.delete(index=index_id)
-    await create_es_index(index_id)
-    await delete_all_project_fields(index_id)
+    async with connection() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM documents WHERE project_pk = %s", [row["pk"]])
+            await conn.execute("DELETE FROM fields WHERE project_pk = %s", [row["pk"]])
 
 
 async def delete_project_index(index_id: str, ignore_missing: bool = False):
     """
-    Delete both the index and the index settings, and the index bucket if any.
+    Delete the project, including its documents, fields, roles and multimedia
     """
-    # important, because otherwise new project with same name will inherit old bucket
-    # (buckets are always optional)
-    # TODO: should we actually use unique index ids?
     if s3_enabled():
         try:
             await delete_project_multimedia(index_id)
         except BotoCoreError as e:
             logging.warning(f"Could not delete multimedia for index {index_id}: {e}")
-
-    _es = es().options(ignore_status=404) if ignore_missing else es()
-    await _es.indices.delete(index=index_id)
-
-    await delete_project_settings(index_id, ignore_missing)
+    try:
+        await delete_project_settings(index_id, ignore_missing)
+    except NotFoundError:
+        raise IndexDoesNotExist(f"Project {index_id} does not exist")
 
 
 async def list_project_indices(ids: list[str] | None = None, skip_archived: bool = True) -> AsyncIterable[ProjectSettings]:
     """
-    List all project indices, or only those with the given ids.
+    List all projects, or only those with the given ids.
     """
-    query = {"bool": {}}
+    conditions, params = ["TRUE"], []
     if ids is not None:
-        query["bool"]["must"] = {"terms": {"_id": ids}}
+        conditions.append("id = ANY(%s)")
+        params.append(ids)
     if skip_archived:
-        query["bool"]["must_not"] = {"exists": {"field": "project_settings.archived"}}
-
-    exclude_source = ["project_settings.image.base64", "server_settings"]
-
-    async for id, ix in index_scan(settings_index_name(), query=query, exclude_source=exclude_source):
-        if id.startswith("_"):
-            continue
-        project_settings = ix["project_settings"]
-        yield ProjectSettings.model_validate(project_settings)
-
-
-async def create_es_index(index_id: str):
-    await es().indices.create(index=index_id, mappings={"dynamic": "strict", "properties": {}})
+        conditions.append("archived IS NULL")
+    rows = await fetch_all(f"SELECT * FROM projects WHERE {' AND '.join(conditions)} ORDER BY id", params)  # type: ignore[arg-type]
+    for row in rows:
+        yield _project_from_row(row)
 
 
 async def refresh_index(index: str):
     """
-    Refresh the elasticsearch index
+    No-op, kept for compatibility: in postgres, documents are searchable as soon as they are committed
     """
-    await es().indices.refresh(index=index)
 
 
 async def list_user_project_indices(
@@ -183,7 +114,6 @@ async def list_user_project_indices(
     """
     List all indices that a user has any role on.
     Return both the index and RoleRule that the user matched for that index (can be None if show_all is True)
-    TODO: add pagination and search here
     """
     if show_all:
         ## ONLY ALLOWED FOR SERVER ADMINS. make sure to check role before setting this param
@@ -192,30 +122,19 @@ async def list_user_project_indices(
         return
 
     project_role_lookup: dict[str, RoleRule] = {}
-    user_indices: list[str] = []
     roles = await list_user_project_roles(user, required_role=Roles.OBSERVER)
     for role in roles:
         project_role_lookup[role.role_context] = role
-        user_indices.append(role.role_context)
 
-    async for index in list_project_indices(ids=user_indices, skip_archived=not show_archived):
+    async for index in list_project_indices(ids=list(project_role_lookup.keys()), skip_archived=not show_archived):
         yield index, project_role_lookup[index.id]
 
 
-async def list_unregistered_indices() -> list[str]:
-    """
-    List all elasticsearch indices that exist but are not registered as amcat projects.
-    Excludes any index whose name starts with the system_index prefix.
-    """
-    prefix = get_settings().system_index
-    registered_ids = {project.id async for project in list_project_indices(skip_archived=False)}
-    all_indices = await es().indices.get(index="*")
-    return sorted(name for name in all_indices.keys() if not name.startswith(prefix) and name not in registered_ids)
-
-
 async def index_size_in_bytes(index_id: IndexId) -> int:
-    response = await es().indices.stats(
-        index=index_id,
-        metric="store",
+    """(Approximate) size of the documents of the project, as stored on disk (after compression)"""
+    row = await fetch_one(
+        """SELECT coalesce(sum(pg_column_size(d.*)), 0) AS bytes FROM documents d
+           JOIN projects p ON p.pk = d.project_pk WHERE p.id = %s""",
+        [index_id],
     )
-    return response["indices"][index_id]["total"]["store"]["size_in_bytes"]
+    return int(row["bytes"]) if row else 0

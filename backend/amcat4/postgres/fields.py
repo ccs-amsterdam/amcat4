@@ -3,21 +3,20 @@ Field definitions for the postgres backend.
 
 Each field has a stable storage key ("f<pk>") that is used as the json key in the documents table. The field
 name is only a project-level label. This module maps AmCAT field types to storage columns, normalizes values
-for storage, and manages the `fields` table.
+for storage, and has low-level functions for the `fields` table (see amcat4.systemdata.fields for the API layer).
 """
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Callable, Literal, Mapping
+from typing import Any, Callable, Literal
 
 from psycopg import AsyncConnection
 
-from amcat4.models import FieldType
-
-StorageColumn = Literal["text_data", "meta_data", "extra_data"]
+StorageColumn = Literal["text_data", "meta_data", "extra_data", "vector"]
+SortSlot = Literal["date", "number", "keyword"]
 
 # Which jsonb column a field type is stored in. text_data is tokenized, meta_data is exact/columnar,
-# extra_data is stored but not indexed.
+# extra_data is stored but not indexed. Vectors are stored in the document_vectors table.
 _STORAGE: dict[str, StorageColumn] = {
     "text": "text_data",
     "keyword": "meta_data",
@@ -30,10 +29,23 @@ _STORAGE: dict[str, StorageColumn] = {
     "number": "meta_data",
     "integer": "meta_data",
     "date": "meta_data",
+    "geo_point": "meta_data",
     "object": "extra_data",
-    "vector": "extra_data",
-    "geo_point": "extra_data",
+    "vector": "vector",
 }
+
+# Which sort slot (fast sort column) a field type can use
+_SORT_SLOTS: dict[str, SortSlot] = {
+    "date": "date",
+    "number": "number",
+    "integer": "number",
+    "keyword": "keyword",
+    "url": "keyword",
+}
+
+
+def sort_slot_for_type(field_type: str) -> SortSlot | None:
+    return _SORT_SLOTS.get(field_type)
 
 
 def storage_column(field_type: str) -> StorageColumn:
@@ -48,13 +60,14 @@ class FieldInfo:
     pk: int
     name: str
     type: str
-    unique_field: bool = False
-    primary_date: bool = False
+    identifier: bool = False
+    sort_slot: str | None = None
+    subkey: str | None = None  # for sub-fields, e.g. the lat/lon of a geo_point
 
     @property
     def key(self) -> str:
         """The json key under which values are stored"""
-        return f"f{self.pk}"
+        return f"f{self.pk}.{self.subkey}" if self.subkey else f"f{self.pk}"
 
     @property
     def column(self) -> StorageColumn:
@@ -67,7 +80,12 @@ class FieldInfo:
 
     @property
     def indexed(self) -> bool:
-        return self.column != "extra_data"
+        return self.column in ("text_data", "meta_data")
+
+    @property
+    def sort_column(self) -> str | None:
+        """The real column in the documents table this field is copied to for fast sorting (if any)"""
+        return f"sort_{self.sort_slot}" if self.sort_slot else None
 
     def derived_key(self, part: str) -> str:
         """json key of a derived value (e.g. the month of a date field)"""
@@ -85,10 +103,10 @@ def _daypart(dt: datetime) -> str:
 
 
 DATE_DERIVED: dict[str, Callable[[datetime], str | int]] = {
-    "year": lambda dt: dt.strftime("%Y"),
-    "month": lambda dt: dt.strftime("%Y-%m"),
+    "year": lambda dt: f"{dt.year:04d}",
+    "month": lambda dt: f"{dt.year:04d}-{dt.month:02d}",
     "week": lambda dt: (dt.date() - timedelta(days=dt.weekday())).isoformat(),
-    "day": lambda dt: dt.strftime("%Y-%m-%d"),
+    "day": lambda dt: dt.date().isoformat(),
     "yearnr": lambda dt: dt.year,
     "monthnr": lambda dt: dt.month,
     "weeknr": lambda dt: dt.isocalendar().week,
@@ -123,7 +141,9 @@ def normalize_date(value: Any) -> str:
         raise ValueError(f"Cannot convert {value!r} to a date")
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    dt = dt.astimezone(UTC)
+    # (not strftime, because that does not zero-pad years < 1000 on all platforms)
+    return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}T{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}.{dt.microsecond:06d}Z"
 
 
 def normalize_value(value: Any, field_type: str) -> Any:
@@ -146,49 +166,48 @@ def normalize_value(value: Any, field_type: str) -> Any:
             return bool(value)
         case "date":
             return normalize_date(value)
+        case "geo_point":
+            return normalize_geo(value)
+        case "vector":
+            if not isinstance(value, list) or not all(isinstance(v, (int, float)) for v in value):
+                raise ValueError(f"A vector should be a list of numbers, got {value!r}")
+            return [float(v) for v in value]
         case _:
             return value
 
 
-async def list_fields(conn: AsyncConnection, project_pk: int) -> dict[str, FieldInfo]:
-    cur = await conn.execute(
-        "SELECT pk, name, type, unique_field, primary_date FROM fields WHERE project_pk = %s ORDER BY pk", [project_pk]
+def normalize_geo(value: Any) -> dict[str, float]:
+    """
+    Normalize a geo point to {"lat": .., "lon": ..}. Accepts a dict with lat/lon, a "lat,lon" string,
+    or a [lon, lat] list (GeoJSON order, as in elasticsearch). Stored as two numbers, so bounding box
+    filters can use range queries on <field>.lat and <field>.lon
+    """
+    if isinstance(value, dict) and "lat" in value and "lon" in value:
+        lat, lon = value["lat"], value["lon"]
+    elif isinstance(value, str) and "," in value:
+        lat, lon = value.split(",", 1)
+    elif isinstance(value, (list, tuple)) and len(value) == 2:
+        lon, lat = value
+    else:
+        raise ValueError(f"Cannot interpret {value!r} as a geo point")
+    lat, lon = float(lat), float(lon)
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ValueError(f"Invalid geo point: lat={lat}, lon={lon}")
+    return {"lat": lat, "lon": lon}
+
+
+FIELD_COLUMNS = "pk, name, type, identifier, sort_slot"
+
+
+def field_info_from_row(row: dict) -> FieldInfo:
+    return FieldInfo(
+        pk=row["pk"], name=row["name"], type=row["type"], identifier=row["identifier"], sort_slot=row["sort_slot"]
     )
-    rows = await cur.fetchall()
-    return {r["name"]: FieldInfo(**r) for r in rows}  # type: ignore[index, call-overload, arg-type]
 
 
-async def create_fields(
-    conn: AsyncConnection, project_pk: int, fields: Mapping[str, FieldType], unique_fields: list[str] | None = None
-) -> dict[str, FieldInfo]:
-    """
-    Create fields that do not exist yet. Existing fields must have the same type.
-    (Unlike in elastic, changing a type would only require rewriting the values of this field)
-
-    The first date field of a project becomes its *primary date*: its value is also stored in the
-    documents.sort_date column, which (unlike json keys) pg_search can use for fast sorting.
-    """
-    current = await list_fields(conn, project_pk)
-    has_primary_date = any(f.primary_date for f in current.values())
-    unique_fields = unique_fields or []
-    for name, field_type in fields.items():
-        storage_column(field_type)  # validates the type
-        if name in current:
-            if current[name].type != field_type:
-                raise ValueError(f"Field {name!r} already exists with type {current[name].type!r}")
-            continue
-        primary_date = field_type == "date" and not has_primary_date
-        has_primary_date = has_primary_date or primary_date
-        await conn.execute(
-            "INSERT INTO fields (project_pk, name, type, unique_field, primary_date) VALUES (%s, %s, %s, %s, %s)",
-            [project_pk, name, field_type, name in unique_fields, primary_date],
-        )
-    return await list_fields(conn, project_pk)
-
-
-async def rename_field(conn: AsyncConnection, project_pk: int, old: str, new: str) -> None:
-    """Renaming is a metadata-only operation, because values are stored by field key"""
-    await conn.execute("UPDATE fields SET name = %s WHERE project_pk = %s AND name = %s", [new, project_pk, old])
+async def list_field_infos(conn: AsyncConnection, project_pk: int) -> dict[str, FieldInfo]:
+    cur = await conn.execute(f"SELECT {FIELD_COLUMNS} FROM fields WHERE project_pk = %s ORDER BY pk", [project_pk])  # type: ignore[arg-type]
+    return {r["name"]: field_info_from_row(r) for r in await cur.fetchall()}  # type: ignore[index, call-overload, arg-type]
 
 
 class QueryError(ValueError):
@@ -225,12 +244,22 @@ class FieldSet:
         return self.by_name[name][0].type
 
     def resolve(self, name: str) -> list[FieldInfo]:
+        if name not in self.by_name and "." in name:
+            return self._resolve_subfield(name)
         fs = self.by_name.get(name)
         if not fs or (self.queryable is not None and name not in self.queryable):
             raise QueryError(f"Unknown field: {name}")
         if not fs[0].indexed:
             raise QueryError(f"Field {name} is not searchable")
         return fs
+
+    def _resolve_subfield(self, name: str) -> list[FieldInfo]:
+        """Sub-fields: the latitude and longitude of a geo_point (e.g. location.lat), which can be filtered as numbers"""
+        base, sub = name.rsplit(".", 1)
+        fs = self.resolve(base)
+        if fs[0].type != "geo_point" or sub not in ("lat", "lon"):
+            raise QueryError(f"Unknown field: {name}")
+        return [FieldInfo(pk=f.pk, name=name, type="number", subkey=sub) for f in fs]
 
     def default_fields(self) -> list[FieldInfo]:
         return [

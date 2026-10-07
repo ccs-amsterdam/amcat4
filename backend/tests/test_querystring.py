@@ -1,7 +1,16 @@
 import pytest
 
 from amcat4.postgres.fields import FieldInfo, FieldSet, QueryError
-from amcat4.postgres.querystring import Bool, Phrase, Range, Term, parse_query, query_string_to_json
+from amcat4.postgres.querystring import (
+    Bool,
+    Phrase,
+    Range,
+    Term,
+    highlight_patterns,
+    match_positions,
+    parse_query,
+    query_string_to_json,
+)
 
 FIELDS = {
     "title": FieldInfo(1, "title", "text"),
@@ -10,6 +19,7 @@ FIELDS = {
     "n": FieldInfo(4, "n", "integer"),
     "date": FieldInfo(5, "date", "date"),
     "secret": FieldInfo(6, "secret", "text"),
+    "location": FieldInfo(7, "location", "geo_point"),
 }
 
 
@@ -71,6 +81,8 @@ def test_compile_leaves():
     r = query_string_to_json("date:2024-01-01", fs)["range"]
     assert r["lower_bound"] == {"included": "2024-01-01T00:00:00.000000Z"}
     assert r["upper_bound"] == {"included": "2024-01-01T23:59:59.999999Z"}
+    r = query_string_to_json("location.lat:>50", fs)["range"]
+    assert r["field"] == "meta_data.f7.lat" and r["lower_bound"] == {"excluded": 50.0}
     with pytest.raises(QueryError):
         query_string_to_json("title:a*b", fs)
     with pytest.raises(QueryError):
@@ -85,3 +97,10 @@ def test_compile_multi_project():
     fs = FieldSet({1: FIELDS, 2: other})
     q = query_string_to_json("title:fox", fs)
     assert {c["match"]["field"] for c in q["boolean"]["should"]} == {"text_data.f1", "text_data.f11"}
+
+
+def test_highlight_patterns():
+    q = parse_query('te* OR "quick fox" -nope title:x')
+    patterns = highlight_patterns(q, "text", default_field=True)
+    assert match_positions("A test text. Quick, fox! nope", patterns) == [[2, 6], [7, 11], [13, 23]]
+    assert highlight_patterns(q, "text", default_field=False) == []

@@ -2,11 +2,11 @@
 
 from typing import Annotated
 
-from elasticsearch import ConflictError, NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth_helpers import authenticated_user
+from amcat4.errors import ConflictError, NotFoundError
 from amcat4.models import Role, RoleEmailPattern, Roles, ServerRole, User
 from amcat4.systemdata.roles import (
     HTTPException_if_not_server_role,

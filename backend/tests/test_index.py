@@ -1,17 +1,13 @@
-from typing import List
-
 import pytest
 
-from amcat4.connections import es
 from amcat4.models import ProjectSettings, Roles, User
+from amcat4.postgres.connection import fetch_one
 from amcat4.projects.index import (
     clear_project_index,
     create_project_index,
     delete_project_index,
-    deregister_project_index,
     list_project_indices,
     list_user_project_indices,
-    register_project_index,
 )
 from amcat4.systemdata.fields import list_fields
 from amcat4.systemdata.roles import (
@@ -30,14 +26,15 @@ from amcat4.systemdata.roles import (
 from amcat4.systemdata.settings import get_project_settings, update_project_settings
 
 
-async def list_es_indices() -> List[str]:
-    """
-    List all indices on the connected elastic cluster.
-    """
-    return list((await es().indices.get(index="*")).keys())
+async def count_documents(index: str) -> int:
+    row = await fetch_one(
+        "SELECT count(*) AS n FROM documents d JOIN projects p ON p.pk = d.project_pk WHERE p.id = %s", [index]
+    )
+    assert row is not None
+    return row["n"]
 
 
-async def list_index_ids(email: str | None = None) -> List[str]:
+async def list_index_ids(email: str | None = None) -> list[str]:
     if email is None:
         return [ix.id async for ix in list_project_indices()]
     else:
@@ -49,30 +46,13 @@ async def test_create_delete_project_index():
     # Can we create and delete indices?
     index = "amcat4_unittest"
     await delete_project_index(index, ignore_missing=True)
-    assert index not in await list_es_indices()
     assert index not in await list_index_ids()
     await create_project_index(ProjectSettings(id=index))
-    assert index in await list_es_indices()
     assert index in await list_index_ids()
     # Cannot create duplicate index
     with pytest.raises(Exception):
         await create_project_index(ProjectSettings(id=index))
     await delete_project_index(index)
-    assert index not in await list_es_indices()
-    assert index not in await list_index_ids()
-
-
-@pytest.mark.anyio
-async def test_import_index():
-    # To import an existing es index, we create the index settings
-    index = "amcat4_unittest"
-    await delete_project_index(index, ignore_missing=True)
-    await es().indices.create(index=index)
-    assert index in await list_es_indices()
-    assert index not in await list_index_ids()
-    await register_project_index(ProjectSettings(id=index))
-    assert index in await list_index_ids()
-    await deregister_project_index(index)
     assert index not in await list_index_ids()
 
 
@@ -149,8 +129,7 @@ async def test_clear_project_index(index_docs):
     await create_project_role(admin_email, index, Roles.ADMIN)
 
     # Verify preconditions: documents and fields exist
-    doc_count = (await es().count(index=index))["count"]
-    assert doc_count > 0
+    assert await count_documents(index) > 0
     fields = await list_fields(index, auto_repair=False)
     assert len(fields) > 0
     settings = await get_project_settings(index)
@@ -159,16 +138,10 @@ async def test_clear_project_index(index_docs):
     # Clear the project
     await clear_project_index(index)
 
-    # ES index still exists but is empty
-    assert await es().indices.exists(index=index)
-    doc_count = (await es().count(index=index))["count"]
-    assert doc_count == 0
+    # Documents are gone
+    assert await count_documents(index) == 0
 
-    # Mapping is reset to empty
-    mapping = await es().indices.get_mapping(index=index)
-    assert mapping[index]["mappings"].get("properties", {}) == {}
-
-    # Field definitions are gone from system index
+    # Field definitions are gone
     fields = await list_fields(index, auto_repair=False)
     assert len(fields) == 0
 

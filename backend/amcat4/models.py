@@ -153,10 +153,14 @@ class DocumentField(BaseModel):
     server side. Others, such as client_settings, are free-form and can be used by the client to store settings."""
 
     type: FieldType
+    # The storage type of the field. It is fixed when the field is created, and determines which field types
+    # the field can be changed to. (The name dates from when AmCAT used elasticsearch)
     elastic_type: ElasticType
     identifier: bool = False
     metareader: DocumentFieldMetareaderAccess = DocumentFieldMetareaderAccess()
     client_settings: dict[str, Any] = {}
+    # If set, the field is in a "sort slot" (date, number or keyword), which makes sorting on it fast
+    sort_slot: Literal["date", "number", "keyword"] | None = None
 
     @model_validator(mode="after")
     def validate_type(self) -> Self:
@@ -188,6 +192,11 @@ class UpdateDocumentField(BaseModel):
     type: FieldType | None = None
     metareader: DocumentFieldMetareaderAccess | None = None
     client_settings: dict[str, Any] | None = None
+    fast_sort: bool | None = Field(
+        default=None,
+        description="Put this field in the (date, number or keyword) sort slot of the project, which makes sorting "
+        "on this field fast. A project can have one field per sort slot.",
+    )
 
 
 ####################### SEARCH SPECIFICATIONS #########################

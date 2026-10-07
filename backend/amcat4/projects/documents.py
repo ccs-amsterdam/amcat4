@@ -1,13 +1,11 @@
-import hashlib
-import json
-import logging
-from typing import Any, AsyncGenerator, Literal, Mapping
+from typing import Any, Literal, Mapping
 
-import elasticsearch.helpers
-
-from amcat4.connections import es
+from amcat4.errors import NotFoundError
 from amcat4.models import CreateDocumentField, DocumentFieldDefinition, FieldType
-from amcat4.systemdata.fields import coerce_type, create_fields, create_or_verify_tag_field, list_fields
+from amcat4.postgres import documents as storage
+from amcat4.postgres.connection import connection
+from amcat4.postgres.projects import project_pk
+from amcat4.systemdata.fields import create_fields, field_infos
 
 
 async def create_or_update_documents(
@@ -21,11 +19,14 @@ async def create_or_update_documents(
     """
     Upload documents to this index
 
-    :param index: The name of the index (without prefix)
-    :param documents: A sequence of article dictionaries
-    :param fields: A mapping of fieldname:UpdateField for field types
+    :param index: The name of the index
+    :param documents: A sequence of document dictionaries
+    :param fields: A mapping of fieldname:type (or definition), fields will be created if they do not exist
     :param op_type: Whether to 'index' new documents (create or overwrite), 'create' (only create),
         'update' (partial update, error if not exists), or 'upsert' (partial update, create if not exists)
+    :param raise_on_error: If true, raise an error if some documents could not be created/updated
+    :param refresh: Not used (documents are always immediately searchable), kept for compatibility
+    :return: dict(successes=<number>, failures=[...])
     """
     if fields:
         create_fields_dict: dict[str, CreateDocumentField] = dict()
@@ -34,185 +35,61 @@ async def create_or_update_documents(
                 create_fields_dict[k] = CreateDocumentField(type=v)
             else:
                 create_fields_dict[k] = CreateDocumentField(**v.model_dump())
-
         await create_fields(index, create_fields_dict)
 
-    actions = [a async for a in upload_document_es_actions(index, documents, op_type)]
-    try:
-        successes, failures = await elasticsearch.helpers.async_bulk(
-            es(),
-            actions,
-            stats_only=False,
-            raise_on_error=raise_on_error,
-            refresh="wait_for" if refresh else False,
-        )
-    except elasticsearch.helpers.BulkIndexError as e:
-        logging.error("Error on indexing: " + json.dumps(e.errors, indent=2, default=str))
-        if e.errors:
-            _, error = list(e.errors[0].items())[0]
-            reason = error.get("error", {}).get("reason", error)
-            e.args = e.args + (f"First error: {reason}",)
-        raise
-
+    pk = await project_pk(index)
+    infos = await field_infos(index)
+    async with connection() as conn:
+        successes, failures = await storage.upload_documents(conn, pk, documents, infos, op_type)
+    if failures and raise_on_error:
+        raise ValueError(f"{len(failures)} document(s) could not be saved. First error: {failures[0]}")
     return dict(successes=successes, failures=failures)
 
 
-async def upload_document_es_actions(index, documents, op_type) -> AsyncGenerator[dict, None]:
-    field_settings = await list_fields(index)
-    identifiers = [k for k, v in field_settings.items() if v.identifier is True]
-    es_op_type = "update" if op_type in ("update", "upsert") else op_type
-    for document in documents:
-        doc = dict()
-        action = {"_op_type": es_op_type, "_index": index}
-
-        for key in document.keys():
-            if key in field_settings:
-                if document[key] is not None:
-                    doc[key] = coerce_type(document[key], field_settings[key].type)
-            elif key == "_id":
-                if len(identifiers) > 0 and op_type != "update":
-                    raise ValueError(f"This index uses identifiers ({identifiers}), so you cannot set the _id directly.")
-                action["_id"] = document[key]
-            else:
-                raise ValueError(f"Field '{key}' is not yet specified")
-
-        if len(identifiers) > 0:
-            action["_id"] = _create_document_id(document, identifiers)
-            # if no _id is given and no identifiers are used, elasticsearch creates a cool unique one
-
-        # https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
-        if op_type in ("update", "upsert"):
-            if "_id" not in action:
-                raise ValueError("Update requires _id")
-            action["doc"] = doc
-            action["doc_as_upsert"] = op_type == "upsert"
-        else:
-            action = {**doc, **action}
-
-        yield action
-
-
-async def fetch_document(index: str, doc_id: str, **kargs) -> dict:
+async def fetch_document(index: str, doc_id: str, _source: str | list[str] | None = None) -> dict:
     """
     Get a single document from this index.
 
     :param index: The name of the index
-    :param doc_id: The document id (hash)
-    :return: the source dict of the document
+    :param doc_id: The document id
+    :param _source: Optional list (or comma separated string) of fields to retrieve
+    :return: the document as a {field: value} dict (without _id)
     """
-    return (await es().get(index=index, id=doc_id, **kargs))["_source"]
+    pk = await project_pk(index)
+    infos = await field_infos(index)
+    names = _source.split(",") if isinstance(_source, str) else _source
+    async with connection() as conn:
+        doc = await storage.get_document(conn, pk, doc_id, infos, names)
+    if doc is None:
+        raise NotFoundError(f"Document {index}/{doc_id} does not exist")
+    doc.pop("_id")
+    return doc
 
 
-async def update_document(
-    index: str, doc_id: str, fields: dict, ignore_missing: bool = False, get_source: bool | Mapping[str, Any] = False
-):
+async def update_document(index: str, doc_id: str, fields: dict, ignore_missing: bool = False, get_source=False):
     """
     Update a single document.
 
     :param index: The name of the index
-    :param doc_id: The document id (hash)
+    :param doc_id: The document id
     :param fields: a {field: value} mapping of fields to update
     :param ignore_missing: If True, create the document if it does not exist
-    :param get_source: If True, return the updated document source
     """
-    await es().update(index=index, id=doc_id, doc=fields, source=get_source, doc_as_upsert=ignore_missing)  # type: ignore
+    pk = await project_pk(index)
+    infos = await field_infos(index)
+    op_type: Literal["update", "upsert"] = "upsert" if ignore_missing else "update"
+    async with connection() as conn:
+        n, failures = await storage.upload_documents(conn, pk, [{**fields, "_id": doc_id}], infos, op_type, explicit_id=True)
+    if failures:
+        raise NotFoundError(f"Document {index}/{doc_id} does not exist")
 
 
 async def delete_document(index: str, doc_id: str, ignore_missing: bool = False):
     """
     Delete a single document
-
-    :param index: The Pname of the index
-    :param doc_id: The document id (hash)
     """
-    await es().delete(index=index, id=doc_id)
-
-
-UPDATE_SCRIPTS = dict(
-    add="""
-    if (ctx._source[params.field] == null) {
-      ctx._source[params.field] = [params.tag]
-    } else {
-      if (!(ctx._source[params.field] instanceof List)) {
-        def existing = ctx._source[params.field];
-        ctx._source[params.field] = new ArrayList();
-        ctx._source[params.field].add(existing);
-      }
-      if (ctx._source[params.field].contains(params.tag)) {
-        ctx.op = 'noop';
-      } else {
-        ctx._source[params.field].add(params.tag)
-      }
-    }
-    """,
-    remove="""
-    if (ctx._source[params.field] == null) {
-      ctx.op = 'noop';
-    } else {
-      if (!(ctx._source[params.field] instanceof List)) {
-        def existing = ctx._source[params.field];
-        ctx._source[params.field] = new ArrayList();
-        ctx._source[params.field].add(existing);
-      }
-      ctx._source[params.field].removeAll([params.tag]);
-      if (ctx._source[params.field].size() == 0) {
-        ctx._source.remove(params.field);
-      }
-    }
-    """,
-)
-
-
-async def update_document_tag_by_query(
-    index: str | list[str],
-    action: Literal["add", "remove"],
-    query: dict,
-    field: str,
-    tag: str,
-):
-    await create_or_verify_tag_field(index, field)
-    script = dict(
-        source=UPDATE_SCRIPTS[action],
-        lang="painless",
-        params=dict(field=field, tag=tag),
-    )
-    result = await es().update_by_query(index=index, script=script, **query, refresh=True)
-    return dict(updated=result["updated"], total=result["total"])
-
-
-async def update_documents_by_query(index: str | list[str], query: dict, field: str, value: Any):
-    if value is None:
-        script = dict(
-            source="ctx._source.remove(params.field)",
-            lang="painless",
-            params=dict(field=field),
-        )
-    else:
-        script = dict(
-            source="ctx._source[params.field] = params.value",
-            lang="painless",
-            params=dict(field=field, value=value),
-        )
-    result = await es().update_by_query(index=index, query=query, script=script, refresh=True)
-    return dict(updated=result["updated"], total=result["total"])
-
-
-async def delete_documents_by_query(index: str | list[str], query: dict):
-    result = await es().delete_by_query(index=index, query=query, refresh=True)
-    return dict(updated=result["deleted"], total=result["total"])
-
-
-def _create_document_id(document: dict, identifiers: list[str]) -> str:
-    """
-    Create the _id for a document.
-    """
-
-    if len(identifiers) == 0:
-        raise ValueError("Can only create id if identifiers are specified")
-
-    id_keys = sorted(set(identifiers) & set(document.keys()))
-    id_fields = {k: document[k] for k in id_keys}
-    hash_str = json.dumps(id_fields, sort_keys=True, ensure_ascii=True, default=str).encode("ascii")
-    m = hashlib.sha224()
-    m.update(hash_str)
-    return m.hexdigest()
+    pk = await project_pk(index)
+    async with connection() as conn:
+        deleted = await storage.delete_document(conn, pk, doc_id)
+    if not deleted and not ignore_missing:
+        raise NotFoundError(f"Document {index}/{doc_id} does not exist")

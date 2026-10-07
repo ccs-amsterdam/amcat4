@@ -1,6 +1,6 @@
 import pytest
-from elasticsearch import NotFoundError
 
+from amcat4.errors import NotFoundError
 from amcat4.models import AdminPermissionRequest, CreateProjectRequest, ProjectRoleRequest, Roles, User
 from amcat4.systemdata.requests import (
     delete_request,

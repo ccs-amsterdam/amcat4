@@ -3,82 +3,22 @@ All things query
 """
 
 import logging
+import re
+import secrets
+import uuid
+from datetime import UTC, datetime, timedelta
 from math import ceil
-from typing import Any, Dict, Literal, Tuple, Union
+from typing import Any, Literal, Union
 
-from amcat4.connections import es
-from amcat4.models import FieldSpec, FieldType, FilterSpec, SortSpec
-from amcat4.projects.date_mappings import mappings
-from amcat4.projects.documents import delete_documents_by_query, update_document_tag_by_query, update_documents_by_query
-from amcat4.systemdata.fields import create_fields, list_fields
+from psycopg.types.json import Jsonb
 
-
-def build_body(
-    queries: dict[str, str] | None = None,
-    filters: dict[str, FilterSpec] | None = None,
-    highlight: dict | None = None,
-    ids: list[str] | None = None,
-):
-    def parse_filter(field: str, filterSpec: FilterSpec) -> Tuple[dict, dict]:
-        filter = filterSpec.model_dump(exclude_none=True)
-        extra_runtime_mappings = {}
-        field_filters = []
-        for value in filter.pop("values", []):
-            field_filters.append({"term": {field: value}})
-        if "value" in filter:
-            field_filters.append({"term": {field: filter.pop("value")}})
-        if "exists" in filter:
-            if filter.pop("exists"):
-                field_filters.append({"exists": {"field": field}})
-            else:
-                field_filters.append({"bool": {"must_not": {"exists": {"field": field}}}})
-        for mapping in mappings():
-            if mapping.interval in filter:
-                value = filter.pop(mapping.interval)
-                extra_runtime_mappings.update(mapping.mapping(field))
-                field_filters.append({"term": {mapping.fieldname(field): value}})
-        rangefilter = {}
-        for rangevar in ["gt", "gte", "lt", "lte"]:
-            if rangevar in filter:
-                rangefilter[rangevar] = filter.pop(rangevar)
-        if rangefilter:
-            field_filters.append({"range": {field: rangefilter}})
-        if filter:
-            raise ValueError(f"Unknown filter type(s): {filter}")
-        return extra_runtime_mappings, {"bool": {"should": field_filters}}
-
-    def parse_query(q: str) -> dict:
-        return {"query_string": {"query": q}}
-
-    def parse_queries(queries: dict[str, str]) -> dict:
-        qs = queries.values()
-        if len(qs) == 1:
-            return parse_query(list(qs)[0])
-        else:
-            return {"bool": {"should": [parse_query(q) for q in qs]}}
-
-    if not (queries or filters or ids or highlight):
-        return {"query": {"match_all": {}}}
-
-    fs, runtime_mappings = [], {}
-    if filters:
-        for field, filter in filters.items():
-            extra_runtime_mappings, filter_term = parse_filter(field, filter)
-            fs.append(filter_term)
-            if extra_runtime_mappings:
-                runtime_mappings.update(extra_runtime_mappings)
-    if queries is not None:
-        fs.append(parse_queries(queries))
-    if ids:
-        fs.append({"ids": {"values": list(ids)}})
-    body: Dict[str, Any] = {"query": {"bool": {"filter": fs}}}
-    if runtime_mappings:
-        body["runtime_mappings"] = runtime_mappings
-
-    if highlight is not None:
-        body["highlight"] = highlight
-
-    return body
+from amcat4.models import CreateDocumentField, FieldSpec, FieldType, FilterSpec, SnippetParams, SortSpec
+from amcat4.postgres import documents as storage
+from amcat4.postgres.connection import connection, fetch_one
+from amcat4.postgres.fields import FieldSet
+from amcat4.postgres.projects import project_pk
+from amcat4.postgres.search import SearchQuery, compile_search, search
+from amcat4.systemdata.fields import create_fields, create_or_verify_tag_field, field_infos, get_fieldset, list_fields
 
 
 class QueryResult:
@@ -113,6 +53,32 @@ class QueryResult:
         return dict(meta=meta, results=self.data)
 
 
+def _search_query(queries, filters, ids=None) -> SearchQuery:
+    return SearchQuery(queries=queries or None, filters=filters or None, ids=list(ids) if ids else None)
+
+
+def _sort_spec(sort: list[dict[str, SortSpec]] | None) -> list[tuple[str, Literal["asc", "desc"]]] | None:
+    if not sort:
+        return None
+    out: list[tuple[str, Literal["asc", "desc"]]] = []
+    for s in sort:
+        for k, v in s.items():
+            order = v.order if isinstance(v, SortSpec) else SortSpec.model_validate(v).order
+            out.append((k, order))
+    return out
+
+
+def _parse_duration(scroll: str | bool | None) -> timedelta:
+    """Parse an elastic-style duration (e.g. 2m, 30s, 1h) for keeping scroll contexts alive"""
+    if not scroll or scroll is True:
+        return timedelta(minutes=2)
+    m = re.fullmatch(r"(\d+)\s*([smhd]?)", str(scroll).strip())
+    if not m:
+        raise ValueError(f"Invalid scroll duration: {scroll}")
+    unit = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "": "seconds"}[m.group(2)]
+    return timedelta(**{unit: int(m.group(1))})
+
+
 async def query_documents(
     index: Union[str, list[str]],
     fields: list[FieldSpec] | None = None,
@@ -128,10 +94,10 @@ async def query_documents(
     **kwargs,
 ) -> QueryResult | None:
     """
-    Conduct a query_string query, returning the found documents.
+    Conduct a query, returning the found documents.
 
     It will return at most per_page results.
-    In normal (paginated) mode, the next batch can be  requested by incrementing the page parameter.
+    In normal (paginated) mode, the next batch can be requested by incrementing the page parameter.
     If the scroll parameter is given, the result will contain a scroll_id which can be used to get the next batch.
     In case there are no more documents to scroll, it will return None
     :param index: The name of the index or indexes
@@ -140,128 +106,87 @@ async def query_documents(
                    !Any logic for determining whether a user can see the field should be done in the API layer.
     :param queries: if not None, a dict with labels and queries {label1: query1, ...}
     :param filters: if not None, a dict where the key is the field and the value is a FilterSpec
-
     :param page: The number of the page to request (starting from zero)
     :param per_page: The number of hits per page
-    :param scroll: if not None, will create a scroll request rather than a paginated request. Parmeter should
+    :param scroll: if not None, will create a scroll context rather than a paginated request. Parameter should
                    specify the time the context should be kept alive, or True to get the default of 2m.
-    :param scroll_id: if not None, should be a previously returned context_id to retrieve a new page of results
+    :param scroll_id: if not None, should be a previously returned scroll_id to retrieve a new page of results
     :param highlight: if True, add <em> tags to query matches in fields
-    :param sort: Sort order of results, can be either a single field or a list of fields.
-                 In the list, each field is a string or a dict with options, e.g. ["id", {"date": {"order": "desc"}}]
-                 (https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html)
-    :param kwargs: Additional elements passed to Elasticsearch.search()
-    :return: a QueryResult, or None if there is not scroll result anymore
+    :param sort: Sort order of results, a list of {field: SortSpec} dicts. Use "?" as field for random order.
+    :return: a QueryResult, or None if there is no scroll result anymore
     """
     if fields is not None and not isinstance(fields, list):
         raise ValueError("fields should be a list")
 
-    if scroll or scroll_id:
-        # set scroll to default also if scroll_id is given but no scroll time is known
-        kwargs["scroll"] = "2m" if (not scroll or scroll is True) else scroll
-
-    if sort is not None:
-        kwargs["sort"] = []
-        for s in sort:
-            for k, v in s.items():
-                if k == "?":
-                    kwargs["sort"].append(
-                        {"_script": {"type": "number", "script": {"source": "Math.random()"}, "order": "asc"}}
-                    )
-                else:
-                    kwargs["sort"].append({k: dict(v)})
     if scroll_id:
-        result = await es().scroll(scroll_id=scroll_id, scroll=kwargs.get("scroll", "2m"))
-        # TODO: check why we return None here instead of just an empty result
-        if not result["hits"]["hits"]:
-            return None
-        n = result["hits"]["total"]["value"]
-    else:
-        h = query_highlight_and_snippets(fields, highlight) if fields is not None else None
-        body = build_body(queries, filters, h)
+        return await _continue_scroll(scroll_id)
 
-        # TODO: we might be able to optimize a bit by not getting fields via _source if we
-        #       know we're going to overwrite them with the snippet (highlight) results.
-        #       Is also a bit 'safer' than overwriting the full text if we only allow snippets
-        # fieldnames = [field.name for field in fields if not field.snippet] if fields is not None else ["_id"]
-        fieldnames = [field.name for field in fields] if fields is not None else ["_id"]
-        kwargs["_source"] = fieldnames
+    indices = [index] if isinstance(index, str) else index
+    params: dict[str, Any] = dict(
+        indices=indices,
+        fields=[f.model_dump() for f in fields or []],
+        queries=queries,
+        filters={k: v.model_dump(exclude_none=True) for k, v in (filters or {}).items()},
+        sort=_sort_spec(sort),
+        per_page=per_page,
+        highlight=highlight,
+    )
+    if not scroll:
+        result, _ = await _run_query(params, page=page)
+        return QueryResult(result.results, n=result.total, per_page=per_page, page=page)
 
-        if not scroll:
-            kwargs["from_"] = page * per_page
-        result = await es().search(index=index, size=per_page, **body, **kwargs)
-
-        n = result["hits"]["total"]["value"]
-        if n == 10000 and not scroll:
-            # Default elastic max on non-scrolled values. I think we should return the actual count,
-            # even if elastic will error (I think) if the user ever retrieves a page > 1000
-            # TODO: can we not hard-code the 10k limit?
-            res = await es().count(index=index, query=body["query"])
-            n = res["count"]
-
-    data = []
-    for hit in result["hits"]["hits"]:
-        hitdict = dict(_id=hit["_id"], **hit["_source"])
-        hitdict = overwrite_highlight_results(hit, hitdict)
-        if "highlight" in hit:
-            for key in hit["highlight"].keys():
-                if hit["highlight"][key]:
-                    hitdict[key] = " ... ".join(hit["highlight"][key])
-        data.append(hitdict)
-
-    if scroll_id:
-        return QueryResult(data, n=n, scroll_id=result["_scroll_id"])
-    elif scroll:
-        return QueryResult(data, n=n, per_page=per_page, scroll_id=result["_scroll_id"])
-    else:
-        return QueryResult(data, n=n, per_page=per_page, page=page)
+    # Scroll: store the query server side, and return the first batch
+    sid = secrets.token_urlsafe(24)
+    expires = datetime.now(UTC) + _parse_duration(scroll)
+    params["scroll"] = str(scroll)
+    async with connection() as conn:
+        await conn.execute("DELETE FROM scrolls WHERE expires_at < now()")
+        await conn.execute("INSERT INTO scrolls (id, params, expires_at) VALUES (%s, %s, %s)", [sid, Jsonb(params), expires])
+    return await _continue_scroll(sid)
 
 
-def query_highlight_and_snippets(fields: list[FieldSpec], highlight_queries: bool = False) -> dict[str, Any]:
-    """
-    The elastic "highlight" parameters works for both highlighting text fields and adding snippets.
-    This function will return the highlight parameter to be added to the query body.
-    """
-
-    highlight: dict[str, Any] = {
-        "pre_tags": ["<em>"] if highlight_queries is True else [""],
-        "post_tags": ["</em>"] if highlight_queries is True else [""],
-        "require_field_match": True,
-        "fields": {},
-    }
-
-    for field in fields:
-        if field.snippet is None:
-            if highlight_queries is True:
-                # This will overwrite the field with the highlighted version, so
-                # only needed if highlight is True
-                highlight["fields"][field.name] = {"number_of_fragments": 0}
-        else:
-            # the elastic highlight feature is also used to get snippets.
-            highlight["fields"][field.name] = {
-                "no_match_size": field.snippet.nomatch_chars,
-                "number_of_fragments": field.snippet.max_matches,
-                "fragment_size": field.snippet.match_chars or 1,  # 0 would return the whole field
-            }
-            if field.snippet.max_matches == 0:
-                # If max_matches is zero, we drop the query for highlighting so that
-                # the nomatch_chars are returned
-                highlight["fields"][field.name]["highlight_query"] = {"match_all": {}}
-
-    return highlight
+async def _run_query(params: dict, page: int = 0, after_id: int | None = None, keyset: bool = False):
+    fieldset = await get_fieldset(params["indices"])
+    fields = [FieldSpec.model_validate(f) for f in params["fields"]]
+    filters = {k: FilterSpec.model_validate(v) for k, v in (params.get("filters") or {}).items()}
+    snippets: dict[str, SnippetParams] = {f.name: f.snippet for f in fields if f.snippet is not None}
+    names = [f.name for f in fields if f.snippet is None]
+    async with connection() as conn:
+        result = await search(
+            conn,
+            fieldset,
+            _search_query(params.get("queries"), filters),
+            names,
+            sort=params.get("sort"),
+            page=page,
+            per_page=params["per_page"],
+            snippets=snippets,
+            highlight=params.get("highlight", False),
+            keyset=keyset,
+            after_id=after_id,
+        )
+    return result, fieldset
 
 
-def overwrite_highlight_results(hit: dict, hitdict: dict):
-    """
-    highlights are a separate field in the hits. If highlight is True, we want to overwrite
-    the original field with the highlighted version. If there are snippets, we want to add them
-    """
-    if not hit.get("highlight"):
-        return hitdict
-    for key in hit["highlight"].keys():
-        # if hit["highlight"][key]:
-        hitdict[key] = " ... ".join(hit["highlight"][key])
-    return hitdict
+async def _continue_scroll(scroll_id: str) -> QueryResult | None:
+    row = await fetch_one("SELECT params, position, page FROM scrolls WHERE id = %s AND expires_at > now()", [scroll_id])
+    if row is None:
+        return None
+    params = row["params"]
+    # Unsorted scrolls use (efficient) keyset pagination on the internal id, sorted scrolls use pages
+    keyset = not params.get("sort")
+    result, _ = await _run_query(params, page=row["page"], after_id=row["position"], keyset=keyset)
+    if not result.results:
+        async with connection() as conn:
+            await conn.execute("DELETE FROM scrolls WHERE id = %s", [scroll_id])
+        return None
+    expires = datetime.now(UTC) + _parse_duration(params.get("scroll"))
+    async with connection() as conn:
+        await conn.execute(
+            "UPDATE scrolls SET position = %s, page = page + 1, expires_at = %s WHERE id = %s",
+            [result.last_id, expires, scroll_id],
+        )
+    return QueryResult(result.results, n=result.total, per_page=params["per_page"], scroll_id=scroll_id)
 
 
 async def update_tag_query(
@@ -274,10 +199,15 @@ async def update_tag_query(
     ids: list[str] | None = None,
 ):
     """Add or remove tags using a query"""
-    body = build_body(queries, filters, ids=ids)
+    await create_or_verify_tag_field(index, field)
+    fieldset = await get_fieldset(index)
+    query = _search_query(queries, filters, ids)
+    async with connection() as conn:
+        from amcat4.postgres.search import count
 
-    update_result = await update_document_tag_by_query(index, action, body, field, tag)
-    return update_result
+        total = await count(conn, fieldset, query)
+        updated = await storage.update_tag_by_query(conn, fieldset, query, field, tag, action)
+    return dict(updated=updated, total=total)
 
 
 async def update_query(
@@ -288,8 +218,12 @@ async def update_query(
     filters: dict[str, FilterSpec] | None = None,
     ids: list[str] | None = None,
 ):
-    query = build_body(queries, filters, ids=ids)
-    return await update_documents_by_query(index=index, query=query["query"], field=field, value=value)
+    fieldset = await get_fieldset(index)
+    if field not in fieldset.by_name:
+        raise ValueError(f"Field {field} does not exist")
+    async with connection() as conn:
+        updated = await storage.update_by_query(conn, fieldset, _search_query(queries, filters, ids), field, value)
+    return dict(updated=updated, total=updated)
 
 
 async def delete_query(
@@ -298,8 +232,14 @@ async def delete_query(
     filters: dict[str, FilterSpec] | None = None,
     ids: list[str] | None = None,
 ):
-    query = build_body(queries, filters, ids=ids)
-    return await delete_documents_by_query(index=index, query=query["query"])
+    fieldset = await get_fieldset(index)
+    async with connection() as conn:
+        deleted = await storage.delete_by_query(conn, fieldset, _search_query(queries, filters, ids))
+    return dict(updated=deleted, total=deleted)
+
+
+# Results of finished reindex 'tasks'. Reindexing runs synchronously, but we keep the task interface
+_TASKS: dict[str, dict] = {}
 
 
 async def reindex(
@@ -310,16 +250,19 @@ async def reindex(
     field_options: dict[str, dict] | None = None,
     wait_for_completion=False,
 ):
-    """Start a reindex task.
-    This will first create any fields missing in the target index, and then start the reindex task.
-    If wait_for_completion is False (default), returns a {'task': task_id} dict
+    """Copy documents (optionally selected by queries/filters) to another index.
+    This will first create any fields missing in the destination index. Returns a {'task': task_id} dict
+    (the copy is done when this function returns, but the task can be used to get the status)
 
     field_options: per-field options dict keyed by source field name, each with optional keys:
       - rename: str — copy field under this new name in destination
       - exclude: bool — if True, skip this field entirely
       - type: FieldType — override amcat type for fields new to destination
     """
-    if not await es().indices.exists(index=destination_index):
+    from_pk = await project_pk(source_index)
+    try:
+        to_pk = await project_pk(destination_index)
+    except Exception:
         raise Exception("Please create index before re-indexing!")
 
     field_options = field_options or {}
@@ -327,46 +270,47 @@ async def reindex(
     source_field_defs = await list_fields(source_index)
 
     # Sync fields to destination, applying renames, exclusions, and type overrides
-    new_fields: dict[str, FieldType] = {}
+    new_fields: dict[str, CreateDocumentField] = {}
+    mapping: dict[str, str] = {}
     for field, definition in source_field_defs.items():
         opts = field_options.get(field, {})
         if opts.get("exclude"):
             continue
         dest_name = opts.get("rename") or field
+        mapping[field] = dest_name
         if dest_name in dest_fields:
-            continue  # already exists; elastic type is immutable, skip
-        type_override = opts.get("type")
-        new_fields[dest_name] = type_override if type_override else definition.type
+            continue
+        type_override: FieldType | None = opts.get("type")
+        if type_override:
+            new_fields[dest_name] = CreateDocumentField(type=type_override)
+        else:
+            new_fields[dest_name] = CreateDocumentField(
+                type=definition.type,
+                elastic_type=definition.elastic_type,
+                identifier=definition.identifier,
+                metareader=definition.metareader,
+                client_settings=definition.client_settings,
+            )
 
     if new_fields:
-        logging.info(f"Creating fields {new_fields}")
+        logging.info(f"Creating fields {list(new_fields)}")
         await create_fields(destination_index, new_fields)
 
-    source: dict = {"index": source_index}
+    source_infos = await field_infos(source_index)
+    dest_infos = await field_infos(destination_index)
+    field_map = {source_infos[s]: dest_infos[d] for s, d in mapping.items()}
 
-    # Exclude fields from the source payload
-    excluded = [f for f, opts in field_options.items() if opts.get("exclude")]
-    if excluded:
-        source["_source"] = {"excludes": excluded}
+    fieldset = FieldSet({from_pk: source_infos})
+    c = compile_search(fieldset, _search_query(queries, filters))
+    async with connection() as conn:
+        n = await storage.copy_documents(conn, from_pk, to_pk, field_map, c.where, c.params)
 
-    if queries or filters:
-        source.update(build_body(queries, filters))
-
-    # Build Painless script for field renames
-    rename_lines = [
-        f'ctx._source["{opts["rename"]}"] = ctx._source["{f}"]; ctx._source.remove("{f}")'
-        for f, opts in field_options.items()
-        if opts.get("rename")
-    ]
-    script = "; ".join(rename_lines) if rename_lines else None
-
-    kwargs: dict = dict(dest=dict(index=destination_index), source=source, wait_for_completion=wait_for_completion)
-    if script:
-        kwargs["script"] = {"source": script, "lang": "painless"}
-
-    return await es().reindex(**kwargs)
+    task_id = f"reindex-{uuid.uuid4().hex}"
+    _TASKS[task_id] = {"completed": True, "task": task_id, "response": {"total": n, "created": n}}
+    return {"task": task_id, "total": n}
 
 
 async def get_task_status(task_id):
-    res = await es().tasks.get(task_id=task_id)
-    return res
+    if task_id not in _TASKS:
+        raise ValueError(f"Unknown task {task_id}")
+    return _TASKS[task_id]

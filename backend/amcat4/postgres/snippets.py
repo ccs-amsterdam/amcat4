@@ -77,9 +77,13 @@ def _word_boundaries(text: str, start: int, end: int) -> tuple[int, int]:
 
 
 def _cut(text: str, start: int, n: int) -> str:
-    if len(text) <= n:
-        return text
-    return text[start : start + n]
+    """Cut the text after n characters, but do not end in the middle of a word (like elastic does)"""
+    if len(text) <= start + n:
+        return text[start:]
+    end = start + n
+    while end < len(text) and end < start + n + 30 and not text[end].isspace():
+        end += 1
+    return text[start:end].strip()
 
 
 def highlight(

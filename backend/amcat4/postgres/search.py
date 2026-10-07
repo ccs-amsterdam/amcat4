@@ -15,7 +15,7 @@ from psycopg.types.json import Jsonb
 from amcat4.models import FilterSpec, SnippetParams
 from amcat4.postgres.fields import FieldInfo, FieldSet, QueryError
 from amcat4.postgres.filters import compile_filters, field_sql
-from amcat4.postgres.querystring import query_string_to_json
+from amcat4.postgres.querystring import highlight_patterns, match_positions, parse_query, query_string_to_json
 from amcat4.postgres.snippets import byte_to_char_positions, make_snippet
 from amcat4.postgres.snippets import highlight as highlight_text
 
@@ -64,6 +64,7 @@ def compile_search(fieldset: FieldSet, query: SearchQuery) -> CompiledSearch:
 class SearchResult:
     total: int
     results: list[dict]
+    last_id: int | None = None  # internal id of the last result, for keyset pagination
 
 
 def _coalesce(fs: list[FieldInfo]) -> sql.Composable:
@@ -79,11 +80,16 @@ def order_by(fieldset: FieldSet, sort: list[tuple[str, Literal["asc", "desc"]]] 
             items.append(sql.SQL("paradedb.score(documents.id) {}").format(direction))
         elif name == "?":
             items.append(sql.SQL("random()"))
+        elif name == "_id":
+            items.append(sql.SQL("documents.doc_id {}").format(direction))
         else:
+            if name not in fieldset.by_name:
+                raise QueryError(f"Cannot sort on unknown field: {name}")
             fs = fieldset.by_name[name]
-            if all(f.primary_date for f in fs):
-                # sort_date is a real column, which pg_search can use for a fast Top-K scan
-                items.append(sql.SQL("documents.sort_date {}").format(direction))
+            sort_columns = {f.sort_column for f in fs}
+            if len(sort_columns) == 1 and None not in sort_columns:
+                # the field is in a sort slot: a real column, which pg_search can use for a fast Top-K scan
+                items.append(sql.SQL("documents.{} {}").format(sql.Identifier(fs[0].sort_column), direction))  # type: ignore[arg-type]
             else:
                 items.append(sql.SQL("{} {}").format(_coalesce(fs), direction))
     if not items and scored:
@@ -111,21 +117,29 @@ async def search(
     snippets: dict[str, SnippetParams] | None = None,
     highlight: bool = False,
     with_total: bool = True,
+    keyset: bool = False,
+    after_id: int | None = None,
 ) -> SearchResult:
     """
     Search documents, returning the given fields (and snippets for the fields in snippets).
     Access control on which fields may be returned (or only as snippets) is the responsibility of the caller.
+
+    If keyset is True, results are ordered by internal id and only results after after_id are returned
+    (efficient pagination through large result sets; sort and page are ignored).
     """
+    from amcat4.postgres.documents import field_select
+
     c = compile_search(fieldset, query)
     scored = bool(query.queries)
     snippets = snippets or {}
 
     columns: list[sql.Composable] = [sql.SQL("documents.doc_id"), sql.SQL("documents.project_pk")]
+    # fields that do not exist (in any of the projects) are simply not returned
+    fields = [name for name in fields if name in fieldset.by_name]
+    snippets = {name: s for name, s in snippets.items() if name in fieldset.by_name}
     for name in dict.fromkeys([*fields, *snippets.keys()]):
-        if name not in fieldset.by_name:
-            raise QueryError(f"Unknown field: {name}")
         for f in fieldset.by_name[name]:
-            columns.append(sql.SQL("{}->{} AS {}").format(sql.Identifier(f.column), sql.Literal(f.key), sql.Identifier(f.key)))
+            columns.append(sql.SQL("{} AS {}").format(field_select(f), sql.Identifier(f.key)))
             if scored and f.type == "text" and (name in snippets or highlight):
                 columns.append(
                     sql.SQL("paradedb.snippet_positions({}->{}) AS {}").format(
@@ -134,12 +148,32 @@ async def search(
                 )
     if scored:
         columns.append(sql.SQL("paradedb.score(documents.id) AS _score"))
+    columns.append(sql.SQL("documents.id AS _internal_id"))
 
+    where, params = c.where, list(c.params)
+    if keyset:
+        if after_id is not None:
+            where = sql.SQL("{} AND documents.id > %s").format(where)
+            params.append(after_id)
+        ordering: sql.Composable = sql.SQL("documents.id")
+        offset = 0
+    else:
+        ordering = order_by(fieldset, sort, scored)
+        offset = page * per_page
     stmt = sql.SQL("SELECT {} FROM documents WHERE {} ORDER BY {} LIMIT %s OFFSET %s").format(
-        sql.SQL(", ").join(columns), c.where, order_by(fieldset, sort, scored)
+        sql.SQL(", ").join(columns), where, ordering
     )
-    cur = await conn.execute(stmt, [*c.params, per_page, page * per_page])
+    cur = await conn.execute(stmt, [*params, per_page, offset])
     rows = await cur.fetchall()
+
+    # Patterns to find query matches for highlighting / snippets (combined with the positions reported by pg_search,
+    # which does not report positions for all query types)
+    nodes = [parse_query(q) for q in (query.queries or {}).values()]
+    default_names = {f.name for f in fieldset.default_fields()}
+    patterns = {
+        name: [p for node in nodes for p in highlight_patterns(node, name, name in default_names)]
+        for name in dict.fromkeys([*fields, *snippets.keys()])
+    }
 
     results = []
     for row in rows:
@@ -150,7 +184,10 @@ async def search(
             if f is None:
                 continue
             value = row[f.key]  # type: ignore[index, call-overload]
-            positions = byte_to_char_positions(value, row.get("_pos_" + f.key))  # type: ignore[union-attr]
+            positions = None
+            if isinstance(value, str) and nodes and (name in snippets or highlight):
+                positions = byte_to_char_positions(value, row.get("_pos_" + f.key)) or []  # type: ignore[union-attr]
+                positions = _merge_positions(positions + match_positions(value, patterns[name]))
             if name in snippets:
                 value = make_snippet(value, positions, snippets[name], *(("<em>", "</em>") if highlight else ("", "")))
             elif highlight and positions:
@@ -160,4 +197,16 @@ async def search(
         results.append(doc)
 
     total = await count(conn, fieldset, query) if with_total else len(results)
-    return SearchResult(total=total, results=results)
+    last_id = rows[-1]["_internal_id"] if rows else None  # type: ignore[index, call-overload]
+    return SearchResult(total=total, results=results, last_id=last_id)
+
+
+def _merge_positions(positions: list[list[int]]) -> list[list[int]]:
+    """Sort and merge overlapping (start, end) positions"""
+    merged: list[list[int]] = []
+    for start, end in sorted((p[0], p[1]) for p in positions):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return merged

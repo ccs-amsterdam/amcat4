@@ -4,7 +4,6 @@ from typing import Tuple
 import magic
 from typing_extensions import TypedDict
 
-from amcat4.connections import es
 from amcat4.models import ObjectStorage
 from amcat4.objectstorage.s3bucket import (
     delete_s3_by_key,
@@ -120,4 +119,6 @@ async def presigned_multimedia_post(ix: str, object: ObjectStorage) -> Tuple[str
 
 
 async def update_multimedia_field(ix: str, doc: str, field: str, hash: str, size: int):
-    await es().update(index=ix, id=doc, doc={field: {"hash": hash, "size": size}}, refresh=True)
+    from amcat4.projects.documents import update_document
+
+    await update_document(ix, doc, {field: {"hash": hash, "size": size}})

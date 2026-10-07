@@ -21,7 +21,7 @@ from pydantic.fields import FieldInfo
 from uvicorn.config import LOGGING_CONFIG
 
 from amcat4.config import AuthOptions, config_tui_editor, get_settings, validate_settings
-from amcat4.connections import amcat_connections, es
+from amcat4.connections import amcat_connections
 from amcat4.models import FieldType, ProjectSettings, Roles
 from amcat4.objectstorage.image_processing import create_image_from_url
 from amcat4.projects.documents import create_or_update_documents
@@ -75,10 +75,13 @@ async def upload_test_data() -> str:
     return SOTU_INDEX
 
 
-async def _check_elastic_connection():
-    async with amcat_connections():
-        if await es().ping():
-            logging.info(f"Connect to elasticsearch {get_settings().elastic_host}")
+async def _check_db_connection():
+    try:
+        async with amcat_connections():
+            logging.info("Connected to the database")
+    except ConnectionError as e:
+        logging.error(str(e))
+        sys.exit(1)
 
 
 def run(args):
@@ -95,7 +98,7 @@ def run(args):
         f"{' ' * 26}You can also run `python -m amcat4 config` to create the .env settings file interactively\n"
     )
 
-    asyncio.run(_check_elastic_connection())
+    asyncio.run(_check_db_connection())
 
     asyncio.run(do_migrate_systemdata())
 
@@ -117,27 +120,17 @@ async def migrate_systemdata(args) -> None:
 
 
 async def do_migrate_systemdata(rm_pending_migrations=True) -> None:
-    settings = get_settings()
     async with amcat_connections():
-        if not await es().ping():
-            logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
-            sys.exit(1)
         await create_or_update_systemdata(rm_pending_migrations=rm_pending_migrations)
 
 
 async def dangerously_destroy_systemdata(args) -> None:
-    settings = get_settings()
     async with amcat_connections():
-        if not await es().ping():
-            logging.error(f"Cannot connect to elasticsearch server {settings.elastic_host}")
+        answer = input("This will delete ALL data (projects, documents, users) in the database schema. Type 'yes': ")
+        if answer.strip().lower() != "yes":
+            logging.info("Aborted")
             sys.exit(1)
-
-        version = args.version
-        if not version:
-            logging.error("You must specify a version to delete using --version")
-            sys.exit(1)
-
-        await delete_systemdata_version(int(version))
+        await delete_systemdata_version()
 
 
 def base_env():
@@ -261,32 +254,19 @@ def main():
     p = subparsers.add_parser("create-test-index", help=f"Create the {SOTU_INDEX} test index")
     p.set_defaults(func=create_test_index)
 
-    p = subparsers.add_parser("migrate", help="Migrate the system index to the current version")
-    p.add_argument(
-        "--no-rm-pending",
-        action="store_false",
-        dest="rm_pending",
-        default=True,
-        help="Do NOT remove pending migrations (by default they ARE removed)",
-    )
+    p = subparsers.add_parser("migrate", help="Create or migrate the database schema to the current version")
+    p.set_defaults(rm_pending=True)
     p.set_defaults(func=migrate_systemdata)
 
     p = subparsers.add_parser(
         "dangerously_destroy_systemdata",
-        help="DANGER: Delete all systemdata for a given version. Use with caution, and only if you know what you're doing.",
-    )
-    p.add_argument(
-        "-v",
-        "--version",
-        help="The systemdata version to delete.",
+        help="DANGER: Delete ALL data in the database schema. Use with caution, and only if you know what you're doing.",
     )
     p.set_defaults(func=dangerously_destroy_systemdata)
 
     args = parser.parse_args()
 
     logging.basicConfig(format="[%(levelname)-7s:%(name)-15s] %(message)s", level=logging.INFO)
-    es_logger = logging.getLogger("elasticsearch")
-    es_logger.setLevel(logging.WARNING)
 
     if inspect.iscoroutinefunction(args.func):
         asyncio.run(args.func(args))

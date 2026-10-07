@@ -18,7 +18,11 @@ from amcat4.postgres.querystring import range_query
 
 def field_sql(f: FieldInfo, table: str = "documents") -> sql.Composable:
     """SQL expression for the (typed) value of a field"""
-    raw = sql.SQL("{}.{}->>{}").format(sql.Identifier(table), sql.Identifier(f.column), sql.Literal(f.key))
+    if f.subkey:
+        path = sql.Literal([f"f{f.pk}", f.subkey])
+        raw = sql.SQL("{}.{}#>>{}::text[]").format(sql.Identifier(table), sql.Identifier(f.column), path)
+    else:
+        raw = sql.SQL("{}.{}->>{}").format(sql.Identifier(table), sql.Identifier(f.column), sql.Literal(f.key))
     match f.type:
         case "number" | "integer":
             return sql.SQL("({})::numeric").format(raw)

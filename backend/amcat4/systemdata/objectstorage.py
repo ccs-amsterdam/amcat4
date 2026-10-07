@@ -1,12 +1,12 @@
 from datetime import UTC, datetime, timedelta
-from typing import AsyncGenerator, Tuple
+from typing import Any, Tuple
 
-from amcat4.connections import es
-from amcat4.elastic.util import BulkInsertAction, batched_index_scan, es_bulk_create, es_bulk_upsert
 from amcat4.models import AllowedContentType, IndexId, ObjectStorage, RegisterObject
 from amcat4.objectstorage.s3bucket import PRESIGNED_POST_HOURS_VALID, scan_s3_objects
+from amcat4.postgres.connection import connection, execute, fetch_all, fetch_one
 from amcat4.systemdata.fields import list_fields
-from amcat4.systemdata.versions import objectstorage_index_id, objectstorage_index_name
+
+_COLUMNS = "project_id AS index, field, filepath, path, size, content_type, registered, last_synced"
 
 INFER_MIME_TYPE: dict[str, AllowedContentType] = {
     # Images (Inert/Pixel-based)
@@ -31,21 +31,18 @@ async def register_objects(
     index: IndexId, field: str, objects: list[RegisterObject], max_bytes: int
 ) -> Tuple[int, list[ObjectStorage]]:
     """
-    Register a list of ObjectStorage objects in ES. Returns an iterable of the newly registered objects.
+    Register a list of objects. Returns the new total size and the newly registered objects.
 
-    If force is False, only register objects that are new or have a different size than the
-    existing object in ES. This is the usual behavior to avoid unnecessary updates. Use force
-    for the (unlikely) case that you need to upload a different file to a filename that happens
-    to have the same size as the existing file.
+    Only objects that are new or have a different size than the existing object are registered, unless
+    obj.force is set (for the unlikely case that you need to upload a different file to a filename that happens
+    to have the same size as the existing file).
     """
     existing = await _get_current(index, field, objects)
     new_total_size = await _get_total_size(index)
 
     add_objects: dict[str, ObjectStorage] = {}
     for obj in objects:
-        id = objectstorage_index_id(index, field, obj.filepath)
-
-        existing_size = existing.get(id)
+        existing_size = existing.get(obj.filepath)
         if existing_size == obj.size and not obj.force:
             continue
         new_total_size += obj.size - (existing_size or 0)
@@ -53,26 +50,33 @@ async def register_objects(
         if new_total_size > max_bytes:
             raise ValueError(f"Total size of object storage exceeds maximum allowed size of {max_bytes} bytes.")
 
-        obj = _create_object_doc(index, field, obj)
-        add_objects[id] = obj
+        add_objects[obj.filepath] = _create_object_doc(index, field, obj)
 
     await _raise_if_invalid_type(index, field, add_objects)
 
-    async def generator() -> AsyncGenerator[BulkInsertAction, None]:
-        for id, obj in add_objects.items():
-            yield BulkInsertAction(index=objectstorage_index_name(), id=id, doc=obj.model_dump())
-
-    await es_bulk_create(generator(), overwrite=True)
+    if add_objects:
+        async with connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.executemany(
+                    """INSERT INTO object_storage (project_id, field, filepath, path, size, content_type, registered)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (project_id, field, filepath) DO UPDATE SET size = EXCLUDED.size,
+                       content_type = EXCLUDED.content_type, registered = EXCLUDED.registered, last_synced = NULL""",
+                    [
+                        (o.index, o.field, o.filepath, o.path, o.size, o.content_type, o.registered)
+                        for o in add_objects.values()
+                    ],
+                )
 
     return new_total_size, list(add_objects.values())
 
 
 async def get_object(index: IndexId, field: str, filepath: str) -> ObjectStorage | None:
-    id = objectstorage_index_id(index, field, filepath)
-    doc = await es().options(ignore_status=[404]).get(index=objectstorage_index_name(), id=id)
-    if not doc["found"]:
-        return None
-    return ObjectStorage.model_validate(doc["_source"])
+    row = await fetch_one(
+        f"SELECT {_COLUMNS} FROM object_storage WHERE project_id = %s AND field = %s AND filepath = %s",  # type: ignore[arg-type]
+        [index, field, filepath],
+    )
+    return ObjectStorage.model_validate(row) if row else None
 
 
 async def list_objects(
@@ -83,31 +87,37 @@ async def list_objects(
     recursive: bool = False,
     scroll_id: str | None = None,
 ) -> Tuple[str | None, list[ObjectStorage]]:
-    query = {
-        "bool": {
-            "must": [
-                {"term": {"index": index}},
-            ]
-        }
-    }
-
+    """
+    List registered objects. Returns a scroll_id (pagination cursor, which also remembers the page size) and the
+    objects. The scroll_id is None if there are no (more) objects.
+    """
+    conditions: list[str] = ["project_id = %s"]
+    params: list[Any] = [index]
     if directory:
         if recursive:
-            query["bool"]["must"].append({"term": {"path": directory.strip("/")}})
+            conditions.append("path = %s")
+            params.append(directory.strip("/"))
         else:
-            query["bool"]["must"].append({"prefix": {"filepath": directory.strip("/") + "/"}})
-    else:
-        if recursive:
-            query["bool"]["must"].append({"term": {"path": ""}})
-
+            conditions.append("starts_with(filepath, %s)")
+            params.append(directory.strip("/") + "/")
+    elif recursive:
+        conditions.append("path = ''")
     if search:
-        query["bool"]["must"].append({"wildcard": {"filepath": f"*{search}*"}})
+        conditions.append("strpos(filepath, %s) > 0")
+        params.append(search)
+    if scroll_id:
+        size, field, filepath = scroll_id.split("/", 2)
+        page_size = int(size)
+        conditions.append("(field, filepath) > (%s, %s)")
+        params += [field, filepath]
 
-    new_scroll_id, batch = await batched_index_scan(
-        index=objectstorage_index_name(), query=query, batchsize=page_size, scroll_id=scroll_id
+    rows = await fetch_all(
+        f"SELECT {_COLUMNS} FROM object_storage WHERE {' AND '.join(conditions)} ORDER BY field, filepath LIMIT %s",  # type: ignore[arg-type]
+        [*params, page_size],
     )
-
-    return new_scroll_id, [ObjectStorage.model_validate(doc) for id, doc in batch]
+    objects = [ObjectStorage.model_validate(row) for row in rows]
+    new_scroll_id = f"{page_size}/{objects[-1].field}/{objects[-1].filepath}" if objects else None
+    return new_scroll_id, objects
 
 
 async def refresh_objectstorage(
@@ -115,117 +125,97 @@ async def refresh_objectstorage(
     index: IndexId,
     field: str | None = None,
 ) -> dict:
+    """Synchronize the register with the objects in the S3 bucket"""
     sync_time = datetime.now(UTC)
 
     prefix = f"{index}/"
     if field:
         prefix += f"{field}/"
 
-    ## First, we bulk upsert everything from S3 to ES. Adding the sync time,
-    ## and also creating the document if it doesn't exist yet.
-    async def gen() -> AsyncGenerator[BulkInsertAction, None]:
-        async for obj in scan_s3_objects(bucket, prefix):
-            index, field, filepath = obj["key"].split("/", 2)
-            path, _, _ = split_filepath(filepath)
+    batch: list[tuple] = []
 
-            action = BulkInsertAction(
-                index=objectstorage_index_name(),
-                id=objectstorage_index_id(index, field, filepath),
-                doc={
-                    "index": index,
-                    "field": field,
-                    "filepath": filepath,
-                    "path": path,
-                    "size": obj["size"],
-                    "last_synced": sync_time,
-                },
-            )
-            yield action
+    async def flush():
+        async with connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.executemany(
+                    """INSERT INTO object_storage (project_id, field, filepath, path, size, last_synced)
+                       VALUES (%s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (project_id, field, filepath) DO UPDATE
+                       SET size = EXCLUDED.size, last_synced = EXCLUDED.last_synced""",
+                    batch,
+                )
+        batch.clear()
 
-    await es_bulk_upsert(gen(), batchsize=2500)
+    async for obj in scan_s3_objects(bucket, prefix):
+        obj_index, obj_field, filepath = obj["key"].split("/", 2)
+        path, _, _ = split_filepath(filepath)
+        batch.append((obj_index, obj_field, filepath, path, obj["size"], sync_time))
+        if len(batch) >= 2500:
+            await flush()
+    if batch:
+        await flush()
 
     return await _clean_register(index, field=field, min_sync=sync_time)
 
 
 async def delete_register(index: IndexId, field: str | None = None):
     """
-    Delete all ObjectStorage entries from ES for the given index and optional field.
+    Delete all register entries for the given index and optional field.
     """
-    query: dict = {
-        "bool": {
-            "must": [
-                {"term": {"index": index}},
-            ]
-        }
-    }
     if field:
-        query["bool"]["must"].append({"term": {"field": field}})
-    result = await es().delete_by_query(index=objectstorage_index_name(), query=query, refresh=True, conflicts="proceed")
-    return dict(updated=result["deleted"], total=result["total"])
+        n = await execute("DELETE FROM object_storage WHERE project_id = %s AND field = %s", [index, field])
+    else:
+        n = await execute("DELETE FROM object_storage WHERE project_id = %s", [index])
+    return dict(updated=n, total=n)
 
 
 async def delete_objects(index: IndexId, field: str, filepaths: list[str]):
-    ids = [objectstorage_index_id(index, field, fp) for fp in filepaths]
-    result = await es().delete_by_query(index=objectstorage_index_name(), query={"ids": {"values": ids}}, refresh=True)
-    print(result)
-    return dict(updated=result["deleted"], total=result["total"])
+    n = await execute(
+        "DELETE FROM object_storage WHERE project_id = %s AND field = %s AND filepath = ANY(%s)", [index, field, filepaths]
+    )
+    return dict(updated=n, total=n)
 
 
 async def _clean_register(
     index: IndexId, field: str | None = None, min_sync: datetime | None = None, keep_pending: bool = True
 ) -> dict:
     """
-    Remove all ObjectStorage entries from ES that were not synced since min_sync, or not synced at all if
-    min_sync is None.
+    Remove all entries that were not synced since min_sync (or not synced at all if min_sync is None).
 
     If keep_pending is True, we do not delete entries for which the presigned post is still valid
     """
-    query: dict = {
-        "bool": {
-            "must": [
-                {"term": {"index": index}},
-            ]
-        }
-    }
-
+    conditions: list[str] = ["project_id = %s"]
+    params: list[Any] = [index]
     if min_sync:
-        query["bool"]["must"].append({"range": {"last_synced": {"gte": min_sync.isoformat()}}})
+        conditions.append("(last_synced IS NULL OR last_synced < %s)")
+        params.append(min_sync)
     else:
-        query["bool"]["must"].append({"bool": {"must_not": {"exists": {"field": "last_synced"}}}})
+        conditions.append("last_synced IS NULL")
     if field:
-        query["bool"]["must"].append({"term": {"field": field}})
-
+        conditions.append("field = %s")
+        params.append(field)
     if keep_pending:
         pending_time = datetime.now(UTC) - timedelta(hours=PRESIGNED_POST_HOURS_VALID + 1)
-        query["bool"]["must"].append({"range": {"registered": {"lte": pending_time.isoformat()}}})
-    result = await es().delete_by_query(index=objectstorage_index_name(), query=query)
-    return dict(updated=result["deleted"], total=result["total"])
+        conditions.append("(registered IS NULL OR registered <= %s)")
+        params.append(pending_time)
+    n = await execute(f"DELETE FROM object_storage WHERE {' AND '.join(conditions)}", params)  # type: ignore[arg-type]
+    return dict(updated=n, total=n)
 
 
 async def _get_current(index: IndexId, field: str, objects: list[RegisterObject]) -> dict[str, int]:
     """
-    Given a list of ObjectStorage objects, get the current versions from ES.
-    Existing objects will be returned in a dictionary with id as key and size as value;
-    non-existing objects will be omitted.
+    Get the sizes of the objects that are already registered, as a {filepath: size} dictionary
     """
-    ids = [objectstorage_index_id(index, field, obj.filepath) for obj in objects]
-    res = await es().options(ignore_status=[404]).mget(index=objectstorage_index_name(), ids=ids, source_includes=["size"])
-
-    existing: dict[str, int] = dict()
-    for doc in res["docs"]:
-        if doc["found"]:
-            existing[doc["_id"]] = doc["_source"]["size"]
-
-    return existing
+    rows = await fetch_all(
+        "SELECT filepath, size FROM object_storage WHERE project_id = %s AND field = %s AND filepath = ANY(%s)",
+        [index, field, [obj.filepath for obj in objects]],
+    )
+    return {row["filepath"]: row["size"] for row in rows}
 
 
 async def _get_total_size(index: IndexId) -> int:
-    query: dict = {"term": {"index": index}}
-
-    agg = {"total_sum": {"sum": {"field": "size"}}}
-    agg = await es().search(query=query, index=objectstorage_index_name(), size=0, aggregations=agg)
-
-    return agg["aggregations"]["total_sum"]["value"]
+    row = await fetch_one("SELECT coalesce(sum(size), 0) AS total FROM object_storage WHERE project_id = %s", [index])
+    return int(row["total"]) if row else 0
 
 
 def _create_object_doc(index: IndexId, field: str, obj: RegisterObject) -> ObjectStorage:

@@ -1,9 +1,9 @@
 from typing import AsyncIterable
 
 from fastapi import HTTPException
+from psycopg.errors import UniqueViolation
 
-from amcat4.connections import es
-from amcat4.elastic.util import index_scan
+from amcat4.errors import ConflictError, NotFoundError
 from amcat4.models import (
     GuestRole,
     IndexId,
@@ -13,7 +13,7 @@ from amcat4.models import (
     Roles,
     User,
 )
-from amcat4.systemdata.versions import roles_index_id, roles_index_name
+from amcat4.postgres.connection import connection, execute
 
 
 def role_is_at_least(user: User, user_role: RoleRule | None, required_role: Roles, ignore_restrictions: bool = False) -> bool:
@@ -210,29 +210,48 @@ async def _create_role(email: RoleEmailPattern, role_context: RoleContext, role:
     Creates a role for a given email pattern and role context.
     Raises an error if a role for this email in this context already exists.
     """
-    id = roles_index_id(email, role_context)
     if role == Roles.NONE:
         raise HTTPException(422, "Cannot create a role with Role.NONE.")
 
     user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-    await es().create(index=roles_index_name(), id=id, document=user_role.model_dump(), refresh=True)
+    try:
+        await execute(
+            "INSERT INTO roles (email, role_context, role) VALUES (%s, %s, %s)",
+            [user_role.email, user_role.role_context, user_role.role],
+        )
+    except UniqueViolation:
+        raise ConflictError(f"Role for {email} on {role_context} already exists")
 
 
 async def _update_role(email: RoleEmailPattern, role_context: RoleContext, role: Roles, ignore_missing: bool = False):
     """
-    Updates (or creates) a role for a given email pattern and role context.
+    Updates (or with ignore_missing: creates) a role for a given email pattern and role context.
+    Updating to Roles.NONE deletes the role.
     """
-    id = roles_index_id(email, role_context)
     if role == Roles.NONE:
         await _delete_role(email, role_context, ignore_missing=ignore_missing)
+        return
 
     user_role = RoleRule(email=email, role_context=role_context, role=role.name)
-    await es().update(index=roles_index_name(), id=id, doc=user_role.model_dump(), doc_as_upsert=ignore_missing, refresh=True)
+    if ignore_missing:
+        await execute(
+            """INSERT INTO roles (email, role_context, role) VALUES (%s, %s, %s)
+               ON CONFLICT (role_context, email) DO UPDATE SET role = EXCLUDED.role""",
+            [user_role.email, user_role.role_context, user_role.role],
+        )
+    else:
+        n = await execute(
+            "UPDATE roles SET role = %s WHERE email = %s AND role_context = %s",
+            [user_role.role, user_role.email, user_role.role_context],
+        )
+        if n == 0:
+            raise NotFoundError(f"Role for {email} on {role_context} does not exist")
 
 
 async def _delete_role(email: RoleEmailPattern, role_context: RoleContext, ignore_missing: bool = False):
-    elastic = es().options(ignore_status=404) if ignore_missing else es()
-    await elastic.delete(index=roles_index_name(), id=roles_index_id(email, role_context), refresh=True)
+    n = await execute("DELETE FROM roles WHERE email = %s AND role_context = %s", [email, role_context])
+    if n == 0 and not ignore_missing:
+        raise NotFoundError(f"Role for {email} on {role_context} does not exist")
 
 
 async def _list_roles(
@@ -242,29 +261,30 @@ async def _list_roles(
     only_projects: bool = False,
 ) -> AsyncIterable[RoleRule]:
     """
-    List roles, optionally filtered by user, minimum role, role contexts, and minimum match quality.
+    List roles, optionally filtered by email patterns, role contexts, and minimum role.
 
-    :param role_emails: List of email patterns to filter on (or None for all users)
-    :param min_role: The minimum global role of the user (or None for all roles)
+    :param emails: List of email patterns to filter on (or None for all users)
     :param role_contexts: List of role contexts to filter on (or None for all contexts)
-    :param min_match: The minimum match quality (or None for all matches)
+    :param min_role: The minimum role (or None for all roles)
     """
-    query: dict = {"bool": {"must": []}}
-
+    conditions, params = ["TRUE"], []
     if emails is not None:
-        query["bool"]["must"].append({"terms": {"email": emails}})
-
+        conditions.append("email = ANY(%s)")
+        params.append(list(emails))
     if role_contexts is not None:
-        query["bool"]["must"].append({"terms": {"role_context": role_contexts}})
-
+        conditions.append("role_context = ANY(%s)")
+        params.append(list(role_contexts))
     if min_role is not None:
-        query["bool"]["must"].append(_min_role_query(min_role))
-
+        conditions.append("role = ANY(%s)")
+        params.append([role.name for role in Roles if role >= min_role])
     if only_projects:
-        query["bool"]["must"].append({"bool": {"must_not": {"term": {"role_context": "_server"}}}})
+        conditions.append("role_context <> '_server'")
 
-    async for id, user_role in index_scan(roles_index_name(), query=query):
-        yield RoleRule.model_validate(user_role)
+    async with connection() as conn:
+        cur = await conn.execute(f"SELECT email, role_context, role FROM roles WHERE {' AND '.join(conditions)}", params)  # type: ignore[arg-type]
+        rows = await cur.fetchall()
+    for row in rows:
+        yield RoleRule.model_validate(row)
 
 
 def _user_to_role_emails(user: User):
@@ -276,11 +296,6 @@ def _user_to_role_emails(user: User):
         return ["*"]
     # Otherwise, check exact email, domain wildcard, and guest role
     return [user.email, "*@" + user.email.split("@")[-1], "*"]
-
-
-def _min_role_query(min_role: Roles):
-    roles = [role.name for role in Roles if role >= min_role]
-    return {"terms": {"role": roles}}
 
 
 def _match_strength(email: RoleEmailPattern) -> int:

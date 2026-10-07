@@ -7,8 +7,6 @@ import json
 import zlib
 from typing import Annotated
 
-from elastic_transport import ApiError
-from elasticsearch import ConflictError, NotFoundError
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Path, Query, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -16,6 +14,7 @@ from pydantic import BaseModel, Field
 from amcat4.api.auth_helpers import authenticated_user
 from amcat4.api.index_query import FiltersType, QueriesType, _standardize_filters, _standardize_queries
 from amcat4.config import get_settings
+from amcat4.errors import ConflictError, NotFoundError
 from amcat4.models import (
     ContactInfo,
     CreateDocumentField,
@@ -39,10 +38,8 @@ from amcat4.projects.index import (
     create_project_index,
     delete_project_index,
     index_size_in_bytes,
-    list_unregistered_indices,
     list_user_project_indices,
     refresh_index,
-    register_project_index,
     update_project_index,
 )
 from amcat4.projects.query import query_documents, reindex
@@ -190,52 +187,9 @@ async def create_index(
         )
     except IndexAlreadyExists as e:
         raise HTTPException(status_code=409, detail=str(e))
-    except ApiError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=dict(info=f"Error on creating index: {e}", message=e.message, body=e.body),
-        )
 
     if body.guest_role:
         await set_project_guest_role(body.id, Roles[body.guest_role])
-
-
-@app_index.post("/index/{ix}/register", status_code=status.HTTP_201_CREATED)
-async def register_index(
-    ix: Annotated[IndexId, Path(..., description="ID of the existing elasticsearch index to register")],
-    body: Annotated[UpdateIndexBody, Body(...)],
-    user: User = Depends(authenticated_user),
-):
-    """
-    Register an existing elasticsearch index as an amcat project.
-    The elasticsearch index must already exist and not yet be registered. Requires ADMIN server role.
-    """
-    await HTTPException_if_not_server_role(
-        user, Roles.ADMIN, message="Registering an existing index requires ADMIN permission on the server"
-    )
-
-    d = body.model_dump()
-    d["id"] = ix
-
-    try:
-        await register_project_index(ProjectSettings(**d), user.email)
-    except IndexDoesNotExist as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except IndexAlreadyExists as e:
-        raise HTTPException(status_code=409, detail=str(e))
-
-    if body.guest_role:
-        await set_project_guest_role(ix, Roles[body.guest_role])
-
-
-@app_index.get("/index/unregistered")
-async def list_unregistered(user: User = Depends(authenticated_user)) -> list[str]:
-    """
-    List all elasticsearch indices that exist but are not registered as amcat projects.
-    Excludes system indices. Requires ADMIN server role.
-    """
-    await HTTPException_if_not_server_role(user, Roles.ADMIN)
-    return await list_unregistered_indices()
 
 
 @app_index.put("/index/{ix}", status_code=status.HTTP_204_NO_CONTENT)
@@ -280,10 +234,7 @@ async def view_index(
     await HTTPException_if_not_project_index_role(user, ix, Roles.OBSERVER)
     role = await get_user_project_role(user, project_index=ix, global_admin=False)
 
-    try:
-        bytes = await index_size_in_bytes(ix)
-    except NotFoundError:
-        raise HTTPException(status_code=404, detail=f"Index {ix} has no corresponding Elasticsearch index")
+    bytes = await index_size_in_bytes(ix)
 
     image_url = f"{get_settings().host}/api/index/{ix}/image/{d.image.id}" if d.image else None
 
@@ -341,7 +292,7 @@ async def clear_index(ix: IndexId, user: User = Depends(authenticated_user)):
 
 @app_index.get("/index/{ix}/refresh", status_code=status.HTTP_204_NO_CONTENT)
 async def refresh(ix: str):
-    """Refresh the elastic index. Use this if you need to make recently added documents searchable immediately."""
+    """Deprecated: documents are always searchable immediately. Kept for compatibility."""
     await refresh_index(ix)
 
 

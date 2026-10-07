@@ -2,38 +2,34 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from psycopg import AsyncConnection
-from psycopg.rows import dict_row
-from psycopg_pool import AsyncConnectionPool
 
-from amcat4.config import get_settings
-
-_POOL: AsyncConnectionPool | None = None
-
-
-async def start_postgres(url: str | None = None, min_size: int = 1, max_size: int = 10) -> AsyncConnectionPool:
-    global _POOL
-    url = url or get_settings().postgres_url
-    if not url:
-        raise ConnectionError("No postgres_url configured")
-    _POOL = AsyncConnectionPool(url, min_size=min_size, max_size=max_size, open=False, kwargs={"row_factory": dict_row})
-    await _POOL.open(wait=True)
-    return _POOL
-
-
-async def close_postgres() -> None:
-    global _POOL
-    if _POOL is not None:
-        await _POOL.close()
-        _POOL = None
-
-
-def pool() -> AsyncConnectionPool:
-    if _POOL is None:
-        raise ConnectionError("Postgres connection pool not initialized")
-    return _POOL
+from amcat4.connections import db
 
 
 @asynccontextmanager
 async def connection() -> AsyncGenerator[AsyncConnection, None]:
-    async with pool().connection() as conn:
+    """
+    Get a connection from the pool. Connections are in autocommit mode; use `async with conn.transaction()`
+    for statements that need to be atomic.
+    """
+    async with db().connection() as conn:
         yield conn
+
+
+async def execute(query, params=None) -> int:
+    """Execute a statement on a pooled connection, returning the number of affected rows"""
+    async with connection() as conn:
+        cur = await conn.execute(query, params)
+        return cur.rowcount
+
+
+async def fetch_all(query, params=None) -> list[dict]:
+    async with connection() as conn:
+        cur = await conn.execute(query, params)
+        return await cur.fetchall()  # type: ignore[return-value]
+
+
+async def fetch_one(query, params=None) -> dict | None:
+    async with connection() as conn:
+        cur = await conn.execute(query, params)
+        return await cur.fetchone()  # type: ignore[return-value]

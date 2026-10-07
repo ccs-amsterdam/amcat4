@@ -89,7 +89,7 @@ async def test_presigned(client, index, user):
                 data={**post["form_data"], "key": "forbidden/file.png", "Content-Type": "image/png"},
                 files=file,
             )
-        ).status_code == 307
+        ).status_code in (307, 403)  # depends on the seaweedfs version
         ## errors if content type doesn't match type prefix
         assert (
             await uploader.post(
@@ -97,7 +97,7 @@ async def test_presigned(client, index, user):
                 data={**post["form_data"], "Content-Type": "application/pdf"},
                 files=file,
             )
-        ).status_code == 307
+        ).status_code in (307, 403)  # depends on the seaweedfs version
 
         ## works with correct (unchanged) key and content type
         res = await uploader.post(url=post["url"], data={**post["form_data"]}, files=file)

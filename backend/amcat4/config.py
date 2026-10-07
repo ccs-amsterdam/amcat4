@@ -10,12 +10,12 @@ We read configuration from 2 sources, in order of precedence (higher is more pri
 import functools
 import secrets
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated
 
 import questionary
 from class_doc import extract_docs_from_cls_obj
 from dotenv import load_dotenv
-from pydantic import Field, model_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_PREFIX = "amcat4_"
@@ -52,50 +52,19 @@ class Settings(BaseSettings):
         ),
     ] = "http://localhost:5000"
 
-    elastic_password: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Elasticsearch password. This the password for the 'elastic' user when Elastic xpack security is enabled"
-            )
-        ),
-    ] = None
-
-    elastic_host: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Elasticsearch host. "
-                "Default: https://localhost:9200 if elastic_password is set, http://localhost:9200 otherwise"
-            )
-        ),
-    ] = None
-
-    elastic_verify_ssl: Annotated[
-        bool | None,
-        Field(
-            description=(
-                "Elasticsearch verify SSL (only used if elastic_password is set). Default: True unless host is localhost)"
-            ),
-        ),
-    ] = None
-
     postgres_url: Annotated[
-        str | None,
-        Field(
-            description=(
-                "PostgreSQL connection URL (with the pg_search extension), "
-                "e.g. postgresql://amcat:amcat@localhost:5432/amcat. Only used by the (experimental) postgres backend."
-            ),
-        ),
-    ] = None
-
-    system_index: Annotated[
         str,
         Field(
-            description="Prefix for indices in Elasticsearch that contain system data (users, roles, settings, etc.)",
+            description="PostgreSQL connection URL. The server needs the pg_search extension (e.g. the paradedb image)",
         ),
-    ] = "amcat4_system"
+    ] = "postgresql://amcat:amcat@localhost:5432/amcat"
+
+    postgres_schema: Annotated[
+        str,
+        Field(
+            description="Postgres schema in which AmCAT stores its tables",
+        ),
+    ] = "amcat"
 
     auth: Annotated[AuthOptions, Field(description="Do we require authorization?")] = AuthOptions.no_auth
 
@@ -153,17 +122,6 @@ class Settings(BaseSettings):
             description="Use a separate test database (for unit tests)",
         ),
     ] = False
-
-    @model_validator(mode="after")
-    def set_ssl(self: Any) -> "Settings":
-        if not self.elastic_host:
-            self.elastic_host = ("https" if self.elastic_password else "http") + "://localhost:9200"
-        if not self.elastic_verify_ssl:
-            self.elastic_verify_ssl = self.elastic_host not in {
-                "http://localhost:9200",
-                "https://localhost:9200",
-            }
-        return self
 
     model_config = SettingsConfigDict(env_prefix=ENV_PREFIX)
 
@@ -227,7 +185,7 @@ def config_tui_editor(env_file: str, dev: bool):
     current = get_settings(env_file)
 
     if dev:
-        only = ["auth", "admin_email", "elastic_host", "s3_host", "s3_access_key", "s3_secret_key"]
+        only = ["auth", "admin_email", "postgres_url", "s3_host", "s3_access_key", "s3_secret_key"]
         setattr(current, "s3_host", "http://localhost:8333")
         setattr(current, "s3_access_key", "DEV_S3_ACCESS_KEY")
         setattr(current, "s3_secret_key", "DEV_S3_SECRET_KEY")

@@ -1,28 +1,18 @@
 """
-We have two types of fields:
-- Elastic fields are the fields used under the hood by elastic.
-  (https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-types.html
-  These are stored in the Mapping of an index
-- Amcat fields (Field) are the fields are seen by the amcat user. They use a simplified type, and contain additional
-  information such as metareader access
-  These are stored in the "fields" system index
+Document fields.
 
-We need to make sure that:
-- When a user sets a field, it needs to be changed in both types: the system index and the mapping
-- If a field only exists in the elastic mapping, we need to add the default Field to the system index.
-  This happens anytime get_fields is called, so that whenever a field is used it is guarenteed to be in the
-  system index
+A field has a name (a project-level label), an AmCAT type, and settings such as metareader access.
+The values of a field are stored in the documents table under a stable field key (see amcat4.postgres.fields).
 """
 
 import datetime
-from typing import Any, AsyncGenerator, Iterable, Mapping, get_args
+from typing import Any, Iterable, Mapping, get_args
 
-from elasticsearch import NotFoundError
 from fastapi import HTTPException
-from typing_extensions import TypedDict
+from psycopg import sql
+from psycopg.types.json import Jsonb
 
-from amcat4.connections import es
-from amcat4.elastic.util import BulkInsertAction, es_bulk_upsert, es_get, index_scan
+from amcat4.errors import NotFoundError
 from amcat4.models import (
     CreateDocumentField,
     DocumentField,
@@ -36,35 +26,70 @@ from amcat4.models import (
     UpdateDocumentField,
     User,
 )
+from amcat4.postgres.connection import connection, fetch_all, fetch_one
+from amcat4.postgres.fields import FieldInfo, FieldSet, field_info_from_row, sort_slot_for_type
+from amcat4.postgres.projects import project_pk, project_pks
 from amcat4.systemdata.roles import HTTPException_if_not_project_index_role, list_user_project_roles, role_is_at_least
-from amcat4.systemdata.typemap import infer_field_type, list_allowed_elastic_types
-from amcat4.systemdata.versions import fields_index_id, fields_index_name
+from amcat4.systemdata.typemap import list_allowed_elastic_types
+
+_COLUMNS = "pk, name, type, elastic_type, identifier, metareader, client_settings, sort_slot"
+
+
+def _document_field(row: dict) -> DocumentField:
+    return DocumentField.model_validate({k: row[k] for k in row if k not in ("pk", "name")})
 
 
 async def delete_all_project_fields(index: str):
-    """Delete all field definitions for the given project from the system fields index."""
-    await es().delete_by_query(
-        index=fields_index_name(),
-        body={"query": {"term": {"index": index}}},
-        refresh=True,
+    """Delete all field definitions for the given project"""
+    async with connection() as conn:
+        await conn.execute("DELETE FROM fields WHERE project_pk = (SELECT pk FROM projects WHERE id = %s)", [index])
+
+
+async def _field_rows(index: str) -> list[dict]:
+    pk = await project_pk(index)
+    return await fetch_all(f"SELECT {_COLUMNS} FROM fields WHERE project_pk = %s ORDER BY pk", [pk])  # type: ignore[arg-type]
+
+
+async def list_fields(index: str, auto_repair: bool = True) -> dict[str, DocumentField]:
+    """
+    Retrieve the fields settings for this index. (auto_repair is not used anymore, kept for compatibility)
+    """
+    return {row["name"]: _document_field(row) for row in await _field_rows(index)}
+
+
+async def field_infos(index: str) -> dict[str, FieldInfo]:
+    """The storage information of the fields of an index"""
+    return {row["name"]: field_info_from_row(row) for row in await _field_rows(index)}
+
+
+async def get_fieldset(indices: str | list[str], queryable: set[str] | None = None) -> FieldSet:
+    """
+    Get the fields of one or more indices, for searching. queryable restricts which fields can be used in queries
+    and filters (None = all fields).
+    """
+    indices = [indices] if isinstance(indices, str) else indices
+    pks = await project_pks(indices)
+    rows = await fetch_all(
+        "SELECT project_pk, pk, name, type, identifier, sort_slot FROM fields WHERE project_pk = ANY(%s) ORDER BY pk",
+        [list(pks.values())],
     )
-
-
-class UpdateFieldMapping(TypedDict):
-    name: str
-    type: FieldType
-    elastic_type: ElasticType
+    project_fields: dict[int, dict[str, FieldInfo]] = {pk: {} for pk in pks.values()}
+    for row in rows:
+        project_fields[row["project_pk"]][row["name"]] = field_info_from_row(row)
+    return FieldSet(project_fields, queryable=queryable)
 
 
 async def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocumentField]):
-    current_fields = await list_fields(index)
-
+    """
+    Create fields that do not exist yet. Existing fields must have the same storage (elastic) type and identifier
+    setting; their other settings are not changed. (For example, a scraper might include the field types in every
+    upload request.)
+    """
+    pk = await project_pk(index)
+    current = await list_fields(index)
     sfields = _standardize_createfields(fields)
-    old_identifiers = any(f.identifier for f in current_fields.values())
-
-    # flags to track whether we need to update mapping or identifiers
-    update_mapping = False
-    new_identifiers = False
+    old_identifiers = any(f.identifier for f in current.values())
+    new_fields: dict[str, DocumentField] = {}
 
     for field, settings in sfields.items():
         if settings.elastic_type is not None:
@@ -77,131 +102,143 @@ async def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocum
         else:
             settings.elastic_type = _get_default_field(settings.type).elastic_type
 
-        current = current_fields.get(field)
-
-        if current is not None:
-            # fields can already exist. For example, a scraper might include the field types in every
-            # upload request. If a field already exists, we'll ignore the new settings, and we will throw an error
-            # if static settings (elastic type, identifier) do not match.
-            if current.elastic_type != settings.elastic_type:
-                raise ValueError(f"Field '{field}' already exists with elastic type '{current.elastic_type}'. ")
-            if current.identifier != bool(settings.identifier):
-                raise ValueError(f"Field '{field}' already exists with identifier '{current.identifier}'. ")
+        existing = current.get(field)
+        if existing is not None:
+            if existing.elastic_type != settings.elastic_type:
+                raise ValueError(f"Field '{field}' already exists with elastic type '{existing.elastic_type}'. ")
+            if existing.identifier != bool(settings.identifier):
+                raise ValueError(f"Field '{field}' already exists with identifier '{existing.identifier}'. ")
             continue
-
-        # if field does not exist, we add it to both the mapping and the system index
-
-        update_mapping = True
-        if settings.identifier:
-            new_identifiers = True
 
         new_field = DocumentField(
             type=settings.type,
             elastic_type=settings.elastic_type,
             identifier=settings.identifier or False,
             metareader=settings.metareader or _get_default_metareader(settings.type),
+            client_settings=settings.client_settings or {},
         )
         _check_forbidden_type(new_field, settings.type)
+        new_fields[field] = new_field
 
-        current_fields[field] = new_field
+    if not new_fields:
+        return
 
-    if new_identifiers:
-        # new identifiers are only allowed if the index had identifiers, or if it is a new index (i.e. no documents)
-        has_docs = (await es().count(index=index))["count"] > 0
-        if has_docs and not old_identifiers:
-            raise ValueError("Cannot add identifiers. Index already has documents with no identifiers.")
+    async with connection() as conn:
+        async with conn.transaction():
+            if any(f.identifier for f in new_fields.values()):
+                # new identifiers are only allowed if the index had identifiers, or if it has no documents yet
+                cur = await conn.execute("SELECT EXISTS (SELECT 1 FROM documents WHERE project_pk = %s) AS e", [pk])
+                has_docs = (await cur.fetchone())["e"]  # type: ignore[index, call-overload]
+                if has_docs and not old_identifiers:
+                    raise ValueError("Cannot add identifiers. Index already has documents with no identifiers.")
 
-    if update_mapping:
-        await _update_index_fields_mappings(index, current_fields)
+            cur = await conn.execute("SELECT sort_slot FROM fields WHERE project_pk = %s AND sort_slot IS NOT NULL", [pk])
+            used_slots = {row["sort_slot"] for row in await cur.fetchall()}  # type: ignore[index, call-overload]
+            for name, f in new_fields.items():
+                # The first date field automatically gets the date sort slot
+                slot = "date" if f.type == "date" and "date" not in used_slots else None
+                if slot:
+                    used_slots.add(slot)
+                await conn.execute(
+                    """INSERT INTO fields (project_pk, name, type, elastic_type, identifier, metareader, client_settings,
+                                           sort_slot)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                    [
+                        pk,
+                        name,
+                        f.type,
+                        f.elastic_type,
+                        f.identifier,
+                        Jsonb(f.metareader.model_dump(exclude_none=True)),
+                        Jsonb(f.client_settings),
+                        slot,
+                    ],
+                )
 
 
 async def update_fields(index: str, fields: dict[str, UpdateDocumentField]):
-    current_fields = await list_fields(index)
+    pk = await project_pk(index)
+    rows = {row["name"]: row for row in await _field_rows(index)}
+    current = {name: _document_field(row) for name, row in rows.items()}
 
-    for field, new_settings in fields.items():
-        current = current_fields.get(field)
-        if current is None:
-            raise ValueError(f"Field {field} does not exist")
+    async with connection() as conn:
+        async with conn.transaction():
+            for field, new_settings in fields.items():
+                existing = current.get(field)
+                if existing is None:
+                    raise ValueError(f"Field {field} does not exist")
 
-        if new_settings.type is not None:
-            _check_forbidden_type(current, new_settings.type)
+                if new_settings.type is not None:
+                    _check_forbidden_type(existing, new_settings.type)
+                    valid_es_types = list_allowed_elastic_types(new_settings.type)
+                    if existing.elastic_type not in valid_es_types:
+                        raise ValueError(
+                            f"Field {field} has the elastic type {existing.elastic_type}. A {new_settings.type} "
+                            f"field can only have the following elastic types: {valid_es_types}."
+                        )
+                    existing.type = new_settings.type
 
-            valid_es_types = list_allowed_elastic_types(new_settings.type)
-            if current.elastic_type not in valid_es_types:
-                raise ValueError(
-                    f"Field {field} has the elastic type {current.elastic_type}. A {new_settings.type} "
-                    f"field can only have the following elastic types: {valid_es_types}."
+                if new_settings.metareader is not None:
+                    if existing.type != "text" and new_settings.metareader.access == "snippet":
+                        raise ValueError(f"Field {field} is not of type text, cannot set metareader access to snippet")
+                    existing.metareader = new_settings.metareader
+
+                if new_settings.client_settings is not None:
+                    existing.client_settings = new_settings.client_settings
+
+                await conn.execute(
+                    "UPDATE fields SET type = %s, metareader = %s, client_settings = %s WHERE pk = %s",
+                    [
+                        existing.type,
+                        Jsonb(existing.metareader.model_dump(exclude_none=True)),
+                        Jsonb(existing.client_settings),
+                        rows[field]["pk"],
+                    ],
                 )
-            current_fields[field].type = new_settings.type
 
-        if new_settings.metareader is not None:
-            if current.type != "text" and new_settings.metareader.access == "snippet":
-                raise ValueError(f"Field {field} is not of type text, cannot set metareader access to snippet")
-            current_fields[field].metareader = new_settings.metareader
-
-        if new_settings.client_settings is not None:
-            current_fields[field].client_settings = new_settings.client_settings
-
-    await _update_fields(index, current_fields)
+                if new_settings.fast_sort is not None:
+                    info = field_info_from_row({**rows[field], "type": existing.type})
+                    await _set_sort_slot(conn, pk, info, new_settings.fast_sort)
 
 
-async def list_fields(index: str, auto_repair: bool = True) -> dict[str, DocumentField]:
+async def rename_field(index: str, old: str, new: str) -> None:
     """
-    Retrieve the fields settings for this index.
-
-    If auto_repair is true, look for both (1) the field settings in the 'fields' system index,
-    and (2) the field mappings in the index itself. If these are not in sync, fix them.
+    Rename a field. This only changes the field definition: values are stored by field key, not by name
     """
-    if auto_repair:
-        return await list_and_repair_fields(index)
-    else:
-        return await _list_fields(index)
+    pk = await project_pk(index)
+    async with connection() as conn:
+        cur = await conn.execute("SELECT 1 FROM fields WHERE project_pk = %s AND name = %s", [pk, new])
+        if await cur.fetchone():
+            raise ValueError(f"Field {new} already exists")
+        cur = await conn.execute("UPDATE fields SET name = %s WHERE project_pk = %s AND name = %s", [new, pk, old])
+        if cur.rowcount == 0:
+            raise NotFoundError(f"Field {old} does not exist")
 
 
-async def list_and_repair_fields(
-    index: str,
-):
-    fields: dict[str, DocumentField] = {}
-
-    try:
-        system_index_fields = await _list_fields(index)
-    except NotFoundError:
-        system_index_fields = {}
-
-    # check if all fields in elastic are registered in the system index, and otherwise add them (update_system_index=True)
-    update_system_index = False
-    inferred_fields = await _infer_es_index_fields(index)
-    for name, inferred_field in inferred_fields.items():
-        if name not in system_index_fields:
-            update_system_index = True
-            fields[name] = inferred_field
-        else:
-            fields[name] = system_index_fields[name]
-
-            if fields[name].elastic_type != inferred_field.elastic_type:
-                ## if for some reason the elastic types in the system index and mapping don't match,
-                ## update the system index using the inferred type (because we can't update the mapping)
-                update_system_index = True
-                fields[name].elastic_type = inferred_field.elastic_type
-
-                ## If the current amcat type is not allowed for the new elastic type, we also need to update the amcat type
-                if fields[name].elastic_type not in list_allowed_elastic_types(fields[name].type):
-                    fields[name].type = inferred_field.type
-
-    # check if all fields in the system index have defined mappings in elastic, and otherwise update mapping
-    # (update_mapping=True)
-    update_mapping = False
-    for name in system_index_fields.keys():
-        if name not in inferred_fields.keys():
-            update_mapping = True
-
-    if update_mapping:
-        await _update_index_fields_mappings(index, fields)
-
-    if update_system_index:
-        await _update_fields(index, fields)
-
-    return fields
+async def _set_sort_slot(conn, project: int, f: FieldInfo, fast_sort: bool) -> None:
+    """Put a field in its sort slot (or remove it), and copy the values to the sort column"""
+    if not fast_sort:
+        if f.sort_slot:
+            await conn.execute("UPDATE fields SET sort_slot = NULL WHERE pk = %s", [f.pk])
+            await conn.execute(
+                sql.SQL("UPDATE documents SET {} = NULL WHERE project_pk = %s").format(sql.Identifier(f"sort_{f.sort_slot}")),
+                [project],
+            )
+        return
+    slot = sort_slot_for_type(f.type)
+    if slot is None:
+        raise ValueError(f"Fields of type {f.type} cannot be used for fast sorting")
+    if f.sort_slot == slot:
+        return
+    await conn.execute("UPDATE fields SET sort_slot = NULL WHERE project_pk = %s AND sort_slot = %s", [project, slot])
+    await conn.execute("UPDATE fields SET sort_slot = %s WHERE pk = %s", [slot, f.pk])
+    cast = {"date": sql.SQL("timestamptz"), "number": sql.SQL("double precision"), "keyword": sql.SQL("text")}[slot]
+    await conn.execute(
+        sql.SQL("UPDATE documents SET {} = ({}->>{})::{} WHERE project_pk = %s").format(
+            sql.Identifier(f"sort_{slot}"), sql.Identifier(f.column), sql.Literal(f.key), cast
+        ),
+        [project],
+    )
 
 
 async def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSpec]:
@@ -214,8 +251,6 @@ async def allowed_fieldspecs(user: User, indices: list[IndexId]) -> list[FieldSp
     roles = await list_user_project_roles(user, project_ids=indices)
     role_dict: dict[str, RoleRule] = {role.role_context: role for role in roles}
 
-    # Note that we NEED to use list_fields and not _list_fields,
-    # because we need to be certain the es fields are all registered in the system index.
     for index in indices:
         for field_name, field in (await list_fields(index)).items():
             if field_name not in fields_across_indices:
@@ -273,13 +308,12 @@ def intersect_fieldspecs(specs: list[FieldSpec | None]) -> FieldSpec | None:
 
 
 async def HTTPException_if_invalid_or_unauthorized_multimedia_field(index: str, field: str, user: User) -> None:
-    es_field = await es_get(fields_index_name(), fields_index_id(index, field))
-    if es_field is None:
+    docfield = (await list_fields(index)).get(field)
+    if docfield is None:
         raise HTTPException(
             status_code=400,
             detail=f"Field '{field}' does not exist in index '{index}'",
         )
-    docfield = DocumentField.model_validate(es_field["settings"])
     valid_types = ["image", "video", "audio"]
     if docfield.type not in valid_types:
         raise HTTPException(
@@ -355,8 +389,7 @@ async def HTTPException_if_invalid_field_access(indices: list[str], user: User, 
 
 def coerce_type(value: Any, type: FieldType):
     """
-    Coerces values into the respective type in elastic
-    based on ES_MAPPINGS and elastic field types
+    Coerces values into the respective type
     """
     if type == "date":
         if isinstance(value, datetime.date):
@@ -377,94 +410,94 @@ def coerce_type(value: Any, type: FieldType):
         return float(value)
     if type in ["integer"]:
         return int(value)
-
-    # TODO: check coercion / validation for object, vector and geo types
-    if type in ["object"]:
-        return value
-    if type in ["vector"]:
-        return value
-    if type in ["geo_point"]:
-        return value
-
-    # TODO: Perhaps we should check if its a local file path (meaning we use S3), and in
-    # that case enforce using a correct extension.
     if type in ["image", "video", "audio"]:
         return str(value)
-
     return value
 
 
 async def create_or_verify_tag_field(index: str | list[str], field: str):
     """
-    Create a special type of field that can be used to tag documents.
-    Since adding/removing tags supports multiple indices, we first check whether the field name is valid for all indices
-    TODO: double check, because this function looks weird
+    Make sure the field exists as a tag field in all given indices (creating it where it does not exist)
     """
     indices = [index] if isinstance(index, str) else index
-    add_to_indices: list[str] = []
     for i in indices:
         current_fields = await list_fields(i)
         if field in current_fields:
             if current_fields[field].type != "tag":
                 raise ValueError(f"Field '{field}' already exists in index '{i}' and is not a tag field")
-        else:
-            add_to_indices.append(i)
+    for i in indices:
+        await create_fields(i, {field: "tag"})
 
-    for i in add_to_indices:
-        current_fields = await list_fields(i)
-        current_fields[field] = _get_default_field("tag")
-        await es().indices.put_mapping(index=index, properties={field: {"type": "keyword"}})
-        await _update_fields(i, current_fields)
+
+async def _field_expression(index: str, field: str) -> tuple[int, FieldInfo]:
+    pk = await project_pk(index)
+    f = (await field_infos(index)).get(field)
+    if f is None:
+        raise NotFoundError(f"Field {field} does not exist in index {index}")
+    return pk, f
 
 
 async def field_values(index: str, field: str, size: int) -> list[str]:
     """
     Get the values for a given field (e.g. to populate list of filter values on keyword field)
     Results are sorted descending by document frequency
-    see: https://www.elastic.co/guide/en/elasticsearch/reference/7.4/search-aggregations-bucket-terms-aggregation.html
-         #search-aggregations-bucket-terms-aggregation-order
-
-    :param index: The index
-    :param field: The field name
-    :return: A list of values
     """
-    aggs = {"unique_values": {"terms": {"field": field, "size": size}}}
-    r = await es().search(index=index, size=0, aggs=aggs)
-    return [x["key"] for x in r["aggregations"]["unique_values"]["buckets"]]  # pyright: ignore[reportAny]
+    pk, f = await _field_expression(index, field)
+    if f.column != "meta_data":
+        raise ValueError(f"Cannot list values of {f.type} field {field}")
+    value = sql.SQL("documents.meta_data->{}").format(sql.Literal(f.key))
+    elements = sql.SQL("CASE jsonb_typeof({v}) WHEN 'array' THEN {v} ELSE jsonb_build_array({v}) END").format(v=value)
+    rows = await fetch_all(
+        sql.SQL(
+            """SELECT value, count(*) AS n FROM documents, jsonb_array_elements_text({}) AS value
+               WHERE project_pk = %s AND documents.meta_data ? {} GROUP BY value ORDER BY n DESC, value LIMIT %s"""
+        ).format(elements, sql.Literal(f.key)),
+        [pk, size],
+    )
+    return [row["value"] for row in rows]
 
 
 async def field_stats(index: str, field: str) -> dict[str, Any]:
     """
-    :param index: The index
-    :param field: The field name
-    :return: A list of values
+    Get count, min, max, avg and sum of a numeric or date field
     """
-    aggs = {"facets": {"stats": {"field": field}}}
-    r = await es().search(index=index, size=0, aggs=aggs)
-    return r["aggregations"]["facets"]  # pyright: ignore[reportAny]
+    pk, f = await _field_expression(index, field)
+    if f.type not in ("number", "integer", "date"):
+        raise ValueError(f"Cannot compute statistics for {f.type} field {field}")
+    raw = sql.SQL("(documents.meta_data->>{})").format(sql.Literal(f.key))
+    if f.type == "date":
+        x = sql.SQL("extract(epoch FROM {}::timestamptz) * 1000").format(raw)
+    else:
+        x = sql.SQL("{}::double precision").format(raw)
+    row = await fetch_one(
+        sql.SQL(
+            "SELECT count({x}) AS count, min({x}) AS min, max({x}) AS max, avg({x}) AS avg, sum({x}) AS sum "
+            "FROM documents WHERE project_pk = %s"
+        ).format(x=x),
+        [pk],
+    )
+    assert row is not None
+    stats = {k: (float(v) if v is not None and k != "count" else v) for k, v in row.items()}
+    if f.type == "date":
+        for k in ("min", "max", "avg"):
+            if stats[k] is not None:
+                stats[f"{k}_as_string"] = datetime.datetime.fromtimestamp(stats[k] / 1000, tz=datetime.UTC).isoformat()
+    return stats
 
 
 def _get_default_metareader(type: FieldType):
     # Safety first: just make "none" the default for everything
-    # if [some safe condition that I cant really think of]:
-    #     return DocumentFieldMetareaderAccess(access="read")
-
     return DocumentFieldMetareaderAccess(access="none")
 
 
 def _get_default_field(type: FieldType, elastic_type: ElasticType | None = None):
     """
     Generate a field on the spot with default settings.
-    Primary use case is importing existing indices with fields that are not registered in the system index.
     """
     if elastic_type is None:
         default_elastic_types = list_allowed_elastic_types(type)
-
         if len(default_elastic_types) == 0:
-            raise ValueError(
-                f"The default elastic type mapping for field type {type} is not defined "
-                "(if this happens, blame and inform Kasper)"
-            )
+            raise ValueError(f"The default storage type for field type {type} is not defined")
         elastic_type = default_elastic_types[0]
 
     return DocumentField(elastic_type=elastic_type, type=type, metareader=_get_default_metareader(type))
@@ -486,58 +519,3 @@ def _check_forbidden_type(field: DocumentField, type: FieldType):
         for forbidden_type in ["tag", "vector"]:
             if type == forbidden_type:
                 raise ValueError(f"Field {field} is an identifier field, which cannot be a {forbidden_type} field")
-
-
-async def _update_fields(index: str, fields: dict[str, DocumentField]):
-    async def insert_fields() -> AsyncGenerator[BulkInsertAction, None]:
-        for field, settings in fields.items():
-            id = fields_index_id(index, field)
-            field_doc = {"index": index, "name": field, "settings": settings.model_dump()}
-            yield BulkInsertAction(index=fields_index_name(), id=id, doc=field_doc)
-
-    await es_bulk_upsert(insert_fields())
-
-
-async def _list_fields(index: str) -> dict[str, DocumentField]:
-    docs = index_scan(fields_index_name(), query={"term": {"index": index}})
-    return {doc["name"]: DocumentField.model_validate(doc["settings"]) async for id, doc in docs}
-
-
-async def _get_es_index_fields(index: str) -> AsyncGenerator[tuple[str, dict], None]:
-    r = await es().indices.get_mapping(index=index)
-    if "properties" in r[index]["mappings"]:
-        for name, mapping in r[index]["mappings"]["properties"].items():
-            yield name, mapping
-
-
-async def _infer_es_index_fields(index: str) -> dict[str, DocumentField]:
-    fields: dict[str, DocumentField] = {}
-    async for name, mapping in _get_es_index_fields(index):
-        elastic_type = mapping.get("type", "object")
-        nested_props = mapping.get("properties", None)
-        type = infer_field_type(elastic_type, nested_props)
-        field = _get_default_field(type, elastic_type)
-        fields[name] = field
-    return fields
-
-
-async def _update_index_fields_mappings(index: str, fields: dict[str, DocumentField]) -> None:
-    """
-    Add mappings for fields not yet present in the elasticsearch index, and sync
-    the fields system index. Fields already present in the ES mapping are skipped
-    because most mapping parameters (notably `format` on date fields) are immutable;
-    re-sending them raises "Mapper for [X] conflicts with existing mapper".
-    """
-    existing_in_es = {name async for name, _ in _get_es_index_fields(index)}
-
-    mapping_updates: dict[str, dict[str, Any]] = {}
-    for field_name, field in fields.items():
-        if field_name in existing_in_es:
-            continue
-        mapping_updates[field_name] = {"type": field.elastic_type}
-        if field.type == "date":
-            mapping_updates[field_name]["format"] = "strict_date_optional_time"
-
-    if mapping_updates:
-        await es().indices.put_mapping(index=index, properties=mapping_updates)
-    await _update_fields(index, fields)

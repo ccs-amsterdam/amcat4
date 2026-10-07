@@ -1,11 +1,12 @@
 from amcat4.models import SnippetParams
-from amcat4.postgres.snippets import highlight, make_snippet
+from amcat4.postgres.snippets import byte_to_char_positions, highlight, make_snippet
 
 TEXT = "The quick brown fox jumps over the lazy dog. Later that day, the fox went home to sleep."
 
 
 def test_nomatch():
-    assert make_snippet(TEXT, None, SnippetParams(nomatch_chars=9, max_matches=3, match_chars=20)) == "The quick"
+    # like elastic, the snippet does not end in the middle of a word
+    assert make_snippet(TEXT, None, SnippetParams(nomatch_chars=6, max_matches=3, match_chars=20)) == "The quick"
     assert make_snippet(TEXT, [[16, 19]], SnippetParams(nomatch_chars=9, max_matches=0, match_chars=20)) == "The quick"
 
 
@@ -23,8 +24,5 @@ def test_highlight():
 
 
 def test_byte_to_char_positions():
-    from amcat4.postgres.snippets import byte_to_char_positions
-
-    text = "Café über fox"
-    assert byte_to_char_positions(text, [[12, 15]]) == [[10, 13]]
+    assert byte_to_char_positions("Café über fox", [[12, 15]]) == [[10, 13]]
     assert byte_to_char_positions("plain fox", [[6, 9]]) == [[6, 9]]

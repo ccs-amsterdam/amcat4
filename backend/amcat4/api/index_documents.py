@@ -2,11 +2,11 @@
 
 from typing import Annotated, Any, Literal
 
-from elasticsearch import NotFoundError
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
 from amcat4.api.auth_helpers import authenticated_user
+from amcat4.errors import NotFoundError
 from amcat4.models import (
     DocumentFieldDefinition,
     FieldType,

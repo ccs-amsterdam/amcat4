@@ -1,7 +1,6 @@
 import pytest
 from httpx import AsyncClient
 
-from amcat4.connections import es
 from amcat4.models import Roles
 from amcat4.systemdata.roles import (
     create_project_role,
@@ -128,8 +127,6 @@ async def test_fields_upload(client: AsyncClient, user: str, index: str):
     ) == {"title"}
     assert (await get_json(client, f"/index/{index}/fields", user=user) or {})["x"]["type"] == "keyword"
 
-    es_conn = es()
-    await es_conn.indices.refresh()
     assert set(await get_json(client, f"/index/{index}/fields/x/values", user=user) or []) == {
         "a",
         "b",

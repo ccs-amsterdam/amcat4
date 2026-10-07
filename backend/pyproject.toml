@@ -24,7 +24,6 @@ dependencies = [
     "jinja2",
     "httpx",
     "itsdangerous",
-    "elasticsearch~=8.6",
     "python-multipart",
     "python-dotenv",
     "requests",

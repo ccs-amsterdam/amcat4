@@ -3,11 +3,11 @@
 import logging
 from contextlib import asynccontextmanager
 
-from elasticsearch import BadRequestError as ESBadRequestError
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from psycopg.errors import DataError
 from starlette.middleware.sessions import SessionMiddleware
 
 from amcat4.api.api_keys import app_api_keys
@@ -20,12 +20,12 @@ from amcat4.api.index_query import app_index_query
 from amcat4.api.index_users import app_index_users
 from amcat4.api.requests import app_requests
 from amcat4.api.server import app_info
-from amcat4.api.snapshots import app_snapshots
 from amcat4.api.users import app_users
 from amcat4.auth.CSRFMiddleware import CSRFMiddleware
 from amcat4.auth.oauth import MAX_AGE_SESSION
 from amcat4.config import get_settings
 from amcat4.connections import amcat_connections
+from amcat4.errors import ConflictError, NotFoundError
 from amcat4.systemdata.manage import create_or_update_systemdata
 
 
@@ -57,7 +57,6 @@ app = FastAPI(
         dict(name="query", description="Endpoints to list or query documents or run aggregate queries"),
         dict(name="middlecat", description="MiddleCat authentication"),
         dict(name="api keys", description="Endpoints for API key management"),
-        dict(name="snapshots", description="Endpoints for Elasticsearch snapshot management"),
     ],
     lifespan=lifespan,
 )
@@ -74,7 +73,6 @@ api_router.include_router(app_index_query)
 api_router.include_router(app_requests)
 api_router.include_router(app_multimedia)
 api_router.include_router(app_api_keys)
-api_router.include_router(app_snapshots)
 app.include_router(api_router)
 
 
@@ -97,13 +95,20 @@ app.add_middleware(
 app.add_middleware(CSRFMiddleware)
 
 
-@app.exception_handler(ESBadRequestError)
-async def es_bad_request_handler(request: Request, exc: ESBadRequestError) -> JSONResponse:
-    try:
-        reason = exc.body["error"]["root_cause"][0]["reason"]
-    except (KeyError, IndexError, TypeError):
-        reason = str(exc)
-    return JSONResponse(status_code=422, content={"detail": reason})
+@app.exception_handler(NotFoundError)
+async def not_found_handler(request: Request, exc: NotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(ConflictError)
+async def conflict_handler(request: Request, exc: ConflictError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(DataError)
+async def data_error_handler(request: Request, exc: DataError) -> JSONResponse:
+    """Invalid values in the database layer, e.g. a non-numeric value in a numeric filter"""
+    return JSONResponse(status_code=422, content={"detail": str(exc).split("\n")[0]})
 
 
 @app.exception_handler(ValueError)

@@ -1,19 +1,19 @@
-from psycopg import AsyncConnection
+from amcat4.errors import NotFoundError
+from amcat4.postgres.connection import fetch_all, fetch_one
 
 
-async def create_project(conn: AsyncConnection, project_id: str, name: str | None = None) -> int:
-    """Create a project and return its internal primary key"""
-    cur = await conn.execute("INSERT INTO projects (id, name) VALUES (%s, %s) RETURNING pk", [project_id, name or project_id])
-    row = await cur.fetchone()
-    return row["pk"]  # type: ignore[index, call-overload]
+async def project_pk(project_id: str) -> int:
+    """Get the internal primary key of a project"""
+    row = await fetch_one("SELECT pk FROM projects WHERE id = %s", [project_id])
+    if row is None:
+        raise NotFoundError(f"Project {project_id} does not exist")
+    return row["pk"]
 
 
-async def get_project_pk(conn: AsyncConnection, project_id: str) -> int | None:
-    cur = await conn.execute("SELECT pk FROM projects WHERE id = %s", [project_id])
-    row = await cur.fetchone()
-    return row["pk"] if row else None  # type: ignore[index, call-overload]
-
-
-async def delete_project(conn: AsyncConnection, project_id: str) -> None:
-    """Delete a project, including its fields and documents"""
-    await conn.execute("DELETE FROM projects WHERE id = %s", [project_id])
+async def project_pks(project_ids: list[str]) -> dict[str, int]:
+    rows = await fetch_all("SELECT id, pk FROM projects WHERE id = ANY(%s)", [project_ids])
+    pks = {row["id"]: row["pk"] for row in rows}
+    for project_id in project_ids:
+        if project_id not in pks:
+            raise NotFoundError(f"Project {project_id} does not exist")
+    return pks
