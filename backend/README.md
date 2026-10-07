@@ -6,7 +6,8 @@ FastAPI-based REST API for the AmCAT text analysis platform.
 
 - **Python 3.11+** with [uv](https://docs.astral.sh/uv/) for dependency management
 - **FastAPI** + **Uvicorn** — async web framework and ASGI server
-- **Elasticsearch 8.6+** — primary data store for documents and indexes
+- **PostgreSQL** with **pg_search** (BM25 full-text search) and **pgvector** — data store for documents and system data (e.g. the `paradedb/paradedb` docker image)
+- **psycopg 3** — async postgres driver
 - **Pydantic / pydantic-settings** — data validation and configuration
 - **Authlib** — OAuth/OIDC integration (via [MiddleCat](https://github.com/ccs-amsterdam/middlecat))
 - **aioboto3** — async S3/SeaweedFS client for multimedia storage (optional)
@@ -17,12 +18,12 @@ FastAPI-based REST API for the AmCAT text analysis platform.
 amcat4/
 ├── api/           # FastAPI route handlers (one file per resource)
 ├── projects/      # Business logic (no HTTP concerns)
-├── elastic/       # Elasticsearch utilities
+├── postgres/      # Database layer: schema, query parser, search, documents, aggregation
 ├── auth/          # Auth helpers and CSRF
 ├── objectstorage/ # S3/SeaweedFS integration and image processing
-├── systemdata/    # System index management, migrations, roles
+├── systemdata/    # Users, roles, settings, fields, api keys, requests
 ├── config.py      # Settings (env vars prefixed AMCAT4_*)
-├── connections.py # Elasticsearch + S3 connection management
+├── connections.py # Database + S3 connection management
 ├── models.py      # Shared Pydantic models
 └── __main__.py    # CLI entry point
 ```
@@ -47,11 +48,15 @@ uv run amcat4 --help      # List all available CLI commands
 
 The API will be available at `http://localhost:5000`. Interactive docs at `/docs`.
 
-Requires Elasticsearch 8.17+ running locally — start one via the root `docker-compose.yml`.
+Requires PostgreSQL with pg_search running locally — start one via `pnpm start:db` (see the root README), or e.g.:
+
+```bash
+docker run -d -p 5432:5432 -e POSTGRES_USER=amcat -e POSTGRES_PASSWORD=amcat -e POSTGRES_DB=amcat paradedb/paradedb
+```
 
 ## Testing
 
-Tests use **pytest** with **pytest-anyio** (async) and **pytest-httpx** (mock HTTP). They run against a live Elasticsearch instance, creating and tearing down prefixed (`amcat4_unittest_*`) indexes automatically.
+Tests use **pytest** with **pytest-anyio** (async) and **pytest-httpx** (mock HTTP). They run against a live postgres database (configured with `AMCAT4_POSTGRES_URL`), using a separate schema (`amcat_test`) that is created and dropped automatically. The multimedia tests are skipped unless S3 is configured (`AMCAT4_S3_HOST` etc.).
 
 ```bash
 uv run pytest

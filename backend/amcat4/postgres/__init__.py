@@ -1,5 +1,5 @@
 """
-Experimental PostgreSQL + pg_search storage backend.
+The database layer: PostgreSQL with pg_search (BM25 full-text search) and pgvector.
 
-This package is a prototype for replacing Elasticsearch. It is not yet used by the API.
+See schema.py for the design, and benchmark/README.md for findings and performance.
 """

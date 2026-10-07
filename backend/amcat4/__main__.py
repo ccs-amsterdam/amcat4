@@ -154,6 +154,20 @@ def create_env(args):
     print("*** Created .env file ***")
 
 
+async def optimize(args):
+    """Database maintenance: vacuum (which also merges search index segments), and optionally rebuild the index"""
+    from amcat4.postgres.connection import connection
+
+    async with amcat_connections():
+        async with connection() as conn:
+            logging.info("Running VACUUM ANALYZE on the documents table")
+            await conn.execute("VACUUM ANALYZE documents")
+            if args.reindex:
+                logging.info("Rebuilding the full-text search index (online, this can take a while)")
+                await conn.execute("REINDEX INDEX CONCURRENTLY documents_bm25")
+    logging.info("Done")
+
+
 async def create_test_index(_args):
     logging.info("**** Creating test index {} ****".format(SOTU_INDEX))
     async with amcat_connections():
@@ -250,6 +264,10 @@ def main():
 
     p = subparsers.add_parser("list-users", help="List global users")
     p.set_defaults(func=list_users)
+
+    p = subparsers.add_parser("optimize", help="Database maintenance (vacuum, and optionally rebuild the search index)")
+    p.add_argument("--reindex", action="store_true", help="Also rebuild the full-text search index (online)")
+    p.set_defaults(func=optimize)
 
     p = subparsers.add_parser("create-test-index", help=f"Create the {SOTU_INDEX} test index")
     p.set_defaults(func=create_test_index)

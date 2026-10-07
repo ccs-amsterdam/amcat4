@@ -143,7 +143,7 @@ TABLES = [
         (sort_keyword::pdb.literal),
         (text_data::pdb.unicode_words),
         (meta_data::pdb.literal)
-    )
+    ) WITH (mutable_segment_rows = 0)
     """,
     """
     CREATE UNLOGGED TABLE IF NOT EXISTS scrolls (

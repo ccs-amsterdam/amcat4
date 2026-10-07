@@ -5,7 +5,6 @@ import { useAmcatSession } from "@/components/Contexts/AuthProvider";
 import {
   ChevronRight,
   Columns3Cog,
-  DatabaseBackup,
   DatabaseZap,
   LayoutDashboard,
   Library,
@@ -24,7 +23,6 @@ const serverSubMenuPaths: SubMenuPath[] = [
   { href: "projects", label: "Projects", Icon: Library, minServerRole: "NONE" },
   { href: "branding", label: "Branding", Icon: Paintbrush, minServerRole: "ADMIN" },
   { href: "users", label: "Server users", Icon: Users, minServerRole: "ADMIN" },
-  { href: "snapshots", label: "Snapshots", Icon: DatabaseBackup, minServerRole: "ADMIN" },
   { href: "access", label: "Server role", Icon: LockKeyholeOpen, minServerRole: "NONE", hideForServerAdmin: true },
 ];
 

@@ -16,7 +16,21 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
-        elastic-version: ["8.17.1"]
+
+    services:
+      postgres:
+        image: paradedb/paradedb:latest
+        env:
+          POSTGRES_USER: amcat
+          POSTGRES_PASSWORD: amcat
+          POSTGRES_DB: amcat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U amcat -d amcat"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
 
     steps:
       - uses: actions/checkout@v2
@@ -26,20 +40,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-      - name: Configure sysctl limits
-        run: |
-          sudo swapoff -a
-          sudo sysctl -w vm.swappiness=1
-          sudo sysctl -w fs.file-max=262144
-          sudo sysctl -w vm.max_map_count=262144
-      - name: Runs Elasticsearch
-        uses: elastic/elastic-github-actions/elasticsearch@master
-        with:
-          stack-version: ${{ matrix.elastic-version }}
-          security-enabled: false
       - name: Install dependencies
         run: uv sync
         working-directory: backend
       - name: Test with pytest
         run: uv run pytest tests
+        env:
+          AMCAT4_POSTGRES_URL: postgresql://amcat:amcat@localhost:5432/amcat
         working-directory: backend

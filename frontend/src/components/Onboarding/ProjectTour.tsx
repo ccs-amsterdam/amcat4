@@ -69,11 +69,11 @@ function getSteps(windowWidth: number): { title: string; description: string; bo
   },
   {
     title: "Fields",
-    description: "Fields define the structure of documents in this project — each field has a name and an Elasticsearch data type.",
+    description: "Fields define the structure of documents in this project — each field has a name and a data type.",
     body: (
       <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-        <li>• Field types are set by Elasticsearch and <span className="font-medium text-foreground">cannot be changed after the first document is added</span> — choose carefully</li>
-        <li>• Writers and admins can add new fields and make limited type changes within the same Elasticsearch type group</li>
+        <li>• Field storage types are fixed and <span className="font-medium text-foreground">cannot be changed after the first document is added</span> — choose carefully</li>
+        <li>• Writers and admins can add new fields and make limited type changes within the same storage type group</li>
         <li>• The Dashboard column controls which fields appear in document previews and summaries</li>
         <li>• The METAREADER access column controls what users with limited access can see</li>
       </ul>

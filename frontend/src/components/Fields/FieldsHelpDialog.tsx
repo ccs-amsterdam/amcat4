@@ -41,15 +41,14 @@ export default function FieldsHelpDialog({ children }: { children?: React.ReactN
         <section>
           <h3 className="mb-2 font-semibold">Field types</h3>
           <p className="mb-3 text-sm text-muted-foreground">
-            The table below lists the available field types, grouped by their Elasticsearch data type. You can change a
-            field's type within the same group at any time, but Elasticsearch does not allow changes between different
-            data types.
+            The table below lists the available field types, grouped by their storage type. You can change a field's
+            type within the same group at any time, but not between different storage types.
           </p>
           <div className="divide-y rounded border text-sm">
             {typeGroups.map(({ elasticType, types }) => (
               <>
                 <div key={elasticType} className="flex items-center gap-2 bg-muted/50 px-3 py-1">
-                  <span className="text-xs text-muted-foreground">Elasticsearch type:</span>
+                  <span className="text-xs text-muted-foreground">Storage type:</span>
                   <span className="font-mono text-xs font-medium">{elasticType}</span>
                 </div>
                 {types.map(([type, desc]) => (

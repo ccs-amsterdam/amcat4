@@ -2,7 +2,7 @@
 [![Flake8 & Mypy linting](https://github.com/ccs-amsterdam/amcat4/actions/workflows/linting.yml/badge.svg)](https://github.com/ccs-amsterdam/amcat4/actions/workflows/linting.yml)
 [![pip version](https://badge.fury.io/py/amcat4.svg)](https://pypi.org/project/amcat4/)
 ![Python](https://img.shields.io/badge/python-3.10,3.11,3.12,3.13-blue.svg)
-![Elasticsearch](https://img.shields.io/badge/elasticsearch-8.17-green)
+![PostgreSQL](https://img.shields.io/badge/postgresql-pg__search-green)
 
 # AmCAT4
 
@@ -36,9 +36,9 @@ The root folder contains a [package.json](package.json) script which contains a 
 
 In production, the front-end is built and statically served. In development, the front-end is dynamically served using vite, which can be started with the various `pnpm` commands listed in the next section.
 
-The backend uses a ElasticSearch document storage as a database. Each project in AmCAT is represented as a single index within elastic. In addition, a number of 'system indices' represent server and project metadata including users, roles, and fields.
+The backend uses PostgreSQL as its database, with the [pg_search](https://github.com/paradedb/paradedb) extension for full-text (BM25) search and [pgvector](https://github.com/pgvector/pgvector) for vectors (the [paradedb](https://hub.docker.com/r/paradedb/paradedb) docker image contains both). The documents of all projects are stored in a single table, and server and project metadata (users, roles, fields, settings) are stored in normal tables. See [backend/amcat4/postgres/schema.py](backend/amcat4/postgres/schema.py) for the design.
 
-A number of important configuration options for both AmCAT and Elastic are set using a `.env` file, with reasonable defaults for single-user. See [deploy/.env.example](deploy/.env.example) for an overview of options.
+A number of important configuration options for both AmCAT and the database are set using a `.env` file, with reasonable defaults for single-user. See [deploy/.env.example](deploy/.env.example) for an overview of options.
 
 ## Development
 
@@ -71,7 +71,7 @@ pnpm dev:install
 pnpm dev:config
 ```
 
-Then we need an ElasticSearch instance, and optionally a SeaweedFS instance. An easy way to fire this up is to use the [deploy/docker-compose.yml](deploy/docker-compose.yml) file with the `dev` profile. The `start:db` command runs this from the root folder, ensuring the root `.env` file is used to configure the elastic:
+Then we need a PostgreSQL (paradedb) instance, and optionally a SeaweedFS instance. An easy way to fire this up is to use the [deploy/docker-compose.yml](deploy/docker-compose.yml) file with the `dev` profile. The `start:db` command runs this from the root folder, ensuring the root `.env` file is used to configure the database:
 
 ```
 pnpm start:db

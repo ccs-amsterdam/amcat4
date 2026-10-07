@@ -1,6 +1,6 @@
 services:
   caddy:
-    profiles: [deploy, deploy-noelastic]
+    profiles: [deploy, deploy-nodb]
     image: ccsamsterdam/amcat4_frontend:${AMCAT4_VERSION:-latest}
     container_name: katty
     restart: unless-stopped
@@ -18,76 +18,54 @@ services:
       - api
 
   api:
-    profiles: [deploy, deploy-noelastic]
+    profiles: [deploy, deploy-nodb]
     image: ccsamsterdam/amcat4_backend:${AMCAT4_VERSION:-latest}
     container_name: amcat4
     restart: unless-stopped
     networks:
       - amcat-net
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
     environment:
-      # For deploy-noelastic, set amcat4_elastic_host in .env to point to your external Elasticsearch
-      - amcat4_elastic_host=${amcat4_elastic_host:-http://elasticsearch:9200}
+      # For deploy-nodb, set amcat4_postgres_url in .env to point to your own postgres server (with pg_search)
+      - amcat4_postgres_url=${amcat4_postgres_url:-postgresql://amcat:${POSTGRES_PASSWORD:-amcat}@db:5432/amcat}
       - amcat4_host=${AMCAT4_URL:-http://localhost}
       - FORWARDED_ALLOW_IPS=*
       # Passthrough environment variables for the API configuration
-      - amcat4_elastic_password
-      - amcat4_elastic_verify_ssl
-      - amcat4_system_index
+      - amcat4_postgres_schema
       - amcat4_auth
       - amcat4_middlecat_url
       - amcat4_admin_email
 
-  elasticsearch-init:
-    profiles: [deploy, dev]
-    image: busybox
-    user: root
-    command: chown -R 1000:0 /snapshots
-    volumes:
-      - ${ELASTIC_SNAPSHOT_PATH:-snapshot_data}:/snapshots
-
-  elasticsearch: &elastic_base
+  # PostgreSQL with the pg_search (BM25 full-text search) and pgvector extensions.
+  # Consider pinning PARADEDB_VERSION in .env (see https://hub.docker.com/r/paradedb/paradedb/tags)
+  db: &db_base
     profiles: [deploy]
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.4
-    depends_on:
-      elasticsearch-init:
-        condition: service_completed_successfully
+    image: paradedb/paradedb:${PARADEDB_VERSION:-latest}
     restart: unless-stopped
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
+    environment:
+      - POSTGRES_USER=amcat
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-amcat}
+      - POSTGRES_DB=amcat
+    # Set POSTGRES_SHARED_BUFFERS in .env to about 25% of available memory
+    command: ["postgres", "-c", "shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}"]
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'curl -s http://localhost:9200/_cluster/health | grep -vq ''"status":"red"''',
-        ]
+      test: ["CMD-SHELL", "pg_isready -U amcat -d amcat"]
       interval: 5s
       timeout: 5s
       retries: 15
     networks:
       - amcat-net
-    environment:
-      - discovery.type=single-node
-      - bootstrap.memory_lock=true
-      - xpack.security.enabled=false
-      # Set ELASTIC_MEMORY in .env to at most half available memory, and at most 32g
-      - ES_JAVA_OPTS=-Xms${ELASTIC_MEMORY:-1g} -Xmx${ELASTIC_MEMORY:-1g}
-      # Snapshot repositories must be within this path. By default uses a named Docker volume;
-      # set ELASTIC_SNAPSHOT_PATH in .env to a host path to access snapshots outside the container.
-      - path.repo=/usr/share/elasticsearch/data/snapshots
     volumes:
-      - ${ELASTIC_DATA_STORAGE:-elasticsearch_data}:/usr/share/elasticsearch/data:rw
-      - ${ELASTIC_SNAPSHOT_PATH:-snapshot_data}:/usr/share/elasticsearch/data/snapshots:rw
+      - ${POSTGRES_DATA_STORAGE:-postgres_data}:/var/lib/postgresql:rw
 
-  elasticsearch-dev:
-    <<: *elastic_base
+  db-dev:
+    <<: *db_base
     profiles: [dev]
     ports:
-      - "127.0.0.1:9200:9200"
+      - "127.0.0.1:5432:5432"
 
   # S3-compatible storage — only used in local dev (run with --profile dev)
   s3:
@@ -119,8 +97,7 @@ networks:
   amcat-net:
 
 volumes:
-  elasticsearch_data:
-  snapshot_data:
+  postgres_data:
   caddy_data:
   caddy_config:
   seaweedfs_data:

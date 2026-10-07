@@ -21,7 +21,7 @@ export function FieldTypesSection() {
           <b className="text-primary">url / image / video / audio</b>
           Links to web pages or media files. Displayed as a clickable link or inline media.
           <b className="text-primary">object</b>
-          Structured JSON objects. Not analysed or parsed by Elasticsearch.
+          Structured JSON objects. Stored, but not searchable.
         </div>
       </div>
     </section>
