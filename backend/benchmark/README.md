@@ -12,13 +12,14 @@ The benchmark script is `benchmark/pg_benchmark.py`.
 
 ```
 projects(pk, id, name, description, folder, contact, image, archived)
-fields(pk, project_pk, name, type, elastic_type, identifier, metareader, client_settings, sort_slot)
+fields(pk, project_pk, name, type, unique_field, metareader, reader, client_settings, sort_slot)
 documents(id, project_pk, doc_id, text_data jsonb, meta_data jsonb, extra_data jsonb, source jsonb,
-          sort_date, sort_number, sort_keyword, created_at, updated_at)
-    UNIQUE (project_pk, doc_id)
+          dedup_hash, sort_date, sort_number, sort_keyword, created_at, updated_at)
+    UNIQUE (project_pk, doc_id), UNIQUE (project_pk, dedup_hash)
     BM25 index on (id, project_pk, sort_date, sort_number, sort_keyword, text_data, meta_data)
 document_vectors(document_id, field_pk, embedding vector)   -- HNSW index per field
-roles, api_keys, requests, server_settings, object_storage, scrolls   -- system data, plain tables
+jobs(id, type, status, project_pk, params, progress, result, ...)  -- background jobs (e.g. copy)
+roles, api_keys, requests, server_settings, object_storage   -- system data, plain tables
 ```
 
 - **One table for all projects.** A project owns its documents. Cross-project queries filter on several projects.
@@ -39,16 +40,18 @@ roles, api_keys, requests, server_settings, object_storage, scrolls   -- system 
 - **Geo points** are stored as `{"lat": .., "lon": ..}`, so `location.lat` and `location.lon` can be used in range
   filters and queries (bounding boxes).
 - **Vectors** are stored in `document_vectors`, with a pgvector HNSW index (cosine) per field, created on first upload
-  (which fixes the number of dimensions). There is no similarity search API yet.
-- **Identifiers.** If a project has identifier fields, the document id is a hash of their values, so uploading the same
-  document twice updates it instead of creating a duplicate (same behaviour as before).
+  (which fixes the number of dimensions). Queries can order results by similarity to a vector (`similar`).
+- **Unique fields.** If a project has unique fields, a hash of their values is stored in `dedup_hash` (unique per
+  project), so uploading the same document twice updates it (or fails, for `create`) instead of creating a duplicate.
+  Document ids are independent of these values.
 - **Query parsing.** Query strings are parsed by AmCAT (`postgres/querystring.py`) and compiled to pg_search's
   structured json queries. This translates field names to keys, determines which fields are searched by default, and
   is the place where field-level access (which fields may be queried) can be enforced.
 - **Snippets and highlighting** are built by AmCAT from the stored text, so the limits for metareaders are enforced in
   our own code. Match positions come from the parsed query, combined with `paradedb.snippet_positions`.
-- **Scrolling** uses a server-side `scrolls` table (keyset pagination for unsorted results).
-- **Copies** (`reindex`) physically copy (a subset of) documents and fields, recording provenance in `source`.
+- **Pagination** uses stateless cursors (keyset on the internal id for unsorted results, otherwise offsets).
+- **Copies** (a `copy` job) physically copy (a subset of) documents and fields in batches, recording provenance in
+  `source`.
   Read-only *reference* projects are a planned feature (see the TODO in `postgres/schema.py`).
 - **Backups:** standard postgres tools (`pg_dump`, or pgBackRest for point in time recovery) replace elastic snapshots.
 
@@ -124,8 +127,6 @@ of a large project leave a measurable cost even after vacuum and reindex (probab
 - Once, an update by query directly after `REINDEX INDEX CONCURRENTLY` (with autovacuum running) took more than 10
   minutes before it was cancelled; it took 2 s when repeated. Not reproduced; keep an eye on this.
 - Tag aggregations are done in SQL (unnest), which is the slowest aggregation (0.7 s for 500k documents).
-- No vector similarity search API yet (vectors are stored and indexed); geo distance queries would need PostGIS.
-- Field-level query visibility (visible / queryable but invisible / invisible) is supported by the query parser
-  (`FieldSet.queryable`) but not yet wired into the API.
+- Geo distance queries would need PostGIS.
 - Read-only reference projects (see design discussion) are not implemented.
 - Postgres settings are untuned; real (longer, natural language) texts and larger corpora should be tested.

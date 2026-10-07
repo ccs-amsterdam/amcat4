@@ -1,117 +1,50 @@
-# Postgres migration: compromises to review
+# Postgres migration: elastic-era compromises and how they were resolved
 
-During the migration, the existing API and behaviour were kept wherever possible, so that clients (frontend,
-R/Python packages, scrapers) keep working and the existing tests could be used as a specification. In a number of
-places this means we copied elasticsearch behaviour that is no longer necessary, or not the most natural choice in
-postgres. This file lists those places, roughly in order of how much I think they are worth revisiting.
+The first version of the migration kept the existing API wherever possible. Since the new version is not in
+production yet, most of those compromises have now been removed. This file lists what changed (useful for updating
+clients such as the R/Python packages and scrapers) and what is still open.
 
-## API and behaviour
+## Resolved (breaking changes for clients)
 
-### Scrolling (`scroll` / `scroll_id`)
-**Now:** a server-side `scrolls` table stores the query; the same scroll id is returned on every call and the
-server advances the position, and contexts expire after the given time (`"5m"`). This mimics elastic, whose scroll
-contexts exist because elastic needs to keep a point-in-time snapshot of its segments.
-**Better:** stateless cursor pagination. Return a (signed) `after` token containing the sort values and id of the last
-result, and query `WHERE (sort, id) > (...)`. No server state, no expiry, works across server processes, and the same
-mechanism can replace deep `page` offsets (which get slow: page 1000 took ~150-300 ms). The scroll parameters could
-be kept as a deprecated alias.
+| Topic | Before (elastic style) | Now |
+|---|---|---|
+| Identity / dedup | `identifier` fields; document id = hash of identifier values | `unique` fields: a separate dedup hash (unique per project) decides which documents are the same; document ids stay stable and unique values can be corrected |
+| Field types | `elastic_type` fixed at creation, restricted type changes | Only the AmCAT type. Any type can be converted (`PUT /fields` with `type`); values are converted in batches and the change fails (and changes nothing) if a value cannot be converted |
+| Renaming fields | not possible | `PUT /index/{ix}/fields` with `{field: {name: new_name}}` |
+| Field visibility | metareader access only restricted returned values | `reader: {visible, queryable}` and `metareader: {access, max_snippet, queryable}`. `queryable` defaults to "same as visible"; fields can be visible but not queryable, or queryable but invisible (non-consumptive research). Writers and admins see everything |
+| Uploads | `index` / `create` / `update` / `upsert`, result `{successes, failures}` | `create` / `update` / `upsert` / `replace` (default), all-or-nothing transaction, result `{created, updated}`, errors are 409 (conflicts) or 422 (invalid values) |
+| Reindex | synchronous, pretended to be a task (in-memory) | `POST /index/{ix}/copy` creates a job; `GET /jobs`, `GET /jobs/{id}`, `DELETE /jobs/{id}` (cancel). Jobs run in a worker loop in the API process, in batches of 2000 documents, tracking the last copied id, so they continue after a restart. `/task/{id}` is removed |
+| Refresh | no-op endpoint and parameter | removed |
+| Scrolling | `scroll` / `scroll_id` with a server-side table | cursor pagination: the response meta has `next`; send the same query with `after=next`. Without sort/query the cursor is keyset on the internal id (fast for downloading everything), otherwise an offset |
+| Aggregation pagination | `after` offsets | no pagination; `order` (`axes` or `count`) and `limit` (default 1000, max 10000), meta has `truncated` |
+| Snippets | characters (`nomatch_chars`, `match_chars`), elastic highlighter behaviour | words: `words_per_match`, `max_matches`, `nomatch_words` (first N words if there are no matches); old parameters are rejected |
+| Multiple projects | `/index/a,b,c/query` | `POST /query` and `POST /aggregate` with `projects: [...]` in the body; per-project endpoints take a single project |
+| Field stats / values | elastic stats shape; values errored above 2000 | stats `{count, min, max, avg}` (dates as ISO); values are the most frequent values, `size` default 200, max 2000 |
+| Query errors | generic | 400 with the query label, e.g. `Error in query 'q1' ('te*xt'): Wildcards are only supported at the end of a word ...`. OR stays the default operator |
+| Project references | roles, requests and object storage used the project id string | foreign keys to `projects.pk` with `ON DELETE CASCADE` |
+| Unused parameters | `list_fields(auto_repair)`, `rm_pending_migrations`, `migrate --no-rm-pending` | removed |
 
-### Document ids for projects with identifier fields
-**Now:** like elastic, the document id is a hash of the identifier values.
-**Better (as discussed):** decouple identity from deduplication. Keep a stable id, and enforce uniqueness of the
-identifier fields with a unique (hash) column, with `ON CONFLICT` deciding between skip / update / error. This also
-makes it possible to correct a value in an identifier field.
+New features: vector similarity search (`similar: {field, vector}` in the query body, results ordered by
+`_similarity`), and provenance of copied documents (`_copied_from: {project, doc_id}` on the single document endpoint).
 
-### `elastic_type` and the type change rules
-**Now:** fields still have an `elastic_type` (e.g. `keyword`, `wildcard`, `double`, `long`), which is fixed at creation
-and determines which AmCAT types a field can be changed to (via the old elastic type map). This was kept so the
-frontend (field editing, upload type detection) works unchanged.
-**Better:** the elastic types have no meaning anymore. Storage is only determined by the AmCAT type (text, exact
-values, vector, stored-only object). Changing a type can simply rewrite the values of that field (one `UPDATE`), so
-most type changes could be allowed, with validation of the existing values. The frontend could then drop the
-elastic type concept.
+## Importing exports from the current (elastic) servers
 
-### `tag` vs `keyword`
-**Now:** tags are a separate type (lists of keywords), as in amcat-on-elastic.
-**Better:** in postgres a keyword field could just allow multiple values. Worth considering whether the distinction is
-still useful for users.
+`POST /index/import` (and the chunked `/index/import/metadata` + `/index/{ix}/import/documents`) accept the existing
+export format. Field definitions are converted by `amcat4.projects.legacy`: `elastic_type` is dropped, `identifier`
+becomes `unique`, and snippet limits are converted from characters to words (6 characters per word). Document ids
+from the export are kept.
 
-### Reindex as a "task"
-**Now:** `reindex` (copying documents to another project) runs synchronously, but still returns a `task` id, and
-`get_task_status` reads the result from an in-memory dict. That dict is lost on restart and not shared between server
-processes, so the task endpoint only works by accident.
-**Better:** either a plain synchronous endpoint that returns the number of copied documents, or (for very large
-copies) a real job table with status. Also: the name "reindex" comes from elastic; "copy" describes it better.
+## Kept on purpose
 
-### Refresh
-**Now:** `GET /index/{ix}/refresh` and the `refresh` parameter of uploads are kept, but do nothing (postgres makes
-documents searchable on commit).
-**Better:** deprecate and remove.
+- `tag` stays a separate type: tags are keywords with their own UI and endpoints (`tags_update`).
+- Guest roles are still stored as a role with email `*` (and domain roles as `*@domain`).
+- Server settings and api key restrictions are merged on update (partial updates).
+- The aggregation count column is still called `n` (collides with a field called `n`); metrics are `avg_field` etc.
 
-### Upload operations and the failure format
-**Now:** `index` / `create` / `update` / `upsert` with a `{successes, failures}` result, mirroring the elastic bulk
-API.
-**Better:** fine to keep, but in postgres an upload is one transaction. We could choose all-or-nothing semantics
-(clearer for users), and report failures in a more useful format.
+## Still open
 
-### Aggregation pagination (`after`)
-**Now:** the `after` cursor is an offset; every page recomputes the whole aggregation and returns rows 1000-2000 etc.
-This mimics elastic composite aggregation pagination.
-**Better:** aggregations are fast now; return all buckets (with a sane maximum), or let the client set
-order/limit (e.g. top 100 values by count), which is what SQL is good at.
-
-### Aggregation result shape
-**Now:** the count column is called `n`, which collides with a field called `n`; metric names are `avg_field`, etc.
-**Better:** reserved names (e.g. `_n`) or a nested structure.
-
-### Query string syntax
-**Now:** Lucene-like syntax with OR as the default operator (like elastic `query_string`), parsed by our own parser.
-**Better:** since we own the parser now, we can choose the syntax deliberately: e.g. AND as default (what most users
-expect), clear errors for unsupported syntax, and maybe a simpler documented subset. Note: changing the default
-operator changes the results of existing queries.
-
-### Snippets
-**Now:** snippet parameters (`nomatch_chars`, `max_matches`, `match_chars`) and behaviour copy the elastic highlighter
-(e.g. extending the no-match snippet to the end of a word).
-**Better:** fine as is, but we are free to define snippets in a way that is simpler to explain to metareaders and
-admins (e.g. "N sentences around each match").
-
-### Multiple projects in the URL
-**Now:** `/index/a,b,c/query` (comma-separated ids in the path, elastic style).
-**Better:** a `projects` list in the request body, and "project" instead of "index" throughout the API (there is
-already a TODO for this in `api/index.py`).
-
-### Field stats and values
-**Now:** `field_stats` returns elastic's stats shape (`count`, `min`, `max`, `avg`, `sum`, `*_as_string` for dates).
-`field_values` returns the most frequent values. Both fine, but could be designed for what the frontend needs.
-
-### Unused parameters
-`list_fields(auto_repair=...)` and `create_or_update_systemdata(rm_pending_migrations=...)` are kept for compatibility
-but have no meaning anymore.
-
-## Data model
-
-### Roles, requests and object storage refer to projects by text id
-**Now:** these tables use the project id string (and `"_server"` for server roles), without foreign keys, like the old
-system indices. Deleting a project deletes them explicitly.
-**Better:** reference `projects.pk` with `ON DELETE CASCADE` (and a separate server roles table). This also makes it
-possible to rename project ids (the pk is the real identity now).
-
-### Guest roles
-**Now:** stored as a role with email `*` (and domain roles as `*@domain`), as before.
-**Better:** fine, but a `guest_role` column on projects would be simpler to query and explain.
-
-### Server settings and api key restrictions are merged on update
-**Now:** updates are merged into the existing jsonb (like elastic partial updates), which means a setting cannot be
-removed by leaving it out. Server settings are a single jsonb document.
-**Better:** explicit columns or full replacement semantics.
-
-### Field-level visibility
-The query parser already supports restricting which fields can be queried (`FieldSet.queryable`), but the API still
-uses the old metareader logic, which only restricts which fields are *returned*, not which can be *queried*. This is
-where the planned "visible / queryable but invisible / invisible" settings should go.
-
-## Things that are new and could be exposed more
-- Renaming fields (`systemdata.fields.rename_field`) has no API endpoint yet.
-- Vectors are stored and indexed (pgvector), but there is no similarity search endpoint.
-- Copies record provenance (`documents.source`), which is not shown anywhere yet.
+- Rename "index" to "project" in the API paths (TODO in `api/index.py`).
+- Jobs are generic (`projects/jobs.py`, register a handler in `HANDLERS`), e.g. for preprocessing, but only `copy`
+  exists. Old jobs are never cleaned up.
+- Read-only reference projects (sharing documents without copying) are not implemented.
+- Mass updates of large projects are slow and degrade query performance until a reindex (see `benchmark/README.md`).
