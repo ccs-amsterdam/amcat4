@@ -80,6 +80,16 @@ class Settings(BaseSettings):
         ),
     ] = None
 
+    postgres_url: Annotated[
+        str | None,
+        Field(
+            description=(
+                "PostgreSQL connection URL (with the pg_search extension), "
+                "e.g. postgresql://amcat:amcat@localhost:5432/amcat. Only used by the (experimental) postgres backend."
+            ),
+        ),
+    ] = None
+
     system_index: Annotated[
         str,
         Field(
