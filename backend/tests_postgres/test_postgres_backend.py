@@ -196,3 +196,48 @@ async def test_copy_subset(conn):
     assert sorted(d["_id"] for d in res.results) == ["1", "3"]
     with pytest.raises(ValueError):
         await ids(conn, fs2, queries={"q": "text:dog"})  # text was not copied
+
+
+async def test_update_and_delete_by_query(conn):
+    from amcat4.postgres.documents import delete_by_query, update_by_query, update_tag_by_query
+
+    pk, fs = await setup_project(conn)
+    fields = fs.project_fields[pk]
+    assert await update_tag_by_query(conn, fs, SearchQuery(queries={"q": "fox"}), fields["tags"], "c", "add") == 2
+    assert await update_tag_by_query(conn, fs, SearchQuery(queries={"q": "fox"}), fields["tags"], "c", "add") == 0
+    assert await ids(conn, fs, queries={"q": "tags:c"}) == ["1", "3"]
+    assert await update_tag_by_query(conn, fs, SearchQuery(), fields["tags"], "b", "remove") == 2
+    doc = await get_document(conn, pk, "2", fields)
+    assert "tags" not in doc
+    assert await update_by_query(conn, fs, SearchQuery(ids=["1", "2"]), fields["source"], "wire") == 2
+    assert await ids(conn, fs, filters={"source": FilterSpec(values=["wire"])}) == ["1", "2"]
+    assert await update_by_query(conn, fs, SearchQuery(ids=["1"]), fields["source"], None) == 1
+    assert await ids(conn, fs, filters={"source": FilterSpec(exists=False)}) == ["1"]
+    assert await delete_by_query(conn, fs, SearchQuery(queries={"q": "dog"})) == 2
+    assert await ids(conn, fs) == ["3"]
+
+
+async def test_snippets_non_ascii(conn):
+    docs = [dict(_id="u", title="Café über déjà vu fox", text="x")]
+    _, fs = await setup_project(conn, docs=docs)
+    res = await search(conn, fs, SearchQuery(queries={"q": "fox"}), ["title"], highlight=True)
+    assert res.results[0]["title"] == "Café über déjà vu <em>fox</em>"
+
+
+async def test_primary_date_and_derived_keys(conn):
+    from amcat4.postgres.documents import update_by_query
+
+    pk, fs = await setup_project(conn)
+    fields = fs.project_fields[pk]
+    assert fields["date"].primary_date
+    cur = await conn.execute("SELECT doc_id, sort_date FROM documents ORDER BY doc_id")
+    assert [r["sort_date"].year for r in await cur.fetchall()] == [2024, 2025, 2023]
+    rows = await aggregate(conn, fs, SearchQuery(), [Axis("date", "month")])
+    assert [(r["date_month"], r["n"]) for r in rows] == [(date(2023, 6, 1), 1), (date(2024, 3, 1), 1), (date(2025, 1, 1), 1)]
+    rows = await aggregate(conn, fs, SearchQuery(), [Axis("date", "monthnr")])
+    assert [r["date_monthnr"] for r in rows] == [1, 3, 6]
+    # updating the date updates sort_date and derived keys
+    assert await update_by_query(conn, fs, SearchQuery(ids=["3"]), fields["date"], "2026-12-31T12:00:00Z") == 1
+    assert await ids(conn, fs, filters={"date": FilterSpec(monthnr=12)}) == ["3"]
+    res = await search(conn, fs, SearchQuery(), [], sort=[("date", "desc")])
+    assert [d["_id"] for d in res.results] == ["3", "2", "1"]

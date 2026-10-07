@@ -12,8 +12,11 @@ Design (see docs/postgres-migration.md for the reasoning):
     - meta_data:  untokenized fields (keyword, tag, url, number, integer, boolean, date, multimedia paths),
                   stored as fast (columnar) fields for filtering, sorting and aggregation
     - extra_data: values that are stored but not indexed (object, vector, geo_point for now)
-- A single BM25 index covers project_id, text_data and meta_data. New fields are new json keys, so adding
-  a field never requires rebuilding the index.
+- A single BM25 index covers project_pk, sort_date, text_data and meta_data. New fields are new json keys, so
+  adding a field never requires rebuilding the index.
+- pg_search cannot sort on json keys inside the index (Top-K), so the primary date field of each project is also
+  stored in the sort_date column. Date fields also get derived keys (f12_year, f12_month, f12_dayofweek, ...) in
+  meta_data, so date histograms and date-part filters run inside the index.
 
 TODO (later): read-only *reference* projects, that reference documents owned by other projects
 (project_references / document_references tables). Querying a reference project filters on the owner
@@ -48,6 +51,7 @@ SCHEMA_SQL = [
         name text NOT NULL,
         type text NOT NULL,
         unique_field boolean NOT NULL DEFAULT false,
+        primary_date boolean NOT NULL DEFAULT false,
         metareader jsonb NOT NULL DEFAULT '{"access": "none"}',
         client_settings jsonb NOT NULL DEFAULT '{}',
         UNIQUE (project_pk, name)
@@ -63,6 +67,7 @@ SCHEMA_SQL = [
         meta_data jsonb NOT NULL DEFAULT '{}',
         extra_data jsonb,
         source jsonb,
+        sort_date timestamptz,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now(),
         UNIQUE (project_pk, doc_id)
@@ -76,6 +81,7 @@ SCHEMA_SQL = [
     CREATE INDEX IF NOT EXISTS documents_bm25 ON documents USING bm25 (
         id,
         project_pk,
+        sort_date,
         (text_data::pdb.unicode_words),
         (meta_data::pdb.literal)
     )

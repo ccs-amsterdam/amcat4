@@ -7,8 +7,8 @@ for storage, and manages the `fields` table.
 """
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
-from typing import Any, Literal, Mapping
+from datetime import UTC, date, datetime, timedelta
+from typing import Any, Callable, Literal, Mapping
 
 from psycopg import AsyncConnection
 
@@ -49,6 +49,7 @@ class FieldInfo:
     name: str
     type: str
     unique_field: bool = False
+    primary_date: bool = False
 
     @property
     def key(self) -> str:
@@ -67,6 +68,44 @@ class FieldInfo:
     @property
     def indexed(self) -> bool:
         return self.column != "extra_data"
+
+    def derived_key(self, part: str) -> str:
+        """json key of a derived value (e.g. the month of a date field)"""
+        return f"{self.key}_{part}"
+
+    def derived_path(self, part: str) -> str:
+        return f"{self.column}.{self.derived_key(part)}"
+
+
+# Derived values that are stored for every date field (as extra keys in meta_data), so that grouping by
+# date intervals and filtering on date parts can be done inside the BM25 index (columnar), instead of
+# computing them in SQL for every document. pg_search cannot push down expressions like date_trunc.
+def _daypart(dt: datetime) -> str:
+    return "Night" if dt.hour < 6 else "Morning" if dt.hour < 12 else "Afternoon" if dt.hour < 18 else "Evening"
+
+
+DATE_DERIVED: dict[str, Callable[[datetime], str | int]] = {
+    "year": lambda dt: dt.strftime("%Y"),
+    "month": lambda dt: dt.strftime("%Y-%m"),
+    "week": lambda dt: (dt.date() - timedelta(days=dt.weekday())).isoformat(),
+    "day": lambda dt: dt.strftime("%Y-%m-%d"),
+    "yearnr": lambda dt: dt.year,
+    "monthnr": lambda dt: dt.month,
+    "weeknr": lambda dt: dt.isocalendar().week,
+    "dayofmonth": lambda dt: dt.day,
+    "dayofweek": lambda dt: dt.strftime("%A"),
+    "daypart": _daypart,
+    "decade": lambda dt: dt.year // 10 * 10,
+}
+
+
+def parse_date(normalized: str) -> datetime:
+    return datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+
+
+def derived_date_values(f: FieldInfo, normalized: str) -> dict[str, str | int]:
+    dt = parse_date(normalized)
+    return {f.derived_key(part): fn(dt) for part, fn in DATE_DERIVED.items()}
 
 
 def normalize_date(value: Any) -> str:
@@ -112,9 +151,11 @@ def normalize_value(value: Any, field_type: str) -> Any:
 
 
 async def list_fields(conn: AsyncConnection, project_pk: int) -> dict[str, FieldInfo]:
-    cur = await conn.execute("SELECT pk, name, type, unique_field FROM fields WHERE project_pk = %s ORDER BY pk", [project_pk])
+    cur = await conn.execute(
+        "SELECT pk, name, type, unique_field, primary_date FROM fields WHERE project_pk = %s ORDER BY pk", [project_pk]
+    )
     rows = await cur.fetchall()
-    return {r["name"]: FieldInfo(pk=r["pk"], name=r["name"], type=r["type"], unique_field=r["unique_field"]) for r in rows}  # type: ignore[index, call-overload]
+    return {r["name"]: FieldInfo(**r) for r in rows}  # type: ignore[index, call-overload, arg-type]
 
 
 async def create_fields(
@@ -123,8 +164,12 @@ async def create_fields(
     """
     Create fields that do not exist yet. Existing fields must have the same type.
     (Unlike in elastic, changing a type would only require rewriting the values of this field)
+
+    The first date field of a project becomes its *primary date*: its value is also stored in the
+    documents.sort_date column, which (unlike json keys) pg_search can use for fast sorting.
     """
     current = await list_fields(conn, project_pk)
+    has_primary_date = any(f.primary_date for f in current.values())
     unique_fields = unique_fields or []
     for name, field_type in fields.items():
         storage_column(field_type)  # validates the type
@@ -132,9 +177,11 @@ async def create_fields(
             if current[name].type != field_type:
                 raise ValueError(f"Field {name!r} already exists with type {current[name].type!r}")
             continue
+        primary_date = field_type == "date" and not has_primary_date
+        has_primary_date = has_primary_date or primary_date
         await conn.execute(
-            "INSERT INTO fields (project_pk, name, type, unique_field) VALUES (%s, %s, %s, %s)",
-            [project_pk, name, field_type, name in unique_fields],
+            "INSERT INTO fields (project_pk, name, type, unique_field, primary_date) VALUES (%s, %s, %s, %s, %s)",
+            [project_pk, name, field_type, name in unique_fields, primary_date],
         )
     return await list_fields(conn, project_pk)
 

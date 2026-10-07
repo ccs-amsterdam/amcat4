@@ -20,3 +20,11 @@ def test_matches_are_limited():
 
 def test_highlight():
     assert highlight("a fox b", [[2, 5]]) == "a <em>fox</em> b"
+
+
+def test_byte_to_char_positions():
+    from amcat4.postgres.snippets import byte_to_char_positions
+
+    text = "Café über fox"
+    assert byte_to_char_positions(text, [[12, 15]]) == [[10, 13]]
+    assert byte_to_char_positions("plain fox", [[6, 9]]) == [[6, 9]]

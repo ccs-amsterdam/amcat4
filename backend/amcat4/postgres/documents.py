@@ -8,29 +8,53 @@ INSERT ... SELECT ... ON CONFLICT statement. This is fast and gives us proper up
 import hashlib
 import json
 import uuid
-from typing import Any, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Iterable, Literal
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, sql
 from psycopg.types.json import Jsonb
 
-from amcat4.postgres.fields import FieldInfo, normalize_value
+from amcat4.postgres.fields import DATE_DERIVED, FieldInfo, FieldSet, derived_date_values, normalize_value
+
+if TYPE_CHECKING:
+    from amcat4.postgres.search import SearchQuery
 
 OnConflict = Literal["update", "replace", "skip", "error"]
 
 
-def split_document(document: dict[str, Any], fields: dict[str, FieldInfo]) -> tuple[dict, dict, dict]:
-    """Split a {name: value} document into (text_data, meta_data, extra_data) dicts keyed by field key"""
-    text: dict[str, Any] = {}
-    meta: dict[str, Any] = {}
-    extra: dict[str, Any] = {}
+def stored_values(f: FieldInfo, value: Any) -> dict[str, Any]:
+    """The json key(s) and value(s) to store for a field value (date fields also store derived values)"""
+    normalized = normalize_value(value, f.type)
+    out = {f.key: normalized}
+    if f.type == "date":
+        out.update(derived_date_values(f, normalized))
+    return out
+
+
+def stored_keys(f: FieldInfo) -> list[str]:
+    keys = [f.key]
+    if f.type == "date":
+        keys += [f.derived_key(part) for part in DATE_DERIVED]
+    return keys
+
+
+def split_document(document: dict[str, Any], fields: dict[str, FieldInfo]) -> tuple[dict, dict, dict, str | None]:
+    """
+    Split a {name: value} document into (text_data, meta_data, extra_data) dicts keyed by field key,
+    and the value for the sort_date column (the primary date field)
+    """
+    columns: dict[str, dict[str, Any]] = {"text_data": {}, "meta_data": {}, "extra_data": {}}
+    sort_date = None
     for name, value in document.items():
         if name == "_id" or value is None:
             continue
         f = fields.get(name)
         if f is None:
             raise ValueError(f"Field {name!r} is not yet specified")
-        {"text_data": text, "meta_data": meta, "extra_data": extra}[f.column][f.key] = normalize_value(value, f.type)
-    return text, meta, extra
+        values = stored_values(f, value)
+        columns[f.column].update(values)
+        if f.primary_date:
+            sort_date = values[f.key]
+    return columns["text_data"], columns["meta_data"], columns["extra_data"], sort_date
 
 
 def dedup_hash(document: dict[str, Any], fields: dict[str, FieldInfo]) -> bytes | None:
@@ -55,7 +79,7 @@ def join_document(row: dict[str, Any], fields: dict[str, FieldInfo], names: Iter
 
 _STAGING = """
 CREATE TEMP TABLE IF NOT EXISTS staging_documents (
-    doc_id text, dedup_hash bytea, text_data jsonb, meta_data jsonb, extra_data jsonb, source jsonb
+    doc_id text, dedup_hash bytea, text_data jsonb, meta_data jsonb, extra_data jsonb, source jsonb, sort_date timestamptz
 ) ON COMMIT DELETE ROWS
 """
 
@@ -63,9 +87,10 @@ _CONFLICT = {
     "update": """DO UPDATE SET text_data = documents.text_data || EXCLUDED.text_data,
                               meta_data = documents.meta_data || EXCLUDED.meta_data,
                               extra_data = coalesce(documents.extra_data, '{}') || coalesce(EXCLUDED.extra_data, '{}'),
+                              sort_date = coalesce(EXCLUDED.sort_date, documents.sort_date),
                               updated_at = now()""",
     "replace": """DO UPDATE SET text_data = EXCLUDED.text_data, meta_data = EXCLUDED.meta_data,
-                               extra_data = EXCLUDED.extra_data, updated_at = now()""",
+                               extra_data = EXCLUDED.extra_data, sort_date = EXCLUDED.sort_date, updated_at = now()""",
     "skip": "DO NOTHING",
 }
 
@@ -90,10 +115,10 @@ async def upload_documents(
     async with conn.transaction():
         await conn.execute(_STAGING)
         async with conn.cursor().copy(
-            "COPY staging_documents (doc_id, dedup_hash, text_data, meta_data, extra_data, source) FROM STDIN"
+            "COPY staging_documents (doc_id, dedup_hash, text_data, meta_data, extra_data, source, sort_date) FROM STDIN"
         ) as copy:
             for doc in documents:
-                text, meta, extra = split_document(doc, fields)
+                text, meta, extra, sort_date = split_document(doc, fields)
                 doc_id = str(doc.get("_id") or uuid.uuid4().hex)
                 await copy.write_row(
                     [
@@ -103,6 +128,7 @@ async def upload_documents(
                         Jsonb(meta),
                         Jsonb(extra) if extra else None,
                         Jsonb(source) if source else None,
+                        sort_date,
                     ]
                 )
         target = "(project_pk, dedup_hash) WHERE dedup_hash IS NOT NULL" if has_unique else "(project_pk, doc_id)"
@@ -110,8 +136,8 @@ async def upload_documents(
         # a batch can contain duplicates itself, which ON CONFLICT cannot handle, so keep the last one
         key = "dedup_hash" if has_unique else "doc_id"
         cur = await conn.execute(
-            f"""INSERT INTO documents (project_pk, doc_id, dedup_hash, text_data, meta_data, extra_data, source)
-                SELECT DISTINCT ON ({key}) %s, doc_id, dedup_hash, text_data, meta_data, extra_data, source
+            f"""INSERT INTO documents (project_pk, doc_id, dedup_hash, text_data, meta_data, extra_data, source, sort_date)
+                SELECT DISTINCT ON ({key}) %s, doc_id, dedup_hash, text_data, meta_data, extra_data, source, sort_date
                 FROM (SELECT *, row_number() OVER () AS rn FROM staging_documents) s
                 ORDER BY {key}, rn DESC
                 {conflict}""",  # type: ignore[arg-type]
@@ -147,18 +173,97 @@ async def copy_documents(
     fields in field_map (source field -> destination field). Provenance is recorded in the source column.
     """
 
+    for s, d in field_map.items():
+        if s.type != d.type:
+            raise ValueError(f"Cannot copy {s.name} ({s.type}) to {d.name} ({d.type})")
+
     def remap(column: str) -> str:
-        pairs = [(s, d) for s, d in field_map.items() if s.column == column]
+        pairs = [
+            (s_key, d_key)
+            for s, d in field_map.items()
+            if s.column == column
+            for s_key, d_key in zip(stored_keys(s), stored_keys(d))
+        ]
         if not pairs:
             return "'{}'::jsonb"
-        args = ", ".join(f"'{d.key}', {column}->'{s.key}'" for s, d in pairs)
+        args = ", ".join(f"'{d_key}', {column}->'{s_key}'" for s_key, d_key in pairs)
         return f"jsonb_strip_nulls(jsonb_build_object({args}))"
 
+    primary = [s for s, d in field_map.items() if d.primary_date]
+    sort_date = f"(meta_data->>'{primary[0].key}')::timestamptz" if primary else "NULL"
+
     cur = await conn.execute(
-        f"""INSERT INTO documents (project_pk, doc_id, dedup_hash, text_data, meta_data, extra_data, source)
+        f"""INSERT INTO documents (project_pk, doc_id, dedup_hash, text_data, meta_data, extra_data, source, sort_date)
             SELECT %s, doc_id, dedup_hash, {remap("text_data")}, {remap("meta_data")}, {remap("extra_data")},
-                   jsonb_build_object('project_pk', project_pk, 'doc_id', doc_id)
+                   jsonb_build_object('project_pk', project_pk, 'doc_id', doc_id), {sort_date}
             FROM documents WHERE project_pk = %s AND ({where_sql})""",  # type: ignore[arg-type]
         [to_project_pk, from_project_pk, *(where_params or [])],
     )
+    return cur.rowcount
+
+
+async def update_tag_by_query(
+    conn: AsyncConnection,
+    fieldset: FieldSet,
+    query: "SearchQuery",
+    field: FieldInfo,
+    tag: str,
+    action: Literal["add", "remove"],
+) -> int:
+    """Add or remove a tag on all documents matching the query. Returns the number of changed documents."""
+    from amcat4.postgres.search import compile_search
+
+    if field.type != "tag":
+        raise ValueError(f"Field {field.name} is not a tag field")
+    c = compile_search(fieldset, query)
+    key = sql.Literal(field.key)
+    if action == "add":
+        stmt = sql.SQL(
+            """UPDATE documents SET meta_data = jsonb_set(meta_data, ARRAY[{key}],
+                   coalesce(meta_data->{key}, '[]'::jsonb) || to_jsonb(%s::text)), updated_at = now()
+               WHERE {where} AND NOT coalesce(meta_data->{key} ? %s, false)"""
+        )
+    else:
+        stmt = sql.SQL(
+            """UPDATE documents SET meta_data = CASE WHEN meta_data->{key} = to_jsonb(ARRAY[%s::text])
+                   THEN meta_data - {key} ELSE jsonb_set(meta_data, ARRAY[{key}], (meta_data->{key}) - %s) END,
+                   updated_at = now()
+               WHERE {where} AND coalesce(meta_data->{key} ? %s, false)"""
+        )
+    params = [tag, *c.params, tag] if action == "add" else [tag, tag, *c.params, tag]
+    cur = await conn.execute(stmt.format(key=key, where=c.where), params)
+    return cur.rowcount
+
+
+async def update_by_query(
+    conn: AsyncConnection, fieldset: FieldSet, query: "SearchQuery", field: FieldInfo, value: Any
+) -> int:
+    """Set (or with value=None: remove) a field on all documents matching the query"""
+    from amcat4.postgres.search import compile_search
+
+    c = compile_search(fieldset, query)
+    column = sql.Identifier(field.column)
+    sort_date = sql.SQL(", sort_date = %s") if field.primary_date else sql.SQL("")
+    if value is None:
+        stmt = sql.SQL("UPDATE documents SET {col} = {col} - %s::text[]{sort_date}, updated_at = now() WHERE {where}")
+        params: list[Any] = [stored_keys(field)]
+        if field.primary_date:
+            params.append(None)
+    else:
+        stmt = sql.SQL(
+            "UPDATE documents SET {col} = coalesce({col}, '{{}}') || %s{sort_date}, updated_at = now() WHERE {where}"
+        )
+        values = stored_values(field, value)
+        params = [Jsonb(values)]
+        if field.primary_date:
+            params.append(values[field.key])
+    cur = await conn.execute(stmt.format(col=column, sort_date=sort_date, where=c.where), [*params, *c.params])
+    return cur.rowcount
+
+
+async def delete_by_query(conn: AsyncConnection, fieldset: FieldSet, query: "SearchQuery") -> int:
+    from amcat4.postgres.search import compile_search
+
+    c = compile_search(fieldset, query)
+    cur = await conn.execute(sql.SQL("DELETE FROM documents WHERE {}").format(c.where), c.params)
     return cur.rowcount

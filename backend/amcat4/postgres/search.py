@@ -16,8 +16,8 @@ from amcat4.models import FilterSpec, SnippetParams
 from amcat4.postgres.fields import FieldInfo, FieldSet, QueryError
 from amcat4.postgres.filters import compile_filters, field_sql
 from amcat4.postgres.querystring import query_string_to_json
+from amcat4.postgres.snippets import byte_to_char_positions, make_snippet
 from amcat4.postgres.snippets import highlight as highlight_text
-from amcat4.postgres.snippets import make_snippet
 
 
 @dataclass
@@ -80,7 +80,12 @@ def order_by(fieldset: FieldSet, sort: list[tuple[str, Literal["asc", "desc"]]] 
         elif name == "?":
             items.append(sql.SQL("random()"))
         else:
-            items.append(sql.SQL("{} {}").format(_coalesce(fieldset.by_name[name]), direction))
+            fs = fieldset.by_name[name]
+            if all(f.primary_date for f in fs):
+                # sort_date is a real column, which pg_search can use for a fast Top-K scan
+                items.append(sql.SQL("documents.sort_date {}").format(direction))
+            else:
+                items.append(sql.SQL("{} {}").format(_coalesce(fs), direction))
     if not items and scored:
         items.append(sql.SQL("paradedb.score(documents.id) DESC"))
     items.append(sql.SQL("documents.id"))
@@ -145,7 +150,7 @@ async def search(
             if f is None:
                 continue
             value = row[f.key]  # type: ignore[index, call-overload]
-            positions = row.get("_pos_" + f.key)  # type: ignore[union-attr]
+            positions = byte_to_char_positions(value, row.get("_pos_" + f.key))  # type: ignore[union-attr]
             if name in snippets:
                 value = make_snippet(value, positions, snippets[name], *(("<em>", "</em>") if highlight else ("", "")))
             elif highlight and positions:

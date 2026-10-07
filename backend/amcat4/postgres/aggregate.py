@@ -13,8 +13,8 @@ from typing import Any, Literal
 
 from psycopg import AsyncConnection, sql
 
-from amcat4.postgres.fields import FieldInfo, FieldSet, QueryError
-from amcat4.postgres.filters import DATE_PARTS, DATE_TRUNC, field_sql
+from amcat4.postgres.fields import DATE_DERIVED, FieldInfo, FieldSet, QueryError
+from amcat4.postgres.filters import DATE_TRUNC, field_sql
 from amcat4.postgres.search import SearchQuery, compile_search
 
 MetricFunction = Literal["sum", "avg", "min", "max", "count"]
@@ -51,15 +51,18 @@ def _axis_expr(axis: Axis, fs: list[FieldInfo], lateral_alias: str) -> tuple[sql
         )
         return sql.SQL("{}.value").format(sql.Identifier(lateral_alias)), lateral
 
+    if axis.interval is None or (ftype == "date" and axis.interval in DATE_DERIVED):
+        # Group on the raw json value (or the derived date key), which pg_search can aggregate inside the
+        # index. Values are converted to the right type afterwards.
+        keys = [f.key if axis.interval is None else f.derived_key(axis.interval) for f in fs]
+        raws = [sql.SQL("documents.meta_data->>{}").format(sql.Literal(k)) for k in keys]
+        return (raws[0] if len(raws) == 1 else sql.SQL("coalesce({})").format(sql.SQL(", ").join(raws))), None
+
     exprs = [field_sql(f) for f in fs]
     x = exprs[0] if len(exprs) == 1 else sql.SQL("coalesce({})").format(sql.SQL(", ").join(exprs))
-    if axis.interval is None:
-        return x, None
     if ftype == "date":
         if axis.interval in DATE_TRUNC:
             return sql.SQL("date_trunc({}, {})").format(sql.Literal(axis.interval), x), None
-        if axis.interval in DATE_PARTS:
-            return sql.SQL(DATE_PARTS[axis.interval].replace("{x}", "{0}")).format(x), None  # type: ignore[arg-type]
         raise QueryError(f"Unknown date interval: {axis.interval}")
     if ftype in ("number", "integer"):
         interval = float(axis.interval)
@@ -76,12 +79,35 @@ def _metric_expr(metric: Metric, fieldset: FieldSet) -> sql.Composable:
     return sql.SQL("{}({})").format(sql.SQL(metric.function), x)
 
 
-def _postprocess(value: Any, axis: Axis) -> Any:
-    if isinstance(value, datetime) and axis.interval in ("year", "quarter", "month", "week", "day"):
-        return value.date()
-    if axis.interval in ("monthnr", "yearnr", "decade", "dayofmonth", "weeknr") and isinstance(value, (int, float, Decimal)):
-        return int(value)
+def _postprocess(value: Any, axis: Axis, ftype: str) -> Any:
+    """Convert the (textual) group value to the right type"""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date() if axis.interval == "quarter" else value
+    if isinstance(value, Decimal):
+        return float(value)
+    if ftype == "date" and axis.interval is None:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    match axis.interval if ftype == "date" else ftype:
+        case "year":
+            return date(int(value), 1, 1)
+        case "month":
+            return date.fromisoformat(value + "-01")
+        case "week" | "day":
+            return date.fromisoformat(value)
+        case "monthnr" | "yearnr" | "decade" | "dayofmonth" | "weeknr" | "integer":
+            return int(value)
+        case "number":
+            return float(value)
+        case "boolean":
+            return value == "true"
     return value
+
+
+def _sort_key(row: dict, axes: list[Axis]) -> tuple:
+    # sort by axis values (None last), with values of mixed types compared as strings
+    return tuple((row[ax.name] is None, str(type(row[ax.name])), row[ax.name] or 0) for ax in axes)
 
 
 async def aggregate(
@@ -120,23 +146,25 @@ async def aggregate(
     for metric in metrics:
         selects.append(sql.SQL("{} AS {}").format(_metric_expr(metric, fieldset), sql.Identifier(metric.name)))
 
+    # No ORDER BY / LIMIT in SQL: that prevents pg_search from running the aggregation inside the index.
+    # We sort the (typed) results in python instead.
     group = sql.SQL("")
     if axes:
-        positions = sql.SQL(", ").join(sql.Literal(i + 1) for i in range(len(axes)))
-        group = sql.SQL("GROUP BY {} ORDER BY {}").format(positions, positions)
-    stmt = sql.SQL("SELECT {} FROM documents {} WHERE {} {} LIMIT %s").format(
+        group = sql.SQL("GROUP BY {}").format(sql.SQL(", ").join(sql.Literal(i + 1) for i in range(len(axes))))
+    stmt = sql.SQL("SELECT {} FROM documents {} WHERE {} {}").format(
         sql.SQL(", ").join(selects), sql.SQL(" ").join(laterals), c.where, group
     )
-    cur = await conn.execute(stmt, [*c.params, limit])
+    cur = await conn.execute(stmt, c.params)
     rows = await cur.fetchall()
     out = []
     for row in rows:
         d = dict(row)  # type: ignore[arg-type]
         for axis in axes:
-            d[axis.name] = _postprocess(d[axis.name], axis)
+            d[axis.name] = _postprocess(d[axis.name], axis, fieldset.type(axis.field))
         for metric in metrics:
             if isinstance(d[metric.name], (date, datetime)) or d[metric.name] is None:
                 continue
             d[metric.name] = float(d[metric.name])
         out.append(d)
-    return out
+    out.sort(key=lambda row: _sort_key(row, axes))
+    return out[:limit]

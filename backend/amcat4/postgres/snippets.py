@@ -96,3 +96,14 @@ def highlight(
         cursor = end
     parts.append(text[cursor:])
     return "".join(parts)
+
+
+def byte_to_char_positions(text: str | None, positions: list[list[int]] | None) -> list[list[int]] | None:
+    """pg_search returns utf-8 byte offsets; convert them to character offsets"""
+    if not text or not positions or text.isascii():
+        return positions
+    encoded = text.encode("utf-8")
+    return [
+        [len(encoded[:start].decode("utf-8", "ignore")), len(encoded[:end].decode("utf-8", "ignore"))]
+        for start, end in positions
+    ]

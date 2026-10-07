@@ -2,7 +2,8 @@
 Filters for the postgres backend.
 
 A filter compiles to pg_search json clauses where possible (so filtering happens inside the BM25 index),
-and to plain SQL conditions otherwise (e.g. derived date parts like month number or day of week).
+and to plain SQL conditions otherwise (currently only 'exists' on text fields). Date part filters (month number,
+day of week) use the derived keys that are stored for every date field.
 """
 
 from dataclasses import dataclass, field
@@ -11,7 +12,7 @@ from typing import Any
 from psycopg import sql
 
 from amcat4.models import FilterSpec
-from amcat4.postgres.fields import FieldInfo, FieldSet, QueryError, normalize_value
+from amcat4.postgres.fields import DATE_DERIVED, FieldInfo, FieldSet, QueryError, normalize_value
 from amcat4.postgres.querystring import range_query
 
 
@@ -30,27 +31,8 @@ def field_sql(f: FieldInfo, table: str = "documents") -> sql.Composable:
             return raw
 
 
-# Derived date values, usable both as filter (FilterSpec.monthnr etc.) and as aggregation interval
-DATE_PARTS: dict[str, str] = {
-    "dayofweek": "trim(to_char({x}, 'Day'))",
-    "daypart": (
-        "CASE WHEN extract(hour from {x}) < 6 THEN 'Night' WHEN extract(hour from {x}) < 12 THEN 'Morning' "
-        "WHEN extract(hour from {x}) < 18 THEN 'Afternoon' ELSE 'Evening' END"
-    ),
-    "monthnr": "extract(month from {x})::int",
-    "yearnr": "extract(year from {x})::int",
-    "decade": "(floor(extract(year from {x}) / 10) * 10)::int",
-    "dayofmonth": "extract(day from {x})::int",
-    "weeknr": "extract(week from {x})::int",
-}
-
-DATE_TRUNC = {"year", "quarter", "month", "week", "day", "hour", "minute"}
-
-
-def date_part_sql(f: FieldInfo, part: str) -> sql.Composable:
-    template = DATE_PARTS[part]
-    x = field_sql(f)
-    return sql.SQL(template.replace("{x}", "{0}")).format(x)  # type: ignore[arg-type]
+# Date intervals that are computed in SQL for aggregation (other intervals use the derived keys, see fields.py)
+DATE_TRUNC = {"quarter", "hour", "minute"}
 
 
 @dataclass
@@ -131,10 +113,10 @@ def _compile_filter(f: FieldInfo, spec: FilterSpec) -> tuple[list[dict], list[sq
             sql_clauses.append(cond if exists else sql.SQL("NOT ({})").format(cond))
 
     for part in list(d.keys()):
-        if part in DATE_PARTS:
+        if part in DATE_DERIVED:
             if f.type != "date":
                 raise QueryError(f"Filter {part} requires a date field, {f.name} is {f.type}")
-            sql_clauses.append(sql.SQL("{} = {}").format(date_part_sql(f, part), sql.Literal(d.pop(part))))
+            clauses.append({"term": {"field": f.derived_path(part), "value": d.pop(part)}})
 
     if d:
         raise QueryError(f"Unknown filter type(s): {d}")
