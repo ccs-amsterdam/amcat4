@@ -62,8 +62,7 @@ export function autoTypeColumn(data: Record<string, jsType>[], name: string): Co
   if (isBoolean) return { ...column, type: "boolean" };
 
   const pctUnique = percentUnique(data, name);
-  if (pctUnique < 0.5 && !hasValueLongerThan(data, name, 100))
-    return { ...column, type: "keyword" };
+  if (pctUnique < 0.5 && !hasValueLongerThan(data, name, 100)) return { ...column, type: "keyword" };
 
   if (!hasSpaces(data, name)) return { ...column, type: "keyword" };
 
@@ -99,20 +98,29 @@ export async function validateColumns(
   return columns.map((column) => {
     if (column.status !== "Validating") return column;
 
-    if (column.type === "keyword") {
-      if (hasValueLongerThan(data, column.name, 256)) {
-        return {
-          ...column,
-          status: "Type invalid",
-          typeWarning: "Some values are too long (> 256 chars) to be a keyword. These will be skipped",
-        };
-      }
-    }
-
     if (column.type === "text" || column.type === "keyword") {
       const empty = countEmpty(data, column.name);
       if (empty > 0) {
         return { ...column, status: "Type invalid", typeWarning: `${empty} empty values` };
+      }
+      if (column.type === "keyword") {
+        // Long values are stored fine, but the search index cannot match a single term over ~64KB (utf-8)
+        if (hasValueLongerThanBytes(data, column.name, 65000)) {
+          return {
+            ...column,
+            status: "Type warning",
+            typeWarning:
+              "Some values are too long (> 64KB) to filter or search on as a keyword. Are you sure this isn't a 'text' type?",
+          };
+        }
+        if (hasValueLongerThan(data, column.name, 256)) {
+          return {
+            ...column,
+            status: "Type warning",
+            typeWarning:
+              "Some values are long (> 256 characters). Keywords are meant for short labels. Are you sure this isn't a 'text' type?",
+          };
+        }
       }
       const invalid = listInvalid(data, column.name, coerceNumeric);
       if (invalid.length === 0) {
@@ -285,6 +293,15 @@ function percentUnique(data: Record<string, jsType>[], column: string) {
 
 function hasValueLongerThan(data: Record<string, jsType>[], column: string, max: number) {
   return data.some((d) => String(d[column]).length > max);
+}
+
+function hasValueLongerThanBytes(data: Record<string, jsType>[], column: string, max: number) {
+  const encoder = new TextEncoder();
+  // a string with fewer than max/3 characters cannot exceed max bytes (at most 3 utf-8 bytes per utf-16 unit)
+  return data.some((d) => {
+    const value = String(d[column]);
+    return value.length * 3 > max && encoder.encode(value).length > max;
+  });
 }
 
 function hasSpaces(data: Record<string, jsType>[], column: string) {
