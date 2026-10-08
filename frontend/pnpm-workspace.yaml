@@ -1,0 +1,6 @@
+allowBuilds:
+  esbuild: true
+  sharp: true
+overrides:
+  minimatch: ^10.0.0
+  flatted: '>=3.4.0'
