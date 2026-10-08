@@ -1,10 +1,12 @@
-"""Initial schema (the schema of AmCAT before migrations were introduced)
+"""Initial schema
 
 Revision ID: 0001
 Revises:
 Create Date: 2026-10-08
 
-Uses IF NOT EXISTS, so that databases created before migrations were introduced are upgraded cleanly.
+The documents table is hash partitioned on project_pk, so each partition has its own (smaller) BM25 index:
+queries on a project only use the index of its partition, and an index can be rebuilt (after mass updates) one
+partition at a time. See amcat4/postgres/layout.py for the design.
 """
 
 from typing import Sequence
@@ -16,15 +18,18 @@ down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# Changing the number of partitions later means rewriting the whole documents table
+DOCUMENT_PARTITIONS = 64
+
 TABLES = [
     """
-    CREATE TABLE IF NOT EXISTS server_settings (
+    CREATE TABLE server_settings (
         id boolean PRIMARY KEY DEFAULT true CHECK (id),
         settings jsonb NOT NULL DEFAULT '{}'
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS projects (
+    CREATE TABLE projects (
         pk integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         id text NOT NULL UNIQUE,
         name text,
@@ -37,16 +42,16 @@ TABLES = [
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS roles (
+    CREATE TABLE roles (
         email text NOT NULL,
         project_pk integer REFERENCES projects(pk) ON DELETE CASCADE,  -- NULL for server roles
         role text NOT NULL
     )
     """,
-    "CREATE UNIQUE INDEX IF NOT EXISTS roles_unique ON roles (coalesce(project_pk, 0), email)",
-    "CREATE INDEX IF NOT EXISTS roles_email ON roles (email)",
+    "CREATE UNIQUE INDEX roles_unique ON roles (coalesce(project_pk, 0), email)",
+    "CREATE INDEX roles_email ON roles (email)",
     """
-    CREATE TABLE IF NOT EXISTS api_keys (
+    CREATE TABLE api_keys (
         id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
         email text NOT NULL,
         name text NOT NULL,
@@ -56,9 +61,9 @@ TABLES = [
         restrictions jsonb NOT NULL DEFAULT '{}'
     )
     """,
-    "CREATE INDEX IF NOT EXISTS api_keys_email ON api_keys (email)",
+    "CREATE INDEX api_keys_email ON api_keys (email)",
     """
-    CREATE TABLE IF NOT EXISTS requests (
+    CREATE TABLE requests (
         id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         type text NOT NULL,
         email text NOT NULL,
@@ -70,11 +75,11 @@ TABLES = [
     )
     """,
     """
-    CREATE UNIQUE INDEX IF NOT EXISTS requests_unique
+    CREATE UNIQUE INDEX requests_unique
         ON requests (type, email, coalesce(project_pk, 0), coalesce(new_project_id, ''))
     """,
     """
-    CREATE TABLE IF NOT EXISTS object_storage (
+    CREATE TABLE object_storage (
         project_pk integer NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
         field text NOT NULL,
         filepath text NOT NULL,
@@ -87,7 +92,7 @@ TABLES = [
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS fields (
+    CREATE TABLE fields (
         pk integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         project_pk integer NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
         name text NOT NULL,
@@ -102,8 +107,8 @@ TABLES = [
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS documents (
-        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    CREATE TABLE documents (
+        id bigint GENERATED ALWAYS AS IDENTITY,
         project_pk integer NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
         doc_id text NOT NULL,
         dedup_hash text,  -- hash of the values of the unique fields of the project
@@ -116,14 +121,21 @@ TABLES = [
         sort_keyword text COLLATE "C",
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now(),
+        -- unique constraints on a partitioned table must include the partition key
+        PRIMARY KEY (id, project_pk),
         UNIQUE (project_pk, doc_id)
-    )
+    ) PARTITION BY HASH (project_pk)
     """,
+    *[
+        f"CREATE TABLE documents_p{i:02} PARTITION OF documents FOR VALUES WITH (MODULUS {DOCUMENT_PARTITIONS}, REMAINDER {i})"
+        for i in range(DOCUMENT_PARTITIONS)
+    ],
     """
-    CREATE UNIQUE INDEX IF NOT EXISTS documents_dedup ON documents (project_pk, dedup_hash) WHERE dedup_hash IS NOT NULL
+    CREATE UNIQUE INDEX documents_dedup ON documents (project_pk, dedup_hash) WHERE dedup_hash IS NOT NULL
     """,
+    # Creates a BM25 index on every partition
     """
-    CREATE INDEX IF NOT EXISTS documents_bm25 ON documents USING bm25 (
+    CREATE INDEX documents_bm25 ON documents USING bm25 (
         id,
         project_pk,
         sort_date,
@@ -134,7 +146,7 @@ TABLES = [
     ) WITH (mutable_segment_rows = 0)
     """,
     """
-    CREATE TABLE IF NOT EXISTS jobs (
+    CREATE TABLE jobs (
         id text PRIMARY KEY,
         type text NOT NULL,
         status text NOT NULL,  -- pending, running, done, failed, cancelled
@@ -148,13 +160,15 @@ TABLES = [
         updated_at timestamptz NOT NULL DEFAULT now()
     )
     """,
-    "CREATE INDEX IF NOT EXISTS jobs_status ON jobs (status)",
+    "CREATE INDEX jobs_status ON jobs (status)",
     """
-    CREATE TABLE IF NOT EXISTS document_vectors (
-        document_id bigint NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    CREATE TABLE document_vectors (
+        document_id bigint NOT NULL,
+        project_pk integer NOT NULL,  -- needed for the foreign key to the (partitioned) documents table
         field_pk integer NOT NULL REFERENCES fields(pk) ON DELETE CASCADE,
         embedding public.vector NOT NULL,
-        PRIMARY KEY (field_pk, document_id)
+        PRIMARY KEY (field_pk, document_id),
+        FOREIGN KEY (document_id, project_pk) REFERENCES documents(id, project_pk) ON DELETE CASCADE
     )
     """,
 ]
@@ -165,8 +179,6 @@ def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public")
     for statement in TABLES:
         op.execute(statement)
-    # Replaced by alembic's version table
-    op.execute("DROP TABLE IF EXISTS schema_version")
 
 
 def downgrade() -> None:
@@ -182,4 +194,4 @@ def downgrade() -> None:
         "projects",
         "server_settings",
     ]:
-        op.execute(f"DROP TABLE IF EXISTS {table}")
+        op.execute(f"DROP TABLE {table}")

@@ -135,9 +135,10 @@ async def benchmark() -> None:
         await conn.execute("VACUUM ANALYZE documents")  # also merges BM25 index segments
     results["vacuum_seconds"] = round(time.perf_counter() - t0, 1)
     row = await fetch_one(
-        """SELECT pg_size_pretty(pg_table_size('documents')) AS table_incl_toast,
-                  pg_size_pretty(pg_relation_size('documents_bm25')) AS bm25_index,
-                  pg_size_pretty(pg_total_relation_size('documents')) AS total"""
+        # documents and its BM25 index are partitioned: sum the sizes of the partitions
+        """SELECT pg_size_pretty((SELECT sum(pg_table_size(relid)) FROM pg_partition_tree('documents'))) AS table_incl_toast,
+                  pg_size_pretty((SELECT sum(pg_relation_size(relid)) FROM pg_partition_tree('documents_bm25'))) AS bm25_index,
+                  pg_size_pretty((SELECT sum(pg_total_relation_size(relid)) FROM pg_partition_tree('documents'))) AS total"""
     )
     results["sizes"] = row
     print(f"VACUUM: {results['vacuum_seconds']}s. Sizes: {row}")

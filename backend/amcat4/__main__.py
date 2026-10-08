@@ -155,16 +155,26 @@ def create_env(args):
 
 
 async def optimize(args):
-    """Database maintenance: vacuum (which also merges search index segments), and optionally rebuild the index"""
+    """
+    Database maintenance: vacuum (which also merges search index segments), and optionally rebuild the index.
+    With a project, only the documents partition (and index) that contains the project is optimized.
+    """
+    from psycopg import sql
+
     from amcat4.postgres.connection import connection
+    from amcat4.postgres.layout import document_partition
+    from amcat4.postgres.projects import project_pk
 
     async with amcat_connections():
         async with connection() as conn:
-            logging.info("Running VACUUM ANALYZE on the documents table")
-            await conn.execute("VACUUM ANALYZE documents")
+            table, index = "documents", "documents_bm25"
+            if args.project:
+                table, index = await document_partition(conn, await project_pk(args.project))
+            logging.info(f"Running VACUUM ANALYZE on {table}")
+            await conn.execute(sql.SQL("VACUUM ANALYZE {}").format(sql.Identifier(table)))
             if args.reindex:
-                logging.info("Rebuilding the full-text search index (online, this can take a while)")
-                await conn.execute("REINDEX INDEX CONCURRENTLY documents_bm25")
+                logging.info(f"Rebuilding the full-text search index {index} (online, this can take a while)")
+                await conn.execute(sql.SQL("REINDEX INDEX CONCURRENTLY {}").format(sql.Identifier(index)))
     logging.info("Done")
 
 
@@ -267,6 +277,7 @@ def main():
 
     p = subparsers.add_parser("optimize", help="Database maintenance (vacuum, and optionally rebuild the search index)")
     p.add_argument("--reindex", action="store_true", help="Also rebuild the full-text search index (online)")
+    p.add_argument("--project", help="Only optimize the partition (1/64th of the documents table) that contains this project")
     p.set_defaults(func=optimize)
 
     p = subparsers.add_parser("create-test-index", help=f"Create the {SOTU_INDEX} test index")

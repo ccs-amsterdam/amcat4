@@ -13,7 +13,7 @@ from alembic.script import ScriptDirectory
 
 from amcat4.connections import db_schema
 from amcat4.postgres.connection import connection
-from amcat4.postgres.schema import drop_schema
+from amcat4.postgres.layout import drop_schema
 
 
 def _alembic_config() -> Config:

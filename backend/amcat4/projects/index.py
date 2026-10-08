@@ -128,7 +128,7 @@ async def index_size_in_bytes(index_id: IndexId) -> int:
     """(Approximate) size of the documents of the project, as stored on disk (after compression)"""
     row = await fetch_one(
         """SELECT coalesce(sum(pg_column_size(d.*)), 0) AS bytes FROM documents d
-           JOIN projects p ON p.pk = d.project_pk WHERE p.id = %s""",
+           WHERE d.project_pk = (SELECT pk FROM projects WHERE id = %s)""",
         [index_id],
     )
     return int(row["bytes"]) if row else 0

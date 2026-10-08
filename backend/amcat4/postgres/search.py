@@ -66,8 +66,10 @@ def compile_search(fieldset: FieldSet, query: SearchQuery) -> CompiledSearch:
     if query.queries:
         qs = [_compile_query_string(label, q, fieldset) for label, q in query.queries.items()]
         must.append(qs[0] if len(qs) == 1 else {"boolean": {"should": qs}})
-    sql_clauses: list[sql.Composable] = []
-    params: list[Any] = []
+    # The project condition is also in the json query, but postgres needs it in SQL to only scan the partitions
+    # of these projects
+    sql_clauses: list[sql.Composable] = [sql.SQL("documents.project_pk = ANY(%s)")]
+    params: list[Any] = [list(fieldset.project_pks)]
     filters = dict(query.filters or {})
     if "_id" in filters:
         sql_clauses.append(sql.SQL("documents.doc_id = ANY(%s)"))

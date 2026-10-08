@@ -252,7 +252,8 @@ async def upload_documents(
         assignments = _MERGE if op_type in ("update", "upsert") else _REPLACE
         cur = await conn.execute(
             f"""UPDATE documents SET {assignments} FROM staging_documents s
-                WHERE documents.id = s.target_id RETURNING documents.id"""  # type: ignore[arg-type]
+                WHERE documents.project_pk = %s AND documents.id = s.target_id RETURNING documents.id""",  # type: ignore[arg-type]
+            [project_pk],
         )
         updated = [row["id"] for row in await cur.fetchall()]  # type: ignore[index, call-overload]
         if unique and updated and op_type in ("update", "upsert"):
@@ -271,13 +272,13 @@ async def upload_documents(
                 await conn.execute("DELETE FROM document_vectors WHERE document_id = ANY(%s)", [updated])
             vector_rows = [(internal[rn], field_pk, v) for rn, d in enumerate(split) for field_pk, v in d.vectors.items()]
             if vector_rows:
-                await store_vectors(conn, vector_rows)
+                await store_vectors(conn, project_pk, vector_rows)
 
     return {"created": len(created), "updated": len(updated)}
 
 
-async def store_vectors(conn: AsyncConnection, rows: list[tuple[int, int, list[float]]]) -> None:
-    """Store vectors (document id, field pk, vector), creating a vector index for new fields"""
+async def store_vectors(conn: AsyncConnection, project_pk: int, rows: list[tuple[int, int, list[float]]]) -> None:
+    """Store vectors (document id, field pk, vector) of documents in the project, creating a vector index for new fields"""
     dims: dict[int, int] = {}
     for _, field_pk, vector in rows:
         if dims.setdefault(field_pk, len(vector)) != len(vector):
@@ -286,9 +287,10 @@ async def store_vectors(conn: AsyncConnection, rows: list[tuple[int, int, list[f
         await ensure_vector_index(conn, field_pk, n)
     async with conn.cursor() as cur:
         await cur.executemany(
-            """INSERT INTO document_vectors (document_id, field_pk, embedding) VALUES (%s, %s, %s::text::public.vector)
+            """INSERT INTO document_vectors (document_id, project_pk, field_pk, embedding)
+               VALUES (%s, %s, %s, %s::text::public.vector)
                ON CONFLICT (field_pk, document_id) DO UPDATE SET embedding = EXCLUDED.embedding""",
-            [(doc, field, json.dumps(vector)) for doc, field, vector in rows],
+            [(doc, project_pk, field, json.dumps(vector)) for doc, field, vector in rows],
         )
 
 
@@ -419,13 +421,13 @@ async def copy_batch(
             if s.column != "vector":
                 continue
             await conn.execute(
-                """INSERT INTO document_vectors (document_id, field_pk, embedding)
-                   SELECT new.id, %s, v.embedding FROM document_vectors v
-                   JOIN documents old ON old.id = v.document_id
+                """INSERT INTO document_vectors (document_id, project_pk, field_pk, embedding)
+                   SELECT new.id, new.project_pk, %s, v.embedding FROM document_vectors v
+                   JOIN documents old ON old.project_pk = %s AND old.id = v.document_id
                    JOIN documents new ON new.project_pk = %s AND new.doc_id = old.doc_id
                    WHERE v.field_pk = %s AND old.id = ANY(%s)
                    ON CONFLICT (field_pk, document_id) DO UPDATE SET embedding = EXCLUDED.embedding""",
-                [d.pk, to_project_pk, s.pk, ids],
+                [d.pk, from_project_pk, to_project_pk, s.pk, ids],
             )
     return len(copied)
 
@@ -590,5 +592,10 @@ async def convert_field(conn: AsyncConnection, project_pk: int, old: FieldInfo, 
             assignments = sql.SQL("{old} = {old} - {removed}::text[], {new} = coalesce({new}, '{{}}') || c.vals").format(
                 old=old_col, new=new_col, removed=removed
             )
-        await conn.execute(sql.SQL("UPDATE documents SET {} FROM converted c WHERE documents.id = c.id").format(assignments))
+        await conn.execute(
+            sql.SQL("UPDATE documents SET {} FROM converted c WHERE documents.project_pk = %s AND documents.id = c.id").format(
+                assignments
+            ),
+            [project_pk],
+        )
         last_id = rows[-1]["id"]  # type: ignore[index, call-overload]

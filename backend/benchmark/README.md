@@ -5,7 +5,9 @@ BM25 full-text search and [pgvector](https://github.com/pgvector/pgvector) for v
 [`paradedb/paradedb`](https://hub.docker.com/r/paradedb/paradedb) image contains both. Developed and tested with
 PostgreSQL 18.6 and pg_search 0.26.0.
 
-The database code is in `amcat4/postgres/`; the business logic in `amcat4/projects/` and `amcat4/systemdata/` uses it.
+The database code is in `amcat4/postgres/` (with the design in `layout.py`); the business logic in `amcat4/projects/`
+and `amcat4/systemdata/` uses it. The tables are defined by the (alembic) migrations in `amcat4/migrations/versions/`,
+which are run at startup.
 The benchmark script is `benchmark/pg_benchmark.py`.
 
 ## Design
@@ -15,15 +17,21 @@ projects(pk, id, name, description, folder, contact, image, archived)
 fields(pk, project_pk, name, type, unique_field, metareader, reader, client_settings, sort_slot)
 documents(id, project_pk, doc_id, text_data jsonb, meta_data jsonb, extra_data jsonb, source jsonb,
           dedup_hash, sort_date, sort_number, sort_keyword, created_at, updated_at)
-    UNIQUE (project_pk, doc_id), UNIQUE (project_pk, dedup_hash)
+    PRIMARY KEY (id, project_pk), UNIQUE (project_pk, doc_id), UNIQUE (project_pk, dedup_hash)
+    PARTITION BY HASH (project_pk): 64 partitions, each with its own BM25 index
     BM25 index on (id, project_pk, sort_date, sort_number, sort_keyword, text_data, meta_data)
-document_vectors(document_id, field_pk, embedding vector)   -- HNSW index per field
+document_vectors(document_id, project_pk, field_pk, embedding vector)   -- HNSW index per field
 jobs(id, type, status, project_pk, params, progress, result, ...)  -- background jobs (e.g. copy)
 roles, api_keys, requests, server_settings, object_storage   -- system data, plain tables
 ```
 
 - **One table for all projects.** A project owns its documents. Cross-project queries filter on several projects.
   (An empty table with a BM25 index costs ~2.8 MB, so a table per project would be expensive.)
+- **Partitioned by project.** The documents table is hash partitioned on `project_pk` into 64 partitions, each with
+  its own BM25 index. A query on a project only uses its own partition (the search adds a SQL condition on
+  `project_pk` for this), and after a mass update only that partition's index needs to be rebuilt
+  (`amcat4 optimize --reindex --project <id>`). Rebuilding runs online: reads and writes continue. The cost is
+  ~180 MB for the 64 empty indexes, and the number of partitions can only be changed by rewriting the table.
 - **Values are keyed by field key (`f<field pk>`), not by name.** Renaming a field (`systemdata.fields.rename_field`)
   only changes the field definition. The same name can have different keys in different projects; queries over
   multiple projects resolve a name to one key per project.
@@ -52,7 +60,7 @@ roles, api_keys, requests, server_settings, object_storage   -- system data, pla
 - **Pagination** uses stateless cursors (keyset on the internal id for unsorted results, otherwise offsets).
 - **Copies** (a `copy` job) physically copy (a subset of) documents and fields in batches, recording provenance in
   `source`.
-  Read-only *reference* projects are a planned feature (see the TODO in `postgres/schema.py`).
+  Read-only *reference* projects are a planned feature (see the TODO in `postgres/layout.py`).
 - **Backups:** standard postgres tools (`pg_dump`, or pgBackRest for point in time recovery) replace elastic snapshots.
 
 ## What we learned about pg_search
@@ -69,11 +77,14 @@ roles, api_keys, requests, server_settings, object_storage   -- system data, pla
 | When grouping inside the index, json dates/numbers are returned in an internal representation | Dates/numbers without interval are grouped in SQL |
 | `snippet_positions` returns utf-8 byte offsets, and no positions for prefix queries | Converted to characters, combined with our own matcher |
 | Small inserts are buffered in a *mutable segment*, which made every query 5-10x slower after many small uploads | The index is created with `mutable_segment_rows = 0` |
-| Updating many rows (e.g. tagging a large set, putting a field in a sort slot) leaves the BM25 index bloated and slower, also after `VACUUM` | Rebuild the index online with `amcat4 optimize --reindex` (`REINDEX INDEX CONCURRENTLY`) after large updates |
+| Updating many rows (e.g. tagging a large set, putting a field in a sort slot) leaves the BM25 index bloated and slower, also after `VACUUM` | Rebuild the index online with `amcat4 optimize --reindex [--project <id>]` (`REINDEX INDEX CONCURRENTLY`) after large updates; with partitioning only the partition of the project |
+| BM25 indexes work on partitioned tables: one index per partition, partition pruning and Top-K sorting work | The documents table is partitioned on project |
 | `pdb.agg` terms counts on arrays are approximate; date histograms only support fixed intervals | Exact SQL aggregation |
 | The paradedb image also contains pgvector and PostGIS | Vectors use pgvector |
 
 ## Benchmark
+
+The numbers below were measured before the documents table was partitioned.
 
 `uv run python benchmark/pg_benchmark.py --scale 1.0` (results in `benchmark/benchmark_results.json`)
 
