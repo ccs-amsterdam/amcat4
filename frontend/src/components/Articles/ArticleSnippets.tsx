@@ -4,6 +4,7 @@ import { AlertTriangle, Link as LinkIcon, SkipBack, SkipForward } from "lucide-r
 import { AmcatSessionUser } from "@/components/Contexts/AuthProvider";
 import { Link } from "@tanstack/react-router";
 import { highlightElasticTags, removeElasticTags } from "../../lib/highlightElasticTags";
+import { formatDate } from "../../lib/formatField";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import usePaginatedArticles from "./usePaginatedArticles";
@@ -137,6 +138,7 @@ export default function ArticleSnippets({ user, projectId, projectRole, query, f
                       let showValue: ReactNode = removeElasticTags(value);
 
                       const type = fields.find((f) => f.name === field.name)?.type;
+                      if (type === "date") showValue = formatDate(String(showValue));
                       if (type === "image") showValue = DynamicIcon({ type: "image", className: "h-4 w-4" });
                       if (type === "preprocess") {
                         if (row[field.name]?.status === "error") {

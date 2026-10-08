@@ -6,6 +6,7 @@ from pytest import raises
 
 from amcat4.api.index_query import _standardize_filters, _standardize_queries
 from amcat4.models import FieldSpec, FilterSpec, FilterValue, ProjectSettings, SnippetParams
+from amcat4.postgres.fields import QueryError
 from amcat4.projects.documents import fetch_document
 from amcat4.projects.index import create_project_index, delete_project_index
 from amcat4.projects.jobs import create_job, get_job, run_pending_jobs
@@ -107,6 +108,20 @@ async def test_highlight(index):
 
 
 @pytest.mark.anyio
+async def test_highlight_proximity(index):
+    text = "Speaker of the House of Representatives, and the house"
+    await upload(index, [dict(title="title", text=text)], fields={"title": "text", "text": "text"})
+    res = await query_documents(
+        index, fields=[FieldSpec(name="text")], queries={"1": '"house representatives"~2'}, highlight=True
+    )
+    assert res is not None
+    # (pg_search also reports positions for the separate words, so the final 'house' may be highlighted as well)
+    assert res.data[0]["text"].startswith("Speaker of the <em>House</em> of <em>Representatives</em>,")
+    with raises(QueryError, match="proximity"):
+        await query_documents(index, queries={"1": '"house repr*"~2'})
+
+
+@pytest.mark.anyio
 async def test_query_multiple_index(index_docs, index):
     await upload(index, [{"text": "also a text", "i": -1}], fields={"i": "integer", "text": "text"})
     docs = await query_documents([index_docs, index])
@@ -121,6 +136,17 @@ async def test_query_filter_mapping(index_docs):
     q = functools.partial(query_ids, index_docs)
     assert await q(filters={"date": FilterSpec(monthnr=2)}) == {1}
     assert await q(filters={"date": FilterSpec(dayofweek="Monday")}) == {0, 3}
+
+
+@pytest.mark.anyio
+async def test_query_id_filter(index_docs):
+    q = functools.partial(query_ids, index_docs)
+    assert await q(filters={"_id": FilterSpec(values=["1"])}) == {1}
+    assert await q(filters={"_id": FilterSpec(values=["0", "2", "3"])}) == {0, 2, 3}
+    assert await q("this", filters={"_id": FilterSpec(values=["0", "1"])}) == {0}
+    assert await q(filters={"_id": FilterSpec(values=["0", "1", "2"]), "title": ["title"]}) == {0, 1}
+    with raises(QueryError):
+        await q(filters={"_id": FilterSpec(gte="1")})
 
 
 async def copy(source: str, destination: str, **params) -> dict:

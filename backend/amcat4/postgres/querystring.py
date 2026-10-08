@@ -371,9 +371,14 @@ def _compile_text(node: Term | Phrase | Range, f: FieldInfo) -> dict:
         return _boost({"match": {"field": path, "value": text}}, node.boost)
     # phrase
     prefix = node.text.rstrip().endswith("*")
+    if "?" in node.text or "*" in node.text.rstrip().rstrip("*"):
+        raise QueryError(f'Wildcards are only supported at the end of a phrase (e.g. "house of repr*"), not in {node.text!r}')
     words = _words(node.text)
     if not words:
         raise QueryError(f"Empty phrase: {node.text!r}")
+    if prefix and node.slop and len(words) > 1:
+        # pg_search has no phrase_prefix with slop, and regex_phrase does not work on json fields
+        raise QueryError(f"Wildcards cannot be combined with proximity (~) in phrase {node.text!r}")
     if prefix:
         return _boost({"phrase_prefix": {"field": path, "phrases": words}}, node.boost)
     if len(words) == 1:
@@ -439,12 +444,48 @@ def query_string_to_json(q: str, resolver: FieldResolver, default_operator: Lite
 # ------------------------------------------------------------------ Highlighting
 
 
-def highlight_patterns(node: Node, field: str, default_field: bool) -> list[re.Pattern]:
+@dataclass
+class ProximityPattern:
     """
-    Regular expressions that match the (positive) terms of the query in the given field. Used to find match
+    Matches a phrase with slop ("a b"~n), following tantivy: each next word must be within slop positions of
+    where it would be in the exact phrase, in either direction. Finds the positions of the matched words.
+    """
+
+    words: list[str]
+    slop: int
+
+    def spans(self, text: str) -> list[tuple[int, int]]:
+        tokens = [(m.group().lower(), m.start(), m.end()) for m in _WORD_RE.finditer(text)]
+        positions: dict[str, list[int]] = {}
+        for i, (word, _, _) in enumerate(tokens):
+            positions.setdefault(word, []).append(i)
+
+        def extend(chain: list[int]) -> list[int] | None:
+            if len(chain) == len(self.words):
+                return chain
+            expected = chain[-1] + 1
+            candidates = [p for p in positions.get(self.words[len(chain)], []) if abs(p - expected) <= self.slop]
+            for p in sorted(candidates, key=lambda p: abs(p - expected)):
+                if p not in chain and (result := extend([*chain, p])):
+                    return result
+            return None
+
+        spans = []
+        for start in positions.get(self.words[0], []):
+            if chain := extend([start]):
+                spans.extend((tokens[i][1], tokens[i][2]) for i in chain)
+        return sorted(set(spans))
+
+
+HighlightPattern = re.Pattern | ProximityPattern
+
+
+def highlight_patterns(node: Node, field: str, default_field: bool) -> list[HighlightPattern]:
+    """
+    Patterns that match the (positive) terms of the query in the given field. Used to find match
     positions for highlighting and snippets. default_field: whether the field is searched for terms without field.
     """
-    patterns: list[re.Pattern] = []
+    patterns: list[HighlightPattern] = []
 
     def visit(n: Node, negated: bool):
         if isinstance(n, Bool):
@@ -459,6 +500,9 @@ def highlight_patterns(node: Node, field: str, default_field: bool) -> list[re.P
         words = _words(n.text.rstrip("*"))
         if not words or (isinstance(n, Term) and n.fuzzy is not None):
             return
+        if isinstance(n, Phrase) and n.slop and len(words) > 1:
+            patterns.append(ProximityPattern(words, n.slop))
+            return
         body = r"\W+".join(re.escape(w) for w in words)
         suffix = r"\w*" if prefix else ""
         patterns.append(re.compile(rf"(?<!\w){body}{suffix}(?!\w)", re.IGNORECASE))
@@ -467,9 +511,11 @@ def highlight_patterns(node: Node, field: str, default_field: bool) -> list[re.P
     return patterns
 
 
-def match_positions(text: str, patterns: list[re.Pattern]) -> list[list[int]]:
+def match_positions(text: str, patterns: list[HighlightPattern]) -> list[list[int]]:
     positions = []
     for pattern in patterns:
-        for m in pattern.finditer(text):
-            positions.append([m.start(), m.end()])
+        if isinstance(pattern, ProximityPattern):
+            positions.extend([start, end] for start, end in pattern.spans(text))
+        else:
+            positions.extend([m.start(), m.end()] for m in pattern.finditer(text))
     return positions

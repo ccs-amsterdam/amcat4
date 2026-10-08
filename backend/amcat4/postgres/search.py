@@ -50,17 +50,32 @@ def _compile_query_string(label: str, q: str, fieldset: FieldSet) -> dict:
         raise QueryError(f"Error in {where}: {e}") from e
 
 
+def _id_filter_values(spec: FilterSpec) -> list[str]:
+    """The _id 'field' is the doc_id column, which can only be filtered on exact values"""
+    d = spec.model_dump(exclude_none=True)
+    values = d.pop("values", None)
+    if "value" in d:
+        values = (values or []) + [d.pop("value")]
+    if d or values is None:
+        raise QueryError("Filter on _id only supports values")
+    return [str(v) for v in values]
+
+
 def compile_search(fieldset: FieldSet, query: SearchQuery) -> CompiledSearch:
     must: list[dict] = [project_clause(fieldset.project_pks)]
     if query.queries:
         qs = [_compile_query_string(label, q, fieldset) for label, q in query.queries.items()]
         must.append(qs[0] if len(qs) == 1 else {"boolean": {"should": qs}})
     sql_clauses: list[sql.Composable] = []
-    if query.filters:
-        compiled = compile_filters(query.filters, fieldset)
+    params: list[Any] = []
+    filters = dict(query.filters or {})
+    if "_id" in filters:
+        sql_clauses.append(sql.SQL("documents.doc_id = ANY(%s)"))
+        params.append(_id_filter_values(filters.pop("_id")))
+    if filters:
+        compiled = compile_filters(filters, fieldset)
         must.extend(compiled.json_clauses)
         sql_clauses.extend(compiled.sql_clauses)
-    params: list[Any] = []
     if query.ids:
         sql_clauses.append(sql.SQL("documents.doc_id = ANY(%s)"))
         params.append(list(query.ids))

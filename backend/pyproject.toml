@@ -44,6 +44,7 @@ dependencies = [
     "questionary",
     "psycopg[binary]>=3.2",
     "psycopg-pool>=3.2",
+    "alembic>=1.20.0",
 ]
 
 [dependency-groups]
@@ -67,9 +68,18 @@ default-groups = ["dev"]
 amcat4 = "amcat4.__main__:main"
 
 [tool.setuptools]
-packages = ["amcat4", "amcat4.api"]
 include-package-data = true
 zip-safe = false
+
+[tool.setuptools.packages.find]
+include = ["amcat4*"]
+
+[tool.setuptools.package-data]
+"amcat4.migrations" = ["script.py.mako"]
+
+[tool.alembic]
+# Database migrations (plain SQL), see amcat4/migrations/env.py
+script_location = "amcat4:migrations"
 
 [tool.ruff]
 line-length = 127

@@ -12,6 +12,9 @@ from amcat4.postgres.querystring import (
     query_string_to_json,
 )
 
+# The (autouse) setup fixture in conftest is async, so these tests need to run under anyio as well
+pytestmark = pytest.mark.anyio
+
 FIELDS = {
     "title": FieldInfo(1, "title", "text"),
     "text": FieldInfo(2, "text", "text"),
@@ -27,7 +30,7 @@ def fieldset(queryable=None):
     return FieldSet({1: FIELDS}, queryable=queryable)
 
 
-def test_parse_terms_and_operators():
+async def test_parse_terms_and_operators():
     assert parse_query("fox") == Term(None, "fox")
     assert parse_query("a AND b") == Bool([("must", Term(None, "a")), ("must", Term(None, "b"))])
     assert parse_query("a OR b") == Bool([("should", Term(None, "a")), ("should", Term(None, "b"))])
@@ -39,7 +42,7 @@ def test_parse_terms_and_operators():
     assert isinstance(q, Bool) and q.clauses[0] == ("should", Term(None, "a"))
 
 
-def test_parse_fields_phrases_ranges():
+async def test_parse_fields_phrases_ranges():
     assert parse_query("title:fox") == Term("title", "fox")
     assert parse_query('"quick fox"~2') == Phrase(None, "quick fox", slop=2)
     assert parse_query("title:(a OR b)") == Bool([("should", Term("title", "a")), ("should", Term("title", "b"))])
@@ -51,12 +54,12 @@ def test_parse_fields_phrases_ranges():
 
 
 @pytest.mark.parametrize("q", ["(a", "a)", "AND", "title:", '"unclosed'])
-def test_parse_errors(q):
+async def test_parse_errors(q):
     with pytest.raises(QueryError):
         parse_query(q)
 
 
-def test_compile_default_fields_and_visibility():
+async def test_compile_default_fields_and_visibility():
     # no field: search all queryable text fields
     q = query_string_to_json("fox", fieldset())
     assert {c["match"]["field"] for c in q["boolean"]["should"]} == {"text_data.f1", "text_data.f2", "text_data.f6"}
@@ -68,7 +71,7 @@ def test_compile_default_fields_and_visibility():
         query_string_to_json("nonexisting:fox", fieldset())
 
 
-def test_compile_leaves():
+async def test_compile_leaves():
     fs = fieldset()
     assert query_string_to_json("title:immigr*", fs) == {"phrase_prefix": {"field": "text_data.f1", "phrases": ["immigr"]}}
     assert query_string_to_json('title:"Quick Fox"~1', fs) == {
@@ -92,15 +95,36 @@ def test_compile_leaves():
     }
 
 
-def test_compile_multi_project():
+async def test_compile_multi_project():
     other = {"title": FieldInfo(11, "title", "text")}
     fs = FieldSet({1: FIELDS, 2: other})
     q = query_string_to_json("title:fox", fs)
     assert {c["match"]["field"] for c in q["boolean"]["should"]} == {"text_data.f1", "text_data.f11"}
 
 
-def test_highlight_patterns():
+async def test_highlight_patterns():
     q = parse_query('te* OR "quick fox" -nope title:x')
     patterns = highlight_patterns(q, "text", default_field=True)
     assert match_positions("A test text. Quick, fox! nope", patterns) == [[2, 6], [7, 11], [13, 23]]
     assert highlight_patterns(q, "text", default_field=False) == []
+
+
+async def test_proximity_highlight():
+    q = parse_query('"house representatives"~2')
+    patterns = highlight_patterns(q, "text", default_field=True)
+    # reversed order is allowed (distance 2 from the expected position), but 'House x y z representatives' is too far
+    text = "The House of Representatives. Representatives house. House x y z representatives"
+    assert match_positions(text, patterns) == [[4, 9], [13, 28], [30, 45], [46, 51]]
+    patterns = highlight_patterns(parse_query('"house representatives"~1'), "text", default_field=True)
+    assert match_positions(text, patterns) == [[4, 9], [13, 28]]
+
+
+async def test_phrase_wildcards():
+    fs = FieldSet({1: FIELDS})
+    assert query_string_to_json('title:"quick fo*"', fs) == {
+        "phrase_prefix": {"field": "text_data.f1", "phrases": ["quick", "fo"]}
+    }
+    with pytest.raises(QueryError, match="proximity"):
+        query_string_to_json('title:"quick fo*"~2', fs)
+    with pytest.raises(QueryError, match="end of a phrase"):
+        query_string_to_json('title:"qu* fox"', fs)

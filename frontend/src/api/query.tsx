@@ -45,6 +45,8 @@ export function asPostAmcatQuery(query: AmcatQuery) {
   const postAmcatQuery: PostAmcatQuery = {};
   if (query.queries) {
     query.queries.forEach((q) => {
+      // skip empty queries, e.g. from a blank line in the multiline query input
+      if (!q.query?.trim()) return;
       if (!postAmcatQuery.queries) postAmcatQuery.queries = {};
       postAmcatQuery.queries[q.label || q.query] = q.query;
     });

@@ -13,8 +13,7 @@ export const formatField = (article: AmcatArticle, field: AmcatField) => {
 
   switch (field.type) {
     case "date":
-      // Only remove 'T' for now. But not sure why that's a great idea
-      return value.replace("T", " ").substring(0, 19);
+      return formatDate(String(value));
 
     case "keyword":
       // if value contains http or https, make it a link
@@ -37,6 +36,15 @@ export const formatField = (article: AmcatArticle, field: AmcatField) => {
       return JSON.stringify(value);
   }
 };
+
+/**
+ * Show a date as "YYYY-MM-DD HH:MM:SS", ignoring the timezone and fractional seconds.
+ * Midnight is shown as just the date.
+ */
+export function formatDate(value: string): string {
+  const datetime = value.replace("T", " ").substring(0, 19);
+  return datetime.endsWith(" 00:00:00") ? datetime.substring(0, 10) : datetime;
+}
 
 function highlightableValue(value: string) {
   return value.includes("<em>") ? highlightElasticTags(value) : value;
