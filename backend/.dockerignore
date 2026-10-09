@@ -1,0 +1,12 @@
+# Keep the image small, and keep local files (virtualenv, settings with secrets, test data) out of it
+.venv
+.env
+.env.*
+**/__pycache__
+*.egg-info
+.pytest_cache
+.ruff_cache
+tests
+benchmark
+*.md
+!README.md

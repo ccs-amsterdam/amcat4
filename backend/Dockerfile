@@ -1,26 +1,24 @@
-FROM python:3.11-alpine3.19 AS builder
+FROM python:3.13-slim AS builder
 
-# 1 Install system dependencies and uv
-RUN apk add --update --no-cache git gcc libc-dev libffi-dev libmagic
-# Get uv from the official image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /srv/amcat
 
-# 2 Clone the repo
+# Install the dependencies first (cached as long as the lock file doesn't change), then the project itself
+COPY pyproject.toml uv.lock ./
+RUN UV_LINK_MODE=copy uv sync --frozen --no-dev --no-install-project
 COPY . .
-
-# 3 Install amcat using uv
 RUN UV_LINK_MODE=copy uv sync --frozen --no-dev
 
-# Start a new image without build dependencies and copy the build
-FROM python:3.11-alpine3.19
+# Runtime image without uv and the build cache
+FROM python:3.13-slim
 WORKDIR /srv/amcat
 
-RUN apk add --update --no-cache libmagic
+RUN apt-get update && apt-get install -y --no-install-recommends libmagic1 && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /srv/amcat/.venv /srv/amcat/.venv
 COPY --from=builder /srv/amcat /srv/amcat
 
-ENV PATH="/srv/amcat/.venv/bin:$PATH"
+ENV PATH="/srv/amcat/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 EXPOSE 5000
-CMD ["amcat4", "run"]
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/config', timeout=4)"
+CMD ["amcat4", "serve"]

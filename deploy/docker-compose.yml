@@ -1,7 +1,10 @@
+# NOTE (postgres-migration branch): the images use intermediate names, so that the postgres version can never
+# replace the official (elasticsearch-based) ccsamsterdam/amcat4_* images, also not by an accidental push. Switch back
+# to the official names once the existing servers have been migrated.
 services:
   caddy:
     profiles: [deploy, deploy-nodb]
-    image: ccsamsterdam/amcat4_frontend:${AMCAT4_VERSION:-latest}
+    image: ccsamsterdam/amcat4-postgres_frontend:${AMCAT4_VERSION:-latest}
     container_name: katty
     restart: unless-stopped
     ports:
@@ -9,17 +12,19 @@ services:
       - "443:443"
     environment:
       - AMCAT4_URL=${AMCAT4_URL:-http://localhost}
+      - AMCAT4_S3_HOST
     volumes:
       - caddy_data:/data
       - caddy_config:/config
     networks:
       - amcat-net
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   api:
     profiles: [deploy, deploy-nodb]
-    image: ccsamsterdam/amcat4_backend:${AMCAT4_VERSION:-latest}
+    image: ccsamsterdam/amcat4-postgres_backend:${AMCAT4_VERSION:-latest}
     container_name: amcat4
     restart: unless-stopped
     networks:
@@ -28,29 +33,38 @@ services:
       db:
         condition: service_healthy
         required: false
+    # All settings in .env are passed to the API (see .env.example and backend/amcat4/config.py)
+    env_file:
+      - path: .env
+        required: false
     environment:
       # For deploy-nodb, set amcat4_postgres_url in .env to point to your own postgres server (with pg_search)
       - amcat4_postgres_url=${amcat4_postgres_url:-postgresql://amcat:${POSTGRES_PASSWORD:-amcat}@db:5432/amcat}
       - amcat4_host=${AMCAT4_URL:-http://localhost}
+      # Caddy (the only way in) sets the X-Forwarded headers
       - FORWARDED_ALLOW_IPS=*
-      # Passthrough environment variables for the API configuration
-      - amcat4_postgres_schema
-      - amcat4_auth
-      - amcat4_middlecat_url
-      - amcat4_admin_email
 
   # PostgreSQL with the pg_search (BM25 full-text search) and pgvector extensions.
-  # Consider pinning PARADEDB_VERSION in .env (see https://hub.docker.com/r/paradedb/paradedb/tags)
+  # The version is pinned: a new major postgres version cannot open an existing data directory, and a new pg_search
+  # version can need a reindex. Upgrade deliberately (see https://hub.docker.com/r/paradedb/paradedb/tags).
   db: &db_base
     profiles: [deploy]
-    image: paradedb/paradedb:${PARADEDB_VERSION:-latest}
+    image: paradedb/paradedb:${PARADEDB_VERSION:-0.26.0-pg18}
     restart: unless-stopped
     environment:
       - POSTGRES_USER=amcat
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-amcat}
       - POSTGRES_DB=amcat
-    # Set POSTGRES_SHARED_BUFFERS in .env to about 25% of available memory
-    command: ["postgres", "-c", "shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}"]
+    # Set POSTGRES_SHARED_BUFFERS in .env to about 25% of available memory. maintenance_work_mem is used when
+    # rebuilding search indexes and vacuuming.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-512MB}
+    # Docker's default of 64MB shared memory is too small for parallel queries on large projects
+    shm_size: ${POSTGRES_SHM_SIZE:-1gb}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U amcat -d amcat"]
       interval: 5s

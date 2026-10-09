@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+# NOTE (postgres-migration branch): a tag on this branch releases the postgres version under intermediate image names
+# (ccsamsterdam/amcat4-postgres_*), without a 'latest' tag, as a pre-release that is not marked as GitHub's latest
+# release. So servers and install instructions that use the official images / latest release are not affected.
+# Switch back once the existing servers have been migrated.
 jobs:
   docker:
     runs-on: ubuntu-latest
@@ -30,8 +34,7 @@ jobs:
           context: frontend
           push: true
           tags: |
-            ccsamsterdam/amcat4_frontend:${{ steps.version.outputs.version }}
-            ccsamsterdam/amcat4_frontend:latest
+            ccsamsterdam/amcat4-postgres_frontend:${{ steps.version.outputs.version }}
 
       - name: Build and push backend image
         uses: docker/build-push-action@v6
@@ -39,13 +42,25 @@ jobs:
           context: backend
           push: true
           tags: |
-            ccsamsterdam/amcat4_backend:${{ steps.version.outputs.version }}
-            ccsamsterdam/amcat4_backend:latest
+            ccsamsterdam/amcat4-postgres_backend:${{ steps.version.outputs.version }}
+
+      # The deploy bundle: docker-compose.yml with this version as default image version, and a .env to edit
+      - name: Create deploy bundle
+        run: |
+          mkdir amcat4-deploy
+          sed 's/AMCAT4_VERSION:-latest/AMCAT4_VERSION:-${{ steps.version.outputs.version }}/g' deploy/docker-compose.yml > amcat4-deploy/docker-compose.yml
+          grep -q 'AMCAT4_VERSION:-${{ steps.version.outputs.version }}' amcat4-deploy/docker-compose.yml
+          cp deploy/.env.example amcat4-deploy/.env.example
+          cp deploy/.env.example amcat4-deploy/.env
+          zip -r amcat4-deploy.zip amcat4-deploy
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            amcat4-deploy.zip
             deploy/docker-compose.yml
             deploy/.env.example
           generate_release_notes: true
+          prerelease: true
+          make_latest: false

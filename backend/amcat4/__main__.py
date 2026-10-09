@@ -107,6 +107,47 @@ def run(args):
     uvicorn.run("amcat4.api:app", host="0.0.0.0", reload=not args.nodebug, port=args.port, log_config=log_config)
 
 
+def _cookie_secret_configured() -> bool:
+    """Was the cookie secret set explicitly (in the environment or .env), rather than generated at startup?"""
+    get_settings()  # loads .env into the environment
+    value = next((v for k, v in os.environ.items() if k.lower() == "amcat4_cookie_secret"), None)
+    return bool(value) and not value.startswith("please replace me")
+
+
+def serve(args):
+    """Run the API in production mode: no reloading, multiple worker processes, behind a proxy"""
+    settings = get_settings()
+    if not _cookie_secret_configured():
+        if settings.auth != AuthOptions.no_auth:
+            logging.error(
+                "Set a cookie secret (AMCAT4_COOKIE_SECRET, e.g. the output of `openssl rand -hex 32`) when "
+                "authentication is enabled: without it, every restart logs out all users."
+            )
+            sys.exit(1)
+        # all worker processes need the same secret (they read it from the environment)
+        os.environ["AMCAT4_COOKIE_SECRET"] = secrets.token_hex(32)
+    if settings.auth == AuthOptions.no_auth:
+        logging.warning(
+            "Warning: No authentication is set up - everyone who can access this service can view and change all data"
+        )
+    if warning := validate_settings():
+        logging.warning(warning)
+
+    asyncio.run(_check_db_connection())
+    asyncio.run(do_migrate_systemdata())
+
+    logging.info(f"Starting server at port {args.port} with {args.workers} workers, auth={settings.auth}")
+    log_config = "logging.yml" if Path("logging.yml").exists() else LOGGING_CONFIG
+    uvicorn.run(
+        "amcat4.api:app",
+        host="0.0.0.0",
+        port=int(args.port),
+        workers=args.workers,
+        proxy_headers=True,
+        log_config=log_config,
+    )
+
+
 def val(val_or_list):
     if isinstance(val_or_list, list):
         if len(val_or_list) == 1:
@@ -156,13 +197,13 @@ def create_env(args):
 
 async def optimize(args):
     """
-    Database maintenance: vacuum (which also merges search index segments), and optionally rebuild the index.
-    With a project, only the documents partition (and index) that contains the project is optimized.
+    Database maintenance: vacuum, and optionally rebuild the search index (which the server also does automatically,
+    see amcat4.projects.maintenance). With a project, only the partition (and index) of the project is optimized.
     """
     from psycopg import sql
 
     from amcat4.postgres.connection import connection
-    from amcat4.postgres.layout import list_partitions, partition_of
+    from amcat4.postgres.layout import list_partitions, partition_of, reindex
     from amcat4.postgres.projects import project_pk
 
     async with amcat_connections():
@@ -176,7 +217,7 @@ async def optimize(args):
             await conn.execute(sql.SQL("VACUUM ANALYZE {}").format(sql.Identifier(table)))
             if args.reindex:
                 logging.info(f"Rebuilding the full-text search index {index} (online, this can take a while)")
-                await conn.execute(sql.SQL("REINDEX INDEX CONCURRENTLY {}").format(sql.Identifier(index)))
+                await reindex(conn, index)
     logging.info("Done")
 
 
@@ -260,6 +301,17 @@ def main():
     )
     p.add_argument("-p", "--port", help="Port", default=5000)
     p.set_defaults(func=run)
+
+    p = subparsers.add_parser("serve", help="Run the backend API in production mode (used by the docker image)")
+    p.add_argument("-p", "--port", help="Port", default=5000)
+    p.add_argument(
+        "-w",
+        "--workers",
+        type=int,
+        default=int(os.environ.get("AMCAT4_WORKERS", 4)),
+        help="Number of worker processes (default: AMCAT4_WORKERS or 4)",
+    )
+    p.set_defaults(func=serve)
 
     p = subparsers.add_parser("create-env", help="Create the .env file with a random secret key")
     p.add_argument("-a", "--admin_email", help="The email address of the admin user.")

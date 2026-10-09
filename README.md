@@ -36,7 +36,7 @@ The root folder contains a [package.json](package.json) script which contains a 
 
 In production, the front-end is built and statically served. In development, the front-end is dynamically served using vite, which can be started with the various `pnpm` commands listed in the next section.
 
-The backend uses PostgreSQL as its database, with the [pg_search](https://github.com/paradedb/paradedb) extension for full-text (BM25) search and [pgvector](https://github.com/pgvector/pgvector) for vectors (the [paradedb](https://hub.docker.com/r/paradedb/paradedb) docker image contains both). The documents of all projects are stored in a single table, and server and project metadata (users, roles, fields, settings) are stored in normal tables. See [backend/amcat4/postgres/schema.py](backend/amcat4/postgres/schema.py) for the design.
+The backend uses PostgreSQL as its database, with the [pg_search](https://github.com/paradedb/paradedb) extension for full-text (BM25) search and [pgvector](https://github.com/pgvector/pgvector) for vectors (the [paradedb](https://hub.docker.com/r/paradedb/paradedb) docker image contains both). The documents of all projects are stored in a single table, and server and project metadata (users, roles, fields, settings) are stored in normal tables. See [backend/amcat4/postgres/layout.py](backend/amcat4/postgres/layout.py) for the design, and [backend/ELASTIC_VS_POSTGRES.md](backend/ELASTIC_VS_POSTGRES.md) for the reasons and trade-offs.
 
 A number of important configuration options for both AmCAT and the database are set using a `.env` file, with reasonable defaults for single-user. See [deploy/.env.example](deploy/.env.example) for an overview of options.
 
