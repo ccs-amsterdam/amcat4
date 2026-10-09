@@ -134,10 +134,13 @@ TABLES = [
     """
     CREATE UNIQUE INDEX documents_dedup ON documents (partition_id, project_pk, dedup_hash) WHERE dedup_hash IS NOT NULL
     """,
-    # Creates a BM25 index on every partition
+    # Creates a BM25 index on every partition. partition_id must be in the index: queries filter on it (so postgres
+    # only uses the right partitions), and pg_search checks conditions on columns that are not in the index against
+    # the table, row by row (which made queries with many matches 2-10x slower)
     """
     CREATE INDEX documents_bm25 ON documents USING bm25 (
         id,
+        partition_id,
         project_pk,
         date,
         (source::pdb.literal),

@@ -18,15 +18,16 @@ Documents:
                      paths), stored as fast (columnar) fields for filtering, sorting and aggregation
     - stored_fields: values that are stored but not indexed (object)
 - Vectors are stored in the document_vectors table (pgvector), with a vector index per field.
-- A BM25 index covers project_pk, the standard columns, text_fields and exact_fields. New fields are new json keys, so
-  adding a field never requires rebuilding the index.
+- A BM25 index covers partition_id, project_pk, the standard columns, text_fields and exact_fields. New fields are
+  new json keys, so adding a field never requires rebuilding the index.
 - The documents table is list partitioned on partition_id, and every partition has its own BM25 index. Every project
   is assigned to a partition when it is created (projects.partition_id): the newest partition, until its BM25 index
   reaches partition_max_gb, after which a new partition is created. So the long tail of small projects shares
   partitions, and a big project fills (most of) a partition. (Later: moving big projects to their own partition.)
   Queries on a project only use its own partition, but only if they have a SQL condition on partition_id: postgres
-  does not know that a project is in one partition (see project_filter). A foreign key keeps the documents of a
-  project in its partition: updating projects.partition_id moves the documents.
+  does not know that a project is in one partition (see project_filter). partition_id is also in the BM25 index:
+  pg_search checks SQL conditions on columns outside the index against the table, for every match. A foreign key
+  keeps the documents of a project in its partition: updating projects.partition_id moves the documents.
   After mass updates, the index of a single partition can be rebuilt (amcat4 optimize --reindex --project ...).
 - BM25 scores (how rare a word is) are computed per partition, so other projects in the same partition affect the
   ranking (but not which documents match).

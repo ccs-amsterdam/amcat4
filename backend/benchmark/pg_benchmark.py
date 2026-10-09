@@ -129,94 +129,136 @@ async def load(scale: float) -> None:
     print(f"Loaded in {elapsed:.0f}s ({total / elapsed:.0f} docs/s, including generating the documents)")
 
 
-async def benchmark() -> None:
-    t0 = time.perf_counter()
-    async with connection() as conn:
-        await conn.execute("VACUUM ANALYZE documents")  # also merges BM25 index segments
-    results["vacuum_seconds"] = round(time.perf_counter() - t0, 1)
+PHASES = ["fresh", "after mass update", "after VACUUM FULL"]
+
+
+def q(query=None):
+    return {"q": query} if query else None
+
+
+async def sizes() -> dict:
     row = await fetch_one(
         # documents and its BM25 index are partitioned: sum the sizes of the partitions
         """SELECT pg_size_pretty((SELECT sum(pg_table_size(relid)) FROM pg_partition_tree('documents'))) AS table_incl_toast,
                   pg_size_pretty((SELECT sum(pg_relation_size(relid)) FROM pg_partition_tree('documents_bm25'))) AS bm25_index,
                   pg_size_pretty((SELECT sum(pg_total_relation_size(relid)) FROM pg_partition_tree('documents'))) AS total"""
     )
-    results["sizes"] = row
-    print(f"VACUUM: {results['vacuum_seconds']}s. Sizes: {row}")
+    assert row is not None
+    return row
 
-    def q(query=None):
-        return {"q": query} if query else None
 
+async def reads(phase: str) -> None:
+    """The read operations, measured in every phase (labels get the phase as suffix)"""
     fields = [FieldSpec(name="title"), FieldSpec(name="date")]
 
-    print("\n--- search (10 results incl. total count)")
+    async def t(label, fn, **kargs):
+        return await timeit(f"{label} [{phase}]", fn, **kargs)
+
+    print(f"\n=== {phase}: {await sizes()}")
+    print("--- search (10 results incl. total count)")
     for project in ["big", "medium_0", "small_0"]:
         for label, term in [("rare", RARE), ("medium", MEDIUM), ("common", COMMON)]:
-            res = await timeit(
+            await t(
                 f"search {label} term in {project}",
-                lambda p=project, t=term: query_documents(p, fields=fields, queries=q(t)),
+                lambda p=project, term=term: query_documents(p, fields=fields, queries=q(term)),
             )
-            results[f"search {label} term in {project}"]["hits"] = res.total_count if res else 0
     medium = [f"medium_{i}" for i in range(20)]
-    await timeit("search common term in 20 medium projects", lambda: query_documents(medium, fields=fields, queries=q(COMMON)))
-    await timeit(
+    await t("search common term in 20 medium projects", lambda: query_documents(medium, fields=fields, queries=q(COMMON)))
+    await t(
         "boolean query in big",
         lambda: query_documents("big", fields=fields, queries=q(f'({MEDIUM} OR "{COMMON} {VOCAB[10]}"~5) AND NOT {RARE}')),
     )
-    await timeit("prefix query (zzmed*) in big", lambda: query_documents("big", fields=fields, queries=q("zzmed*")))
+    await t("prefix query (zzmed*) in big", lambda: query_documents("big", fields=fields, queries=q("zzmed*")))
 
-    print("\n--- filters and sorting")
+    print("--- filters and sorting")
     f = {"date": FilterSpec(gte="2010-01-01", lt="2011-01-01"), "source": FilterSpec(values=["source_1", "source_2"])}
-    await timeit("date range + keyword filter in big", lambda: query_documents("big", fields=fields, filters=f))
-    await timeit(
-        "monthnr filter in big", lambda: query_documents("big", fields=fields, filters={"date": FilterSpec(monthnr=3)})
-    )
+    await t("date range + keyword filter in big", lambda: query_documents("big", fields=fields, filters=f))
+    await t("monthnr filter in big", lambda: query_documents("big", fields=fields, filters={"date": FilterSpec(monthnr=3)}))
     date_desc = [{"date": {"order": "desc"}}]
-    await timeit("sort by date (date column), no query, big", lambda: query_documents("big", fields=fields, sort=date_desc))  # type: ignore
-    await timeit(
+    source_desc = [{"source": {"order": "desc"}}]
+    await t("sort by date (date column), no query, big", lambda: query_documents("big", fields=fields, sort=date_desc))  # type: ignore
+    await t(
         "sort by date (date column), common query, big",
         lambda: query_documents("big", fields=fields, queries=q(COMMON), sort=date_desc),  # type: ignore
     )
-    # source is mapped to the source column automatically: unmap it to compare
-    await update_fields("big", {"source": UpdateDocumentField(fast_sort=False)})
-    source_desc = [{"source": {"order": "desc"}}]
-    await timeit("sort by source (not mapped), big", lambda: query_documents("big", fields=fields, sort=source_desc), repeat=2)  # type: ignore
-    t0 = time.perf_counter()
-    await update_fields("big", {"source": UpdateDocumentField(fast_sort=True)})
-    results["map source to the source column (updates all rows of big)"] = {"seconds": round(time.perf_counter() - t0, 1)}
-    # updating all rows leaves dead rows and index entries; rebuild the index (online), see `amcat4 optimize --reindex`
-    t0 = time.perf_counter()
-    async with connection() as conn:
-        await conn.execute("VACUUM ANALYZE documents")
-        await conn.execute("REINDEX INDEX CONCURRENTLY documents_bm25")
-    results["vacuum + reindex after mapping"] = {"seconds": round(time.perf_counter() - t0, 1)}
-    print(
-        f"map source: {results['map source to the source column (updates all rows of big)']['seconds']}s, "
-        f"vacuum + reindex: {results['vacuum + reindex after mapping']['seconds']}s"
-    )
-    await timeit("sort by source (source column), big", lambda: query_documents("big", fields=fields, sort=source_desc))  # type: ignore
-    await timeit(
+    await t("sort by source (source column), big", lambda: query_documents("big", fields=fields, sort=source_desc))  # type: ignore
+    await t(
         "page 1000 (offset 10000), common query, big",
         lambda: query_documents("big", fields=fields, queries=q(COMMON), page=1000),
     )
 
-    print("\n--- snippets")
+    print("--- snippets")
     snippet = [FieldSpec(name="title"), FieldSpec(name="text", snippet=SnippetParams(nomatch_words=20, max_matches=3))]
-    await timeit(
+    await t(
         "medium query in big, 100 results with snippets",
         lambda: query_documents("big", fields=snippet, queries=q(MEDIUM), per_page=100),
     )
 
-    print("\n--- aggregation")
-    await timeit("terms(source), all docs in big", lambda: query_aggregate("big", [Axis("source")]))
-    await timeit("month histogram, all docs in big", lambda: query_aggregate("big", [Axis("date", "month")]))
-    await timeit(
-        "month histogram, medium query in big", lambda: query_aggregate("big", [Axis("date", "month")], queries=q(MEDIUM))
-    )
-    await timeit(
+    print("--- aggregation")
+    await t("terms(source), all docs in big", lambda: query_aggregate("big", [Axis("source")]))
+    await t("month histogram, all docs in big", lambda: query_aggregate("big", [Axis("date", "month")]))
+    await t("month histogram, medium query in big", lambda: query_aggregate("big", [Axis("date", "month")], queries=q(MEDIUM)))
+    await t(
         "year x source, common query in big",
         lambda: query_aggregate("big", [Axis("date", "year"), Axis("source")], queries=q(COMMON)),
     )
-    await timeit("tags terms, all docs in big", lambda: query_aggregate("big", [Axis("tags")]))
+    await t("tags terms, all docs in big", lambda: query_aggregate("big", [Axis("tags")]))
+
+
+async def maintenance(label: str, *statements: str) -> None:
+    t0 = time.perf_counter()
+    async with connection() as conn:
+        for statement in statements:
+            await conn.execute(statement)  # type: ignore[arg-type]
+    results[label] = {"seconds": round(time.perf_counter() - t0, 1)}
+    print(f"{label}: {results[label]['seconds']}s")
+
+
+def print_comparison() -> None:
+    """Median times (ms) of the read operations per phase"""
+    labels = [k.rsplit(" [", 1)[0] for k in results if k.endswith(f"[{PHASES[0]}]")]
+    print(f"\n{'operation':55s}" + "".join(f"{p:>20s}" for p in PHASES))
+    for label in labels:
+        row = [results.get(f"{label} [{p}]", {}).get("median_ms") for p in PHASES]
+        print(f"{label:55s}" + "".join(f"{v:20.1f}" if v is not None else f"{'-':>20s}" for v in row))
+
+
+async def benchmark() -> None:
+    await maintenance("vacuum after load", "VACUUM ANALYZE documents")  # also merges BM25 index segments
+    results["sizes after load"] = await sizes()
+    await reads(PHASES[0])
+
+    # A mass update: unmapping and remapping the source column rewrites all documents of big (twice). This is what
+    # happens on e.g. tagging all documents or changing a field type. In between, sort on source without the column.
+    fields = [FieldSpec(name="title"), FieldSpec(name="date")]
+    print("\n=== mass update of big")
+    t0 = time.perf_counter()
+    await update_fields("big", {"source": UpdateDocumentField(fast_sort=False)})
+    results["unmap source (updates all rows of big)"] = {"seconds": round(time.perf_counter() - t0, 1)}
+    await timeit(
+        "sort by source (not mapped: reads all rows), big",
+        lambda: query_documents("big", fields=fields, sort=[{"source": {"order": "desc"}}]),  # type: ignore
+        repeat=2,
+    )
+    t0 = time.perf_counter()
+    await update_fields("big", {"source": UpdateDocumentField(fast_sort=True)})
+    results["map source (updates all rows of big)"] = {"seconds": round(time.perf_counter() - t0, 1)}
+    print(
+        f"unmap + map source: {results['unmap source (updates all rows of big)']['seconds']}s + "
+        f"{results['map source (updates all rows of big)']['seconds']}s"
+    )
+    # dead rows and index entries remain; vacuum and rebuild the index (online), see `amcat4 optimize --reindex`
+    await maintenance(
+        "vacuum + reindex after mass update", "VACUUM ANALYZE documents", "REINDEX INDEX CONCURRENTLY documents_bm25"
+    )
+    results["sizes after mass update"] = await sizes()
+    await reads(PHASES[1])
+
+    # VACUUM FULL rewrites the table (and its indexes) without the dead space, but locks the table while doing so
+    await maintenance("VACUUM FULL", "VACUUM FULL ANALYZE documents")
+    results["sizes after VACUUM FULL"] = await sizes()
+    await reads(PHASES[2])
+    print_comparison()
 
     print("\n--- writes")
     t0 = time.perf_counter()

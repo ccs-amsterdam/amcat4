@@ -78,69 +78,80 @@ roles, api_keys, requests, server_settings, object_storage   -- system data, pla
 | When grouping inside the index, json dates/numbers are returned in an internal representation | Dates/numbers without interval are grouped in SQL |
 | `snippet_positions` returns utf-8 byte offsets, and no positions for prefix queries | Converted to characters, combined with our own matcher |
 | Small inserts are buffered in a *mutable segment*, which made every query 5-10x slower after many small uploads | The index is created with `mutable_segment_rows = 0` |
-| Updating many rows (e.g. tagging a large set, mapping a field to a standard column) leaves the BM25 index bloated and slower, also after `VACUUM` | Rebuild the index online with `amcat4 optimize --reindex [--project <id>]` (`REINDEX INDEX CONCURRENTLY`) after large updates; with partitioning only the partition of the project |
+| Updating many rows (e.g. tagging a large set, mapping a field to a standard column) leaves the BM25 index bloated and slower, also after `VACUUM` | Rebuild the index online with `amcat4 optimize --reindex [--project <id>]` (`REINDEX INDEX CONCURRENTLY`) after large updates; with partitioning only the partition of the project. In the benchmark this did not fully restore the speed of aggregations over a whole project (see below) |
 | BM25 indexes work on partitioned tables: one index per partition, partition pruning and Top-K sorting work | The documents table is partitioned on project |
+| SQL conditions on columns that are not in the BM25 index are checked against the table for every match (2-10x slower for queries with many matches) | `partition_id` is in the index |
 | `pdb.agg` terms counts on arrays are approximate; date histograms only support fixed intervals | Exact SQL aggregation |
 | The paradedb image also contains pgvector and PostGIS | Vectors use pgvector |
 
 ## Benchmark
 
-The numbers below were measured before the documents table was partitioned, and before the sort slots (date,
-number, keyword) were replaced by the standard `date` and `source` columns. The script now times mapping and sorting
-on `source` instead of a number field, so those rows will differ in a new run.
-
 `uv run python benchmark/pg_benchmark.py --scale 1.0` (results in `benchmark/benchmark_results.json`)
 
 - **Data:** 1,000,000 synthetic documents (title + ~150 word text, keyword, date, integer, tags) in 821 projects: one big
   project (500k), 20 medium (15k each), 800 small (250 each). Zipf-distributed vocabulary; a *rare* term (0.05% of
-  documents), a *medium* term (2%) and a *common* term (~99%).
-- **Machine:** 4-core container, 15 GB RAM, untuned postgres settings in the paradedb image.
+  documents), a *medium* term (2%) and a *common* term (~99%). All projects fit in one partition (the BM25 index is
+  ~500 MB), so the big project shares its partition and index with all other projects.
+- **Machine:** desktop (i9-14900KF, 32 threads, 62 GB RAM), postgres in the paradedb docker image without resource
+  limits and with untuned settings. (Earlier runs on a 4-core container with 15 GB RAM were ~1.5-3x slower.)
 - Times are medians of 5 runs after a warm-up, via the same functions the API uses (so including field lookups,
   result conversion and the count for the total number of results).
+- The read operations are measured in three phases: on **fresh** data (loaded with the normal upload code, then
+  `VACUUM`); **after a mass update** of the big project (all 500k documents rewritten twice, by unmapping and
+  remapping the `source` column), followed by `VACUUM` and an online index rebuild (`REINDEX INDEX CONCURRENTLY`, as
+  `amcat4 optimize --reindex` does); and **after `VACUUM FULL`**, which rewrites the table without dead rows (but
+  locks it while doing so). The fresh phase runs directly after loading, so small searches are a bit slower there
+  (a colder cache); differences of a few ms are noise.
 
-Fresh data (loaded with the normal upload code, then `VACUUM`):
+| Operation | Fresh | After mass update | After VACUUM FULL |
+|---|---|---|---|
+| Search rare / medium term in big project (500k), 10 results + total count | 27 / 27 ms | 12 / 13 ms | 11 / 16 ms |
+| Search common term in big (~495k hits, so mostly counting) | 129 ms | 110 ms | 119 ms |
+| Search in a medium (15k) / small (250) project | 19-33 ms | 6-10 ms | 5-12 ms |
+| Search common term across 20 medium projects | 137 ms | 105 ms | 112 ms |
+| Complex boolean query (OR, phrase with slop, NOT) in big | 124 ms | 84 ms | 117 ms |
+| Prefix query in big | 29 ms | 14 ms | 13 ms |
+| Date range + keyword filter / month number filter in big | 23 / 23 ms | 13 / 16 ms | 11 / 23 ms |
+| Sort by date (date column), without / with common query, big | 98 / 131 ms | 95 / 114 ms | 104 / 111 ms |
+| Sort by source (source column), big | 97 ms | 92 ms | 92 ms |
+| Page 1000 (offset 10,000), common query, big | 136 ms | 128 ms | 130 ms |
+| 100 results with snippets, big | 32 ms | 17 ms | 23 ms |
+| Month histogram for a query (10k hits) in big | 24 ms | 13 ms | 12 ms |
+| Terms(source) / month histogram over all 500k docs of big | 94 / 92 ms | 195 / 193 ms | 180 / 182 ms |
+| Year x source for the common query (495k hits) | 139 ms | 228 ms | 228 ms |
+| Tag terms over all docs of big (SQL, not inside the index) | 74 ms | 71 ms | 66 ms |
+| Storage: table incl. TOAST / BM25 index / total | 1954 / 503 / 2572 MB | 3907 / 621 / 4674 MB | 1953 / 629 / 2677 MB |
+
+Other operations:
 
 | Operation | Time |
 |---|---|
-| Load 1M docs (4 parallel uploads of 5000 documents, incl. generating them) | 181 s (5.5k docs/s) |
-| Storage: table incl. TOAST / BM25 index / total | 1954 MB / 467 MB / 2.5 GB |
-| Search rare / medium / common term in big project (500k), 10 results + total count | 46 / 42 / 64 ms |
-| Search in a medium (15k) / small (250) project | 30-37 / 34-41 ms |
-| Search common term across 20 medium projects | 94 ms |
-| Complex boolean query (OR, phrase with slop, NOT) in big | 167 ms |
-| Prefix query in big | 46 ms |
-| Date range + keyword filter / month number filter in big | 46 / 32 ms |
-| Sort by date (date column), without / with common query, big | 45 / 74 ms |
-| Sort by a number *without* sort slot, big (reads all 500k rows) | 4.1 s |
-| 100 results with snippets | 53 ms |
-| Month histogram for a query (10k hits) in big | 40 ms |
+| Load 1M docs (4 parallel uploads of 5000 documents, incl. generating them) | 60 s (16.7k docs/s) |
+| Sort by source *without* the source column, big (reads all 500k rows) | 1.7 s |
+| Update all 500k documents of big (unmapping or mapping the source column) | 24-25 s |
+| `VACUUM` + `REINDEX INDEX CONCURRENTLY` after that / `VACUUM FULL` | 41 s / 12 s |
+| Add a tag to 9.8k documents (by query) | 0.65 s |
+| Copy 9.8k documents (subset by query) to a new project | 0.8 s |
+| Upload 100 documents into a small project | 18 ms |
 
-After putting a number field of the big project in a sort slot (which updates all 500k rows, 102 s) and rebuilding
-the index (`VACUUM` + `REINDEX INDEX CONCURRENTLY`, 110 s):
+So most searches and filters take 5-30 ms, and operations that touch (almost) all 500k documents of a project
+(counting a common term, sorting everything, aggregating the whole project) take ~100-200 ms. A mass update mostly
+affects aggregations over the whole project (2x slower), even after rebuilding the index. `VACUUM FULL` does not
+fix that, so it is not the (bloated) table; it seems to be the rebuilt BM25 index, which is also ~25% larger than
+the one built during the upload.
 
-| Operation | Time |
-|---|---|
-| Sort by that number (sort slot), big | 248 ms |
-| Page 1000 (offset 10,000), common query, big | 292 ms |
-| Aggregate terms(source) / month histogram over all 500k docs of big | 253 / 256 ms |
-| Year x source for the common query (500k hits) | 283 ms |
-| Tag terms over all docs of big (SQL, not inside the index) | 716 ms |
-| Add a tag to 9.8k documents (by query) | 2.2 s |
-| Copy 9.8k documents (subset by query) to a new project | 2-3 s |
-| Upload 100 documents into a small project | 50-60 ms |
-
-Earlier runs on a freshly built index showed aggregations over the whole big project in 17-40 ms, so mass updates
-of a large project leave a measurable cost even after vacuum and reindex (probably the bloated table: a full
-`VACUUM FULL` was not tested).
+The first run of this benchmark (after partitioning) was 2-10x slower for queries with many matches: `partition_id`
+was not in the BM25 index, so pg_search checked the partition condition against the table for every match. It is
+now in the index.
 
 ## Open issues
 
-- **Mass updates** (updating all documents of a large project) are slow (~100 s for 500k documents, every update
-  rewrites the row and its index entry) and degrade query performance until `amcat4 optimize --reindex`; aggregations
-  stayed ~5x slower than on fresh data. Worth investigating (autovacuum settings, `VACUUM FULL`, newer pg_search).
+- **Mass updates** (updating all documents of a large project) take ~25 s for 500k documents (every update rewrites
+  the row and its index entry), and afterwards aggregations over the whole project stay ~2x slower, also after
+  `amcat4 optimize --reindex` and `VACUUM FULL`. Worth investigating (index segment layout, newer pg_search).
 - Once, an update by query directly after `REINDEX INDEX CONCURRENTLY` (with autovacuum running) took more than 10
   minutes before it was cancelled; it took 2 s when repeated. Not reproduced; keep an eye on this.
-- Tag aggregations are done in SQL (unnest), which is the slowest aggregation (0.7 s for 500k documents).
+- Tag aggregations are done in SQL (unnest), not inside the index (~70 ms for 500k documents in the benchmark).
 - Geo distance queries would need PostGIS.
 - Read-only reference projects (see design discussion) are not implemented.
 - Postgres settings are untuned; real (longer, natural language) texts and larger corpora should be tested.
