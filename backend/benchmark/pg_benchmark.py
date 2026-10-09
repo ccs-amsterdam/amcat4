@@ -23,6 +23,7 @@ from typing import Any, Awaitable, Callable
 
 os.environ["AMCAT4_POSTGRES_SCHEMA"] = "amcat_benchmark"
 
+import amcat4.connections  # noqa: E402
 from amcat4.connections import amcat_connections  # noqa: E402
 from amcat4.models import FieldSpec, FilterSpec, ProjectSettings, SnippetParams, UpdateDocumentField  # noqa: E402
 from amcat4.postgres.connection import connection, fetch_one  # noqa: E402
@@ -45,6 +46,21 @@ FIELD_TYPES: dict[str, Any] = {
 SOURCES = [f"source_{i}" for i in range(25)]
 TAGS = [f"tag{i}" for i in range(40)]
 WORDS_PER_DOC = 150
+
+
+class _SerialPool(amcat4.connections.AsyncConnectionPool):
+    """
+    Connection pool without parallel query. pg_search estimates the number of matches from the largest index segment
+    (https://github.com/paradedb/paradedb/issues/6563), and postgres decides on parallel workers based on that
+    estimate. So the number of workers would depend on the index layout, making the phases incomparable.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs["kwargs"]["options"] += " -c max_parallel_workers_per_gather=0"
+        super().__init__(*args, **kwargs)
+
+
+amcat4.connections.AsyncConnectionPool = _SerialPool  # type: ignore[misc]
 
 results: dict[str, Any] = {}
 
@@ -129,7 +145,7 @@ async def load(scale: float) -> None:
     print(f"Loaded in {elapsed:.0f}s ({total / elapsed:.0f} docs/s, including generating the documents)")
 
 
-PHASES = ["fresh", "after mass update", "after VACUUM FULL"]
+PHASES = ["after upload", "after upload + reindex", "after mass update", "after mass update + reindex"]
 
 
 def q(query=None):
@@ -154,7 +170,6 @@ async def reads(phase: str) -> None:
     async def t(label, fn, **kargs):
         return await timeit(f"{label} [{phase}]", fn, **kargs)
 
-    print(f"\n=== {phase}: {await sizes()}")
     print("--- search (10 results incl. total count)")
     for project in ["big", "medium_0", "small_0"]:
         for label, term in [("rare", RARE), ("medium", MEDIUM), ("common", COMMON)]:
@@ -217,16 +232,34 @@ async def maintenance(label: str, *statements: str) -> None:
 def print_comparison() -> None:
     """Median times (ms) of the read operations per phase"""
     labels = [k.rsplit(" [", 1)[0] for k in results if k.endswith(f"[{PHASES[0]}]")]
-    print(f"\n{'operation':55s}" + "".join(f"{p:>20s}" for p in PHASES))
+    print(f"\n{'operation':55s}" + "".join(f"{p:>30s}" for p in PHASES))
     for label in labels:
         row = [results.get(f"{label} [{p}]", {}).get("median_ms") for p in PHASES]
-        print(f"{label:55s}" + "".join(f"{v:20.1f}" if v is not None else f"{'-':>20s}" for v in row))
+        print(f"{label:55s}" + "".join(f"{v:30.1f}" if v is not None else f"{'-':>30s}" for v in row))
+
+
+async def segments() -> int:
+    """Number of segments of the BM25 index (of all partitions)"""
+    row = await fetch_one(
+        """SELECT count(*) AS n FROM pg_partition_tree('documents_bm25') t, paradedb.index_info(t.relid)
+           WHERE t.isleaf"""
+    )
+    return row["n"] if row else 0
+
+
+async def phase(name: str) -> None:
+    results[f"sizes {name}"] = {**await sizes(), "segments": await segments()}
+    print(f"\n=== {name}: {results[f'sizes {name}']}")
+    await reads(name)
 
 
 async def benchmark() -> None:
-    await maintenance("vacuum after load", "VACUUM ANALYZE documents")  # also merges BM25 index segments
-    results["sizes after load"] = await sizes()
-    await reads(PHASES[0])
+    # VACUUM (which autovacuum also does) updates the statistics; it does not merge BM25 index segments
+    await maintenance("vacuum after upload", "VACUUM ANALYZE documents")
+    await phase(PHASES[0])
+    # rebuild the index online, as `amcat4 optimize --reindex` does
+    await maintenance("reindex after upload", "REINDEX INDEX CONCURRENTLY documents_bm25")
+    await phase(PHASES[1])
 
     # A mass update: unmapping and remapping the source column rewrites all documents of big (twice). This is what
     # happens on e.g. tagging all documents or changing a field type. In between, sort on source without the column.
@@ -247,17 +280,10 @@ async def benchmark() -> None:
         f"unmap + map source: {results['unmap source (updates all rows of big)']['seconds']}s + "
         f"{results['map source (updates all rows of big)']['seconds']}s"
     )
-    # dead rows and index entries remain; vacuum and rebuild the index (online), see `amcat4 optimize --reindex`
-    await maintenance(
-        "vacuum + reindex after mass update", "VACUUM ANALYZE documents", "REINDEX INDEX CONCURRENTLY documents_bm25"
-    )
-    results["sizes after mass update"] = await sizes()
-    await reads(PHASES[1])
-
-    # VACUUM FULL rewrites the table (and its indexes) without the dead space, but locks the table while doing so
-    await maintenance("VACUUM FULL", "VACUUM FULL ANALYZE documents")
-    results["sizes after VACUUM FULL"] = await sizes()
-    await reads(PHASES[2])
+    await maintenance("vacuum after mass update", "VACUUM ANALYZE documents")
+    await phase(PHASES[2])
+    await maintenance("reindex after mass update", "REINDEX INDEX CONCURRENTLY documents_bm25")
+    await phase(PHASES[3])
     print_comparison()
 
     print("\n--- writes")
