@@ -12,7 +12,8 @@ from amcat4.config import get_settings, validate_settings
 from amcat4.connections import s3_enabled
 from amcat4.models import ContactInfo, Links, LinksGroup, Roles, ServerSettings, User
 from amcat4.objectstorage.image_processing import create_image_from_url
-from amcat4.postgres.connection import fetch_one
+from amcat4.postgres.connection import connection, fetch_one
+from amcat4.postgres.layout import partition_overview
 from amcat4.systemdata.roles import HTTPException_if_not_server_role
 from amcat4.systemdata.settings import get_server_settings, upsert_server_settings
 
@@ -33,6 +34,27 @@ class BrandingBody(BaseModel):
 
 
 # RESPONSE MODELS
+class PartitionProject(BaseModel):
+    project: str = Field(..., description="The project id.")
+    documents: int = Field(..., description="The number of documents of the project.")
+
+
+class PartitionInfo(BaseModel):
+    """A documents partition: a part of the documents table with its own full-text (BM25) index."""
+
+    partition_id: int = Field(..., description="The partition number.")
+    table: str = Field(..., description="The name of the partition table.")
+    index_bytes: int = Field(..., description="Size of the BM25 index of the partition (bytes).")
+    total_bytes: int = Field(..., description="Size of the partition, including all its indexes (bytes).")
+    documents: int = Field(..., description="The number of documents in the partition.")
+    projects: list[PartitionProject] = Field(..., description="The projects in the partition (largest first).")
+
+
+class PartitionsResponse(BaseModel):
+    max_index_bytes: int = Field(..., description="New projects go to a new partition once the BM25 index is this big.")
+    partitions: list[PartitionInfo]
+
+
 class AuthConfigResponse(BaseModel):
     """Response for authentication configuration."""
 
@@ -101,3 +123,18 @@ async def change_branding(data: BrandingBody, user: User = Depends(authenticated
     d = data.model_dump(exclude_unset=True, exclude={"icon_url"})
     d["icon"] = await create_image_from_url(data.icon_url) if data.icon_url else None
     await upsert_server_settings(ServerSettings(**d))
+
+
+@app_info.get("/partitions")
+async def get_partitions(user: User = Depends(authenticated_user)) -> PartitionsResponse:
+    """
+    The documents partitions, with their size and projects (server admins only).
+    New projects are added to the newest partition, until its BM25 index reaches the maximum size.
+    """
+    await HTTPException_if_not_server_role(user, Roles.ADMIN)
+    async with connection() as conn:
+        partitions = await partition_overview(conn)
+    return PartitionsResponse(
+        max_index_bytes=int(get_settings().partition_max_gb * 1024**3),
+        partitions=[PartitionInfo(**p) for p in partitions],
+    )

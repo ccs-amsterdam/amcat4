@@ -15,34 +15,35 @@ The benchmark script is `benchmark/pg_benchmark.py`.
 ```
 projects(pk, id, name, description, folder, contact, image, archived)
 fields(pk, project_pk, name, type, unique_field, metareader, reader, client_settings, sort_slot)
-documents(id, project_pk, doc_id, text_data jsonb, meta_data jsonb, extra_data jsonb, source jsonb,
-          dedup_hash, sort_date, sort_number, sort_keyword, created_at, updated_at)
-    PRIMARY KEY (id, project_pk), UNIQUE (project_pk, doc_id), UNIQUE (project_pk, dedup_hash)
-    PARTITION BY HASH (project_pk): 64 partitions, each with its own BM25 index
-    BM25 index on (id, project_pk, sort_date, sort_number, sort_keyword, text_data, meta_data)
-document_vectors(document_id, project_pk, field_pk, embedding vector)   -- HNSW index per field
+documents(id, partition_id, project_pk, doc_id, text_fields jsonb, exact_fields jsonb, stored_fields jsonb,
+          copied_from jsonb, dedup_hash, date, source, created_at, updated_at)
+    PRIMARY KEY (id, partition_id), UNIQUE (partition_id, project_pk, doc_id), UNIQUE (.., dedup_hash)
+    PARTITION BY LIST (partition_id): partitions are created when needed, each with its own BM25 index
+    BM25 index on (id, project_pk, date, source, text_fields, exact_fields)
+document_vectors(document_id, partition_id, field_pk, embedding vector)   -- HNSW index per field
 jobs(id, type, status, project_pk, params, progress, result, ...)  -- background jobs (e.g. copy)
 roles, api_keys, requests, server_settings, object_storage   -- system data, plain tables
 ```
 
 - **One table for all projects.** A project owns its documents. Cross-project queries filter on several projects.
   (An empty table with a BM25 index costs ~2.8 MB, so a table per project would be expensive.)
-- **Partitioned by project.** The documents table is hash partitioned on `project_pk` into 64 partitions, each with
-  its own BM25 index. A query on a project only uses its own partition (the search adds a SQL condition on
-  `project_pk` for this), and after a mass update only that partition's index needs to be rebuilt
-  (`amcat4 optimize --reindex --project <id>`). Rebuilding runs online: reads and writes continue. The cost is
-  ~180 MB for the 64 empty indexes, and the number of partitions can only be changed by rewriting the table.
+- **Partitioned by project.** The documents table is list partitioned on `partition_id`, each partition with its own
+  BM25 index. Every project is assigned to a partition when it is created: the newest one, until its BM25 index
+  reaches `partition_max_gb`, after which a new partition is created. A query on a project only uses its own
+  partition (queries add a SQL condition on `partition_id` for this), and after a mass update only that partition's
+  index needs to be rebuilt (`amcat4 optimize --reindex --project <id>`). Rebuilding runs online: reads and writes
+  continue.
 - **Values are keyed by field key (`f<field pk>`), not by name.** Renaming a field (`systemdata.fields.rename_field`)
   only changes the field definition. The same name can have different keys in different projects; queries over
   multiple projects resolve a name to one key per project.
-- **Storage columns by how a field is indexed:** `text_data` (tokenized, with positions: text fields), `meta_data`
-  (exact and columnar: keyword, tag, url, number, integer, boolean, date, geo_point, multimedia), `extra_data` (stored
+- **Storage columns by how a field is indexed:** `text_fields` (tokenized, with positions: text fields), `exact_fields`
+  (exact and columnar: keyword, tag, url, number, integer, boolean, date, geo_point, multimedia), `stored_fields` (stored
   only: object), `document_vectors` (vector). A new field is a new json key, so the BM25 index never needs to be
   rebuilt for new fields.
-- **Sort slots.** pg_search cannot sort on json keys inside the index. Each project can put one date, one number and
-  one keyword field in a *sort slot*: a real column (`sort_date`, `sort_number`, `sort_keyword`) in the index. Sorting
-  on such a field is fast; sorting on other fields works but reads all matching rows. The first date field gets the
-  date slot automatically; others are set with `fast_sort` in the field update API.
+- **Standard columns.** pg_search cannot sort on json keys inside the index. Each project can map one date field and
+  one keyword field to the standard `date` and `source` columns, which are real columns in the index. Sorting on
+  such a field is fast; sorting on other fields works but reads all matching rows. The first date field and a keyword
+  field called `source` are mapped automatically; others are set with `fast_sort` in the field update API.
 - **Derived date keys.** For date fields, `f12_year`, `f12_month`, `f12_week`, `f12_day`, `f12_monthnr`,
   `f12_dayofweek`, ... are stored as well, so date histograms and date part filters run inside the index.
 - **Geo points** are stored as `{"lat": .., "lon": ..}`, so `location.lat` and `location.lon` can be used in range
@@ -59,7 +60,7 @@ roles, api_keys, requests, server_settings, object_storage   -- system data, pla
   our own code. Match positions come from the parsed query, combined with `paradedb.snippet_positions`.
 - **Pagination** uses stateless cursors (keyset on the internal id for unsorted results, otherwise offsets).
 - **Copies** (a `copy` job) physically copy (a subset of) documents and fields in batches, recording provenance in
-  `source`.
+  `copied_from`.
   Read-only *reference* projects are a planned feature (see the TODO in `postgres/layout.py`).
 - **Backups:** standard postgres tools (`pg_dump`, or pgBackRest for point in time recovery) replace elastic snapshots.
 
@@ -70,21 +71,23 @@ roles, api_keys, requests, server_settings, object_storage   -- system data, pla
 | Structured json queries on json paths support match, phrase (with slop), phrase_prefix, fuzzy, boolean, term, range (numbers, dates, strings), exists (columnar fields) | Our query parser compiles to these |
 | The string query parser (`paradedb.parse`) on json paths does not support wildcards, phrase slop or date ranges, and `AND NOT` silently returns nothing | We use our own parser |
 | A query without a field does not search all keys of a json column | We search the (queryable) text fields explicitly |
-| Regex queries do not work on json paths | Only trailing wildcards (`immigr*`) are supported |
+| Regex queries do not work on json paths (the pattern is matched against the whole stored term, ignoring the field path) | Only trailing wildcards (`immigr*`) are supported |
 | Dates stored as RFC3339 strings are typed as dates (range queries, columnar) | No numeric date representation needed |
-| No Top-K sorting on json keys | Sort slots |
+| No Top-K sorting on json keys | Standard `date` and `source` columns |
 | Expressions (`date_trunc`, casts) are not pushed into the index; grouping on a raw json keyword is | Derived date keys; keyword grouping inside the index |
 | When grouping inside the index, json dates/numbers are returned in an internal representation | Dates/numbers without interval are grouped in SQL |
 | `snippet_positions` returns utf-8 byte offsets, and no positions for prefix queries | Converted to characters, combined with our own matcher |
 | Small inserts are buffered in a *mutable segment*, which made every query 5-10x slower after many small uploads | The index is created with `mutable_segment_rows = 0` |
-| Updating many rows (e.g. tagging a large set, putting a field in a sort slot) leaves the BM25 index bloated and slower, also after `VACUUM` | Rebuild the index online with `amcat4 optimize --reindex [--project <id>]` (`REINDEX INDEX CONCURRENTLY`) after large updates; with partitioning only the partition of the project |
+| Updating many rows (e.g. tagging a large set, mapping a field to a standard column) leaves the BM25 index bloated and slower, also after `VACUUM` | Rebuild the index online with `amcat4 optimize --reindex [--project <id>]` (`REINDEX INDEX CONCURRENTLY`) after large updates; with partitioning only the partition of the project |
 | BM25 indexes work on partitioned tables: one index per partition, partition pruning and Top-K sorting work | The documents table is partitioned on project |
 | `pdb.agg` terms counts on arrays are approximate; date histograms only support fixed intervals | Exact SQL aggregation |
 | The paradedb image also contains pgvector and PostGIS | Vectors use pgvector |
 
 ## Benchmark
 
-The numbers below were measured before the documents table was partitioned.
+The numbers below were measured before the documents table was partitioned, and before the sort slots (date,
+number, keyword) were replaced by the standard `date` and `source` columns. The script now times mapping and sorting
+on `source` instead of a number field, so those rows will differ in a new run.
 
 `uv run python benchmark/pg_benchmark.py --scale 1.0` (results in `benchmark/benchmark_results.json`)
 
@@ -107,7 +110,7 @@ Fresh data (loaded with the normal upload code, then `VACUUM`):
 | Complex boolean query (OR, phrase with slop, NOT) in big | 167 ms |
 | Prefix query in big | 46 ms |
 | Date range + keyword filter / month number filter in big | 46 / 32 ms |
-| Sort by date (sort slot), without / with common query, big | 45 / 74 ms |
+| Sort by date (date column), without / with common query, big | 45 / 74 ms |
 | Sort by a number *without* sort slot, big (reads all 500k rows) | 4.1 s |
 | 100 results with snippets | 53 ms |
 | Month histogram for a query (10k hits) in big | 40 ms |

@@ -36,7 +36,7 @@ def axis_expr(axis: Axis, fs: list[FieldInfo], lateral_alias: str) -> tuple[sql.
     """Returns the SQL expression for the axis, and an optional LATERAL join (for tags)"""
     ftype = fs[0].type
     if ftype == "tag":
-        arrays = [sql.SQL("documents.meta_data->{}").format(sql.Literal(f.key)) for f in fs]
+        arrays = [sql.SQL("documents.exact_fields->{}").format(sql.Literal(f.key)) for f in fs]
         arr = arrays[0] if len(arrays) == 1 else sql.SQL("coalesce({})").format(sql.SQL(", ").join(arrays))
         lateral = sql.SQL("CROSS JOIN LATERAL jsonb_array_elements_text({}) AS {}(value)").format(
             arr, sql.Identifier(lateral_alias)
@@ -48,7 +48,7 @@ def axis_expr(axis: Axis, fs: list[FieldInfo], lateral_alias: str) -> tuple[sql.
         # index. Values are converted to the right type afterwards. (Not for dates and numbers: when grouping
         # inside the index, pg_search returns these in an internal representation.)
         keys = [f.key if axis.interval is None else f.derived_key(axis.interval) for f in fs]
-        raws = [sql.SQL("documents.meta_data->>{}").format(sql.Literal(k)) for k in keys]
+        raws = [sql.SQL("documents.exact_fields->>{}").format(sql.Literal(k)) for k in keys]
         return (raws[0] if len(raws) == 1 else sql.SQL("coalesce({})").format(sql.SQL(", ").join(raws))), None
 
     exprs = [field_sql(f) for f in fs]

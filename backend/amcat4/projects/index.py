@@ -3,12 +3,14 @@ from datetime import UTC, datetime
 from typing import AsyncIterable
 
 from botocore.exceptions import BotoCoreError
+from psycopg import sql
 
 from amcat4.connections import s3_enabled
 from amcat4.errors import NotFoundError
 from amcat4.models import IndexId, ProjectSettings, RoleRule, Roles, User
 from amcat4.objectstorage.multimedia import delete_project_multimedia
 from amcat4.postgres.connection import connection, fetch_all, fetch_one
+from amcat4.postgres.layout import project_filter
 from amcat4.systemdata.roles import list_user_project_roles
 from amcat4.systemdata.settings import (
     _project_from_row,
@@ -68,7 +70,7 @@ async def clear_project_index(index_id: str):
             logging.warning(f"Could not delete multimedia for index {index_id}: {e}")
     async with connection() as conn:
         async with conn.transaction():
-            await conn.execute("DELETE FROM documents WHERE project_pk = %s", [row["pk"]])
+            await conn.execute(sql.SQL("DELETE FROM documents WHERE {}").format(await project_filter(conn, row["pk"])))
             await conn.execute("DELETE FROM fields WHERE project_pk = %s", [row["pk"]])
 
 
@@ -126,9 +128,14 @@ async def list_user_project_indices(
 
 async def index_size_in_bytes(index_id: IndexId) -> int:
     """(Approximate) size of the documents of the project, as stored on disk (after compression)"""
-    row = await fetch_one(
-        """SELECT coalesce(sum(pg_column_size(d.*)), 0) AS bytes FROM documents d
-           WHERE d.project_pk = (SELECT pk FROM projects WHERE id = %s)""",
-        [index_id],
-    )
-    return int(row["bytes"]) if row else 0
+    project = await fetch_one("SELECT pk FROM projects WHERE id = %s", [index_id])
+    if project is None:
+        return 0
+    async with connection() as conn:
+        cur = await conn.execute(
+            sql.SQL("SELECT coalesce(sum(pg_column_size(documents.*)), 0) AS bytes FROM documents WHERE {}").format(
+                await project_filter(conn, project["pk"])
+            )
+        )
+        row = await cur.fetchone()
+    return int(row["bytes"]) if row else 0  # type: ignore[index, call-overload]

@@ -158,8 +158,8 @@ class DocumentField(BaseModel):
     metareader: DocumentFieldMetareaderAccess = DocumentFieldMetareaderAccess()
     reader: DocumentFieldReaderAccess = DocumentFieldReaderAccess()
     client_settings: dict[str, Any] = {}
-    # If set, the field is in a "sort slot" (date, number or keyword), which makes sorting on it fast
-    sort_slot: Literal["date", "number", "keyword"] | None = None
+    # If set, the field is mapped to a standard metadata column (date or source), which makes sorting on it fast
+    sort_slot: Literal["date", "source"] | None = None
 
     @model_validator(mode="after")
     def validate_access(self) -> Self:
@@ -200,8 +200,8 @@ class UpdateDocumentField(BaseModel):
     client_settings: dict[str, Any] | None = None
     fast_sort: bool | None = Field(
         default=None,
-        description="Put this field in the (date, number or keyword) sort slot of the project, which makes sorting "
-        "on this field fast. A project can have one field per sort slot.",
+        description="Map this field to the standard date (for date fields) or source (for keyword fields) column of "
+        "the project, which makes sorting on this field fast. A project can map one field to each.",
     )
 
 

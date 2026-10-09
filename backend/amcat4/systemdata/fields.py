@@ -26,10 +26,11 @@ from amcat4.models import (
     UpdateDocumentField,
     User,
 )
-from amcat4.postgres.connection import connection, fetch_all, fetch_one
+from amcat4.postgres.connection import connection, fetch_all
 from amcat4.postgres.documents import convert_field, delete_field_values, update_dedup_hashes
 from amcat4.postgres.fields import FieldInfo, FieldSet, field_info_from_row, sort_slot_for_type, storage_column
-from amcat4.postgres.projects import project_pk, project_pks
+from amcat4.postgres.layout import project_filter
+from amcat4.postgres.projects import project_partitions, project_pk, project_pks
 from amcat4.systemdata.roles import get_user_project_role, role_is_at_least
 
 _COLUMNS = "pk, name, type, unique_field, metareader, reader, client_settings, sort_slot"
@@ -96,7 +97,7 @@ async def get_fieldset(indices: str | list[str], queryable: set[str] | None = No
     project_fields: dict[int, dict[str, FieldInfo]] = {pk: {} for pk in pks.values()}
     for row in rows:
         project_fields[row["project_pk"]][row["name"]] = field_info_from_row(row)
-    return FieldSet(project_fields, queryable=queryable)
+    return FieldSet(project_fields, queryable=queryable, partitions=await project_partitions(list(pks.values())))
 
 
 def _standardize_createfields(fields: Mapping[str, FieldType | CreateDocumentField]) -> dict[str, CreateDocumentField]:
@@ -141,8 +142,10 @@ async def create_fields(index: str, fields: Mapping[str, FieldType | CreateDocum
             cur = await conn.execute("SELECT sort_slot FROM fields WHERE project_pk = %s AND sort_slot IS NOT NULL", [pk])
             used_slots = {row["sort_slot"] for row in await cur.fetchall()}  # type: ignore[index, call-overload]
             for name, f in new_fields.items():
-                # The first date field automatically gets the date sort slot
-                slot = "date" if f.type == "date" and "date" not in used_slots else None
+                # The first date field, and a keyword field called source, automatically get the standard columns
+                slot = sort_slot_for_type(f.type)
+                if slot is None or slot in used_slots or (slot == "source" and name.lower() != "source"):
+                    slot = None
                 if slot:
                     used_slots.add(slot)
                 await conn.execute(
@@ -255,8 +258,9 @@ async def _set_sort_slot(conn, project: int, f: FieldInfo, fast_sort: bool) -> N
         if f.sort_slot:
             await conn.execute("UPDATE fields SET sort_slot = NULL WHERE pk = %s", [f.pk])
             await conn.execute(
-                sql.SQL("UPDATE documents SET {} = NULL WHERE project_pk = %s").format(sql.Identifier(f"sort_{f.sort_slot}")),
-                [project],
+                sql.SQL("UPDATE documents SET {} = NULL WHERE {}").format(
+                    sql.Identifier(f.sort_slot), await project_filter(conn, project)
+                )
             )
         return
     slot = sort_slot_for_type(f.type)
@@ -266,12 +270,12 @@ async def _set_sort_slot(conn, project: int, f: FieldInfo, fast_sort: bool) -> N
         return
     await conn.execute("UPDATE fields SET sort_slot = NULL WHERE project_pk = %s AND sort_slot = %s", [project, slot])
     await conn.execute("UPDATE fields SET sort_slot = %s WHERE pk = %s", [slot, f.pk])
-    cast = {"date": sql.SQL("timestamptz"), "number": sql.SQL("double precision"), "keyword": sql.SQL("text")}[slot]
+    cast = {"date": sql.SQL("timestamptz"), "source": sql.SQL("text")}[slot]
+    where = await project_filter(conn, project)
     await conn.execute(
-        sql.SQL("UPDATE documents SET {} = ({}->>{})::{} WHERE project_pk = %s").format(
-            sql.Identifier(f"sort_{slot}"), sql.Identifier(f.column), sql.Literal(f.key), cast
-        ),
-        [project],
+        sql.SQL("UPDATE documents SET {} = ({}->>{})::{} WHERE {}").format(
+            sql.Identifier(slot), sql.Identifier(f.column), sql.Literal(f.key), cast, where
+        )
     )
 
 
@@ -428,17 +432,19 @@ async def field_values(index: str, field: str, size: int) -> list[str]:
     Get the most frequent values for a given field (e.g. to populate list of filter values on keyword field)
     """
     pk, f = await _field_info(index, field)
-    if f.column != "meta_data":
+    if f.column != "exact_fields":
         raise ValueError(f"Cannot list values of {f.type} field {field}")
-    value = sql.SQL("documents.meta_data->{}").format(sql.Literal(f.key))
+    value = sql.SQL("documents.exact_fields->{}").format(sql.Literal(f.key))
     elements = sql.SQL("CASE jsonb_typeof({v}) WHEN 'array' THEN {v} ELSE jsonb_build_array({v}) END").format(v=value)
-    rows = await fetch_all(
-        sql.SQL(
-            """SELECT value, count(*) AS n FROM documents, jsonb_array_elements_text({}) AS value
-               WHERE project_pk = %s AND documents.meta_data ? {} GROUP BY value ORDER BY n DESC, value LIMIT %s"""
-        ).format(elements, sql.Literal(f.key)),
-        [pk, size],
-    )
+    async with connection() as conn:
+        cur = await conn.execute(
+            sql.SQL(
+                """SELECT value, count(*) AS n FROM documents, jsonb_array_elements_text({}) AS value
+                   WHERE {} AND documents.exact_fields ? {} GROUP BY value ORDER BY n DESC, value LIMIT %s"""
+            ).format(elements, await project_filter(conn, pk), sql.Literal(f.key)),
+            [size],
+        )
+        rows: list[dict] = await cur.fetchall()  # type: ignore[assignment]
     return [row["value"] for row in rows]
 
 
@@ -450,18 +456,18 @@ async def field_stats(index: str, field: str) -> dict[str, Any]:
     pk, f = await _field_info(index, field)
     if f.type not in ("number", "integer", "date"):
         raise ValueError(f"Cannot compute statistics for {f.type} field {field}")
-    raw = sql.SQL("(documents.meta_data->>{})").format(sql.Literal(f.key))
+    raw = sql.SQL("(documents.exact_fields->>{})").format(sql.Literal(f.key))
     if f.type == "date":
         x = sql.SQL("extract(epoch FROM {}::timestamptz)").format(raw)
     else:
         x = sql.SQL("{}::double precision").format(raw)
-    row = await fetch_one(
-        sql.SQL(
-            "SELECT count({x}) AS count, min({x}) AS min, max({x}) AS max, avg({x}) AS avg "
-            "FROM documents WHERE project_pk = %s"
-        ).format(x=x),
-        [pk],
-    )
+    async with connection() as conn:
+        cur = await conn.execute(
+            sql.SQL(
+                "SELECT count({x}) AS count, min({x}) AS min, max({x}) AS max, avg({x}) AS avg FROM documents WHERE {project}"
+            ).format(x=x, project=await project_filter(conn, pk))
+        )
+        row: dict | None = await cur.fetchone()  # type: ignore[assignment]
     assert row is not None
     stats: dict[str, Any] = {"count": row["count"]}
     for k in ("min", "max", "avg"):

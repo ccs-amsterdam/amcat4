@@ -162,14 +162,16 @@ async def optimize(args):
     from psycopg import sql
 
     from amcat4.postgres.connection import connection
-    from amcat4.postgres.layout import document_partition
+    from amcat4.postgres.layout import list_partitions, partition_of
     from amcat4.postgres.projects import project_pk
 
     async with amcat_connections():
         async with connection() as conn:
             table, index = "documents", "documents_bm25"
             if args.project:
-                table, index = await document_partition(conn, await project_pk(args.project))
+                partition_id = await partition_of(conn, await project_pk(args.project))
+                partition = next(p for p in await list_partitions(conn) if p["partition_id"] == partition_id)
+                table, index = partition["table"], partition["index"]
             logging.info(f"Running VACUUM ANALYZE on {table}")
             await conn.execute(sql.SQL("VACUUM ANALYZE {}").format(sql.Identifier(table)))
             if args.reindex:

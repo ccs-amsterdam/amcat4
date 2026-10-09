@@ -4,7 +4,7 @@ Query string parsing for the postgres backend.
 Users write Lucene-like query strings. We parse these ourselves (instead of passing them to the pg_search
 query parser) and compile them to pg_search's structured json query language, because:
 
-- Field names are project-level labels that need to be translated to storage paths ("title" -> "text_data.f12")
+- Field names are project-level labels that need to be translated to storage paths ("title" -> "text_fields.f12")
 - We need to control which fields can be queried (field-level access), including which fields are searched
   when no field is given (pg_search does not search 'all keys' of a json field)
 - The pg_search query parser does not support all syntax on json fields (e.g. wildcards, phrase slop, dates),

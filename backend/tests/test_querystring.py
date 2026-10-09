@@ -62,9 +62,9 @@ async def test_parse_errors(q):
 async def test_compile_default_fields_and_visibility():
     # no field: search all queryable text fields
     q = query_string_to_json("fox", fieldset())
-    assert {c["match"]["field"] for c in q["boolean"]["should"]} == {"text_data.f1", "text_data.f2", "text_data.f6"}
+    assert {c["match"]["field"] for c in q["boolean"]["should"]} == {"text_fields.f1", "text_fields.f2", "text_fields.f6"}
     q = query_string_to_json("fox", fieldset(queryable={"title", "source"}))
-    assert q == {"match": {"field": "text_data.f1", "value": "fox"}}
+    assert q == {"match": {"field": "text_fields.f1", "value": "fox"}}
     with pytest.raises(QueryError):
         query_string_to_json("secret:fox", fieldset(queryable={"title"}))
     with pytest.raises(QueryError):
@@ -73,25 +73,25 @@ async def test_compile_default_fields_and_visibility():
 
 async def test_compile_leaves():
     fs = fieldset()
-    assert query_string_to_json("title:immigr*", fs) == {"phrase_prefix": {"field": "text_data.f1", "phrases": ["immigr"]}}
+    assert query_string_to_json("title:immigr*", fs) == {"phrase_prefix": {"field": "text_fields.f1", "phrases": ["immigr"]}}
     assert query_string_to_json('title:"Quick Fox"~1', fs) == {
-        "phrase": {"field": "text_data.f1", "phrases": ["quick", "fox"], "slop": 1}
+        "phrase": {"field": "text_fields.f1", "phrases": ["quick", "fox"], "slop": 1}
     }
-    assert query_string_to_json('source:"New York"', fs) == {"term": {"field": "meta_data.f3", "value": "New York"}}
-    assert query_string_to_json("n:42", fs) == {"term": {"field": "meta_data.f4", "value": 42}}
+    assert query_string_to_json('source:"New York"', fs) == {"term": {"field": "exact_fields.f3", "value": "New York"}}
+    assert query_string_to_json("n:42", fs) == {"term": {"field": "exact_fields.f4", "value": 42}}
     r = query_string_to_json("n:>5", fs)["range"]
     assert r["lower_bound"] == {"excluded": 5} and r["upper_bound"] is None
     r = query_string_to_json("date:2024-01-01", fs)["range"]
     assert r["lower_bound"] == {"included": "2024-01-01T00:00:00.000000Z"}
     assert r["upper_bound"] == {"included": "2024-01-01T23:59:59.999999Z"}
     r = query_string_to_json("location.lat:>50", fs)["range"]
-    assert r["field"] == "meta_data.f7.lat" and r["lower_bound"] == {"excluded": 50.0}
+    assert r["field"] == "exact_fields.f7.lat" and r["lower_bound"] == {"excluded": 50.0}
     with pytest.raises(QueryError):
         query_string_to_json("title:a*b", fs)
     with pytest.raises(QueryError):
         query_string_to_json("title:[a TO b]", fs)
     assert query_string_to_json("-title:fox", fs) == {
-        "boolean": {"must": [{"all": None}], "must_not": [{"match": {"field": "text_data.f1", "value": "fox"}}]}
+        "boolean": {"must": [{"all": None}], "must_not": [{"match": {"field": "text_fields.f1", "value": "fox"}}]}
     }
 
 
@@ -99,7 +99,7 @@ async def test_compile_multi_project():
     other = {"title": FieldInfo(11, "title", "text")}
     fs = FieldSet({1: FIELDS, 2: other})
     q = query_string_to_json("title:fox", fs)
-    assert {c["match"]["field"] for c in q["boolean"]["should"]} == {"text_data.f1", "text_data.f11"}
+    assert {c["match"]["field"] for c in q["boolean"]["should"]} == {"text_fields.f1", "text_fields.f11"}
 
 
 async def test_highlight_patterns():
@@ -122,7 +122,7 @@ async def test_proximity_highlight():
 async def test_phrase_wildcards():
     fs = FieldSet({1: FIELDS})
     assert query_string_to_json('title:"quick fo*"', fs) == {
-        "phrase_prefix": {"field": "text_data.f1", "phrases": ["quick", "fo"]}
+        "phrase_prefix": {"field": "text_fields.f1", "phrases": ["quick", "fo"]}
     }
     with pytest.raises(QueryError, match="proximity"):
         query_string_to_json('title:"quick fo*"~2', fs)

@@ -15,6 +15,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
 from amcat4.postgres.fields import DATE_DERIVED, FieldInfo, FieldSet, derived_date_values, normalize_value
+from amcat4.postgres.layout import partition_of, project_filter
 
 if TYPE_CHECKING:
     from amcat4.postgres.search import SearchQuery
@@ -27,7 +28,8 @@ if TYPE_CHECKING:
 # replace: replace existing documents completely (fields that are not given are removed), or create new documents
 OpType = Literal["create", "update", "upsert", "replace"]
 
-SORT_COLUMNS = ["sort_date", "sort_number", "sort_keyword"]
+# The standard metadata columns (see amcat4.postgres.layout)
+STANDARD_COLUMNS = ["date", "source"]
 
 
 class UploadError(ValueError):
@@ -54,8 +56,8 @@ class SplitDocument:
     """A document split into the values for the different storage columns"""
 
     def __init__(self, document: dict[str, Any], fields: dict[str, FieldInfo]):
-        self.columns: dict[str, dict[str, Any]] = {"text_data": {}, "meta_data": {}, "extra_data": {}}
-        self.sort: dict[str, Any] = {c: None for c in SORT_COLUMNS}
+        self.columns: dict[str, dict[str, Any]] = {"text_fields": {}, "exact_fields": {}, "stored_fields": {}}
+        self.standard: dict[str, Any] = {c: None for c in STANDARD_COLUMNS}
         self.vectors: dict[int, list[float]] = {}
         for name, value in document.items():
             if name == "_id":
@@ -74,7 +76,7 @@ class SplitDocument:
                 raise ValueError(f"Invalid value for field '{name}' ({f.type}): {e}") from e
             self.columns[f.column].update(values)
             if f.sort_column:
-                self.sort[f.sort_column] = values[f.key]
+                self.standard[f.sort_column] = values[f.key]
 
 
 def dedup_expression(unique_fields: list[FieldInfo], table: str = "documents") -> sql.Composable:
@@ -98,10 +100,10 @@ async def update_dedup_hashes(
     """
     unique = [f for f in fields.values() if f.unique]
     expr = dedup_expression(unique) if unique else sql.SQL("NULL")
-    where = sql.SQL("project_pk = %s")
-    params: list[Any] = [project_pk]
+    where = await project_filter(conn, project_pk)
+    params: list[Any] = []
     if ids is not None:
-        where = sql.SQL("{} AND id = ANY(%s)").format(where)
+        where = sql.SQL("{} AND documents.id = ANY(%s)").format(where)
         params.append(ids)
     try:
         async with conn.transaction():
@@ -130,23 +132,22 @@ def join_document(row: dict[str, Any], fields: dict[str, FieldInfo], names: Iter
 _STAGING = """
 CREATE TEMP TABLE IF NOT EXISTS staging_documents (
     rn integer, doc_id text, new_doc_id text, dedup_hash text, target_id bigint, target_doc_id text,
-    text_data jsonb, meta_data jsonb, extra_data jsonb, source jsonb,
-    sort_date timestamptz, sort_number double precision, sort_keyword text
+    text_fields jsonb, exact_fields jsonb, stored_fields jsonb, copied_from jsonb,
+    date timestamptz, source text
 ) ON COMMIT DELETE ROWS
 """
 
-_INSERT_COLUMNS = "project_pk, doc_id, text_data, meta_data, extra_data, source, sort_date, sort_number, sort_keyword"
+_INSERT_COLUMNS = "partition_id, project_pk, doc_id, text_fields, exact_fields, stored_fields, copied_from, date, source"
 
-_MERGE = """text_data = documents.text_data || s.text_data,
-            meta_data = documents.meta_data || s.meta_data,
-            extra_data = coalesce(documents.extra_data, '{}') || coalesce(s.extra_data, '{}'),
-            sort_date = coalesce(s.sort_date, documents.sort_date),
-            sort_number = coalesce(s.sort_number, documents.sort_number),
-            sort_keyword = coalesce(s.sort_keyword, documents.sort_keyword),
+_MERGE = """text_fields = documents.text_fields || s.text_fields,
+            exact_fields = documents.exact_fields || s.exact_fields,
+            stored_fields = coalesce(documents.stored_fields, '{}') || coalesce(s.stored_fields, '{}'),
+            date = coalesce(s.date, documents.date),
+            source = coalesce(s.source, documents.source),
             updated_at = now()"""
 
-_REPLACE = """text_data = s.text_data, meta_data = s.meta_data, extra_data = s.extra_data,
-              sort_date = s.sort_date, sort_number = s.sort_number, sort_keyword = s.sort_keyword,
+_REPLACE = """text_fields = s.text_fields, exact_fields = s.exact_fields, stored_fields = s.stored_fields,
+              date = s.date, source = s.source,
               updated_at = now()"""
 
 
@@ -161,7 +162,7 @@ async def upload_documents(
     documents: list[dict[str, Any]],
     fields: dict[str, FieldInfo],
     op_type: OpType = "replace",
-    source: dict | None = None,
+    copied_from: dict | None = None,
 ) -> dict[str, int]:
     """
     Upload documents to a project, in a single transaction: either all documents are saved, or none (UploadError).
@@ -175,23 +176,24 @@ async def upload_documents(
     unique = [f for f in fields.values() if f.unique]
 
     async with conn.transaction():
+        project = [await partition_of(conn, project_pk), project_pk]
         await conn.execute(_STAGING)
         async with conn.cursor().copy(
-            "COPY staging_documents (rn, doc_id, new_doc_id, text_data, meta_data, extra_data, source, sort_date, "
-            "sort_number, sort_keyword) FROM STDIN"
+            "COPY staging_documents (rn, doc_id, new_doc_id, text_fields, exact_fields, stored_fields, copied_from, "
+            "date, source) FROM STDIN"
         ) as copy:
             for rn, (doc_id, d) in enumerate(zip(ids, split)):
-                extra = d.columns["extra_data"]
+                extra = d.columns["stored_fields"]
                 await copy.write_row(
                     [
                         rn,
                         doc_id,
                         uuid.uuid4().hex,
-                        Jsonb(d.columns["text_data"]),
-                        Jsonb(d.columns["meta_data"]),
+                        Jsonb(d.columns["text_fields"]),
+                        Jsonb(d.columns["exact_fields"]),
                         Jsonb(extra) if extra else None,
-                        Jsonb(source) if source else None,
-                        *(d.sort[c] for c in SORT_COLUMNS),
+                        Jsonb(copied_from) if copied_from else None,
+                        *(d.standard[c] for c in STANDARD_COLUMNS),
                     ]
                 )
         if unique:
@@ -211,15 +213,16 @@ async def upload_documents(
         # Find existing documents, by id or by the values of the unique fields
         await conn.execute(
             """UPDATE staging_documents s SET target_id = d.id, target_doc_id = d.doc_id FROM documents d
-               WHERE d.project_pk = %s AND d.doc_id = s.doc_id""",
-            [project_pk],
+               WHERE d.partition_id = %s AND d.project_pk = %s AND d.doc_id = s.doc_id""",
+            project,
         )
         if unique:
             cur = await conn.execute(
                 """SELECT s.doc_id FROM staging_documents s JOIN documents d
-                   ON d.project_pk = %s AND d.dedup_hash = s.dedup_hash AND d.id <> coalesce(s.target_id, -1)
+                   ON d.partition_id = %s AND d.project_pk = %s AND d.dedup_hash = s.dedup_hash
+                      AND d.id <> coalesce(s.target_id, -1)
                    WHERE s.doc_id IS NOT NULL""",
-                [project_pk],
+                project,
             )
             if conflicts := await cur.fetchall():
                 raise UploadError(
@@ -227,8 +230,9 @@ async def upload_documents(
                 )
             await conn.execute(
                 """UPDATE staging_documents s SET target_id = d.id, target_doc_id = d.doc_id FROM documents d
-                   WHERE d.project_pk = %s AND d.dedup_hash = s.dedup_hash AND s.target_id IS NULL""",
-                [project_pk],
+                   WHERE d.partition_id = %s AND d.project_pk = %s AND d.dedup_hash = s.dedup_hash
+                     AND s.target_id IS NULL""",
+                project,
             )
 
         if op_type == "create":
@@ -240,20 +244,21 @@ async def upload_documents(
             if missing := await cur.fetchall():
                 raise UploadError(f"Documents do not exist: {_examples(missing, 'doc_id' if missing[0]['doc_id'] else 'rn')}")  # type: ignore[index, call-overload]
 
-        columns = f"text_data, meta_data, extra_data, source, {', '.join(SORT_COLUMNS)}"
+        columns = f"text_fields, exact_fields, stored_fields, copied_from, {', '.join(STANDARD_COLUMNS)}"
         cur = await conn.execute(
             f"""INSERT INTO documents ({_INSERT_COLUMNS}, dedup_hash)
-                SELECT %s, coalesce(doc_id, new_doc_id), {columns}, dedup_hash
+                SELECT %s, %s, coalesce(doc_id, new_doc_id), {columns}, dedup_hash
                 FROM staging_documents WHERE target_id IS NULL ORDER BY rn
                 RETURNING id, doc_id""",  # type: ignore[arg-type]
-            [project_pk],
+            project,
         )
         created = await cur.fetchall()
         assignments = _MERGE if op_type in ("update", "upsert") else _REPLACE
         cur = await conn.execute(
             f"""UPDATE documents SET {assignments} FROM staging_documents s
-                WHERE documents.project_pk = %s AND documents.id = s.target_id RETURNING documents.id""",  # type: ignore[arg-type]
-            [project_pk],
+                WHERE documents.partition_id = %s AND documents.project_pk = %s AND documents.id = s.target_id
+                RETURNING documents.id""",  # type: ignore[arg-type]
+            project,
         )
         updated = [row["id"] for row in await cur.fetchall()]  # type: ignore[index, call-overload]
         if unique and updated and op_type in ("update", "upsert"):
@@ -264,8 +269,9 @@ async def upload_documents(
         if any(f.column == "vector" for f in fields.values()):
             cur = await conn.execute(
                 """SELECT s.rn, d.id FROM staging_documents s JOIN documents d
-                   ON d.project_pk = %s AND d.doc_id = coalesce(s.target_doc_id, s.doc_id, s.new_doc_id)""",
-                [project_pk],
+                   ON d.partition_id = %s AND d.project_pk = %s
+                      AND d.doc_id = coalesce(s.target_doc_id, s.doc_id, s.new_doc_id)""",
+                project,
             )
             internal = {row["rn"]: row["id"] for row in await cur.fetchall()}  # type: ignore[index, call-overload]
             if op_type == "replace" and updated:
@@ -285,12 +291,13 @@ async def store_vectors(conn: AsyncConnection, project_pk: int, rows: list[tuple
             raise ValueError("All vectors of a field must have the same number of dimensions")
     for field_pk, n in dims.items():
         await ensure_vector_index(conn, field_pk, n)
+    partition_id = await partition_of(conn, project_pk)
     async with conn.cursor() as cur:
         await cur.executemany(
-            """INSERT INTO document_vectors (document_id, project_pk, field_pk, embedding)
+            """INSERT INTO document_vectors (document_id, partition_id, field_pk, embedding)
                VALUES (%s, %s, %s, %s::text::public.vector)
                ON CONFLICT (field_pk, document_id) DO UPDATE SET embedding = EXCLUDED.embedding""",
-            [(doc, project_pk, field, json.dumps(vector)) for doc, field, vector in rows],
+            [(doc, partition_id, field, json.dumps(vector)) for doc, field, vector in rows],
         )
 
 
@@ -318,9 +325,9 @@ async def delete_field_values(conn: AsyncConnection, project_pk: int, f: FieldIn
     sort = sql.SQL(", {} = NULL").format(sql.Identifier(f.sort_column)) if f.sort_column else sql.SQL("")
     await conn.execute(
         sql.SQL(
-            "UPDATE documents SET {col} = {col} - %s::text[]{sort}, updated_at = now() WHERE project_pk = %s AND {col} ? %s"
-        ).format(col=column, sort=sort),
-        [stored_keys(f), project_pk, f.key],
+            "UPDATE documents SET {col} = {col} - %s::text[]{sort}, updated_at = now() WHERE {project} AND {col} ? %s"
+        ).format(col=column, sort=sort, project=await project_filter(conn, project_pk)),
+        [stored_keys(f), f.key],
     )
 
 
@@ -346,8 +353,10 @@ async def get_document(
         sql.SQL("{} AS {}").format(field_select(fields[n]), sql.Identifier(fields[n].key)) for n in names
     ]
     cur = await conn.execute(
-        sql.SQL("SELECT {} FROM documents WHERE project_pk = %s AND doc_id = %s").format(sql.SQL(", ").join(columns)),
-        [project_pk, doc_id],
+        sql.SQL("SELECT {} FROM documents WHERE {} AND doc_id = %s").format(
+            sql.SQL(", ").join(columns), await project_filter(conn, project_pk)
+        ),
+        [doc_id],
     )
     row = await cur.fetchone()
     if row is None:
@@ -361,7 +370,9 @@ async def get_document(
 
 
 async def delete_document(conn: AsyncConnection, project_pk: int, doc_id: str) -> bool:
-    cur = await conn.execute("DELETE FROM documents WHERE project_pk = %s AND doc_id = %s", [project_pk, doc_id])
+    cur = await conn.execute(
+        sql.SQL("DELETE FROM documents WHERE {} AND doc_id = %s").format(await project_filter(conn, project_pk)), [doc_id]
+    )
     return cur.rowcount > 0
 
 
@@ -375,7 +386,7 @@ async def copy_batch(
 ) -> int:
     """
     Physically copy documents (given by internal id) to another project, keeping only the fields in field_map
-    (source field -> destination field). Provenance is recorded in the source column. Documents that were copied
+    (source field -> destination field). Provenance is recorded in the copied_from column. Documents that were copied
     before (same id in the destination) are updated. Used by the copy job (amcat4.projects.jobs).
     """
     for s, d in field_map.items():
@@ -401,19 +412,21 @@ async def copy_batch(
         s = source[0]
         if s.sort_column:
             return s.sort_column
-        cast = {"sort_date": "timestamptz", "sort_number": "double precision", "sort_keyword": "text"}[slot_column]
+        cast = {"date": "timestamptz", "source": "text"}[slot_column]
         return f"({s.column}->>'{s.key}')::{cast}"
 
     merge = re.sub(r"\bs\.", "EXCLUDED.", _MERGE)
     stmt = f"""INSERT INTO documents ({_INSERT_COLUMNS})
-               SELECT %s, doc_id, {remap("text_data")}, {remap("meta_data")}, {remap("extra_data")},
+               SELECT %s, %s, doc_id, {remap("text_fields")}, {remap("exact_fields")}, {remap("stored_fields")},
                       jsonb_build_object('project_pk', project_pk, 'doc_id', doc_id),
-                      {", ".join(sort_value(c) for c in SORT_COLUMNS)}
-               FROM documents WHERE project_pk = %s AND id = ANY(%s)
-               ON CONFLICT (project_pk, doc_id) DO UPDATE SET {merge}
+                      {", ".join(sort_value(c) for c in STANDARD_COLUMNS)}
+               FROM documents WHERE partition_id = %s AND project_pk = %s AND id = ANY(%s)
+               ON CONFLICT (partition_id, project_pk, doc_id) DO UPDATE SET {merge}
                RETURNING id"""
+    from_project = [await partition_of(conn, from_project_pk), from_project_pk]
+    to_project = [await partition_of(conn, to_project_pk), to_project_pk]
     async with conn.transaction():
-        cur = await conn.execute(stmt, [to_project_pk, from_project_pk, ids])  # type: ignore[arg-type]
+        cur = await conn.execute(stmt, [*to_project, *from_project, ids])  # type: ignore[arg-type]
         copied = [row["id"] for row in await cur.fetchall()]  # type: ignore[index, call-overload]
         if any(f.unique for f in dest_fields.values()):
             await update_dedup_hashes(conn, to_project_pk, dest_fields, copied)
@@ -421,13 +434,13 @@ async def copy_batch(
             if s.column != "vector":
                 continue
             await conn.execute(
-                """INSERT INTO document_vectors (document_id, project_pk, field_pk, embedding)
-                   SELECT new.id, new.project_pk, %s, v.embedding FROM document_vectors v
-                   JOIN documents old ON old.project_pk = %s AND old.id = v.document_id
-                   JOIN documents new ON new.project_pk = %s AND new.doc_id = old.doc_id
+                """INSERT INTO document_vectors (document_id, partition_id, field_pk, embedding)
+                   SELECT new.id, new.partition_id, %s, v.embedding FROM document_vectors v
+                   JOIN documents old ON old.partition_id = %s AND old.project_pk = %s AND old.id = v.document_id
+                   JOIN documents new ON new.partition_id = %s AND new.project_pk = %s AND new.doc_id = old.doc_id
                    WHERE v.field_pk = %s AND old.id = ANY(%s)
                    ON CONFLICT (field_pk, document_id) DO UPDATE SET embedding = EXCLUDED.embedding""",
-                [d.pk, from_project_pk, to_project_pk, s.pk, ids],
+                [d.pk, *from_project, *to_project, s.pk, ids],
             )
     return len(copied)
 
@@ -437,6 +450,14 @@ def _project_of_field(fieldset: FieldSet, f: FieldInfo) -> int:
         if fields.get(f.name) is f:
             return pk
     raise ValueError(f"Field {f.name} not found")
+
+
+def _project_condition(fieldset: FieldSet, f: FieldInfo) -> sql.Composable:
+    """SQL condition for the documents of the project of this field"""
+    pk = _project_of_field(fieldset, f)
+    return sql.SQL("documents.partition_id = {} AND documents.project_pk = {}").format(
+        sql.Literal(fieldset.partition(pk)), sql.Literal(pk)
+    )
 
 
 async def update_tag_by_query(
@@ -458,24 +479,24 @@ async def update_tag_by_query(
         key = sql.Literal(f.key)
         # existing values can be a single string (e.g. after changing a keyword field to a tag field)
         current = sql.SQL(
-            "(CASE jsonb_typeof(meta_data->{key}) WHEN 'array' THEN meta_data->{key} "
-            "WHEN 'string' THEN jsonb_build_array(meta_data->{key}) ELSE '[]'::jsonb END)"
+            "(CASE jsonb_typeof(exact_fields->{key}) WHEN 'array' THEN exact_fields->{key} "
+            "WHEN 'string' THEN jsonb_build_array(exact_fields->{key}) ELSE '[]'::jsonb END)"
         ).format(key=key)
         if action == "add":
             stmt = sql.SQL(
-                """UPDATE documents SET meta_data = jsonb_set(meta_data, ARRAY[{key}], {current} || to_jsonb(%s::text)),
+                """UPDATE documents SET exact_fields = jsonb_set(exact_fields, ARRAY[{key}], {current} || to_jsonb(%s::text)),
                    updated_at = now()
-                   WHERE {where} AND documents.project_pk = {project} AND NOT ({current} ? %s)"""
+                   WHERE {where} AND {project} AND NOT ({current} ? %s)"""
             )
             params = [tag, *c.params, tag]
         else:
             stmt = sql.SQL(
-                """UPDATE documents SET meta_data = CASE WHEN {current} - %s = '[]'::jsonb THEN meta_data - {key}
-                   ELSE jsonb_set(meta_data, ARRAY[{key}], {current} - %s) END, updated_at = now()
-                   WHERE {where} AND documents.project_pk = {project} AND {current} ? %s"""
+                """UPDATE documents SET exact_fields = CASE WHEN {current} - %s = '[]'::jsonb THEN exact_fields - {key}
+                   ELSE jsonb_set(exact_fields, ARRAY[{key}], {current} - %s) END, updated_at = now()
+                   WHERE {where} AND {project} AND {current} ? %s"""
             )
             params = [tag, tag, *c.params, tag]
-        project = sql.Literal(_project_of_field(fieldset, f))
+        project = _project_condition(fieldset, f)
         cur = await conn.execute(stmt.format(key=key, current=current, where=c.where, project=project), params)
         updated += cur.rowcount
     return updated
@@ -492,11 +513,10 @@ async def update_by_query(conn: AsyncConnection, fieldset: FieldSet, query: "Sea
             raise ValueError("Cannot update vector fields by query")
         column = sql.Identifier(f.column)
         sort = sql.SQL(", {} = %s").format(sql.Identifier(f.sort_column)) if f.sort_column else sql.SQL("")
-        project = sql.Literal(_project_of_field(fieldset, f))
+        project = _project_condition(fieldset, f)
         if value is None:
             stmt = sql.SQL(
-                "UPDATE documents SET {col} = {col} - %s::text[]{sort}, updated_at = now() "
-                "WHERE {where} AND documents.project_pk = {project}"
+                "UPDATE documents SET {col} = {col} - %s::text[]{sort}, updated_at = now() WHERE {where} AND {project}"
             )
             params: list[Any] = [stored_keys(f)]
             if f.sort_column:
@@ -504,7 +524,7 @@ async def update_by_query(conn: AsyncConnection, fieldset: FieldSet, query: "Sea
         else:
             stmt = sql.SQL(
                 "UPDATE documents SET {col} = coalesce({col}, '{{}}') || %s{sort}, updated_at = now() "
-                "WHERE {where} AND documents.project_pk = {project}"
+                "WHERE {where} AND {project}"
             )
             values = stored_values(f, value)
             params = [Jsonb(values)]
@@ -551,11 +571,14 @@ async def convert_field(conn: AsyncConnection, project_pk: int, old: FieldInfo, 
     This moves values between storage columns if needed. Raises ValueError (and changes nothing, if called within a
     transaction) if a value cannot be converted.
     """
+    project = await project_filter(conn, project_pk)
     if (old.column == "vector") != (new.column == "vector"):
         cur = await conn.execute(
-            "SELECT EXISTS (SELECT 1 FROM documents WHERE project_pk = %s AND "
-            "(text_data ? %s OR meta_data ? %s OR extra_data ? %s)) AS e",
-            [project_pk, old.key, old.key, old.key],
+            sql.SQL(
+                "SELECT EXISTS (SELECT 1 FROM documents WHERE {} "
+                "AND (text_fields ? %s OR exact_fields ? %s OR stored_fields ? %s)) AS e"
+            ).format(project),
+            [old.key, old.key, old.key],
         )
         row = await cur.fetchone()
         if old.column == "vector" or row["e"]:  # type: ignore[index, call-overload]
@@ -570,9 +593,9 @@ async def convert_field(conn: AsyncConnection, project_pk: int, old: FieldInfo, 
         cur = await conn.execute(
             sql.SQL(
                 "SELECT id, doc_id, {col}->{key} AS value FROM documents "
-                "WHERE project_pk = %s AND id > %s AND {col} ? {key} ORDER BY id LIMIT %s"
-            ).format(col=old_col, key=sql.Literal(old.key)),
-            [project_pk, last_id, batch_size],
+                "WHERE {project} AND id > %s AND {col} ? {key} ORDER BY id LIMIT %s"
+            ).format(col=old_col, key=sql.Literal(old.key), project=project),
+            [last_id, batch_size],
         )
         rows = await cur.fetchall()
         if not rows:
@@ -593,9 +616,6 @@ async def convert_field(conn: AsyncConnection, project_pk: int, old: FieldInfo, 
                 old=old_col, new=new_col, removed=removed
             )
         await conn.execute(
-            sql.SQL("UPDATE documents SET {} FROM converted c WHERE documents.project_pk = %s AND documents.id = c.id").format(
-                assignments
-            ),
-            [project_pk],
+            sql.SQL("UPDATE documents SET {} FROM converted c WHERE {} AND documents.id = c.id").format(assignments, project)
         )
         last_id = rows[-1]["id"]  # type: ignore[index, call-overload]

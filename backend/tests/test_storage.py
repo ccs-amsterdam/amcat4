@@ -116,17 +116,23 @@ async def test_sort_slots(docs_index):
         return [d["_id"] for d in res.data] if res else []
 
     fields = await list_fields(docs_index)
-    assert fields["date"].sort_slot == "date"  # the first date field gets the date slot
+    assert fields["date"].sort_slot == "date"  # the first date field gets the date column
+    assert fields["source"].sort_slot == "source"  # a keyword field called source gets the source column
     assert fields["n"].sort_slot is None
     assert await order("date", "desc") == ["2", "1", "3"]
     assert await order("n") == ["1", "3", "2"]  # sorting on fields without slot also works
+    with pytest.raises(ValueError):
+        await update_fields(docs_index, {"n": UpdateDocumentField(fast_sort=True)})  # no standard number column
 
-    await update_fields(docs_index, {"n": UpdateDocumentField(fast_sort=True)})
-    assert (await list_fields(docs_index))["n"].sort_slot == "number"
-    assert await order("n", "desc") == ["2", "3", "1"]
-    # new documents also fill the sort column
-    await create_or_update_documents(docs_index, [dict(_id="4", title="new", n=100)])
-    assert (await order("n", "desc"))[0] == "4"
+    await update_fields(docs_index, {"source": UpdateDocumentField(fast_sort=False)})
+    assert (await list_fields(docs_index))["source"].sort_slot is None
+    assert await order("source", "desc") == ["1", "3", "2"]
+    await update_fields(docs_index, {"source": UpdateDocumentField(fast_sort=True)})
+    assert (await list_fields(docs_index))["source"].sort_slot == "source"
+    assert await order("source", "desc") == ["1", "3", "2"]
+    # new documents also fill the standard column
+    await create_or_update_documents(docs_index, [dict(_id="4", title="new", source="zzz")])
+    assert (await order("source", "desc"))[0] == "4"
     with pytest.raises(ValueError):
         await update_fields(docs_index, {"title": UpdateDocumentField(fast_sort=True)})
 
@@ -300,9 +306,9 @@ async def test_copy_subset(docs_index, index_name):
     assert doc["_copied_from"] == {"project": docs_index, "doc_id": "1"}
     assert await ids(index_name, filters={"date": FilterSpec(monthnr=3)}) == ["1"]
     rows = await fetch_all(
-        "SELECT source FROM documents d JOIN projects p ON p.pk = d.project_pk WHERE p.id = %s", [index_name]
+        "SELECT copied_from FROM documents d JOIN projects p ON p.pk = d.project_pk WHERE p.id = %s", [index_name]
     )
-    assert {r["source"]["doc_id"] for r in rows} == {"1", "3"}  # provenance
+    assert {r["copied_from"]["doc_id"] for r in rows} == {"1", "3"}  # provenance
 
 
 @pytest.mark.anyio
@@ -331,7 +337,8 @@ async def test_delete_fields(docs_index):
     assert set(await list_fields(docs_index)) == {"title", "text", "n", "tags"}
     doc = await fetch_document(docs_index, "1")
     assert "source" not in doc and "date" not in doc
-    rows = await fetch_all("SELECT meta_data, sort_date FROM documents WHERE doc_id = '1'")
-    assert all(not any(k.endswith("_year") for k in r["meta_data"]) and r["sort_date"] is None for r in rows)
+    rows = await fetch_all("SELECT exact_fields, date, source FROM documents WHERE doc_id = '1'")
+    assert all(not any(k.endswith("_year") for k in r["exact_fields"]) and r["date"] is None for r in rows)
+    assert all(r["source"] is None for r in rows)
     with pytest.raises(NotFoundError):
         await delete_fields(docs_index, ["nonexisting"])

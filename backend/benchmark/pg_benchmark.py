@@ -171,27 +171,29 @@ async def benchmark() -> None:
         "monthnr filter in big", lambda: query_documents("big", fields=fields, filters={"date": FilterSpec(monthnr=3)})
     )
     date_desc = [{"date": {"order": "desc"}}]
-    await timeit("sort by date (sort slot), no query, big", lambda: query_documents("big", fields=fields, sort=date_desc))  # type: ignore
+    await timeit("sort by date (date column), no query, big", lambda: query_documents("big", fields=fields, sort=date_desc))  # type: ignore
     await timeit(
-        "sort by date (sort slot), common query, big",
+        "sort by date (date column), common query, big",
         lambda: query_documents("big", fields=fields, queries=q(COMMON), sort=date_desc),  # type: ignore
     )
-    n_desc = [{"n": {"order": "desc"}}]
-    await timeit("sort by number (no sort slot), big", lambda: query_documents("big", fields=fields, sort=n_desc), repeat=2)  # type: ignore
+    # source is mapped to the source column automatically: unmap it to compare
+    await update_fields("big", {"source": UpdateDocumentField(fast_sort=False)})
+    source_desc = [{"source": {"order": "desc"}}]
+    await timeit("sort by source (not mapped), big", lambda: query_documents("big", fields=fields, sort=source_desc), repeat=2)  # type: ignore
     t0 = time.perf_counter()
-    await update_fields("big", {"n": UpdateDocumentField(fast_sort=True)})
-    results["put n in sort slot (updates all rows of big)"] = {"seconds": round(time.perf_counter() - t0, 1)}
+    await update_fields("big", {"source": UpdateDocumentField(fast_sort=True)})
+    results["map source to the source column (updates all rows of big)"] = {"seconds": round(time.perf_counter() - t0, 1)}
     # updating all rows leaves dead rows and index entries; rebuild the index (online), see `amcat4 optimize --reindex`
     t0 = time.perf_counter()
     async with connection() as conn:
         await conn.execute("VACUUM ANALYZE documents")
         await conn.execute("REINDEX INDEX CONCURRENTLY documents_bm25")
-    results["vacuum + reindex after sort slot update"] = {"seconds": round(time.perf_counter() - t0, 1)}
+    results["vacuum + reindex after mapping"] = {"seconds": round(time.perf_counter() - t0, 1)}
     print(
-        f"put n in sort slot: {results['put n in sort slot (updates all rows of big)']['seconds']}s, "
-        f"vacuum + reindex: {results['vacuum + reindex after sort slot update']['seconds']}s"
+        f"map source: {results['map source to the source column (updates all rows of big)']['seconds']}s, "
+        f"vacuum + reindex: {results['vacuum + reindex after mapping']['seconds']}s"
     )
-    await timeit("sort by number (sort slot), big", lambda: query_documents("big", fields=fields, sort=n_desc))  # type: ignore
+    await timeit("sort by source (source column), big", lambda: query_documents("big", fields=fields, sort=source_desc))  # type: ignore
     await timeit(
         "page 1000 (offset 10000), common query, big",
         lambda: query_documents("big", fields=fields, queries=q(COMMON), page=1000),

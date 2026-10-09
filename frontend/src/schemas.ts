@@ -135,7 +135,7 @@ export const amcatFieldSchema = z.object({
   metareader: amcatMetareaderAccessSchema,
   reader: amcatReaderAccessSchema.default({ visible: true }),
   client_settings: amcatClientSettingsSchema,
-  sort_slot: z.enum(["date", "number", "keyword"]).nullish(),
+  sort_slot: z.enum(["date", "source"]).nullish(),
 });
 
 export const amcatFieldValuesSchema = z.array(z.string());

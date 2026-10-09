@@ -1,10 +1,13 @@
 from typing import Any, Literal, Mapping
 
+from psycopg import sql
+
 from amcat4.errors import NotFoundError
 from amcat4.models import CreateDocumentField, DocumentFieldDefinition, FieldType
 from amcat4.postgres import documents as storage
-from amcat4.postgres.connection import connection, fetch_one
+from amcat4.postgres.connection import connection
 from amcat4.postgres.documents import OpType
+from amcat4.postgres.layout import project_filter
 from amcat4.postgres.projects import project_pk
 from amcat4.systemdata.fields import create_fields, field_infos
 
@@ -56,14 +59,17 @@ async def fetch_document(index: str, doc_id: str, _source: str | list[str] | Non
     names = _source.split(",") if isinstance(_source, str) else _source
     async with connection() as conn:
         doc = await storage.get_document(conn, pk, doc_id, infos, names)
-    if doc is None:
-        raise NotFoundError(f"Document {index}/{doc_id} does not exist")
-    doc.pop("_id")
-    row = await fetch_one(
-        """SELECT p.id AS project, d.source->>'doc_id' AS doc_id FROM documents d
-           JOIN projects p ON p.pk = (d.source->>'project_pk')::int WHERE d.project_pk = %s AND d.doc_id = %s""",
-        [pk, doc_id],
-    )
+        if doc is None:
+            raise NotFoundError(f"Document {index}/{doc_id} does not exist")
+        doc.pop("_id")
+        cur = await conn.execute(
+            sql.SQL(
+                """SELECT p.id AS project, d.copied_from->>'doc_id' AS doc_id FROM documents d
+                   JOIN projects p ON p.pk = (d.copied_from->>'project_pk')::int WHERE {} AND d.doc_id = %s"""
+            ).format(await project_filter(conn, pk, "d")),
+            [doc_id],
+        )
+        row = await cur.fetchone()
     if row:
         doc["_copied_from"] = row
     return doc

@@ -4,9 +4,10 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-10-08
 
-The documents table is hash partitioned on project_pk, so each partition has its own (smaller) BM25 index:
+The documents table is list partitioned on partition_id, so each partition has its own (smaller) BM25 index:
 queries on a project only use the index of its partition, and an index can be rebuilt (after mass updates) one
-partition at a time. See amcat4/postgres/layout.py for the design.
+partition at a time. Every project is assigned to a partition when it is created; new partitions are created when
+the current one is full. See amcat4/postgres/layout.py for the design.
 """
 
 from typing import Sequence
@@ -17,9 +18,6 @@ revision: str = "0001"
 down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-# Changing the number of partitions later means rewriting the whole documents table
-DOCUMENT_PARTITIONS = 64
 
 TABLES = [
     """
@@ -38,7 +36,9 @@ TABLES = [
         contact jsonb,
         image jsonb,
         archived timestamptz,
-        created_at timestamptz NOT NULL DEFAULT now()
+        created_at timestamptz NOT NULL DEFAULT now(),
+        partition_id integer NOT NULL,  -- the documents partition of the project
+        UNIQUE (pk, partition_id)  -- for the foreign key from documents
     )
     """,
     """
@@ -109,40 +109,40 @@ TABLES = [
     """
     CREATE TABLE documents (
         id bigint GENERATED ALWAYS AS IDENTITY,
-        project_pk integer NOT NULL REFERENCES projects(pk) ON DELETE CASCADE,
+        partition_id integer NOT NULL,
+        project_pk integer NOT NULL,
         doc_id text NOT NULL,
         dedup_hash text,  -- hash of the values of the unique fields of the project
-        text_data jsonb NOT NULL DEFAULT '{}',
-        meta_data jsonb NOT NULL DEFAULT '{}',
-        extra_data jsonb,
-        source jsonb,
-        sort_date timestamptz,
-        sort_number double precision,
-        sort_keyword text COLLATE "C",
+        text_fields jsonb NOT NULL DEFAULT '{}',
+        exact_fields jsonb NOT NULL DEFAULT '{}',
+        stored_fields jsonb,
+        copied_from jsonb,  -- {project_pk, doc_id} of the original, for copied documents
+        -- standard metadata columns: a project can map one of its fields to each (for fast sorting)
+        date timestamptz,
+        source text COLLATE "C",
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now(),
         -- unique constraints on a partitioned table must include the partition key
-        PRIMARY KEY (id, project_pk),
-        UNIQUE (project_pk, doc_id)
-    ) PARTITION BY HASH (project_pk)
+        PRIMARY KEY (id, partition_id),
+        UNIQUE (partition_id, project_pk, doc_id),
+        -- documents are always in the partition of their project (moving a project cascades to its documents)
+        FOREIGN KEY (project_pk, partition_id) REFERENCES projects(pk, partition_id) ON UPDATE CASCADE ON DELETE CASCADE
+    ) PARTITION BY LIST (partition_id)
     """,
-    *[
-        f"CREATE TABLE documents_p{i:02} PARTITION OF documents FOR VALUES WITH (MODULUS {DOCUMENT_PARTITIONS}, REMAINDER {i})"
-        for i in range(DOCUMENT_PARTITIONS)
-    ],
+    # More partitions are created when needed (amcat4.postgres.layout.assign_partition)
+    "CREATE TABLE documents_p1 PARTITION OF documents FOR VALUES IN (1)",
     """
-    CREATE UNIQUE INDEX documents_dedup ON documents (project_pk, dedup_hash) WHERE dedup_hash IS NOT NULL
+    CREATE UNIQUE INDEX documents_dedup ON documents (partition_id, project_pk, dedup_hash) WHERE dedup_hash IS NOT NULL
     """,
     # Creates a BM25 index on every partition
     """
     CREATE INDEX documents_bm25 ON documents USING bm25 (
         id,
         project_pk,
-        sort_date,
-        sort_number,
-        (sort_keyword::pdb.literal),
-        (text_data::pdb.unicode_words),
-        (meta_data::pdb.literal)
+        date,
+        (source::pdb.literal),
+        (text_fields::pdb.unicode_words),
+        (exact_fields::pdb.literal)
     ) WITH (mutable_segment_rows = 0)
     """,
     """
@@ -164,11 +164,11 @@ TABLES = [
     """
     CREATE TABLE document_vectors (
         document_id bigint NOT NULL,
-        project_pk integer NOT NULL,  -- needed for the foreign key to the (partitioned) documents table
+        partition_id integer NOT NULL,  -- needed for the foreign key to the (partitioned) documents table
         field_pk integer NOT NULL REFERENCES fields(pk) ON DELETE CASCADE,
         embedding public.vector NOT NULL,
         PRIMARY KEY (field_pk, document_id),
-        FOREIGN KEY (document_id, project_pk) REFERENCES documents(id, project_pk) ON DELETE CASCADE
+        FOREIGN KEY (document_id, partition_id) REFERENCES documents(id, partition_id) ON UPDATE CASCADE ON DELETE CASCADE
     )
     """,
 ]

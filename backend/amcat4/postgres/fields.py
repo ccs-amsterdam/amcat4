@@ -12,35 +12,32 @@ from typing import Any, Callable, Literal
 
 from psycopg import AsyncConnection
 
-StorageColumn = Literal["text_data", "meta_data", "extra_data", "vector"]
-SortSlot = Literal["date", "number", "keyword"]
+StorageColumn = Literal["text_fields", "exact_fields", "stored_fields", "vector"]
+SortSlot = Literal["date", "source"]
 
-# Which jsonb column a field type is stored in. text_data is tokenized, meta_data is exact/columnar,
-# extra_data is stored but not indexed. Vectors are stored in the document_vectors table.
+# Which jsonb column a field type is stored in. text_fields is tokenized, exact_fields is exact/columnar,
+# stored_fields is stored but not indexed. Vectors are stored in the document_vectors table.
 _STORAGE: dict[str, StorageColumn] = {
-    "text": "text_data",
-    "keyword": "meta_data",
-    "tag": "meta_data",
-    "url": "meta_data",
-    "image": "meta_data",
-    "video": "meta_data",
-    "audio": "meta_data",
-    "boolean": "meta_data",
-    "number": "meta_data",
-    "integer": "meta_data",
-    "date": "meta_data",
-    "geo_point": "meta_data",
-    "object": "extra_data",
+    "text": "text_fields",
+    "keyword": "exact_fields",
+    "tag": "exact_fields",
+    "url": "exact_fields",
+    "image": "exact_fields",
+    "video": "exact_fields",
+    "audio": "exact_fields",
+    "boolean": "exact_fields",
+    "number": "exact_fields",
+    "integer": "exact_fields",
+    "date": "exact_fields",
+    "geo_point": "exact_fields",
+    "object": "stored_fields",
     "vector": "vector",
 }
 
-# Which sort slot (fast sort column) a field type can use
+# Which sort slot (standard metadata column, which makes sorting fast) a field type can use
 _SORT_SLOTS: dict[str, SortSlot] = {
     "date": "date",
-    "number": "number",
-    "integer": "number",
-    "keyword": "keyword",
-    "url": "keyword",
+    "keyword": "source",
 }
 
 
@@ -75,17 +72,17 @@ class FieldInfo:
 
     @property
     def path(self) -> str:
-        """The field path in the BM25 index, e.g. text_data.f12"""
+        """The field path in the BM25 index, e.g. text_fields.f12"""
         return f"{self.column}.{self.key}"
 
     @property
     def indexed(self) -> bool:
-        return self.column in ("text_data", "meta_data")
+        return self.column in ("text_fields", "exact_fields")
 
     @property
     def sort_column(self) -> str | None:
-        """The real column in the documents table this field is copied to for fast sorting (if any)"""
-        return f"sort_{self.sort_slot}" if self.sort_slot else None
+        """The standard metadata column in the documents table this field is copied to, for fast sorting (if any)"""
+        return self.sort_slot
 
     def derived_key(self, part: str) -> str:
         """json key of a derived value (e.g. the month of a date field)"""
@@ -95,7 +92,7 @@ class FieldInfo:
         return f"{self.column}.{self.derived_key(part)}"
 
 
-# Derived values that are stored for every date field (as extra keys in meta_data), so that grouping by
+# Derived values that are stored for every date field (as extra keys in exact_fields), so that grouping by
 # date intervals and filtering on date parts can be done inside the BM25 index (columnar), instead of
 # computing them in SQL for every document. pg_search cannot push down expressions like date_trunc.
 def _daypart(dt: datetime) -> str:
@@ -221,11 +218,18 @@ class FieldSet:
 
     queryable: names of fields that the user may search/filter on (None = all fields). This is where field-level
     access control plugs in. (Later we may distinguish visible, queryable-but-invisible, and invisible fields.)
+    partitions: the documents partition of each project (needed for searching, see amcat4.postgres.layout)
     """
 
-    def __init__(self, project_fields: dict[int, dict[str, FieldInfo]], queryable: set[str] | None = None):
+    def __init__(
+        self,
+        project_fields: dict[int, dict[str, FieldInfo]],
+        queryable: set[str] | None = None,
+        partitions: dict[int, int] | None = None,
+    ):
         self.project_fields = project_fields
         self.queryable = queryable
+        self.partitions = partitions or {}
         self.by_name: dict[str, list[FieldInfo]] = {}
         for fields in project_fields.values():
             for name, f in fields.items():
@@ -237,6 +241,11 @@ class FieldSet:
     @property
     def project_pks(self) -> list[int]:
         return list(self.project_fields.keys())
+
+    def partition(self, project_pk: int) -> int:
+        if project_pk not in self.partitions:
+            raise ValueError(f"Partition of project {project_pk} is unknown")
+        return self.partitions[project_pk]
 
     def type(self, name: str) -> str:
         return self.by_name[name][0].type

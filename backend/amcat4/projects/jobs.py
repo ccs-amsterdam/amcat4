@@ -23,7 +23,7 @@ from amcat4.models import CreateDocumentField, FieldType, FilterSpec
 from amcat4.postgres import documents as storage
 from amcat4.postgres.connection import connection, execute, fetch_all, fetch_one
 from amcat4.postgres.fields import FieldSet
-from amcat4.postgres.projects import project_pk
+from amcat4.postgres.projects import project_partitions, project_pk
 from amcat4.postgres.search import SearchQuery, compile_search
 
 BATCH_SIZE = 2000
@@ -192,7 +192,7 @@ async def _copy_job(job: Job) -> dict[str, Any]:
         query = SearchQuery(
             queries=p.get("queries"), filters={k: FilterSpec(**v) for k, v in (p.get("filters") or {}).items()} or None
         )
-        c = compile_search(FieldSet({from_pk: source_infos}), query)
+        c = compile_search(FieldSet({from_pk: source_infos}, partitions=await project_partitions([from_pk])), query)
         async with connection() as conn:
             cur = await conn.execute(sql.SQL("SELECT count(*) AS n FROM documents WHERE {}").format(c.where), c.params)
             total = (await cur.fetchone())["n"]  # type: ignore[index, call-overload]
@@ -204,7 +204,7 @@ async def _copy_job(job: Job) -> dict[str, Any]:
     query = SearchQuery(
         queries=p.get("queries"), filters={k: FilterSpec(**v) for k, v in (p.get("filters") or {}).items()} or None
     )
-    c = compile_search(FieldSet({from_pk: source_infos}), query)
+    c = compile_search(FieldSet({from_pk: source_infos}, partitions=await project_partitions([from_pk])), query)
     while True:
         async with connection() as conn:
             cur = await conn.execute(

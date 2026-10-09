@@ -108,7 +108,7 @@ def _compile_filter(f: FieldInfo, spec: FilterSpec) -> tuple[list[dict], list[sq
 
     if "exists" in d:
         exists = d.pop("exists")
-        if f.column == "meta_data":
+        if f.column == "exact_fields":
             q = {"exists": {"field": f.path}}
             clauses.append(q if exists else {"boolean": {"must": [{"all": None}], "must_not": [q]}})
         else:

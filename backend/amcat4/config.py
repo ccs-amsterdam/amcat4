@@ -66,6 +66,13 @@ class Settings(BaseSettings):
         ),
     ] = "amcat"
 
+    partition_max_gb: Annotated[
+        float,
+        Field(
+            description="New projects go to a new documents partition once the BM25 index of the current one is this big (GB)",
+        ),
+    ] = 5
+
     auth: Annotated[AuthOptions, Field(description="Do we require authorization?")] = AuthOptions.no_auth
 
     cookie_secret: Annotated[

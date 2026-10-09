@@ -3,6 +3,7 @@ from psycopg.types.json import Jsonb
 from amcat4.errors import NotFoundError
 from amcat4.models import ImageObject, IndexId, ProjectSettings, Roles, ServerSettings
 from amcat4.postgres.connection import connection, execute, fetch_one
+from amcat4.postgres.layout import assign_partition
 from amcat4.systemdata.roles import create_project_role
 
 ## PROJECT INDEX SETTINGS
@@ -32,15 +33,18 @@ def _values(settings: ProjectSettings, exclude_none: bool) -> dict:
 
 async def create_project_settings(index_settings: ProjectSettings, admin_email: str | None = None):
     """
-    Register a project in the projects table, and optionally assign an admin role to a user.
+    Register a project in the projects table (assigning it to a documents partition), and optionally assign an
+    admin role to a user.
     """
     values = _values(index_settings, exclude_none=True)
-    columns = ["id", *values.keys()]
+    columns = ["id", "partition_id", *values.keys()]
     placeholders = ", ".join(["%s"] * len(columns))
-    await execute(
-        f"INSERT INTO projects ({', '.join(columns)}) VALUES ({placeholders})",  # type: ignore[arg-type]
-        [index_settings.id, *values.values()],
-    )
+    async with connection() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                f"INSERT INTO projects ({', '.join(columns)}) VALUES ({placeholders})",  # type: ignore[arg-type]
+                [index_settings.id, await assign_partition(conn), *values.values()],
+            )
     if admin_email:
         await create_project_role(admin_email, index_settings.id, Roles.ADMIN)
 
