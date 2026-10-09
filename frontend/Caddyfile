@@ -1,10 +1,10 @@
 {$AMCAT4_URL:localhost} {
     # API - Proxy to the FastAPI container
     handle /api {
-        reverse_proxy api:5000
+        reverse_proxy {$AMCAT4_API_HOST:api}:5000
     }
     handle /api/* {
-        reverse_proxy api:5000
+        reverse_proxy {$AMCAT4_API_HOST:api}:5000
     }
 
     # S3 - Proxy to the S3 container
