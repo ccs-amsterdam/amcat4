@@ -46,6 +46,8 @@ class PartitionInfo(BaseModel):
     table: str = Field(..., description="The name of the partition table.")
     index_bytes: int = Field(..., description="Size of the BM25 index of the partition (bytes).")
     total_bytes: int = Field(..., description="Size of the partition, including all its indexes (bytes).")
+    segments: int = Field(..., description="Number of segments of the BM25 index (many segments make searches slower).")
+    deleted_documents: int = Field(..., description="Deleted documents that are still in the BM25 index.")
     documents: int = Field(..., description="The number of documents in the partition.")
     projects: list[PartitionProject] = Field(..., description="The projects in the partition (largest first).")
 

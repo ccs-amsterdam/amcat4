@@ -165,6 +165,13 @@ TABLES = [
     """,
     "CREATE INDEX jobs_status ON jobs (status)",
     """
+    CREATE TABLE periodic_tasks (
+        name text PRIMARY KEY,
+        last_run timestamptz NOT NULL,
+        state jsonb NOT NULL DEFAULT '{}'  -- kept between runs (e.g. what was seen in the previous check)
+    )
+    """,
+    """
     CREATE TABLE document_vectors (
         document_id bigint NOT NULL,
         partition_id integer NOT NULL,  -- needed for the foreign key to the (partitioned) documents table
@@ -187,6 +194,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     for table in [
         "document_vectors",
+        "periodic_tasks",
         "jobs",
         "documents",
         "fields",

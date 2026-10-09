@@ -6,13 +6,23 @@ with FOR UPDATE SKIP LOCKED, so multiple server processes can run jobs safely. J
 store their progress after every batch, so a job that was interrupted (e.g. by a server restart) continues where it
 left off: running jobs that have not been updated for a while are claimed again.
 
+While a job runs, a heartbeat keeps updated_at current, so long steps (e.g. rebuilding an index) are not mistaken
+for interrupted jobs.
+
+Periodic tasks are quick checks that run every interval (e.g. "does a partition need a reindex?", or later "are
+outsourced tasks done?"). The worker loop runs them too; the periodic_tasks table makes sure each task runs at most
+once per interval across all server processes, and keeps its state between runs. Periodic tasks should be quick:
+for heavy work, they create a job.
+
 To add a new job type, write an async handler (job: Job) -> result dict and register it in HANDLERS.
+To add a periodic task, write an async function (state: dict) -> new state dict and register it in PERIODIC.
 """
 
 import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Awaitable, Callable
 
 from psycopg import sql
@@ -25,9 +35,11 @@ from amcat4.postgres.connection import connection, execute, fetch_all, fetch_one
 from amcat4.postgres.fields import FieldSet
 from amcat4.postgres.projects import project_partitions, project_pk
 from amcat4.postgres.search import SearchQuery, compile_search
+from amcat4.projects import maintenance
 
 BATCH_SIZE = 2000
 STALE_AFTER = "2 minutes"  # running jobs that were not updated for this long are considered interrupted
+HEARTBEAT_SECONDS = 30
 
 _COLUMNS = (
     "id, type, status, (SELECT id FROM projects WHERE pk = jobs.project_pk) AS project, created_by, params, "
@@ -110,7 +122,14 @@ async def _claim_job() -> Job | None:
     return Job(id=row["id"], type=row["type"], params=row["params"], progress=row["progress"])  # type: ignore[index, call-overload]
 
 
+async def _heartbeat(job_id: str) -> None:
+    while True:
+        await asyncio.sleep(HEARTBEAT_SECONDS)
+        await execute("UPDATE jobs SET updated_at = now() WHERE id = %s AND status = 'running'", [job_id])
+
+
 async def run_job(job: Job) -> None:
+    heartbeat = asyncio.create_task(_heartbeat(job.id))
     try:
         result = await HANDLERS[job.type](job)
     except JobCancelled:
@@ -120,6 +139,8 @@ async def run_job(job: Job) -> None:
         logging.exception(f"Job {job.id} failed")
         await execute("UPDATE jobs SET status = 'failed', error = %s, updated_at = now() WHERE id = %s", [str(e), job.id])
         return
+    finally:
+        heartbeat.cancel()
     await execute(
         "UPDATE jobs SET status = 'done', result = %s, updated_at = now() WHERE id = %s AND status = 'running'",
         [Jsonb(result), job.id],
@@ -135,10 +156,40 @@ async def run_pending_jobs() -> int:
     return n
 
 
+@dataclass
+class PeriodicTask:
+    interval: timedelta
+    run: Callable[[dict], Awaitable[dict]]
+
+
+async def run_periodic_tasks() -> list[str]:
+    """Run the periodic tasks that are due (and not already run by another process). Returns their names."""
+    ran = []
+    for name, task in PERIODIC.items():
+        # claim the task: insert it, or update last_run if the interval has passed (atomic, so only one process wins)
+        row = await fetch_one(
+            """INSERT INTO periodic_tasks AS t (name, last_run) VALUES (%s, now())
+               ON CONFLICT (name) DO UPDATE SET last_run = now() WHERE t.last_run <= now() - %s
+               RETURNING state""",
+            [name, task.interval],
+        )
+        if row is None:
+            continue
+        try:
+            state = await task.run(row["state"])
+        except Exception:
+            logging.exception(f"Periodic task {name} failed")
+            continue
+        await execute("UPDATE periodic_tasks SET state = %s WHERE name = %s", [Jsonb(state), name])
+        ran.append(name)
+    return ran
+
+
 async def job_worker(poll_interval: float = 2.0) -> None:
-    """Run jobs forever (started as a background task by the API server)"""
+    """Run periodic tasks and jobs forever (started as a background task by the API server)"""
     while True:
         try:
+            await run_periodic_tasks()
             await run_pending_jobs()
         except asyncio.CancelledError:
             raise
@@ -221,4 +272,9 @@ async def _copy_job(job: Job) -> dict[str, Any]:
 
 HANDLERS: dict[str, Callable[[Job], Awaitable[dict[str, Any]]]] = {
     "copy": _copy_job,
+    "reindex": maintenance.reindex_job,
+}
+
+PERIODIC: dict[str, PeriodicTask] = {
+    "partition_maintenance": PeriodicTask(interval=maintenance.CHECK_INTERVAL, run=maintenance.check_partitions),
 }

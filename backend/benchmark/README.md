@@ -74,7 +74,7 @@ roles, api_keys, requests, server_settings, object_storage   -- system data, pla
 | Regex queries do not work on json paths (the pattern is matched against the whole stored term, ignoring the field path) | Only trailing wildcards (`immigr*`) are supported |
 | Dates stored as RFC3339 strings are typed as dates (range queries, columnar) | No numeric date representation needed |
 | No Top-K sorting on json keys | Standard `date` and `source` columns |
-| Expressions (`date_trunc`, casts) are not pushed into the index; grouping on a raw json keyword can be (but in the benchmark queries it is not, see open issues) | Derived date keys |
+| Grouping is only pushed into the index for indexed columns, not for json expressions (`exact_fields->>'f3'`), casts or `date_trunc` | Aggregations are grouped by postgres; derived date keys avoid date expressions |
 | When grouping inside the index, json dates/numbers are returned in an internal representation | Dates/numbers without interval are grouped in SQL |
 | `snippet_positions` returns utf-8 byte offsets, and no positions for prefix queries | Converted to characters, combined with our own matcher |
 | Small inserts are buffered in a *mutable segment*, which made every query 5-10x slower after many small uploads | The index is created with `mutable_segment_rows = 0` |
@@ -160,15 +160,19 @@ Other operations:
 ## Open issues
 
 - **Mass updates** (updating all documents of a large project) take ~25 s for 500k documents (every update rewrites
-  the row and its index entry), and should be followed by a reindex.
+  the row and its index entry). The server rebuilds the index afterwards (see below).
 - **Parallel query depends on the index layout,** because pg_search estimates the number of matches from the
   largest segment ([paradedb#6563](https://github.com/paradedb/paradedb/issues/6563)). So the same aggregation can
   take ~100 or ~200 ms depending on how the index happens to be built. Known upstream bug; we don't work around it.
 - **Uploads leave many small index segments** (one per upload batch), which makes searches 2-3x slower until the
-  index is rebuilt. Options: tune pg_search's segment merging, or reindex a partition after large uploads (e.g. in a
-  background job).
-- Grouping on json keys (terms, derived date parts) was meant to run inside the index, but in the benchmark Postgres
-  reads the values from the table and groups them itself. Worth checking which aggregations pg_search can push down.
+  index is rebuilt. According to its docs, pg_search merges small segments in the background (setting
+  `background_layer_sizes`, on by default), but in our tests this never happened, also not with the default index
+  settings and after `VACUUM`. Bug or missing setting: worth asking ParadeDB. For now, the server rebuilds the index
+  of a partition automatically when it has many segments or deleted documents, once the partition has been quiet
+  for 15 minutes (or after 24 hours if it never is), one partition at a time (`amcat4/projects/maintenance.py`).
+- Aggregations are grouped by postgres, which reads the values from the table: pg_search can't group on json keys
+  inside the index. Fine for now (~200 ms for 500k documents), but the standard `date` and `source` columns could probably be
+  grouped inside the index, which would make overviews across projects fast.
 - Once, an update by query directly after `REINDEX INDEX CONCURRENTLY` (with autovacuum running) took more than 10
   minutes before it was cancelled; it took 2 s when repeated. Not reproduced; keep an eye on this.
 - Tag aggregations are done in SQL (unnest), not inside the index (~350 ms for 500k documents in the benchmark).

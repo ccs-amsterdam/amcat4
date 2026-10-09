@@ -44,9 +44,9 @@ def axis_expr(axis: Axis, fs: list[FieldInfo], lateral_alias: str) -> tuple[sql.
         return sql.SQL("{}.value").format(sql.Identifier(lateral_alias)), lateral
 
     if (axis.interval is None and ftype in RAW_GROUP_TYPES) or (ftype == "date" and axis.interval in DATE_DERIVED):
-        # Group on the raw json value (or the derived date key), which pg_search can aggregate inside the
-        # index. Values are converted to the right type afterwards. (Not for dates and numbers: when grouping
-        # inside the index, pg_search returns these in an internal representation.)
+        # Group on the raw json value (or the derived date key, so no date expression is needed), and convert
+        # the values to the right type afterwards. Postgres does the grouping: pg_search can only group inside
+        # the index on indexed columns, not on json expressions like this.
         keys = [f.key if axis.interval is None else f.derived_key(axis.interval) for f in fs]
         raws = [sql.SQL("documents.exact_fields->>{}").format(sql.Literal(k)) for k in keys]
         return (raws[0] if len(raws) == 1 else sql.SQL("coalesce({})").format(sql.SQL(", ").join(raws))), None

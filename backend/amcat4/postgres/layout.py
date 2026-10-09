@@ -28,7 +28,9 @@ Documents:
   does not know that a project is in one partition (see project_filter). partition_id is also in the BM25 index:
   pg_search checks SQL conditions on columns outside the index against the table, for every match. A foreign key
   keeps the documents of a project in its partition: updating projects.partition_id moves the documents.
-  After mass updates, the index of a single partition can be rebuilt (amcat4 optimize --reindex --project ...).
+  Every upload adds segments to the BM25 index, which pg_search does not seem to merge, and updates leave deleted
+  documents in it. A periodic task rebuilds the index of a partition when it needs it, after the partition has been
+  quiet for a while (see amcat4.projects.maintenance); manually: amcat4 optimize --reindex [--project ...].
 - BM25 scores (how rare a word is) are computed per partition, so other projects in the same partition affect the
   ranking (but not which documents match).
 - Standard metadata columns: date and source (e.g. publication date and outlet), which most communication data has.
@@ -53,8 +55,10 @@ from psycopg.errors import LockNotAvailable
 
 from amcat4.config import get_settings
 
-# Key of the advisory lock that serializes assigning partitions (so two new projects cannot both create one)
+# Keys of the advisory locks that serialize assigning partitions (so two new projects cannot both create one), and
+# rebuilding BM25 indexes (one at a time: a rebuild uses many cores)
 _PARTITION_LOCK = 4_000_001
+_REINDEX_LOCK = 4_000_002
 
 
 def partition_table(partition_id: int) -> str:
@@ -93,9 +97,69 @@ async def list_partitions(conn: AsyncConnection) -> list[dict]:
             JOIN pg_class idx ON idx.oid = ix.indexrelid
             JOIN pg_am am ON am.oid = idx.relam AND am.amname = 'bm25'
             WHERE i.inhparent = 'documents'::regclass
+              AND ix.indisvalid AND idx.relname !~ '_cc(new|old)[0-9]*$'  -- not the copies made by a reindex
             ORDER BY 1"""
     )
     return await cur.fetchall()  # type: ignore[return-value]
+
+
+async def index_segments(conn: AsyncConnection, index: str) -> dict:
+    """Number of segments, documents and deleted documents (not yet removed from the segments) of a BM25 index"""
+    cur = await conn.execute(
+        """SELECT count(*) AS segments, coalesce(sum(num_docs), 0)::bigint AS documents,
+                  coalesce(sum(num_deleted), 0)::bigint AS deleted
+           FROM paradedb.index_info(%s::regclass)""",
+        [index],
+    )
+    return await cur.fetchone()  # type: ignore[return-value]
+
+
+async def partition_changes(conn: AsyncConnection) -> dict[str, int]:
+    """
+    Number of inserted, updated and deleted rows per partition table, as counted by postgres since its statistics
+    were reset. Only useful to see whether a partition changed since an earlier call.
+    """
+    cur = await conn.execute(
+        """SELECT s.relname AS table, s.n_tup_ins + s.n_tup_upd + s.n_tup_del AS changes
+           FROM pg_stat_user_tables s JOIN pg_inherits i ON i.inhrelid = s.relid
+           WHERE i.inhparent = 'documents'::regclass"""
+    )
+    return {row["table"]: row["changes"] for row in await cur.fetchall()}  # type: ignore[index, call-overload]
+
+
+async def reindex(conn: AsyncConnection, index: str) -> None:
+    """
+    Rebuild a BM25 index (online: reads and writes continue). Waits until no other rebuild is running.
+    The connection must be in autocommit mode.
+    """
+    await conn.execute("SELECT pg_advisory_lock(%s)", [_REINDEX_LOCK])
+    try:
+        await conn.execute(sql.SQL("REINDEX INDEX CONCURRENTLY {}").format(sql.Identifier(index)))
+    finally:
+        await conn.execute("SELECT pg_advisory_unlock(%s)", [_REINDEX_LOCK])
+
+
+async def drop_reindex_leftovers(conn: AsyncConnection) -> list[str]:
+    """
+    Drop the invalid index copies left behind by an interrupted REINDEX CONCURRENTLY (only if no rebuild is running).
+    Returns the names of the dropped indexes.
+    """
+    cur = await conn.execute("SELECT pg_try_advisory_lock(%s) AS locked", [_REINDEX_LOCK])
+    if not (await cur.fetchone())["locked"]:  # type: ignore[index]
+        return []
+    try:
+        cur = await conn.execute(
+            """SELECT idx.relname AS index FROM pg_index ix
+               JOIN pg_class idx ON idx.oid = ix.indexrelid
+               JOIN pg_inherits i ON i.inhrelid = ix.indrelid
+               WHERE i.inhparent = 'documents'::regclass AND NOT ix.indisvalid AND idx.relname ~ '_cc(new|old)[0-9]*$'"""
+        )
+        names = [row["index"] for row in await cur.fetchall()]  # type: ignore[index, call-overload]
+        for name in names:
+            await conn.execute(sql.SQL("DROP INDEX CONCURRENTLY IF EXISTS {}").format(sql.Identifier(name)))
+        return names
+    finally:
+        await conn.execute("SELECT pg_advisory_unlock(%s)", [_REINDEX_LOCK])
 
 
 async def partition_overview(conn: AsyncConnection) -> list[dict]:
@@ -116,12 +180,15 @@ async def partition_overview(conn: AsyncConnection) -> list[dict]:
     result = []
     for partition in await list_partitions(conn):
         members = projects.get(partition["partition_id"], [])
+        segments = await index_segments(conn, partition["index"])
         result.append(
             {
                 "partition_id": partition["partition_id"],
                 "table": partition["table"],
                 "index_bytes": partition["index_bytes"],
                 "total_bytes": partition["total_bytes"],
+                "segments": segments["segments"],
+                "deleted_documents": segments["deleted"],
                 "documents": sum(p["documents"] for p in members),
                 "projects": members,
             }
