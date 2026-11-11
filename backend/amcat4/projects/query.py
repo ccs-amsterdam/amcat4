@@ -185,7 +185,10 @@ async def query_documents(
         #       Is also a bit 'safer' than overwriting the full text if we only allow snippets
         # fieldnames = [field.name for field in fields if not field.snippet] if fields is not None else ["_id"]
         fieldnames = [field.name for field in fields] if fields is not None else ["_id"]
-        kwargs["_source"] = fieldnames
+        # Elasticsearch treats _source=[] as "no filter" (i.e. return everything), not "return
+        # nothing" -- so an empty fieldnames list (a user with zero allowed fields) must use
+        # _source=False instead, or all document content would leak regardless of permissions.
+        kwargs["_source"] = fieldnames if fieldnames else False
 
         if not scroll:
             kwargs["from_"] = page * per_page
@@ -201,7 +204,7 @@ async def query_documents(
 
     data = []
     for hit in result["hits"]["hits"]:
-        hitdict = dict(_id=hit["_id"], **hit["_source"])
+        hitdict = dict(_id=hit["_id"], **hit.get("_source", {}))
         hitdict = overwrite_highlight_results(hit, hitdict)
         if "highlight" in hit:
             for key in hit["highlight"].keys():

@@ -1,12 +1,12 @@
 # --- Stage 1: Build the Frontend ---
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
 # Copy only the files needed for installation to leverage Docker caching
 COPY package.json pnpm-lock.yaml ./
+
+RUN corepack enable && corepack install
 RUN pnpm install --frozen-lockfile
 
 COPY . .

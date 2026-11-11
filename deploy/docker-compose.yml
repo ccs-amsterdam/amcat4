@@ -36,6 +36,7 @@ services:
       - amcat4_auth
       - amcat4_middlecat_url
       - amcat4_admin_email
+      - amcat4_mcp_enabled
 
   elasticsearch-init:
     profiles: [deploy, dev]

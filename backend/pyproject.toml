@@ -38,6 +38,8 @@ dependencies = [
     "class_doc",
     "jsonpath_ng",
     "async-lru",
+    # <2 because mcp v2 is a breaking beta that renames FastMCP
+    "mcp>=1.28,<2",
     "aioboto3",
     "aiobotocore",
     "types-aiobotocore[s3]",
@@ -66,9 +68,11 @@ default-groups = ["dev"]
 amcat4 = "amcat4.__main__:main"
 
 [tool.setuptools]
-packages = ["amcat4", "amcat4.api"]
 include-package-data = true
 zip-safe = false
+
+[tool.setuptools.packages.find]
+include = ["amcat4*"]
 
 [tool.ruff]
 line-length = 127
